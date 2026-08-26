@@ -83,6 +83,7 @@ public sealed class RemotePollerTests
         public Task<GitResult> StageAsync(IReadOnlyList<string> p, CancellationToken ct) => throw new NotSupportedException();
         public Task<GitResult> UnstageAsync(IReadOnlyList<string> p, CancellationToken ct) => throw new NotSupportedException();
         public Task<GitResult> CommitAsync(string m, CancellationToken ct) => throw new NotSupportedException();
+        public Task<GitResult> AmendCommitMessageAsync(string m, CancellationToken ct) => throw new NotSupportedException();
         public Task<GitResult> DiscardAsync(IReadOnlyList<string> p, CancellationToken ct) => throw new NotSupportedException();
         public Task<GitResult> CreateBranchAsync(string n, bool c, CancellationToken ct) => throw new NotSupportedException();
         public Task<GitResult> CheckoutAsync(string b, CancellationToken ct) => throw new NotSupportedException();

@@ -215,6 +215,31 @@ public sealed partial class GitCliClient(
         return RunAsync(["commit", "-m", message], null, ct);
     }
 
+    /// <summary>Rewrite the last commit's message, and nothing else.</summary>
+    /// <remarks>
+    /// <c>--only</c> with no pathspec is the load-bearing switch: git documents exactly this
+    /// combination as "amend the last commit without committing changes that have already
+    /// been staged". Without it, a stray <c>git add</c> — or Versio's own background staging
+    /// — would ride silently into the rewritten commit. See the interface remarks for why
+    /// that would be the worst version of this feature.
+    /// </remarks>
+    public Task<GitResult> AmendCommitMessageAsync(string message, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(message))
+        {
+            _log.Warn(LogCategory.Git, "amend refused: a commit message is required");
+            return Task.FromResult(new GitResult
+            {
+                Success = false, ExitCode = -1, StdErr = "a commit message is required",
+            });
+        }
+
+        _log.Info(LogCategory.Git,
+            $"amending the last commit's message to: {message.Split('\n')[0].TrimEnd('\r')}");
+
+        return RunAsync(["commit", "--amend", "--only", "-m", message], null, ct);
+    }
+
     /// <summary>Throw away working-tree changes to the given paths.</summary>
     /// <remarks><b>Destructive and unrecoverable</b> — the content is not in git anywhere.
     /// Callers must confirm first. Also releases the direction lock (plan §6.5).</remarks>

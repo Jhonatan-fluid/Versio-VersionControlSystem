@@ -2519,6 +2519,9 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
 
     public AsyncCommand CommitCommand { get; private set; } = null!;
 
+    /// <summary>Rewrite the last commit's message — offered only while it is unpushed.</summary>
+    public AsyncCommand AmendCommitCommand { get; private set; } = null!;
+
     /// <summary>Put a branch on the remote for the first time.</summary>
     /// <remarks>
     /// Separate from <see cref="PushCommand"/> because it is a separate operation: a plain
@@ -2867,6 +2870,7 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         OpenMergeRequestCommand = new RelayCommand(OpenMergeRequest, () => MergeRequest.CanOpen);
 
         CommitCommand = new AsyncCommand(CommitAsync, CanCommit, ReportError);
+        AmendCommitCommand = new AsyncCommand(AmendCommitAsync, CanAmend, ReportError);
 
         BuildHunkCommand();
 
@@ -3015,6 +3019,24 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         && !HasConflicts;
 
     /// <summary>
+    /// Whether amend may be offered right now.
+    /// </summary>
+    /// <remarks>
+    /// No message requirement, unlike <see cref="CanCommit"/>, because the first press with
+    /// an empty box is what fills it — see <see cref="AmendCommitAsync"/>. Mid-merge is
+    /// blocked outright: HEAD during a merge is the commit being merged <i>onto</i>, and
+    /// rewriting that under a half-finished merge is not the typo fix this exists for.
+    /// <see cref="GitRemoteViewModel.HeadIsUnpushed"/> carries the unpushed rule and its
+    /// reasoning; it is the glance, and the flow re-verifies before rewriting.
+    /// </remarks>
+    private bool CanAmend() =>
+        Ready
+        && Remote.HeadIsUnpushed
+        && Auth.Identity.IsComplete
+        && !HasConflicts
+        && !IsMidMerge;
+
+    /// <summary>
     /// Ask whether git can be run at all. Once, at launch.
     /// </summary>
     /// <remarks>
@@ -3035,6 +3057,7 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
     private void RaiseGitCommandStates()
     {
         CommitCommand.RaiseCanExecuteChanged();
+        AmendCommitCommand.RaiseCanExecuteChanged();
         Remote.RaiseCommandStates();
         Auth.RaiseCommandStates();
         RefreshCommand.RaiseCanExecuteChanged();
@@ -3205,6 +3228,105 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
                               "Not pushed, so the direction lock is still held.");
     }
 
+    /// <summary>
+    /// Fix the last commit's message (UX-12). Two presses, message-only, unpushed-only.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>The first press with an empty box loads the current message instead of amending.</b>
+    /// The case this exists for is a typo noticed thirty seconds after committing, when the
+    /// box is empty again — so the natural first gesture hands the message over for editing
+    /// rather than doing anything irreversible. It also means a stray press never rewrites
+    /// history: rewriting takes a message in the box, and a message in the box came either
+    /// from this handler or from the user typing one.
+    /// </para>
+    /// <para>
+    /// <b>The glance is not the verdict.</b> The button lights from
+    /// <see cref="GitRemoteViewModel.HeadIsUnpushed"/>, which is as fresh as the last
+    /// refresh; a push from a terminal can land between the button lighting and the press.
+    /// So the flow re-asks <c>rev-list</c> before rewriting and refuses on a pushed HEAD —
+    /// the one answer that matters is the one taken last.
+    /// </para>
+    /// <para>
+    /// <b>No export gate, because no content moves.</b> The commit gate exists so the mirror
+    /// is never committed stale; a message-only amend records the same tree, so running
+    /// 17–31 s of CODESYS ahead of it would guard against nothing.
+    /// </para>
+    /// </remarks>
+    private async Task AmendCommitAsync()
+    {
+        if (_git is null)
+        {
+            return;
+        }
+
+        _logger.Click("Git.Amend");
+
+        if (string.IsNullOrWhiteSpace(CommitMessage))
+        {
+            var current = await _git.CommitMessageAsync("HEAD", CancellationToken.None)
+                .ConfigureAwait(true);
+
+            CommitMessage = current.TrimEnd('\r', '\n');
+            StatusSummary = "Edit the message, then press Amend again.";
+            return;
+        }
+
+        var head = await _git.HeadCommitAsync(CancellationToken.None).ConfigureAwait(true);
+        var unpushed = await _git.UnpushedCommitIdsAsync(CancellationToken.None)
+            .ConfigureAwait(true);
+
+        if (head.Length == 0 || !unpushed.Contains(head))
+        {
+            _logger.Warn(LogCategory.Git, "amend refused: HEAD is already on a remote");
+            Notifications.Failure("Not amended.",
+                "The last commit has been pushed — rewriting it now would fork a history " +
+                "somebody else may already have. Make a new commit instead.");
+
+            // The button was lit from stale knowledge; the refresh is what puts it out.
+            await RunRefreshAsync(RefreshTrigger.Manual, null).ConfigureAwait(true);
+            return;
+        }
+
+        var old = await _git.CommitMessageAsync(head, CancellationToken.None)
+            .ConfigureAwait(true);
+        var oldSubject = old.Split('\n')[0].TrimEnd('\r');
+        var newSubject = CommitMessage.Split('\n')[0].TrimEnd('\r');
+
+        // Named both ways round, because the one thing the confirmation must prevent is a
+        // message typed FOR THE NEXT COMMIT overwriting the last one on a mispress.
+        using (AskingSomething())
+        {
+            var confirmed = Prompts.ConfirmDestructive(new DestructivePrompt(
+                "Rewrite the last commit's message?",
+                $"“{oldSubject}”\n\nbecomes\n\n“{newSubject}”\n\n" +
+                "The changes stay exactly as committed; the commit id changes. Only this " +
+                "machine has the commit, which is why the offer exists at all.",
+                Confirm: "Amend"));
+
+            if (!confirmed)
+            {
+                _logger.Info(LogCategory.Git, "amend cancelled at the confirmation");
+                return;
+            }
+        }
+
+        using var busy = Busy.Begin(WorkKind.GitWrite, "Amending…");
+        var result = await _git.AmendCommitMessageAsync(CommitMessage, busy.Token)
+            .ConfigureAwait(true);
+
+        if (!result.Success)
+        {
+            Notifications.Failure("Amend failed.", result.FailureReason ?? string.Empty);
+            return;
+        }
+
+        _logger.Info(LogCategory.Git, "last commit amended - message only, same tree");
+        CommitMessage = string.Empty;
+        await RunRefreshAsync(RefreshTrigger.Manual, null).ConfigureAwait(true);
+
+        Notifications.Success("Amended.", "Same changes, new message, new commit id.");
+    }
 
     /// <summary>Stage the rows the commit plan chose, reporting a refusal rather than
     /// committing without them.</summary>

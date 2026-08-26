@@ -247,6 +247,32 @@ public sealed class GitRemoteViewModel : ObservableObject, IDisposable
         private set => SetProperty(ref _previewOpen, value);
     }
 
+    /// <summary>True while the commit HEAD points at exists nowhere but this machine.</summary>
+    /// <remarks>
+    /// <para>
+    /// The amend offer's gate (UX-12). Amending is history rewriting, a genuine hazard the
+    /// moment anybody else can hold the commit — and which commits nobody else has is a fact
+    /// this app already tracks, so it can enforce the rule a terminal leaves to discipline.
+    /// </para>
+    /// <para>
+    /// Derived from the same status the standing reads, because this answers a button's
+    /// visibility and must be as cheap as the refresh that moves it: with a live upstream,
+    /// ahead &gt; 0 means HEAD is among the commits a push would send; with no upstream — or
+    /// an upstream whose remote branch is gone — no remote can have it. Detached and unborn
+    /// both answer false: one is a state to leave before doing anything, the other has no
+    /// commit to amend. <b>This is the glance, not the verdict</b> — the amend flow
+    /// re-verifies against <c>rev-list</c> before rewriting, because a push can land between
+    /// the button lighting and the press, and a stale glance must lose to the fresh answer.
+    /// </para>
+    /// </remarks>
+    public bool HeadIsUnpushed => _branch switch
+    {
+        null => false,
+        { IsDetached: true } or { IsUnborn: true } => false,
+        { Upstream: not null, UpstreamGone: false } b => b.Ahead > 0,
+        _ => true,
+    };
+
     public string PreviewTitle
     {
         get => _previewTitle;
@@ -437,6 +463,10 @@ public sealed class GitRemoteViewModel : ObservableObject, IDisposable
         }
 
         Standing = RemoteStanding.For(branch, _hasRemote);
+
+        // Unconditionally, not inside countsMoved: publishing a branch changes the upstream
+        // without moving a single count, and the amend offer has to follow that too.
+        OnPropertyChanged(nameof(HeadIsUnpushed));
     }
 
     /// <summary>Start watching the remote. Idempotent.</summary>
@@ -460,6 +490,7 @@ public sealed class GitRemoteViewModel : ObservableObject, IDisposable
         ClosePreview();
         OnPropertyChanged(nameof(HasAhead));
         OnPropertyChanged(nameof(HasBehind));
+        OnPropertyChanged(nameof(HeadIsUnpushed));
 
         _poller.Stop();
         _poller.Resume();

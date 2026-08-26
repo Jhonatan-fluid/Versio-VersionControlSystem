@@ -211,6 +211,9 @@ internal sealed class CountingGitClient : IGitClient
     public Task<GitResult> CommitAsync(string message, CancellationToken ct) =>
         throw new NotSupportedException();
 
+    public Task<GitResult> AmendCommitMessageAsync(string message, CancellationToken ct) =>
+        throw new NotSupportedException();
+
     public Task<GitResult> DiscardAsync(IReadOnlyList<string> paths, CancellationToken ct) =>
         throw new NotSupportedException();
 

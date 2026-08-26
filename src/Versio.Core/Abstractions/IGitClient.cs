@@ -100,6 +100,25 @@ public interface IGitClient
 
     Task<GitResult> CommitAsync(string message, CancellationToken ct);
 
+    /// <summary>
+    /// Rewrite the last commit's message, and nothing else.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Message-only, by construction.</b> A bare <c>--amend</c> quietly folds whatever is
+    /// staged into the rewritten commit — so somebody fixing a typo thirty seconds after
+    /// committing would also commit whatever the background staging had put in the index
+    /// since, and the diff of the amended commit would not be the diff they reviewed. The
+    /// implementation must exclude the index; content changes go through a new commit.
+    /// </para>
+    /// <para>
+    /// <b>This is history rewriting</b>, safe only while no remote has the commit. The
+    /// client does not enforce that — it cannot know why it is being asked — the caller
+    /// gates the offer and re-verifies before calling (UX-12).
+    /// </para>
+    /// </remarks>
+    Task<GitResult> AmendCommitMessageAsync(string message, CancellationToken ct);
+
     Task<GitResult> DiscardAsync(IReadOnlyList<string> paths, CancellationToken ct);
 
     Task<GitResult> CreateBranchAsync(string name, bool checkout, CancellationToken ct);

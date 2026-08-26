@@ -873,7 +873,12 @@
                          on a disabled control by default, so the one moment the
                          explanation is wanted is the one moment it would be
                          missing. -->
-                    <StackPanel Orientation="Horizontal" Margin="0,10,0,0">
+                    <!-- A WrapPanel for the same reason the Fetch row is one: a row of
+                         fixed-width verbs whose first caption grows with the repository's
+                         state. "Commit (127)" beside Draft and Amend is real, and a
+                         StackPanel would hand each child the width it asks for and let the
+                         last one draw past the panel. -->
+                    <WrapPanel Orientation="Horizontal" Margin="0,10,0,0">
                         <Button Content="{Binding Commit.Label}"
                                 Style="{StaticResource AccentButton}"
                                 Command="{Binding CommitCommand}"
@@ -893,7 +898,34 @@
                                 Command="{Binding DraftCommitMessageCommand}"
                                 ToolTipService.ShowOnDisabled="True"
                                 ToolTip="Fill the box with a subject built from the changed objects. Available while the box is empty." />
-                    </StackPanel>
+
+                        <!-- THE ONE HISTORY REWRITE THE APP OFFERS (UX-12).
+
+                             Amend is the most-reached-for git verb after commit, and the
+                             narrow case is a typo in the subject thirty seconds after
+                             pressing the button. It is also history rewriting — so the
+                             offer exists only while HEAD is unpushed, a rule this app can
+                             enforce and a terminal cannot: Remote.HeadIsUnpushed carries
+                             the derivation, and the flow re-verifies before rewriting.
+
+                             HIDDEN, NOT DISABLED, on a pushed branch — that is the
+                             ordinary state most of the day, and a permanently dead button
+                             wearing a tooltip about history rewriting would be furniture.
+                             While it IS offered and merely blocked (busy, mid-merge), the
+                             disabled tooltip explains, same as every button here.
+
+                             Message-only, deliberately: a bare amend sweeps the index
+                             into the rewritten commit, so fixing a typo would silently
+                             commit whatever was staged since. Content belongs in a new
+                             commit, where the export gate can see it. -->
+                        <Button Content="Amend" Margin="8,0,0,0"
+                                Style="{StaticResource GhostButton}"
+                                Command="{Binding AmendCommitCommand}"
+                                ToolTipService.ShowOnDisabled="True"
+                                ToolTip="Rewrite the last commit's message. Press with the box empty to load the current message first. Offered only while the commit is unpushed."
+                                Visibility="{Binding Remote.HeadIsUnpushed,
+                                    Converter={StaticResource BoolToVisibility}}" />
+                    </WrapPanel>
 
                     <!-- The most surprising rule in the tool, stated where the
                          decision is made rather than discovered afterwards - but
