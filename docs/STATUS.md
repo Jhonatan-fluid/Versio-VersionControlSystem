@@ -10,12 +10,13 @@ never for state.
 39 m 33 s, zero skips**, on an idle machine with the IDE closed, over the Core seam
 changes (`ExportHeldViaCopy`, the held-wait, occupancy-then-hash, the locked-pointer
 skip). That run is also the counted gate `LOCK-1` owed. Item 5 (packaging) has unsigned
-`Setup.exe` / MSI from `Build_Package.bat`; signing and the feed remain. After the
-eyeballs: UX-6 / UX-7 `Ctrl+F` / UX-8 / UX-12 (item 3). Do not start from `archive/`
-or a handoff.
+`Setup.exe` / MSI from `Build_Package.bat`; signing and the feed remain. **Item 3 (the
+UX remainder) is built and tested as of 2026-08-25** — UX-6 find boxes, UX-7 `Ctrl+F` /
+Escape, UX-8 copy-a-commit, UX-12 amend-while-unpushed — and its visual half joins the
+eyeball list in item 2. Do not start from `archive/` or a handoff.
 
-**Tests:** 2,772 across eleven projects, last counted 2026-08-24 (Arch +3 version-bump
-pins, App +1 System information product version). The git panel is one CHANGES list: checkboxes pick the include set,
+**Tests:** 2,794 across eleven projects, last counted 2026-08-25 (App +22: the UX
+remainder — pending/history filters, Ctrl+F and Escape, history copy, amend). The git panel is one CHANGES list: checkboxes pick the include set,
 Commit / Discard are the verbs, and a failed project no longer vetoes unrelated files.
 in-flight work including an import; Try again lights after cancel; close asks even during
 import; CODESYS.exe and git.exe die with Versio (Job Object); TIA/TwinCAT hosts watch the
@@ -42,7 +43,7 @@ marking, duplicate-param keys, and the detail-pane lookup. All of them are in
 |---|---|---|---|
 | `Versio.Core.Tests` | 1,469 | under a second | nothing |
 | `Versio.Integration.Tests` | 162 | ~10 s | real git |
-| `Versio.App.Tests` | 645 | ~50 s | nothing |
+| `Versio.App.Tests` | 667 | ~50 s | nothing |
 | `Versio.Arch.Tests` | 27 | instant | nothing |
 | `Versio.Plc.Codesys.Pure.Tests` | 263 | under a second | nothing |
 | `Versio.Plc.Codesys.Parity.Tests` | 97 | ~15 s | `python` on PATH — skips cleanly without it, so check the count |
@@ -170,11 +171,30 @@ One list. Reorder it; do not copy it into another file.
    that window. TIA confirm-import and restore of the ~500 MB tree (the existing
    directory-payload seam; export was seen on `%TEMP%\versio-tia-p7`). TwinCAT: adopt the
    committed fixture in this repository and confirm export / confirm-import look right.
-3. **UX remainder** — evidence and ranking in [`archive/UX-PLAN.md`](archive/UX-PLAN.md):
-   - **UX-6** — search in the git panel and the history
-   - **UX-7** second half — `Ctrl+F` / Escape (`Ctrl+1/2/3/4` shipped; `Ctrl+F` waits on UX-6)
-   - **UX-8** — act on / copy a history commit
-   - **UX-12** — amend-while-unpushed (owner-approved, never built)
+   **From the 2026-08-25 UX remainder:** the find boxes over the changes list and the
+   history look right in both themes and hide nothing they should not; `Ctrl+F` lands the
+   caret in the visible panel's box; **Escape closes the settings popup and the
+   ahead/behind preview** (headless tests can only prove the dead half — a Popup with no
+   presentation source refuses to open); right-click a history commit and copy all three
+   things; and the Amend flow end to end — empty box loads the message, second press asks
+   with both subjects, the button vanishes after a push.
+3. ~~**UX remainder** — evidence and ranking in [`archive/UX-PLAN.md`](archive/UX-PLAN.md):~~
+   **built and tested 2026-08-25**, three commits on `UxRemainder`; visual checks moved
+   into item 2:
+   - ~~**UX-6** — search in the git panel and the history~~ — find boxes over both lists,
+     as veils on the CollectionView: ticks, counts and paging never change, and each
+     empty-through-the-veil state says which empty it is.
+   - ~~**UX-7** second half — `Ctrl+F` / Escape~~ — `Ctrl+F` on the window routes to the
+     active panel's own `FocusFindBox` (the explorer has none, so there it does nothing);
+     Escape closes the two transient surfaces, CanExecute-gated so an idle Escape stays
+     unhandled.
+   - ~~**UX-8** — act on / copy a history commit~~ — three read-only menu entries (id,
+     subject, whole message via a new `CommitMessageAsync`); revert/reset/cherry-pick
+     deliberately stay out; `Branch from here…` remains an owner question. The stale
+     "detached by clicking the history" comments were corrected with it.
+   - ~~**UX-12** — amend-while-unpushed (owner-approved, never built)~~ — message-only
+     (`--amend --only`), offered only while HEAD is unpushed and re-verified against
+     `rev-list` at press time; two presses with a confirmation naming both subjects.
 4. **P-M2.** Does the commit gate skip the export after a merge? Inferred from reading the gate;
    needs a real CODESYS export. P-M1 already measured that a merge can commit a project its
    mirror disagrees with (41 mirror files, two carrying content the kept project did not have);
@@ -268,9 +288,10 @@ copy of `TC3_PlcSample_reStrText`. Studio 5000 remains additive, not this queue.
 
 1. Read `CLAUDE.md` end to end — the rules are load-bearing and each one names what it cost.
 2. **This page, item 2** — the owner eyeballs (item 1, the CODESYS gate, ran green on
-   2026-08-19). Item 5 first artifacts: double-click `Build_Package.bat` for unsigned
-   `Setup.exe` and MSI in `artifacts\releases`. Then item 3 (UX). Do not re-derive this
-   list from the archive.
+   2026-08-19; item 3, the UX remainder, built 2026-08-25 with its visual checks folded
+   into item 2). Item 5 first artifacts: double-click `Build_Package.bat` for unsigned
+   `Setup.exe` and MSI in `artifacts\releases`. Do not re-derive this list from the
+   archive.
 3. The loop: `Versio.Core.Tests` + `Versio.Integration.Tests` + `Versio.Arch.Tests` +
    `Versio.Plc.Codesys.Pure.Tests` + `Versio.Plc.Codesys.Parity.Tests` +
    `Versio.Plc.TiaPortal.Pure.Tests` + `Versio.Plc.TwinCat.Pure.Tests`, about thirty seconds;
