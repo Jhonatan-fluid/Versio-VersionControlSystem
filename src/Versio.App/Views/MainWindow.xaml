@@ -308,7 +308,7 @@
                 <Button Grid.Column="3" x:Name="SettingsButton"
                         Style="{StaticResource IconButton}"
                         Content="{DynamicResource Icon.Settings}"
-                        Click="OnOpenSettings" ToolTip="Settings" />
+                        Click="OnOpenSettings" ToolTip="Settings. Escape closes the popup." />
             </Grid>
         </Border>
 

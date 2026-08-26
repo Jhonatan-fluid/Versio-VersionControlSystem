@@ -40,6 +40,21 @@
                        FontSize="{DynamicResource Font.Size.Caption}"
                        Foreground="{DynamicResource Brush.Text.Disabled}" />
 
+            <!-- FIND, OVER WHAT IS LOADED (UX-6). The project panel's box: same style, same
+                 200 ms delay, same placeholder grammar. Subject or author, and only the
+                 commits already read — "Load older commits" keeps walking the unfiltered
+                 history, which is why the placeholder says "loaded". The reasoning lives on
+                 HistoryViewModel.Filter's own remarks. -->
+            <TextBox DockPanel.Dock="Top" x:Name="HistoryFilterBox" Margin="0,0,0,6"
+                     AutomationProperties.Name="Find a loaded commit"
+                     Style="{StaticResource FlatTextBox}"
+                     Tag="Find a loaded commit by subject or author…"
+                     ToolTip="Narrow what is loaded. Ctrl+F puts the caret here."
+                     Text="{Binding History.Filter,
+                         UpdateSourceTrigger=PropertyChanged, Delay=200}" />
+
+            <Grid>
+
             <!-- A TreeView for the same reason the project panel uses one:
                  expand and collapse, one selection across both levels, and
                  virtualization that is measured rather than assumed. All
@@ -202,6 +217,20 @@
                     </DataTemplate>
                 </TreeView.Resources>
             </TreeView>
+
+            <!-- WHICH EMPTY THIS IS. A tree emptied by the filter reads as "no history",
+                 which is wrong twice: the loaded commits are all still there, and a match
+                 may exist further back that simply has not been loaded — so the line says
+                 what to press instead of pronouncing the search over. -->
+            <TextBlock Text="No loaded commit matches. Load older commits to search further back."
+                       HorizontalAlignment="Center" VerticalAlignment="Center"
+                       TextWrapping="Wrap" TextAlignment="Center" Margin="12,0"
+                       FontFamily="{DynamicResource Font.UI}"
+                       FontSize="{DynamicResource Font.Size.Caption}"
+                       Foreground="{DynamicResource Brush.Text.Disabled}"
+                       Visibility="{Binding History.FilterHidesEverything,
+                           Converter={StaticResource BoolToVisibility}}" />
+            </Grid>
         </DockPanel>
     </Border>
 

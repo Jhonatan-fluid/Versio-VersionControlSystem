@@ -16,6 +16,20 @@ public partial class HistoryPanelView : UserControl
 {
     public HistoryPanelView() => InitializeComponent();
 
+    /// <summary>Put the caret in this panel's find box (Ctrl+F).</summary>
+    /// <remarks>
+    /// The window owns the gesture, because only the window knows which panel the rail is
+    /// showing; the panel owns which box is its find box. Selected on arrival so typing
+    /// replaces the previous search instead of appending to it.
+    /// </remarks>
+    public void FocusFindBox()
+    {
+        if (HistoryFilterBox.Focus())
+        {
+            HistoryFilterBox.SelectAll();
+        }
+    }
+
     /// <summary>
     /// Selecting a row in the history shows it.
     /// </summary>

@@ -141,10 +141,11 @@
                         Visibility="{Binding Sync.SelectedHasBackups,
                             Converter={StaticResource BoolToVisibility}}" />
 
-                <TextBox DockPanel.Dock="Top" Margin="0,0,0,6"
+                <TextBox DockPanel.Dock="Top" Margin="0,0,0,6" x:Name="TreeSearchBox"
                          AutomationProperties.Name="Find an object or a file"
                          Style="{StaticResource FlatTextBox}"
                          Tag="Find an object or a file…"
+                         ToolTip="Narrow the tree. Ctrl+F puts the caret here."
                          Text="{Binding Sync.TreeSearch, UpdateSourceTrigger=PropertyChanged, Delay=200}" />
 
                 <TextBlock DockPanel.Dock="Bottom" Text="{Binding Sync.TreeSummary}"

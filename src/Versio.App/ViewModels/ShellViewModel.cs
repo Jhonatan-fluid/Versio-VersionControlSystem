@@ -2,6 +2,7 @@ using System.Collections.ObjectModel;
 using System.Collections.Specialized;
 using System.Diagnostics;
 using System.IO;
+using System.Windows.Data;
 using Versio.App.Mvvm;
 using Versio.Core.Abstractions;
 using Versio.Core.Diff;
@@ -1039,6 +1040,10 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
             SelectedBranch = null;
         });
         OnPropertyChanged(nameof(HasStashes));
+
+        // The filter is about a list that was just emptied; carrying it over would open the
+        // next repository on a changes list mysteriously showing nothing.
+        PendingFilter = string.Empty;
 
         BranchName = "—";
         Auth.Reset();
@@ -2129,6 +2134,70 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
     /// </remarks>
     public ObservableCollection<ChangeRow> Pending { get; } = [];
 
+    // ---------------------------------------------------------- find in the list (UX-6)
+
+    private string _pendingFilter = string.Empty;
+
+    /// <summary>Narrow what the changes list shows, by object name or path.</summary>
+    /// <remarks>
+    /// <para>
+    /// <b>A veil over the view, never a change to the set.</b> The ticks decide what Commit
+    /// and Discard apply to, and this filter must not touch them: somebody who ticked three
+    /// files, typed a filter that hides two, and pressed Commit still commits all three.
+    /// That is why the filter lives on the list's <see cref="ICollectionView"/> rather than
+    /// on <see cref="Pending"/> itself — every count, caption and action keeps reading the
+    /// full collection, and only the ListBox looks through the veil. The header keeps saying
+    /// "CHANGES · 12" while four are on screen for the same reason: it describes the set,
+    /// and the set has not changed.
+    /// </para>
+    /// <para>
+    /// Matches the object name as well as the path, because the object name is what the row
+    /// <i>shows</i>: a changed file the manifest knows is rendered as <c>FB_Motor</c>, and a
+    /// filter that only read paths would hide the row somebody is looking straight at.
+    /// </para>
+    /// </remarks>
+    public string PendingFilter
+    {
+        get => _pendingFilter;
+        set
+        {
+            if (SetProperty(ref _pendingFilter, value))
+            {
+                ApplyPendingFilter();
+            }
+        }
+    }
+
+    /// <summary>The filter matched nothing, and one line has to say which empty this is.</summary>
+    /// <remarks>
+    /// An empty list under a live filter reads as "working tree clean", which is exactly
+    /// wrong — the changes are all still there, still counted, still ticked. The line bound
+    /// to this says so where the rows would have been.
+    /// </remarks>
+    public bool PendingFilterHidesEverything =>
+        Pending.Count > 0 &&
+        !string.IsNullOrWhiteSpace(_pendingFilter) &&
+        !Pending.Any(MatchesPendingFilter);
+
+    private void ApplyPendingFilter()
+    {
+        // The default view is the one the ListBox renders when it binds the collection
+        // directly, so no second collection exists to fall out of step with the first.
+        var view = CollectionViewSource.GetDefaultView(Pending);
+        view.Filter = string.IsNullOrWhiteSpace(_pendingFilter)
+            ? null
+            : o => o is ChangeRow row && MatchesPendingFilter(row);
+        OnPropertyChanged(nameof(PendingFilterHidesEverything));
+    }
+
+    private bool MatchesPendingFilter(ChangeRow row)
+    {
+        var needle = _pendingFilter.Trim();
+        return needle.Length == 0
+            || row.Path.Contains(needle, StringComparison.OrdinalIgnoreCase)
+            || row.Primary.Contains(needle, StringComparison.OrdinalIgnoreCase);
+    }
+
     // ------------------------------------------------------- per-file selection (plan §4)
 
     /// <summary>How many pending rows are ticked.</summary>
@@ -2437,6 +2506,7 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         OnPropertyChanged(nameof(PendingSelectionCaption));
         OnPropertyChanged(nameof(PendingHeader));
         OnPropertyChanged(nameof(DiscardLabel));
+        OnPropertyChanged(nameof(PendingFilterHidesEverything));
     }
 
     /// <summary>Recount after anything that could have changed a tick.</summary>
@@ -2626,6 +2696,15 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         foreach (var row in Conflicted.Concat(Pending))
         {
             row.Describe(index.Lookup(row.Path));
+        }
+
+        // Naming a row changes what the filter is matched against — a row hidden while it
+        // was a bare path may be the FB_Motor somebody has already typed. The view caches
+        // each row's verdict, so it has to be told to ask again.
+        if (!string.IsNullOrWhiteSpace(_pendingFilter))
+        {
+            CollectionViewSource.GetDefaultView(Pending).Refresh();
+            OnPropertyChanged(nameof(PendingFilterHidesEverything));
         }
 
         ChangeSummaryLine = ChangeSummary.Sentence(Committing(), index);
@@ -3125,6 +3204,7 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         Notifications.Success("Committed.",
                               "Not pushed, so the direction lock is still held.");
     }
+
 
     /// <summary>Stage the rows the commit plan chose, reporting a refusal rather than
     /// committing without them.</summary>

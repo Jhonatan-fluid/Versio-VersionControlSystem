@@ -1,5 +1,6 @@
 using System.Collections.ObjectModel;
 using System.Globalization;
+using System.Windows.Data;
 using Versio.App.Mvvm;
 using Versio.Core.Abstractions;
 using Versio.Core.Git;
@@ -280,6 +281,71 @@ public sealed class HistoryViewModel : ObservableObject
     /// <summary>The commits currently loaded, newest first.</summary>
     public ObservableCollection<CommitRow> Commits { get; } = [];
 
+    // ------------------------------------------- find in what is loaded (UX-6)
+
+    private string _filter = string.Empty;
+
+    /// <summary>Narrow the loaded commits by subject or author.</summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Over what is loaded, and only what is loaded.</b> This narrows the commits already
+    /// read; "Load older commits" keeps walking the same unfiltered history a page at a time,
+    /// because <see cref="LoadMoreAsync"/> skips by <c>Commits.Count</c> and the filter lives
+    /// on the view, never on the collection. Filtering the walk itself would turn a box meant
+    /// for "where is that commit I scrolled past" into an unbounded <c>git log</c> over the
+    /// whole branch — the eager cost this whole class exists to avoid.
+    /// </para>
+    /// <para>
+    /// Subject and author, deliberately not path: per-file history is out of scope and stated
+    /// as such in the phase 1 close, and a box that filtered <i>loaded</i> commits by path
+    /// would look exactly like the feature that was declined while doing something much
+    /// weaker — matching only whichever commits happen to be in memory.
+    /// </para>
+    /// </remarks>
+    public string Filter
+    {
+        get => _filter;
+        set
+        {
+            if (SetProperty(ref _filter, value))
+            {
+                ApplyFilter();
+            }
+        }
+    }
+
+    /// <summary>The filter matched nothing in what is loaded, said where the rows were.</summary>
+    /// <remarks>
+    /// A tree emptied by the filter reads as "no history", which is wrong twice: the loaded
+    /// commits are all still there, and the branch may hold a match further back that simply
+    /// has not been loaded — which is why the line bound to this mentions loading older
+    /// commits rather than pronouncing the search over.
+    /// </remarks>
+    public bool FilterHidesEverything =>
+        Commits.Count > 0 &&
+        !string.IsNullOrWhiteSpace(_filter) &&
+        !Commits.Any(MatchesFilter);
+
+    private void ApplyFilter()
+    {
+        // The default view is what the TreeView renders when it binds Commits directly, so
+        // the veil needs no second collection — and a row's loaded children and file cache
+        // survive being hidden, because nothing is removed.
+        var view = CollectionViewSource.GetDefaultView(Commits);
+        view.Filter = string.IsNullOrWhiteSpace(_filter)
+            ? null
+            : o => o is CommitRow row && MatchesFilter(row);
+        OnPropertyChanged(nameof(FilterHidesEverything));
+    }
+
+    private bool MatchesFilter(CommitRow row)
+    {
+        var needle = _filter.Trim();
+        return needle.Length == 0
+            || row.Subject.Contains(needle, StringComparison.OrdinalIgnoreCase)
+            || row.Author.Contains(needle, StringComparison.OrdinalIgnoreCase);
+    }
+
     /// <summary>Read the next page back. Enabled only when there is one.</summary>
     public AsyncCommand LoadMoreCommand { get; }
 
@@ -520,6 +586,11 @@ public sealed class HistoryViewModel : ObservableObject
         _files.Clear();
         _stale = true;
         HasMore = false;
+
+        // The filter is about a history that is no longer loaded; carrying it over would
+        // open the next repository on a tree mysteriously showing nothing.
+        Filter = string.Empty;
+
         UpdateSummary();
     }
 
@@ -534,6 +605,10 @@ public sealed class HistoryViewModel : ObservableObject
     /// </remarks>
     private void UpdateSummary()
     {
+        // Loading a page or clearing the list changes what the filter has to match against;
+        // this is the one funnel every one of those paths already goes through.
+        OnPropertyChanged(nameof(FilterHidesEverything));
+
         var loaded = Commits.Count switch
         {
             0 => string.Empty,

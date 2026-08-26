@@ -17,6 +17,22 @@ public partial class GitPanelView : UserControl
 {
     public GitPanelView() => InitializeComponent();
 
+    /// <summary>Put the caret in this panel's find box (Ctrl+F).</summary>
+    /// <remarks>
+    /// The window owns the gesture, because only the window knows which panel the rail is
+    /// showing; the panel owns which box is its find box. <c>Focus()</c> answers false while
+    /// the box is collapsed with the rest of a clean tree's list, and nothing should happen
+    /// then — there is no list to search. Selected on arrival so typing replaces the
+    /// previous search instead of appending to it.
+    /// </remarks>
+    public void FocusFindBox()
+    {
+        if (ChangesFilterBox.Focus())
+        {
+            ChangesFilterBox.SelectAll();
+        }
+    }
+
     /// <summary>
     /// Ctrl+Enter commits from the message box.
     /// </summary>

@@ -16,6 +16,22 @@ public partial class ProjectPanelView : UserControl
 {
     public ProjectPanelView() => InitializeComponent();
 
+    /// <summary>Put the caret in this panel's find box (Ctrl+F).</summary>
+    /// <remarks>
+    /// The window owns the gesture, because only the window knows which panel the rail is
+    /// showing; the panel owns which box is its find box. Selected on arrival so typing
+    /// replaces the previous search instead of appending to it — the box keeps its text,
+    /// and Ctrl+F means "find something", not "find something ending in what I looked for
+    /// last time".
+    /// </remarks>
+    public void FocusFindBox()
+    {
+        if (TreeSearchBox.Focus())
+        {
+            TreeSearchBox.SelectAll();
+        }
+    }
+
     /// <summary>
     /// Selecting a row in the tree shows whatever it has to show.
     /// </summary>

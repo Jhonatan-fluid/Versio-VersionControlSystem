@@ -314,8 +314,10 @@ public sealed class GitPanelChromeTests : IDisposable
             Assert.True(VirtualizingPanel.GetIsVirtualizing(list),
                         "the changes list does not virtualize");
 
+            // Three rows since UX-6: the find box, the header, the list. The star row is
+            // still the list, and the MinHeight on it is still the point of this test.
             var grid = AllOf<Grid>(panel)
-                .FirstOrDefault(g => g.RowDefinitions.Count == 2
+                .FirstOrDefault(g => g.RowDefinitions.Count == 3
                                      && g.RowDefinitions.Any(r => r.Height.IsStar));
 
             Assert.True(grid is not null, "the changes list grid is not there");

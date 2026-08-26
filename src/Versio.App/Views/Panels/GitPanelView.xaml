@@ -459,7 +459,7 @@
                                     FontSize="{DynamicResource Font.Size.Caption}"
                                     Foreground="{DynamicResource Brush.Accent.Default}"
                                     ToolTipService.ShowOnDisabled="True"
-                                    ToolTip="See the commits a push would send"
+                                    ToolTip="See the commits a push would send. Escape closes the preview."
                                     Command="{Binding Remote.ShowOutgoingCommand}"
                                     Visibility="{Binding Remote.HasAhead,
                                         Converter={StaticResource BoolToVisibility}}" />
@@ -469,7 +469,7 @@
                                     FontSize="{DynamicResource Font.Size.Caption}"
                                     Foreground="{DynamicResource Brush.Accent.Default}"
                                     ToolTipService.ShowOnDisabled="True"
-                                    ToolTip="See the commits a pull would bring, and which objects they touch"
+                                    ToolTip="See the commits a pull would bring, and which objects they touch. Escape closes the preview."
                                     Command="{Binding Remote.ShowIncomingCommand}"
                                     Visibility="{Binding Remote.HasBehind,
                                         Converter={StaticResource BoolToVisibility}}" />
@@ -958,13 +958,27 @@
                         </Grid.Style>
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
                         <RowDefinition Height="*" MinHeight="60" />
                     </Grid.RowDefinitions>
+
+                    <!-- FIND, AS A VEIL (UX-6). The project panel's box, same style, same
+                         200 ms delay, same placeholder grammar. It narrows what is SHOWN and
+                         nothing else — the header keeps counting the full set, and the ticks
+                         it hides still commit and still discard. That rule lives on
+                         PendingFilter's own remarks; the box only binds it. -->
+                    <TextBox Grid.Row="0" x:Name="ChangesFilterBox" Margin="0,0,0,6"
+                             AutomationProperties.Name="Find a changed file"
+                             Style="{StaticResource FlatTextBox}"
+                             Tag="Find a changed file…"
+                             ToolTip="Narrow the list. Ctrl+F puts the caret here."
+                             Text="{Binding PendingFilter,
+                                 UpdateSourceTrigger=PropertyChanged, Delay=200}" />
 
                     <!-- THREE COLUMNS, NOT FOUR, AND THAT IS THE OVERFLOW FIX.
                          Auto | * | Auto — checkbox, trimming header, Discard.
                          See StagingSelection.Header. -->
-                    <Grid Grid.Row="0" Margin="0,0,0,4" ClipToBounds="True">
+                    <Grid Grid.Row="1" Margin="0,0,0,4" ClipToBounds="True">
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="Auto" />
                             <ColumnDefinition Width="*" MinWidth="24" />
@@ -993,17 +1007,33 @@
                                 ToolTip="Throw these changes away — this cannot be undone" />
                     </Grid>
 
-                    <ListBox Grid.Row="1" x:Name="ChangesList"
-                             AutomationProperties.Name="Changed files"
-                             ItemsSource="{Binding Pending}"
-                             SelectedItem="{Binding SelectedPending}"
-                             Background="Transparent" BorderThickness="0"
-                             ScrollViewer.HorizontalScrollBarVisibility="Disabled"
-                             ScrollViewer.VerticalScrollBarVisibility="Auto"
-                             ItemTemplate="{StaticResource PendingRowTemplate}"
-                             ItemContainerStyle="{StaticResource ChangeRowContainer}"
-                             VirtualizingStackPanel.IsVirtualizing="True"
-                             VirtualizingStackPanel.VirtualizationMode="Recycling" />
+                    <Grid Grid.Row="2">
+                        <ListBox x:Name="ChangesList"
+                                 AutomationProperties.Name="Changed files"
+                                 ItemsSource="{Binding Pending}"
+                                 SelectedItem="{Binding SelectedPending}"
+                                 Background="Transparent" BorderThickness="0"
+                                 ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                                 ScrollViewer.VerticalScrollBarVisibility="Auto"
+                                 ItemTemplate="{StaticResource PendingRowTemplate}"
+                                 ItemContainerStyle="{StaticResource ChangeRowContainer}"
+                                 VirtualizingStackPanel.IsVirtualizing="True"
+                                 VirtualizingStackPanel.VirtualizationMode="Recycling" />
+
+                        <!-- WHICH EMPTY THIS IS. A list emptied by the filter looks exactly
+                             like a clean working tree, and "clean" is the one thing it is
+                             not — the changes are still there, still counted, still ticked.
+                             Said where the rows would have been, only while the filter is
+                             the reason they are not. -->
+                        <TextBlock Text="No changed file matches. The list and its ticks are unchanged — only hidden."
+                                   HorizontalAlignment="Center" VerticalAlignment="Center"
+                                   TextWrapping="Wrap" TextAlignment="Center" Margin="12,0"
+                                   FontFamily="{DynamicResource Font.UI}"
+                                   FontSize="{DynamicResource Font.Size.Caption}"
+                                   Foreground="{DynamicResource Brush.Text.Disabled}"
+                                   Visibility="{Binding PendingFilterHidesEverything,
+                                       Converter={StaticResource BoolToVisibility}}" />
+                    </Grid>
                     </Grid>
                 </Grid>
             </DockPanel>

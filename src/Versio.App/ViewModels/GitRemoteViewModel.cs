@@ -348,6 +348,16 @@ public sealed class GitRemoteViewModel : ObservableObject, IDisposable
             $"previewed {commits.Count} {(incoming ? "incoming" : "outgoing")} commit(s) ({range})");
     }
 
+    /// <summary>Close the preview without touching anything else. The window's Escape (UX-7).</summary>
+    /// <remarks>
+    /// Its own public door rather than exposing <see cref="ClosePreview"/>, so the two routes
+    /// stay tellable apart in code: the ↑/↓ buttons toggle through
+    /// <see cref="TogglePreviewAsync"/>, and only the keyboard comes through here. Safe to
+    /// call with nothing open — closing a closed preview is a no-op, and the caller's
+    /// CanExecute already keeps the key unhandled in that state.
+    /// </remarks>
+    public void DismissPreview() => ClosePreview();
+
     private void ClosePreview()
     {
         IsPreviewOpen = false;

@@ -107,6 +107,54 @@ public partial class MainWindow : Window
                 }),
                 key,
                 ModifierKeys.Control));
+
+        // CTRL+F TO THE ACTIVE PANEL'S FIND BOX (UX-7, second half).
+        //
+        // It waited on UX-6, which is what created two of the three boxes. On the window for
+        // the same reason Ctrl+1/2/3 are: the point is to reach the box from wherever focus
+        // is. Each panel exposes FocusFindBox rather than the window grubbing through another
+        // control's name scope — the panel knows which box is its find box and whether it is
+        // on screen; the window only knows which panel the rail shows. The explorer has no
+        // find box, so there the key does nothing at all — focus yanked to an invisible
+        // control would be worse than a dead key.
+        InputBindings.Add(new KeyBinding(
+            new RelayCommand(() =>
+            {
+                if (RailIsChecked("RailProject"))
+                {
+                    ProjectPanel.FocusFindBox();
+                }
+                else if (RailIsChecked("RailGit"))
+                {
+                    GitPanel.FocusFindBox();
+                }
+                else if (RailIsChecked("RailHistory"))
+                {
+                    HistoryPanel.FocusFindBox();
+                }
+            }),
+            Key.F,
+            ModifierKeys.Control));
+
+        bool RailIsChecked(string rail) =>
+            FindName(rail) is RadioButton { IsChecked: true };
+
+        // ESCAPE CLOSES THE TWO TRANSIENT SURFACES (UX-7, second half): the settings popup
+        // and the ahead/behind preview strip. Both already close on a click outside, so this
+        // is the same dismissal for the hand that opened them from the keyboard. The
+        // CanExecute gate is the important part — with nothing open the key stays UNHANDLED
+        // and falls through to whoever wanted it, instead of the window silently eating
+        // every Escape for the rest of the session.
+        InputBindings.Add(new KeyBinding(
+            new RelayCommand(
+                () =>
+                {
+                    SettingsPopup.IsOpen = false;
+                    shell.Remote.DismissPreview();
+                },
+                () => SettingsPopup.IsOpen || shell.Remote.IsPreviewOpen),
+            Key.Escape,
+            ModifierKeys.None));
     }
 
     /// <summary>
