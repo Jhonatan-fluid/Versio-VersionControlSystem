@@ -42,12 +42,21 @@ public static class GuardNarrative
     };
 
     /// <summary>The verb phrase for an intent, for use mid-sentence.</summary>
+    /// <remarks>
+    /// Pull, merge and rebase are guarded identically and worded separately — that split is
+    /// the whole reason <see cref="GuardIntent.Merge"/> and <see cref="GuardIntent.Rebase"/>
+    /// exist. For a while all three rendered as "pull", so a guarded merge asked "Continue
+    /// and pull?" — a right decision wearing the wrong verb, which reads as the dialog not
+    /// knowing what button was pressed.
+    /// </remarks>
     public static string Action(GuardIntent intent) => intent switch
     {
         GuardIntent.SwitchBranch => "switch branch",
         GuardIntent.SwitchRepository => "open a different repository",
         GuardIntent.CloseApp => "close Versio",
         GuardIntent.Pull => "pull",
+        GuardIntent.Merge => "merge",
+        GuardIntent.Rebase => "rebase",
         _ => "do that",
     };
 
@@ -100,13 +109,16 @@ public static class GuardNarrative
             $"{Somewhere(verdict.Target)} still claiming to belong here — and the next sync " +
             "would act on it.",
 
+        // The second branch serves pull, merge and rebase alike — the verbs that bring
+        // commits into the tree the user is standing on — so the verb comes from the
+        // intent. It used to say "the pull" to all three.
         GuardReason.DirtyWorkingTree => verdict.Intent == GuardIntent.SwitchBranch
             ? $"{Files(verdict.DirtyFileCount)} {Have(verdict.DirtyFileCount)} changes that are " +
               $"not committed.\n\nStashing keeps them, and Versio offers them back the moment " +
               $"you return to this branch. Discarding cannot be undone."
             : $"{Files(verdict.DirtyFileCount)} {Have(verdict.DirtyFileCount)} changes that are " +
-              "not committed.\n\nStashing keeps them and puts them back once the pull has " +
-              "landed.",
+              $"not committed.\n\nStashing keeps them and puts them back once the " +
+              $"{Action(verdict.Intent)} has landed.",
 
         _ => $"Continue and {Action(verdict.Intent)}?",
     };

@@ -1,6 +1,7 @@
 using System.IO;
 using Versio.App.ViewModels;
 using Versio.Core.Git;
+using Versio.Core.Guarding;
 using Xunit;
 
 namespace Versio.App.Tests;
@@ -73,6 +74,40 @@ public sealed class MergeBranchFlowTests
         // dialog opens rather than only inside it. With no repository open there is no honest
         // answer and it falls back to the bare verb — asserted in GitPanelChromeTests.
         Assert.Equal($"Merge a branch into {shell.BranchName}…", shell.MergeBranchLabel);
+    }
+
+    [Fact]
+    public async Task The_guard_asks_about_a_merge_in_the_word_merge()
+    {
+        // The wiring half of the Merge intent: the guard's decision was always right, but
+        // the merge verb passed GuardIntent.Pull, so somebody who clicked Merge over a
+        // dirty tree was asked about a pull — a right question wearing the wrong verb,
+        // which reads as the dialog not knowing what button was pressed. The narrative's
+        // own wording is pinned in Core; this pins that the CALLER passes the intent that
+        // produces it.
+        using var repo = new TempRepo();
+        GiveItABranchToMerge(repo, "feature", "feature.md");
+        repo.Touch("seed.txt");
+
+        GuardPrompt? asked = null;
+
+        using var shell = TestShell.Build();
+        shell.Prompts = new StubPrompts
+        {
+            BranchMerge = (_, _) => "feature",
+            Guard = p => { asked = p; return GuardChoice.Cancel; },
+        };
+
+        await shell.OpenAsync(repo.Path);
+        await Eventually.Press(shell.MergeBranchCommand, "merge over a dirty tree");
+
+        Assert.NotNull(asked);
+        Assert.Contains("merge", asked!.Body, StringComparison.Ordinal);
+        Assert.DoesNotContain("pull", asked.Body, StringComparison.Ordinal);
+
+        // And cancelling at the guard merged nothing, same as cancelling the picker.
+        Assert.False(File.Exists(Path.Combine(repo.Path, "feature.md")),
+                     "cancelling at the guard merged the branch anyway");
     }
 
     [Fact]

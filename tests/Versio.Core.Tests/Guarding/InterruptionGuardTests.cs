@@ -60,6 +60,8 @@ public sealed class InterruptionGuardTests
     [InlineData(GuardIntent.SwitchBranch)]
     [InlineData(GuardIntent.SwitchRepository)]
     [InlineData(GuardIntent.Pull)]
+    [InlineData(GuardIntent.Merge)]
+    [InlineData(GuardIntent.Rebase)]
     public void Work_that_must_finish_refuses_intents_that_are_not_closing(GuardIntent intent)
     {
         var verdict = InterruptionGuard.Evaluate(
@@ -189,6 +191,8 @@ public sealed class InterruptionGuardTests
     [Theory]
     [InlineData(GuardIntent.SwitchBranch)]
     [InlineData(GuardIntent.Pull)]
+    [InlineData(GuardIntent.Merge)]
+    [InlineData(GuardIntent.Rebase)]
     public void Unmerged_paths_refuse_anything_that_rewrites_the_tree(GuardIntent intent)
     {
         var verdict = InterruptionGuard.Evaluate(intent, WorkSnapshot.Idle, Conflicted(2));
@@ -201,6 +205,8 @@ public sealed class InterruptionGuardTests
     [Theory]
     [InlineData(GuardIntent.SwitchBranch)]
     [InlineData(GuardIntent.Pull)]
+    [InlineData(GuardIntent.Merge)]
+    [InlineData(GuardIntent.Rebase)]
     public void A_held_direction_lock_refuses_anything_that_rewrites_the_tree(GuardIntent intent)
     {
         var verdict = InterruptionGuard.Evaluate(intent, WorkSnapshot.Idle, Locked());
@@ -257,11 +263,15 @@ public sealed class InterruptionGuardTests
             verdict.Choices);
     }
 
-    [Fact]
-    public void A_pull_is_never_offered_the_discard_button()
+    [Theory]
+    [InlineData(GuardIntent.Pull)]
+    [InlineData(GuardIntent.Merge)]
+    [InlineData(GuardIntent.Rebase)]
+    public void Bringing_commits_in_is_never_offered_the_discard_button(GuardIntent intent)
     {
-        // "Throw my work away so the pull applies cleanly" is not an intention anybody forms.
-        var verdict = InterruptionGuard.Evaluate(GuardIntent.Pull, WorkSnapshot.Idle, Dirty());
+        // "Throw my work away so the pull applies cleanly" is not an intention anybody
+        // forms — nor its merge or rebase spelling.
+        var verdict = InterruptionGuard.Evaluate(intent, WorkSnapshot.Idle, Dirty());
 
         Assert.Equal([GuardChoice.StashAndProceed, GuardChoice.Cancel], verdict.Choices);
         Assert.DoesNotContain(GuardChoice.DiscardAndProceed, verdict.Choices);

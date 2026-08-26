@@ -258,4 +258,26 @@ public sealed class GuardNarrativeTests
         Assert.Contains(SyncNarrative.Label(SyncDirection.TextAuthoritative),
                         GuardNarrative.Body(verdict), StringComparison.Ordinal);
     }
+
+    [Theory]
+    [InlineData(GuardIntent.Merge, "merge")]
+    [InlineData(GuardIntent.Rebase, "rebase")]
+    public void A_guarded_merge_or_rebase_says_its_own_verb_not_pull(GuardIntent intent, string verb)
+    {
+        // The gap GuardIntent.Merge and Rebase exist to close: all three bring-commits-in
+        // verbs shared GuardIntent.Pull, so a guarded merge asked "Continue and pull?" and
+        // logged "asking before pull" — a right decision wearing the wrong verb, which reads
+        // as the dialog not knowing what button was pressed. The dirty-tree body is the one
+        // people actually meet, and it also carried a hardcoded "once the pull has landed".
+        var verdict = Verdict(GuardDecision.Ask, GuardReason.DirtyWorkingTree,
+                              intent: intent, dirty: 2);
+
+        var body = GuardNarrative.Body(verdict);
+        var line = GuardNarrative.Describe(verdict);
+
+        Assert.Contains(verb, body, StringComparison.Ordinal);
+        Assert.DoesNotContain("pull", body, StringComparison.Ordinal);
+        Assert.Contains($"asking before {verb}", line, StringComparison.Ordinal);
+        Assert.DoesNotContain("pull", line, StringComparison.Ordinal);
+    }
 }

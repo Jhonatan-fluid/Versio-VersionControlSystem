@@ -34,13 +34,12 @@ public enum GuardIntent
     CloseApp,
 
     /// <summary>
-    /// Bring somebody else's commits into this working tree.
+    /// Bring the upstream's commits into this working tree with a pull.
     /// </summary>
     /// <remarks>
-    /// <b>Wired, by three callers.</b> <c>PullAsync</c> in <c>GitRemoteViewModel</c>, the
-    /// divergence reconcile, and the merge verb all pass this intent, because all three rewrite
-    /// the project and its mirror together — the scenario <c>SAFEGUARDS</c> §5.A calls able to
-    /// corrupt a project through no user error. It is one of the two intents
+    /// <b>Wired, by <c>PullAsync</c> in <c>GitRemoteViewModel</c>.</b> A pull rewrites the
+    /// project and its mirror together — the scenario <c>SAFEGUARDS</c> §5.A calls able to
+    /// corrupt a project through no user error — so it is one of the intents
     /// <c>RewritesWorkingTree</c> answers true for, and its dirty-tree branch is offered
     /// stash-without-discard for reasons argued in <c>ChoicesForDirtyTree</c>.
     /// <para>
@@ -51,16 +50,41 @@ public enum GuardIntent
     /// This paragraph is the record of that, not a description of today.
     /// </para>
     /// <para>
-    /// <b>Known gap: <see cref="GuardNarrative"/> renders this intent as the word "pull"</b>,
-    /// which was the whole of it when the enum was written and is now one caller of three. A
-    /// guarded merge therefore asks "Continue and pull?" and logs "asking before pull". The
-    /// guard's decision is right in every case — only the verb in the sentence is wrong — so it
-    /// is recorded here rather than fixed in passing: closing it means a second intent, and
-    /// <c>RewritesWorkingTree</c> has to learn it in the same change or the guard grows a silent
-    /// hole.
+    /// <b>Closed gap, as history.</b> For a while this was the intent for merge and rebase
+    /// too, because it was the whole of "bring commits in" when the enum was written — so a
+    /// guarded merge asked "Continue and pull?" and logged "asking before pull". The decision
+    /// was right in every case; only the verb was wrong. <see cref="Merge"/> and
+    /// <see cref="Rebase"/> exist so each sentence names the thing the button will do, and
+    /// <c>RewritesWorkingTree</c> learned them in the same change — the silent hole the old
+    /// remark warned a partial fix would open.
     /// </para>
     /// </remarks>
     Pull,
+
+    /// <summary>
+    /// Merge another branch's commits into this working tree.
+    /// </summary>
+    /// <remarks>
+    /// <b>Wired, by two callers in the shell:</b> the merge verb in the branch menu, and the
+    /// divergence reconcile when the user picks merge over rebase. The guard treats it
+    /// exactly as <see cref="Pull"/> — same rewrite of project and mirror together, same
+    /// verdicts — the intent exists so the dialog and the log say "merge" to somebody about
+    /// to merge. The words are the safeguard here: a person who just clicked Merge and is
+    /// asked about a pull has been given a reason to distrust the question.
+    /// </remarks>
+    Merge,
+
+    /// <summary>
+    /// Replay this branch's commits onto the upstream.
+    /// </summary>
+    /// <remarks>
+    /// <b>Wired, by the divergence reconcile</b> when the user picks rebase. Guarded like
+    /// <see cref="Pull"/> and <see cref="Merge"/> and, if anything, more deservedly — a
+    /// rebase rewrites the working tree several times over as each commit replays — but the
+    /// guard does not grade severity, it only decides whether to ask; the intent exists for
+    /// the same reason <see cref="Merge"/> does, so the sentence names the verb.
+    /// </remarks>
+    Rebase,
 }
 
 /// <summary>The three answers the guard can give.</summary>

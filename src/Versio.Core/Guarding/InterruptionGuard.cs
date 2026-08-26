@@ -159,7 +159,8 @@ public static class InterruptionGuard
     /// </para>
     /// </remarks>
     private static bool RewritesWorkingTree(GuardIntent intent) =>
-        intent is GuardIntent.SwitchBranch or GuardIntent.Pull;
+        intent is GuardIntent.SwitchBranch or GuardIntent.Pull
+               or GuardIntent.Merge or GuardIntent.Rebase;
 
     /// <summary>
     /// What to offer when the only thing in the way is uncommitted work.
@@ -168,11 +169,12 @@ public static class InterruptionGuard
     /// Stash leads in both cases: it is the only option that keeps the work, and it is what
     /// somebody in this position almost always wants.
     /// <para>
-    /// <b>Discard is offered for a branch switch and not for a pull.</b> "Throw this away and
-    /// switch" is a real intention — an experiment that turned out badly is abandoned exactly
-    /// this way. "Throw my work away so the pull applies cleanly" is not an intention anybody
-    /// forms; it is a thing that happens to them. Offering it would put an irreversible button
-    /// under a routine one for no use that was asked for.
+    /// <b>Discard is offered for a branch switch and not for pull, merge or rebase.</b>
+    /// "Throw this away and switch" is a real intention — an experiment that turned out badly
+    /// is abandoned exactly this way. "Throw my work away so the pull applies cleanly" is not
+    /// an intention anybody forms — nor its merge or rebase spelling; it is a thing that
+    /// happens to them. Offering it would put an irreversible button under a routine one for
+    /// no use that was asked for.
     /// </para>
     /// </remarks>
     private static IReadOnlyList<GuardChoice> ChoicesForDirtyTree(GuardIntent intent) =>

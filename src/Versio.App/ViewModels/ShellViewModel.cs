@@ -3554,9 +3554,12 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         _logger.Click(rebase ? "Git.Rebase" : "Git.Merge");
         using var scope = _logger.BeginOperation(LoggerExtensions.NewOperationId());
 
-        // The same intent a pull uses: both rewrite the project and its mirror together, which
-        // is the scenario SAFEGUARDS §5.A calls able to corrupt a project through no user error.
-        if (!await ClearForContextChangeAsync(GuardIntent.Pull, what).ConfigureAwait(true))
+        // Guarded like a pull — all three rewrite the project and its mirror together, which
+        // is the scenario SAFEGUARDS §5.A calls able to corrupt a project through no user
+        // error — but each verb carries its own intent, so the dialog asks about the button
+        // that was actually pressed. All three said "pull" until 2026-08-26.
+        if (!await ClearForContextChangeAsync(
+                rebase ? GuardIntent.Rebase : GuardIntent.Merge, what).ConfigureAwait(true))
         {
             return;
         }
@@ -3709,7 +3712,7 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
             return;
         }
 
-        if (!await ClearForContextChangeAsync(GuardIntent.Pull, $"merging {chosen}")
+        if (!await ClearForContextChangeAsync(GuardIntent.Merge, $"merging {chosen}")
                 .ConfigureAwait(true))
         {
             return;

@@ -15,9 +15,9 @@ UX remainder) is built and tested as of 2026-08-25** — UX-6 find boxes, UX-7 `
 Escape, UX-8 copy-a-commit, UX-12 amend-while-unpushed — and its visual half joins the
 eyeball list in item 2. Do not start from `archive/` or a handoff.
 
-**Tests:** 2,799 across eleven projects, last counted 2026-08-26 (App 671, Integration
-163: a failed `git show` is not a copied message; an empty subject names itself;
-amend load/rewrite refusals; GitSurface null-vs-blank). The git panel is one CHANGES list: checkboxes pick the include set,
+**Tests:** 2,818 across eleven projects, last counted 2026-08-26 (Core 1,487, App 672:
+a guarded merge or rebase now asks in its own verb — `GuardIntent.Merge` / `Rebase`
+closed the known gap where all three bring-commits-in verbs said "pull"). The git panel is one CHANGES list: checkboxes pick the include set,
 Commit / Discard are the verbs, and a failed project no longer vetoes unrelated files.
 in-flight work including an import; Try again lights after cancel; close asks even during
 import; CODESYS.exe and git.exe die with Versio (Job Object); TIA/TwinCAT hosts watch the
@@ -42,9 +42,9 @@ marking, duplicate-param keys, and the detail-pane lookup. All of them are in
 
 | Project | Tests | Time | Needs |
 |---|---|---|---|
-| `Versio.Core.Tests` | 1,469 | under a second | nothing |
+| `Versio.Core.Tests` | 1,487 | under a second | nothing |
 | `Versio.Integration.Tests` | 163 | ~10 s | real git |
-| `Versio.App.Tests` | 671 | ~50 s | nothing |
+| `Versio.App.Tests` | 672 | ~50 s | nothing |
 | `Versio.Arch.Tests` | 27 | instant | nothing |
 | `Versio.Plc.Codesys.Pure.Tests` | 263 | under a second | nothing |
 | `Versio.Plc.Codesys.Parity.Tests` | 97 | ~15 s | `python` on PATH — skips cleanly without it, so check the count |
