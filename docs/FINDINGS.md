@@ -3966,7 +3966,9 @@ problem from the one this finding closes, and it wants a different fix.
 
 **So: the leak is closed, and the flake is not.** Those are separate claims and only the first
 one is proven — by a test that fails against the old code and passes against the new, which is
-the only instrument here that answers a question rather than a mood.
+the only instrument here that answers a question rather than a mood. *(The flake half closed
+on 2026-08-26 — see "The suite's last flake was a real race" near the top of this file: it
+was unserialised status refreshes, not git contention, and one gate ended it.)*
 
 And the disposal in those two window helpers **is watched by nothing**, by construction:
 cross-test resource hygiene is invisible to every test in a suite. So it was broken deliberately,

@@ -1,6 +1,6 @@
 # Versio — status and what is next
 
-**Date:** 2026-08-23 · **This is the live page.** Where the project is, and what is next, live
+**Date:** 2026-08-26 · **This is the live page.** Where the project is, and what is next, live
 here and only here. Search [`FINDINGS.md`](FINDINGS.md) for defects. Completed plans and session
 handoffs are records in [`phase1/`](phase1/) and [`archive/`](archive/) — read them for why,
 never for state.
@@ -24,6 +24,7 @@ exist. One gate in `RunRefreshAsync` now serialises them; 18 consecutive green
 `AutoStashFlowTests` runs and a fully green 672-test suite run are the measurement
 (FINDINGS 2026-08-26). The git panel is one CHANGES list: checkboxes pick the include set,
 Commit / Discard are the verbs, and a failed project no longer vetoes unrelated files.
+**Stop / Retry / close (2026-08-21):** the status bar kills
 in-flight work including an import; Try again lights after cancel; close asks even during
 import; CODESYS.exe and git.exe die with Versio (Job Object); TIA/TwinCAT hosts watch the
 parent and Quit COM, and Stop reaps only the Portal/XAE PID this run created. TwinCAT XAE

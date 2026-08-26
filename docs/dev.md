@@ -1234,7 +1234,11 @@ Easy to leave out of a sync document. Still how the app works.
 
 **Rail.** Project Ctrl+1, Git Ctrl+2, History Ctrl+3, Explorer Ctrl+4 (and the numpad
 keys). F5 refreshes. Ctrl+Enter commits from the message box. Ctrl+Shift+P pushes.
-**Ctrl+F is not built** (search is UX-6).
+**Ctrl+F puts the caret in the active panel's find box** — all four rails have one since
+UX-6 (2026-08-25; the explorer's was always there). Escape closes the settings popup and
+the ahead/behind preview. The git panel also offers **Amend** while HEAD is unpushed
+(message-only, UX-12), and a history commit's context menu copies its id, subject or
+whole message (UX-8).
 
 **Settings.** `%LOCALAPPDATA%\VersioUser\settings.json` — theme, panel sizes, last ten
 repositories. A vanished recent repo offers clone-again / remove / cancel, not a blank
