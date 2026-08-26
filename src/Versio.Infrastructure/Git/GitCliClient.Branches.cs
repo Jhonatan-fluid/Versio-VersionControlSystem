@@ -387,6 +387,21 @@ public sealed partial class GitCliClient
         return result.Success ? result.StdOut : string.Empty;
     }
 
+    /// <summary>The full message of one commit.</summary>
+    /// <remarks>
+    /// <c>show --no-patch</c> rather than <c>log -1</c>, staying in this file's idiom of one
+    /// commit named directly; <c>%B</c> is the raw message, subject and body both, exactly as
+    /// recorded — no re-wrapping, no encoding of git's own.
+    /// </remarks>
+    public async Task<string> CommitMessageAsync(string commit, CancellationToken ct)
+    {
+        var result = await RunAsync(
+            ["show", "--no-patch", "--format=%B", commit], null, ct)
+            .ConfigureAwait(false);
+
+        return result.Success ? result.StdOut : string.Empty;
+    }
+
     public async Task<IReadOnlyList<StashEntry>> StashListAsync(CancellationToken ct)
     {
         var result = await RunAsync(["stash", "list", GitLogParser.StashFormat], null, ct)

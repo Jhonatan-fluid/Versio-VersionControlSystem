@@ -533,6 +533,18 @@ public interface IGitClient
     Task<string> CommitFileDiffAsync(string commit, string path, CancellationToken ct,
                                      int contextLines = 3);
 
+    /// <summary>
+    /// One commit's full message — subject, blank line, body — as git recorded it.
+    /// </summary>
+    /// <remarks>
+    /// Read on demand rather than carried on <see cref="CommitEntry"/>: the history reads
+    /// fifty subjects a page, and hauling every body along would put the cost on scrolling
+    /// to serve the one commit somebody right-clicks. Raw (<c>%B</c>), so what reaches the
+    /// clipboard is what <c>git commit</c> was given — the caller trims the trailing
+    /// newline for presentation if it wants to.
+    /// </remarks>
+    Task<string> CommitMessageAsync(string commit, CancellationToken ct);
+
     /// <summary>Everything currently stashed, newest first.</summary>
     Task<IReadOnlyList<StashEntry>> StashListAsync(CancellationToken ct);
 

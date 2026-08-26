@@ -518,7 +518,8 @@
 
                              §9e argued for exactly this and only half of it was built: the
                              amber sentence landed, the escape did not. A detached HEAD is
-                             normally reached by ACCIDENT - clicking a commit in the history -
+                             reached from OUTSIDE the app - a `git checkout <commit>` in a
+                             terminal, a CI tool; nothing inside Versio detaches HEAD -
                              so the reader is somebody who did not mean to be here and does not
                              know the vocabulary. Telling them their next commit is reachable
                              only from the reflog and then leaving the remedy in the top bar's

@@ -45,4 +45,42 @@ public partial class HistoryPanelView : UserControl
     /// </remarks>
     private void OnHistoryRowSelected(object sender, RoutedPropertyChangedEventArgs<object> e) =>
         (DataContext as ShellViewModel)?.History.Select(e.NewValue);
+
+    // ------------------------------------------------- copy a commit (UX-8)
+
+    private void OnCopyCommitId(object sender, RoutedEventArgs e)
+    {
+        if (RowOf(sender) is { } row && DataContext is ShellViewModel shell)
+        {
+            shell.CopyCommitId(row);
+        }
+    }
+
+    private void OnCopyCommitSubject(object sender, RoutedEventArgs e)
+    {
+        if (RowOf(sender) is { } row && DataContext is ShellViewModel shell)
+        {
+            shell.CopyCommitSubject(row);
+        }
+    }
+
+    private void OnCopyCommitMessage(object sender, RoutedEventArgs e)
+    {
+        if (RowOf(sender) is { } row && DataContext is ShellViewModel shell)
+        {
+            _ = shell.CopyCommitMessageAsync(row);
+        }
+    }
+
+    /// <summary>
+    /// The commit a menu entry belongs to: the right-clicked row, never the selection.
+    /// </summary>
+    /// <remarks>
+    /// The same shape as the git panel's <c>RowOf</c>, for the same reason: a
+    /// <c>ContextMenu</c> inherits its DataContext from the element it hangs off, and WPF
+    /// does not select a tree row on right-click — reading the selection would copy
+    /// whatever was clicked <i>last</i>.
+    /// </remarks>
+    private static CommitRow? RowOf(object sender) =>
+        (sender as FrameworkElement)?.DataContext as CommitRow;
 }

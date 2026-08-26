@@ -5158,18 +5158,84 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
     /// sentence and not a crash, and the sentence still carries the path so the copy failing
     /// does not also lose the thing being copied.
     /// </remarks>
-    public void CopyPathToClipboard(string repoRelative)
-    {
+    public void CopyPathToClipboard(string repoRelative) =>
+        CopyToClipboard(repoRelative,
+            copied: $"Copied {repoRelative}",
+            refused: $"Could not reach the clipboard — the path is {repoRelative}");
 
+    // ------------------------------------------------- copy a history commit (UX-8)
+
+    /// <summary>Put a commit's full id on the clipboard, from the history's context menu.</summary>
+    /// <remarks>
+    /// The full forty characters, not the abbreviation on screen: the id is copied to be
+    /// pasted into a tool, and every tool takes the long form while some contexts outgrow
+    /// the short one. The status bar answers with the short form, because that is the one a
+    /// person recognises as "the commit I just clicked".
+    /// </remarks>
+    public void CopyCommitId(CommitRow row)
+    {
+        _logger.Click("History.CopyId");
+        CopyToClipboard(row.Id,
+            copied: $"Copied the id of {row.ShortId}",
+            refused: $"Could not reach the clipboard — the id is {row.Id}");
+    }
+
+    /// <summary>Put a commit's subject line on the clipboard.</summary>
+    public void CopyCommitSubject(CommitRow row)
+    {
+        _logger.Click("History.CopySubject");
+        CopyToClipboard(row.Subject,
+            copied: $"Copied the subject of {row.ShortId}",
+            refused: $"Could not reach the clipboard — the subject is: {row.Subject}");
+    }
+
+    /// <summary>Put a commit's whole message — subject and body — on the clipboard.</summary>
+    /// <remarks>
+    /// Fetched when asked for, like the commit's files: the history deliberately reads only
+    /// subjects, and this is the one gesture that wants the body. The refusal sentence
+    /// cannot carry a multi-line message the way the path one carries its path — but nothing
+    /// is lost either, because the message is still one right-click away.
+    /// </remarks>
+    public async Task CopyCommitMessageAsync(CommitRow row)
+    {
+        _logger.Click("History.CopyMessage");
+
+        if (_git is null)
+        {
+            return;
+        }
+
+        var message = await _git.CommitMessageAsync(row.Id, CancellationToken.None)
+            .ConfigureAwait(true);
+
+        // %B ends with the newline git stores; a clipboard payload ending mid-sentence in a
+        // line break pastes an extra blank line into whatever it lands in.
+        CopyToClipboard(message.TrimEnd('\r', '\n'),
+            copied: $"Copied the message of {row.ShortId}",
+            refused: $"Could not reach the clipboard for the message of {row.ShortId}");
+    }
+
+    /// <summary>
+    /// Put text on the clipboard, and say so either way.
+    /// </summary>
+    /// <remarks>
+    /// Extracted from <see cref="CopyPathToClipboard"/> with its reasoning intact: clipboard
+    /// access can be refused when another process holds it open, which is worth a status-bar
+    /// sentence and not a crash — and the caller words that sentence, so a refused copy of a
+    /// short value can still carry the value itself and losing the copy does not also lose
+    /// the thing being copied.
+    /// </remarks>
+    private void CopyToClipboard(string text, string copied, string refused)
+    {
         try
         {
-            System.Windows.Clipboard.SetText(repoRelative);
-            StatusSummary = $"Copied {repoRelative}";
+            System.Windows.Clipboard.SetText(text);
+            StatusSummary = copied;
         }
         catch (System.Runtime.InteropServices.ExternalException ex)
         {
             _logger.Error(LogCategory.App, "could not reach the clipboard", ex);
-            StatusSummary = $"Could not reach the clipboard — the path is {repoRelative}";
+            StatusSummary = refused;
         }
     }
 

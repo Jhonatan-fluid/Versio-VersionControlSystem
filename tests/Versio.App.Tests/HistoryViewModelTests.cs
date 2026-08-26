@@ -110,6 +110,15 @@ internal sealed class CountingGitClient : IGitClient
         return Task.FromResult($"diff --git a/{path} b/{path}");
     }
 
+    public List<string> MessageCalls { get; } = [];
+
+    /// <summary>Raw, as %B answers: trailing newline included, for the caller to trim.</summary>
+    public Task<string> CommitMessageAsync(string commit, CancellationToken ct)
+    {
+        MessageCalls.Add(commit);
+        return Task.FromResult($"subject of {commit}\n\nbody of {commit}\n");
+    }
+
     // --- everything the history panel never touches -------------------------------
 
     public Task<bool> IsRepositoryAsync(CancellationToken ct) => Task.FromResult(true);

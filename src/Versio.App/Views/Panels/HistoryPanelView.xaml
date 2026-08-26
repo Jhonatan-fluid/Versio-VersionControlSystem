@@ -102,6 +102,34 @@
                     <HierarchicalDataTemplate DataType="{x:Type vm:CommitRow}"
                                               ItemsSource="{Binding Children}">
                         <StackPanel Margin="0,2">
+                            <!-- COPY, AND ONLY COPY (UX-8).
+
+                                 Read-only history is a decision, not an omission: this
+                                 application's failure mode is destroying work, so revert,
+                                 reset and cherry-pick stay on the far side of that line
+                                 until somebody argues them in. Copying is not on that
+                                 side — the id is already on screen in a tooltip nobody can
+                                 select, wanted several times a day.
+
+                                 "Branch from here…" is the one write that would fit the
+                                 safety posture (it creates, it destroys nothing); it is a
+                                 question for the owner, deliberately not assumed here.
+
+                                 THE MENU HANGS OFF THE ROW'S OWN PANEL, like the git
+                                 panel's: a ContextMenu inherits its DataContext from the
+                                 element it is set on, so every entry acts on the row that
+                                 was right-clicked — WPF does not select a tree row on
+                                 right-click, so the selection would be the wrong answer. -->
+                            <StackPanel.ContextMenu>
+                                <ContextMenu>
+                                    <MenuItem Header="Copy commit id"
+                                              Click="OnCopyCommitId" />
+                                    <MenuItem Header="Copy subject"
+                                              Click="OnCopyCommitSubject" />
+                                    <MenuItem Header="Copy the whole message"
+                                              Click="OnCopyCommitMessage" />
+                                </ContextMenu>
+                            </StackPanel.ContextMenu>
                             <!--
                                 WHICH OF THESE IS STILL ONLY HERE.
 

@@ -145,6 +145,7 @@ public sealed class RemotePollerTests
         public Task<string> CommitPatchAsync(string c, CancellationToken ct, int l = 3) => throw new NotSupportedException();
         public Task<IReadOnlyList<CommitFile>> CommitFilesAsync(string c, CancellationToken ct) => throw new NotSupportedException();
         public Task<string> CommitFileDiffAsync(string c, string p, CancellationToken ct, int l = 3) => throw new NotSupportedException();
+        public Task<string> CommitMessageAsync(string c, CancellationToken ct) => throw new NotSupportedException();
         public Task<IReadOnlyList<StashEntry>> StashListAsync(CancellationToken ct) => throw new NotSupportedException();
         public Task<GitResult> StashPushAsync(string? m, bool u, CancellationToken ct) => throw new NotSupportedException();
         public Task<GitResult> StashApplyAsync(string r, bool d, CancellationToken ct) => throw new NotSupportedException();

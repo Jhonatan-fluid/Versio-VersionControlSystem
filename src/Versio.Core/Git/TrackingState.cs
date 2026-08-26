@@ -138,8 +138,8 @@ public sealed record RemoteStanding
     /// <b>The one state whose sentence is not enough on its own.</b> Every other standing either
     /// needs no action or has its action on the card already — push, publish, pull, reconcile.
     /// This one names a trap (work committed here is reachable only from the reflog) and the
-    /// only escape is creating a branch, which lived in the top bar's <c>+</c> — a menu, which is
-    /// what somebody who arrived here by clicking a commit in the history has no reason to open.
+    /// only escape is creating a branch, which lived in the top bar's <c>+</c> — a menu, which
+    /// is what somebody stranded here has no reason to open.
     /// <para>
     /// So the panel puts the escape inside the sentence that describes the trap. Exposed as a
     /// predicate rather than compared against <see cref="TrackingState.Detached"/> in the XAML
@@ -209,9 +209,12 @@ public sealed record RemoteStanding
 
         if (branch.IsDetached)
         {
-            // Reached by accident, usually from clicking a commit in the history, and there is
-            // no way out of it from inside the app without saying what it is. A commit made
-            // here is real and reachable only from the reflog, which is the trap.
+            // Reached from OUTSIDE the app — `git checkout <commit>` in a terminal, a CI
+            // tool, another client. No route inside Versio detaches HEAD: clicking a commit
+            // in the history only shows it, and its context menu only copies (UX-8 drew that
+            // line on purpose). Still worth this much surface, because whoever arrives here
+            // did not arrive through Versio and may not know the vocabulary: a commit made
+            // now is real and reachable only from the reflog, which is the trap.
             return new RemoteStanding
             {
                 State = TrackingState.Detached,
