@@ -110,19 +110,23 @@ public partial class MainWindow : Window
 
         // CTRL+F TO THE ACTIVE PANEL'S FIND BOX (UX-7, second half).
         //
-        // It waited on UX-6, which is what created two of the three boxes. On the window for
-        // the same reason Ctrl+1/2/3 are: the point is to reach the box from wherever focus
-        // is. Each panel exposes FocusFindBox rather than the window grubbing through another
-        // control's name scope — the panel knows which box is its find box and whether it is
-        // on screen; the window only knows which panel the rail shows. The explorer has no
-        // find box, so there the key does nothing at all — focus yanked to an invisible
-        // control would be worse than a dead key.
+        // On the window for the same reason Ctrl+1/2/3 are: the point is to reach the box
+        // from wherever focus is. Each panel exposes FocusFindBox rather than the window
+        // grubbing through another control's name scope — the panel knows which box is its
+        // find box and whether it is on screen; the window only knows which panel the rail
+        // shows. All four rail panels have a box: the explorer's was already there, UX-6
+        // added git and history, and a first pass that skipped the explorer on the claim
+        // it had none left Ctrl+F dead on the one panel where the box was oldest.
         InputBindings.Add(new KeyBinding(
             new RelayCommand(() =>
             {
                 if (RailIsChecked("RailProject"))
                 {
                     ProjectPanel.FocusFindBox();
+                }
+                else if (RailIsChecked("RailExplorer"))
+                {
+                    ExplorerPanel.FocusFindBox();
                 }
                 else if (RailIsChecked("RailGit"))
                 {

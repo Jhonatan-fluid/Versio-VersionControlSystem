@@ -113,10 +113,10 @@ internal sealed class CountingGitClient : IGitClient
     public List<string> MessageCalls { get; } = [];
 
     /// <summary>Raw, as %B answers: trailing newline included, for the caller to trim.</summary>
-    public Task<string> CommitMessageAsync(string commit, CancellationToken ct)
+    public Task<string?> CommitMessageAsync(string commit, CancellationToken ct)
     {
         MessageCalls.Add(commit);
-        return Task.FromResult($"subject of {commit}\n\nbody of {commit}\n");
+        return Task.FromResult<string?>($"subject of {commit}\n\nbody of {commit}\n");
     }
 
     // --- everything the history panel never touches -------------------------------

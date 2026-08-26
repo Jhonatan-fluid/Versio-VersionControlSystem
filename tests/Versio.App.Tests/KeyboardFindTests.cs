@@ -38,6 +38,7 @@ public sealed class KeyboardFindTests : IDisposable
 
     [Theory]
     [InlineData("RailProject", "ProjectPanel", "TreeSearchBox")]
+    [InlineData("RailExplorer", "ExplorerPanel", "ExplorerSearchBox")]
     [InlineData("RailGit", "GitPanel", "ChangesFilterBox")]
     [InlineData("RailHistory", "HistoryPanel", "HistoryFilterBox")]
     public void Ctrl_F_reaches_the_active_panel_s_find_box(string rail, string panel, string box)
@@ -54,25 +55,6 @@ public sealed class KeyboardFindTests : IDisposable
             var host = Assert.IsAssignableFrom<FrameworkElement>(window.FindName(panel));
             var found = Assert.IsType<TextBox>(host.FindName(box));
             Assert.Same(found, FocusManager.GetFocusedElement(window));
-        });
-    }
-
-    [Fact]
-    public void Ctrl_F_does_nothing_on_the_explorer()
-    {
-        // The explorer has no find box. Yanking logical focus somewhere invisible would be
-        // worse than a dead key, so the command runs and moves nothing.
-        StaHarness.Run(() =>
-        {
-            var (window, _) = Build();
-
-            var button = Assert.IsType<RadioButton>(window.FindName("RailExplorer"));
-            button.IsChecked = true;
-
-            var before = FocusManager.GetFocusedElement(window);
-            BoundTo(window, Key.F, ModifierKeys.Control).Execute(null);
-
-            Assert.Same(before, FocusManager.GetFocusedElement(window));
         });
     }
 

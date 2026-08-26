@@ -15,8 +15,8 @@ UX remainder) is built and tested as of 2026-08-25** — UX-6 find boxes, UX-7 `
 Escape, UX-8 copy-a-commit, UX-12 amend-while-unpushed — and its visual half joins the
 eyeball list in item 2. Do not start from `archive/` or a handoff.
 
-**Tests:** 2,794 across eleven projects, last counted 2026-08-25 (App +22: the UX
-remainder — pending/history filters, Ctrl+F and Escape, history copy, amend). The git panel is one CHANGES list: checkboxes pick the include set,
+**Tests:** 2,796 across eleven projects, last counted 2026-08-26 (App +2: a failed
+`git show` is not a copied message, and an empty subject names itself). The git panel is one CHANGES list: checkboxes pick the include set,
 Commit / Discard are the verbs, and a failed project no longer vetoes unrelated files.
 in-flight work including an import; Try again lights after cancel; close asks even during
 import; CODESYS.exe and git.exe die with Versio (Job Object); TIA/TwinCAT hosts watch the
@@ -43,7 +43,7 @@ marking, duplicate-param keys, and the detail-pane lookup. All of them are in
 |---|---|---|---|
 | `Versio.Core.Tests` | 1,469 | under a second | nothing |
 | `Versio.Integration.Tests` | 162 | ~10 s | real git |
-| `Versio.App.Tests` | 667 | ~50 s | nothing |
+| `Versio.App.Tests` | 669 | ~50 s | nothing |
 | `Versio.Arch.Tests` | 27 | instant | nothing |
 | `Versio.Plc.Codesys.Pure.Tests` | 263 | under a second | nothing |
 | `Versio.Plc.Codesys.Parity.Tests` | 97 | ~15 s | `python` on PATH — skips cleanly without it, so check the count |
@@ -173,7 +173,7 @@ One list. Reorder it; do not copy it into another file.
    committed fixture in this repository and confirm export / confirm-import look right.
    **From the 2026-08-25 UX remainder:** the find boxes over the changes list and the
    history look right in both themes and hide nothing they should not; `Ctrl+F` lands the
-   caret in the visible panel's box; **Escape closes the settings popup and the
+   caret in the visible panel's box (all four rails, including Explorer); **Escape closes the settings popup and the
    ahead/behind preview** (headless tests can only prove the dead half — a Popup with no
    presentation source refuses to open); right-click a history commit and copy all three
    things; and the Amend flow end to end — empty box loads the message, second press asks
@@ -185,9 +185,9 @@ One list. Reorder it; do not copy it into another file.
      as veils on the CollectionView: ticks, counts and paging never change, and each
      empty-through-the-veil state says which empty it is.
    - ~~**UX-7** second half — `Ctrl+F` / Escape~~ — `Ctrl+F` on the window routes to the
-     active panel's own `FocusFindBox` (the explorer has none, so there it does nothing);
-     Escape closes the two transient surfaces, CanExecute-gated so an idle Escape stays
-     unhandled.
+     active panel's own `FocusFindBox` (all four rail panels; the explorer's box was
+     already there and a first pass skipped it); Escape closes the two transient
+     surfaces, CanExecute-gated so an idle Escape stays unhandled.
    - ~~**UX-8** — act on / copy a history commit~~ — three read-only menu entries (id,
      subject, whole message via a new `CommitMessageAsync`); revert/reset/cherry-pick
      deliberately stay out; `Branch from here…` remains an owner question. The stale

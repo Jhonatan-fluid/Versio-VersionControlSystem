@@ -57,6 +57,64 @@ public sealed class HistoryCopyTests : IDisposable
     }
 
     [Fact]
+    public void A_missing_commit_is_not_reported_as_copied()
+    {
+        // git show of an unknown id used to return "", and CopyCommitMessageAsync then
+        // claimed a copy. The status has to name the miss, and the clipboard must not
+        // be treated as having received a message.
+        using var repo = new TempRepo();
+        StaHarness.Run(async () =>
+        {
+            using var shell = TestShell.Build();
+            await shell.OpenAsync(repo.Path);
+
+            var row = new CommitRow(
+                new CommitEntry
+                {
+                    Id = new string('0', 40),
+                    ShortId = "0000000",
+                    Subject = "gone",
+                    Author = "nobody",
+                },
+                _ => Task.CompletedTask);
+
+            await shell.CopyCommitMessageAsync(row);
+
+            Assert.Contains("Could not read", shell.StatusSummary, StringComparison.Ordinal);
+            Assert.DoesNotContain("Copied", shell.StatusSummary, StringComparison.Ordinal);
+        });
+    }
+
+    [Fact]
+    public void An_empty_subject_names_itself_instead_of_silently_copying_nothing()
+    {
+        // Reachable: git accepts a commit with an empty message, and its subject is then
+        // "". The clipboard helper refuses empty payloads so a copy cannot clear the
+        // clipboard and claim success — but a refusal nobody hears is a silent no-op,
+        // which is the same failure in a different shape. The status has to say why
+        // nothing was copied.
+        StaHarness.Run(() =>
+        {
+            using var shell = TestShell.Build();
+
+            var row = new CommitRow(
+                new CommitEntry
+                {
+                    Id = new string('b', 40),
+                    ShortId = "bbbbbbb",
+                    Subject = string.Empty,
+                    Author = "somebody",
+                },
+                _ => Task.CompletedTask);
+
+            shell.CopyCommitSubject(row);
+
+            Assert.Contains("is empty", shell.StatusSummary, StringComparison.Ordinal);
+            Assert.DoesNotContain("Copied", shell.StatusSummary, StringComparison.Ordinal);
+        });
+    }
+
+    [Fact]
     public void A_realised_commit_row_offers_copy_and_only_copy()
     {
         // Realised, not read from the template in isolation — a Click handler naming a

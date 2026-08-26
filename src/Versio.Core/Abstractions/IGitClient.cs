@@ -556,13 +556,22 @@ public interface IGitClient
     /// One commit's full message — subject, blank line, body — as git recorded it.
     /// </summary>
     /// <remarks>
+    /// <para>
     /// Read on demand rather than carried on <see cref="CommitEntry"/>: the history reads
     /// fifty subjects a page, and hauling every body along would put the cost on scrolling
     /// to serve the one commit somebody right-clicks. Raw (<c>%B</c>), so what reaches the
     /// clipboard is what <c>git commit</c> was given — the caller trims the trailing
     /// newline for presentation if it wants to.
+    /// </para>
+    /// <para>
+    /// <b>Null on failure, empty on a successful read of nothing.</b> The first version
+    /// returned <c>""</c> for both, so a missing commit and a commit whose message is blank
+    /// looked identical — and the copy/amend callers reported the miss as a successful
+    /// copy and as "edit the message, then press Amend again", which looped. Null is the
+    /// miss; empty is the blank.
+    /// </para>
     /// </remarks>
-    Task<string> CommitMessageAsync(string commit, CancellationToken ct);
+    Task<string?> CommitMessageAsync(string commit, CancellationToken ct);
 
     /// <summary>Everything currently stashed, newest first.</summary>
     Task<IReadOnlyList<StashEntry>> StashListAsync(CancellationToken ct);

@@ -13,10 +13,11 @@
 
     <Border Padding="14,0,12,12">
         <DockPanel>
-            <TextBox DockPanel.Dock="Top" Margin="0,0,0,6"
+            <TextBox DockPanel.Dock="Top" Margin="0,0,0,6" x:Name="ExplorerSearchBox"
                      AutomationProperties.Name="Find a file or an object"
                      Style="{StaticResource FlatTextBox}"
                      Tag="Find a file or an object…"
+                     ToolTip="Narrow the tree. Ctrl+F puts the caret here."
                      Text="{Binding Explorer.Search, UpdateSourceTrigger=PropertyChanged, Delay=200}" />
 
             <TextBlock DockPanel.Dock="Bottom" Text="{Binding Explorer.Summary}"

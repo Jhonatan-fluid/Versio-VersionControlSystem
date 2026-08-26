@@ -19,6 +19,30 @@ produce a diff touching everything else.
 
 ---
 
+### Ctrl+F skipped the explorer, and a failed git show looked like a copy
+
+**Found 2026-08-26 by an audit of the UX remainder**, on `UxRemainder` before it shipped.
+Two defects, both from a first pass that encoded a false fact.
+
+1. **`Ctrl+F` did nothing on the explorer.** The window routed Project / Git / History and
+   skipped the fourth rail on the claim that the explorer had no find box. It has had one
+   since it shipped (`Explorer.Search`). A test named `Ctrl_F_does_nothing_on_the_explorer`
+   locked the miss in. `FocusFindBox` now lives on that panel too, and the theory that
+   walks the rail includes it.
+
+2. **`CommitMessageAsync` returned `""` for a failed `git show`.** Copy then said
+   "Copied the message of …" while clearing the user's clipboard with empty text — WPF's
+   `Clipboard.SetText` **accepts** empty (measured 2026-08-26; WinForms' is the one that
+   rejects it), so nothing threw, and the defect was a success message about a copy that
+   never happened. Amend's first press loaded the empty string and asked the user to
+   press again, which looped. Failure is now null; empty is a blank message; copy and
+   amend both name the miss. The verification pass also found the empty-payload guard
+   turning "copy an empty subject" into a silent no-op — reachable, because git accepts
+   a commit with an empty message — so that copy now names the empty instead of saying
+   nothing.
+
+---
+
 ### Packaging audit: the state rescue could crash startup, and the TIA payload shipped from an uncleaned bin
 
 **Found 2026-08-24 by an audit of the packaging pass**, requested by the owner before the

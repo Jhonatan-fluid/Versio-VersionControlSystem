@@ -391,15 +391,18 @@ public sealed partial class GitCliClient
     /// <remarks>
     /// <c>show --no-patch</c> rather than <c>log -1</c>, staying in this file's idiom of one
     /// commit named directly; <c>%B</c> is the raw message, subject and body both, exactly as
-    /// recorded — no re-wrapping, no encoding of git's own.
+    /// recorded — no re-wrapping, no encoding of git's own. Failure is null, not empty:
+    /// see <see cref="IGitClient.CommitMessageAsync"/>.
     /// </remarks>
-    public async Task<string> CommitMessageAsync(string commit, CancellationToken ct)
+    public async Task<string?> CommitMessageAsync(string commit, CancellationToken ct)
     {
         var result = await RunAsync(
             ["show", "--no-patch", "--format=%B", commit], null, ct)
             .ConfigureAwait(false);
 
-        return result.Success ? result.StdOut : string.Empty;
+        // Null, not empty: empty is a successful read of a blank message, and the
+        // callers have to tell those apart — see IGitClient.CommitMessageAsync.
+        return result.Success ? result.StdOut : null;
     }
 
     public async Task<IReadOnlyList<StashEntry>> StashListAsync(CancellationToken ct)

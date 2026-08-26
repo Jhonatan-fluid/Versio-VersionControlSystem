@@ -3267,6 +3267,17 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
             var current = await _git.CommitMessageAsync("HEAD", CancellationToken.None)
                 .ConfigureAwait(true);
 
+            if (current is null)
+            {
+                // An empty box is the first-press load, not a rewrite. Pretending it
+                // loaded so the next press loops on the same empty box is how a failed
+                // `git show` looked like the feature working.
+                _logger.Warn(LogCategory.Git, "amend load refused: could not read HEAD's message");
+                Notifications.Failure("Could not read the last commit's message.",
+                    "Nothing was rewritten. Try again, or type the message and press Amend.");
+                return;
+            }
+
             CommitMessage = current.TrimEnd('\r', '\n');
             StatusSummary = "Edit the message, then press Amend again.";
             return;
@@ -3290,6 +3301,15 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
 
         var old = await _git.CommitMessageAsync(head, CancellationToken.None)
             .ConfigureAwait(true);
+
+        if (old is null)
+        {
+            _logger.Warn(LogCategory.Git, "amend refused: could not read HEAD's message");
+            Notifications.Failure("Could not read the last commit's message.",
+                "Nothing was rewritten.");
+            return;
+        }
+
         var oldSubject = old.Split('\n')[0].TrimEnd('\r');
         var newSubject = CommitMessage.Split('\n')[0].TrimEnd('\r');
 
@@ -5306,6 +5326,17 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
     public void CopyCommitSubject(CommitRow row)
     {
         _logger.Click("History.CopySubject");
+
+        // Reachable: git accepts a commit with an empty message, and its subject is then
+        // "". Without this line the empty-guard in CopyToClipboard would make the menu
+        // entry a silent no-op — and a silent failure is a bug even when the code is
+        // correct.
+        if (row.Subject.Length == 0)
+        {
+            StatusSummary = $"The subject of {row.ShortId} is empty";
+            return;
+        }
+
         CopyToClipboard(row.Subject,
             copied: $"Copied the subject of {row.ShortId}",
             refused: $"Could not reach the clipboard — the subject is: {row.Subject}");
@@ -5322,19 +5353,44 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
     {
         _logger.Click("History.CopyMessage");
 
-        if (_git is null)
+        try
         {
-            return;
+            if (_git is null)
+            {
+                return;
+            }
+
+            var message = await _git.CommitMessageAsync(row.Id, CancellationToken.None)
+                .ConfigureAwait(true);
+
+            if (message is null)
+            {
+                // The git client used to return "" for a failed `show`, and this method
+                // then claimed a copy — of nothing, over whatever the clipboard held.
+                // WPF's SetText accepts empty (measured 2026-08-26), so nothing threw;
+                // the failure was a success message about a copy that never happened.
+                _logger.Warn(LogCategory.Git, $"could not read the message of {row.ShortId}");
+                StatusSummary = $"Could not read the message of {row.ShortId}";
+                return;
+            }
+
+            var text = message.TrimEnd('\r', '\n');
+            if (text.Length == 0)
+            {
+                StatusSummary = $"The message of {row.ShortId} is empty";
+                return;
+            }
+
+            CopyToClipboard(text,
+                copied: $"Copied the message of {row.ShortId}",
+                refused: $"Could not reach the clipboard for the message of {row.ShortId}");
         }
-
-        var message = await _git.CommitMessageAsync(row.Id, CancellationToken.None)
-            .ConfigureAwait(true);
-
-        // %B ends with the newline git stores; a clipboard payload ending mid-sentence in a
-        // line break pastes an extra blank line into whatever it lands in.
-        CopyToClipboard(message.TrimEnd('\r', '\n'),
-            copied: $"Copied the message of {row.ShortId}",
-            refused: $"Could not reach the clipboard for the message of {row.ShortId}");
+        catch (Exception ex)
+        {
+            // The menu raises this without awaiting. Anything that escapes here is an
+            // unobserved task, which is a crash the status bar never sees.
+            ReportError(ex);
+        }
     }
 
     /// <summary>
@@ -5349,13 +5405,28 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
     /// </remarks>
     private void CopyToClipboard(string text, string copied, string refused)
     {
+        // Refused before the API call — not because SetText would throw on empty (WPF's
+        // accepts it; measured 2026-08-26, and it is WinForms' clipboard that rejects it)
+        // but because "copy nothing" would clear the user's clipboard and then report
+        // success. A caller whose value can genuinely be empty says so itself, the way
+        // the commit-message and subject copies do.
+        if (string.IsNullOrEmpty(text))
+        {
+            return;
+        }
+
         try
         {
             System.Windows.Clipboard.SetText(text);
             StatusSummary = copied;
         }
-        catch (System.Runtime.InteropServices.ExternalException ex)
+        catch (Exception ex) when (ex is System.Runtime.InteropServices.ExternalException
+                                       or ArgumentException)
         {
+            // ExternalException: another process holds the clipboard. ArgumentException
+            // is defensive breadth — nothing known throws it here (see the guard's
+            // remark), kept so a framework that disagrees cannot turn a copy into an
+            // unobserved throw from a fire-and-forget handler.
             _logger.Error(LogCategory.App, "could not reach the clipboard", ex);
             StatusSummary = refused;
         }
