@@ -1,5 +1,10 @@
 using System.Diagnostics;
+using System.Reflection;
 using Versio.App.ViewModels;
+using Versio.Core.Abstractions;
+using Versio.Core.Logging;
+using Versio.Infrastructure.Git;
+using Versio.Infrastructure.Platform;
 using Xunit;
 
 namespace Versio.App.Tests;
@@ -18,6 +23,23 @@ namespace Versio.App.Tests;
 public sealed class AmendCommitTests
 {
     private static ShellViewModel Shell() => TestShell.Build();
+
+    /// <summary>
+    /// A shell whose git client is real except for <see cref="IGitClient.CommitMessageAsync"/>,
+    /// which always misses — so Open and CanAmend still hold, and the load/rewrite
+    /// refusals can be pressed rather than simulated.
+    /// </summary>
+    private static ShellViewModel MutedShell()
+    {
+        var sink = new InMemoryLogSink();
+        var logger = new VersioLogger(new SystemClock()).AddSink(sink);
+        return new ShellViewModel(
+            logger,
+            new LogViewModel(sink),
+            gitFactory: path => MuteCommitMessage.Of(
+                new GitCliClient(path, GitExecutable.Resolve(), logger)),
+            toolchains: (_, _) => null);
+    }
 
     /// <summary>Run git and read what it prints — TempRepo.Git is fire-and-forget.</summary>
     private static string GitRead(string workingDirectory, string arguments)
@@ -68,6 +90,57 @@ public sealed class AmendCommitTests
 
         Assert.Equal("first", shell.CommitMessage);
         Assert.Equal(before, GitRead(repo.Path, "rev-parse HEAD"));
+    }
+
+    [Fact]
+    public async Task A_failed_head_read_is_a_failure_not_a_loop()
+    {
+        // The first press with an empty box loads HEAD. When that read used to return
+        // "", the box stayed empty and the status said "press again" — a loop that
+        // looked like the feature. The copy path already drives a missing id through
+        // the real client; this drives the load path, which only ever asks for HEAD.
+        using var repo = new TempRepo();
+        using var shell = MutedShell();
+
+        await shell.OpenAsync(repo.Path);
+        var before = GitRead(repo.Path, "rev-parse HEAD");
+
+        await Eventually.Press(shell.AmendCommitCommand, "amend (failed load)");
+
+        Assert.Equal(string.Empty, shell.CommitMessage);
+        Assert.Equal(before, GitRead(repo.Path, "rev-parse HEAD"));
+        Assert.DoesNotContain("press Amend again", shell.StatusSummary, StringComparison.Ordinal);
+        var card = Assert.Single(shell.Notifications.Visible);
+        Assert.Contains("Could not read", card.Headline, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task A_failed_head_read_on_the_rewrite_refuses_without_asking()
+    {
+        // The second press names both subjects in the confirmation. If the re-read
+        // of HEAD fails, asking with an empty old subject would be the same lie as
+        // loading an empty box: a dialog about a rewrite that cannot run.
+        using var repo = new TempRepo();
+        using var shell = MutedShell();
+
+        await shell.OpenAsync(repo.Path);
+        var before = GitRead(repo.Path, "rev-parse HEAD");
+
+        string? asked = null;
+        shell.Asked().Destructive = p =>
+        {
+            asked = p.Title;
+            return true;
+        };
+
+        shell.CommitMessage = "typed anyway";
+        await Eventually.Press(shell.AmendCommitCommand, "amend (failed rewrite read)");
+
+        Assert.Null(asked);
+        Assert.Equal("typed anyway", shell.CommitMessage);
+        Assert.Equal(before, GitRead(repo.Path, "rev-parse HEAD"));
+        var card = Assert.Single(shell.Notifications.Visible);
+        Assert.Contains("Could not read", card.Headline, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -160,5 +233,38 @@ public sealed class AmendCommitTests
         // The typed message survives the refusal — losing the copy must not also lose
         // the thing, same argument the clipboard helper makes.
         Assert.Equal("rewritten anyway", shell.CommitMessage);
+    }
+}
+
+/// <summary>
+/// Same client the shell would have built, except <c>CommitMessageAsync</c> always misses.
+/// </summary>
+/// <remarks>
+/// <see cref="GitCliClient"/> is sealed, and forwarding every other <see cref="IGitClient"/>
+/// method to stub one is how the next method on that interface gets forgotten. The
+/// proxy intercepts the one name; everything else is a real git call against the
+/// temp repository, so Open and CanAmend still hold. Public: <c>DispatchProxy.Create</c>
+/// constructs the type from another assembly and cannot see an internal one.
+/// Cannot be sealed: the proxy generator subclasses it.
+/// </remarks>
+public class MuteCommitMessage : DispatchProxy
+{
+    private IGitClient _inner = null!;
+
+    public static IGitClient Of(IGitClient inner)
+    {
+        var proxy = Create<IGitClient, MuteCommitMessage>();
+        ((MuteCommitMessage)(object)proxy)._inner = inner;
+        return proxy;
+    }
+
+    protected override object? Invoke(MethodInfo? targetMethod, object?[]? args)
+    {
+        if (targetMethod!.Name == nameof(IGitClient.CommitMessageAsync))
+        {
+            return Task.FromResult<string?>(null);
+        }
+
+        return targetMethod.Invoke(_inner, args);
     }
 }

@@ -137,6 +137,40 @@ public sealed class GitSurfaceTests(ITestOutputHelper output) : IDisposable
         Assert.NotEmpty(commits[0].Age);
     }
 
+    /// <summary>
+    /// Null on a failed <c>show</c>, a string on a successful one — including a blank.
+    /// </summary>
+    /// <remarks>
+    /// The first version returned <c>""</c> for both, so copy reported a successful paste
+    /// of nothing (and cleared the clipboard: WPF's <c>SetText("")</c> empties it) and
+    /// amend's first press looped on an empty box. The callers tell the two apart; this
+    /// is the client keeping the contract they now rely on.
+    /// </remarks>
+    [SkippableFact]
+    public async Task A_missing_commit_returns_null_and_a_blank_message_does_not()
+    {
+        Skip.IfNot(GitAvailable, "git not on PATH");
+        await InitAsync();
+
+        Write("a.st", "one\n");
+        await RunRawAsync("add", "-A");
+        await RunRawAsync("commit", "-m", "subject", "-m", "body");
+
+        var head = (await Client.RecentCommitsAsync(1, 0, CancellationToken.None))[0];
+        var message = await Client.CommitMessageAsync(head.Id, CancellationToken.None);
+        Assert.NotNull(message);
+        Assert.Contains("subject", message, StringComparison.Ordinal);
+        Assert.Contains("body", message, StringComparison.Ordinal);
+
+        Assert.Null(
+            await Client.CommitMessageAsync(new string('0', 40), CancellationToken.None));
+
+        await RunRawAsync("commit", "--allow-empty", "--allow-empty-message", "-m", "");
+        var blank = await Client.CommitMessageAsync("HEAD", CancellationToken.None);
+        Assert.NotNull(blank);
+        Assert.True(string.IsNullOrWhiteSpace(blank.TrimEnd('\r', '\n')));
+    }
+
     [SkippableFact]
     public async Task An_unborn_branch_has_no_history_rather_than_an_error()
     {

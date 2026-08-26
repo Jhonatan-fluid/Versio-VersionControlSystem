@@ -78,10 +78,15 @@ public sealed class HistoryCopyTests : IDisposable
                 },
                 _ => Task.CompletedTask);
 
+            // The failure mode is a cleared clipboard wearing a success sentence:
+            // WPF's SetText("") empties it and returns. Status naming the miss is
+            // not enough on its own — a regression can still wipe the sentinel.
+            Clipboard.SetText("sentinel");
             await shell.CopyCommitMessageAsync(row);
 
             Assert.Contains("Could not read", shell.StatusSummary, StringComparison.Ordinal);
             Assert.DoesNotContain("Copied", shell.StatusSummary, StringComparison.Ordinal);
+            Assert.Equal("sentinel", Clipboard.GetText());
         });
     }
 
@@ -107,10 +112,12 @@ public sealed class HistoryCopyTests : IDisposable
                 },
                 _ => Task.CompletedTask);
 
+            Clipboard.SetText("sentinel");
             shell.CopyCommitSubject(row);
 
             Assert.Contains("is empty", shell.StatusSummary, StringComparison.Ordinal);
             Assert.DoesNotContain("Copied", shell.StatusSummary, StringComparison.Ordinal);
+            Assert.Equal("sentinel", Clipboard.GetText());
         });
     }
 
