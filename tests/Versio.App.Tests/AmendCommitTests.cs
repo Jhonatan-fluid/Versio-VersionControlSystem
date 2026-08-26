@@ -139,14 +139,20 @@ public sealed class AmendCommitTests
         await shell.RefreshAsync();
         Assert.True(shell.Remote.HeadIsUnpushed);
 
-        // Pushed from "a terminal": the shell has not refreshed and still offers amend.
+        // Pushed from "a terminal". Execute directly rather than through Eventually.Press:
+        // the push touches .git, the watcher notices, and a refresh can put the button out
+        // BEFORE a wait on CanExecute ever samples it — this test lost exactly that race
+        // once. Executing models the press that won it, which is the case under test; the
+        // flow's own rev-list must refuse whichever side the glance was on.
         TempRepo.Git(repo.Path, "push -q");
 
         shell.Asked().Destructive = _ => true;
         shell.CommitMessage = "rewritten anyway";
         var before = GitRead(repo.Path, "rev-parse HEAD");
 
-        await Eventually.Press(shell.AmendCommitCommand, "amend against a pushed head");
+        shell.AmendCommitCommand.Execute(null);
+        await Eventually.Until(
+            () => !shell.AmendCommitCommand.IsRunning, "the amend flow finished");
 
         Assert.Equal(before, GitRead(repo.Path, "rev-parse HEAD"));
         Assert.Equal("local work", GitRead(repo.Path, "log -1 --format=%B"));
