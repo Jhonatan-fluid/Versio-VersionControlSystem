@@ -198,12 +198,15 @@ construct one inline as an argument, because then there is nothing to put `using
 that did not made the suite fail one run in three on a different test each time; fixing them took
 it to about one in fourteen, so **a lone red run is still worth re-running before believing it**.
 
-**It still flakes, and what is left of it looks like real git rather than leaked objects.** The
-last three failures observed were all in tests that drive git subprocesses against a temp
-repository, and all of them dispose correctly. **A fourth, on 2026-08-15, was not**: it was
-`AdoptAndExportTests.A_task_priority_edited_in_the_mirror_…`, a CODESYS test, once in four full
-runs, passing alone immediately afterwards and in the next full run. So the remaining flake is
-not only the git-subprocess class.
+**The residual flake's root cause was found and fixed on 2026-08-26**: nothing serialised the
+shell's status refreshes, so a stale `git status` reading could apply after a fresh one and
+the next guard reasoned about a tree that did not exist — `AutoStashFlowTests` failed one run
+in three on exactly this, a different test each time, tracking machine load. `RunRefreshAsync`
+now funnels every refresh through one gate; the measurement (18 consecutive green class runs,
+a fully green 672-test suite run) is in FINDINGS. **A lone red run is still worth re-running
+before believing it** — one afternoon's measurement retires a mechanism, not the habit — and
+the CODESYS-side one-off (`AdoptAndExportTests`, 2026-08-15, once in four runs) was never part
+of this mechanism and remains unexplained.
 
 **Never run the integration suite with `-v q`.** That failure arrived with no message, because
 quiet verbosity prints the FAIL line and swallows the assertion — so the one run that had

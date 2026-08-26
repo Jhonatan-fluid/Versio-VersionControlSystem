@@ -17,7 +17,12 @@ eyeball list in item 2. Do not start from `archive/` or a handoff.
 
 **Tests:** 2,818 across eleven projects, last counted 2026-08-26 (Core 1,487, App 672:
 a guarded merge or rebase now asks in its own verb — `GuardIntent.Merge` / `Rebase`
-closed the known gap where all three bring-commits-in verbs said "pull"). The git panel is one CHANGES list: checkboxes pick the include set,
+closed the known gap where all three bring-commits-in verbs said "pull"). **The suite's
+residual flake is fixed the same day**: nothing serialised the shell's status refreshes, so
+a stale reading could apply last and the next guard reasoned about a tree that did not
+exist. One gate in `RunRefreshAsync` now serialises them; 18 consecutive green
+`AutoStashFlowTests` runs and a fully green 672-test suite run are the measurement
+(FINDINGS 2026-08-26). The git panel is one CHANGES list: checkboxes pick the include set,
 Commit / Discard are the verbs, and a failed project no longer vetoes unrelated files.
 in-flight work including an import; Try again lights after cancel; close asks even during
 import; CODESYS.exe and git.exe die with Versio (Job Object); TIA/TwinCAT hosts watch the

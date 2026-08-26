@@ -95,9 +95,19 @@ public sealed class AutoStashFlowTests : IDisposable
         return new ShellViewModel(logger, new LogViewModel(sink), toolchains: (_, _) => null);
     }
 
+    /// <summary>A shell over this repository, with one uncommitted edit in the tree.</summary>
+    /// <remarks>
+    /// <b>No <c>using</c> on the shell here — the caller owns it.</b> This read
+    /// <c>using var shell = Build();</c> followed by a <c>return shell</c>, which disposes at
+    /// the closing brace and hands the caller a torn-down shell — the same bug
+    /// <c>GitPanelChromeTests.Build</c> documents catching in itself. Every test on this
+    /// helper ran watcher-less and mostly got away with it; the disposal also raced whatever
+    /// the watcher had already scheduled, which is one of the reasons this class flaked
+    /// under load and nowhere else.
+    /// </remarks>
     private async Task<ShellViewModel> OpenWithDirtyTreeAsync()
     {
-        using var shell = Build();
+        var shell = Build();
         await shell.OpenAsync(_path);
 
         File.WriteAllText(
@@ -257,7 +267,14 @@ public sealed class AutoStashFlowTests : IDisposable
         Assert.False(proceeded);
         Assert.Empty(Record().Entries);
         Assert.Equal(string.Empty, Git("stash list").Trim());
-        Assert.Contains("Nothing was stashed", shell.StatusSummary, StringComparison.Ordinal);
+
+        // The NOTIFICATION, not the status line. The refusal used to live only in
+        // StatusSummary, where the next background refresh legitimately overwrites it with
+        // "No changes" — this assertion flaked on exactly that, and a user reading a second
+        // too late lost the sentence the same way. A notification survives the refresh, by
+        // the design rule Notifications' own remarks state.
+        Assert.Contains(shell.Notifications.Visible,
+            n => n.ClipboardText.Contains("Nothing was stashed", StringComparison.Ordinal));
     }
 
     [SkippableFact]

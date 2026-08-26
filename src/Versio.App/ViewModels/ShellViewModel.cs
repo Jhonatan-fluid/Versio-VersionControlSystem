@@ -1987,7 +1987,21 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         // nothing until a Standing with an upstream has been computed.
         Remote.StartWatching();
 
-        await RefreshCoreAsync(RefreshTrigger.Manual, null).ConfigureAwait(true);
+        // Through the gate, not around it: the watcher above starts BEFORE this refresh on
+        // purpose, so a change landing during it can already have scheduled a gated refresh
+        // — and an ungated one beside it is exactly the overlap the gate exists to end. The
+        // gate is taken here rather than via RunRefreshAsync because a failure of the FIRST
+        // refresh belongs to opening the repository: it must propagate to this method's
+        // caller, not be swallowed into a report while the open claims success.
+        await _refreshGate.WaitAsync().ConfigureAwait(true);
+        try
+        {
+            await RefreshCoreAsync(RefreshTrigger.Manual, null).ConfigureAwait(true);
+        }
+        finally
+        {
+            _refreshGate.Release();
+        }
 
         // The history is handed the client but reads nothing yet. Whether this repository's
         // log is ever walked is now the user's decision, made by clicking the rail.
@@ -2098,14 +2112,41 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         }
     }
 
-    /// <summary>Run a policy-driven refresh, surfacing failures instead of losing them.</summary>
+    /// <summary>
+    /// One refresh at a time, in arrival order, so a stale reading can never land last.
+    /// </summary>
     /// <remarks>
-    /// The policy must be told the refresh finished even when it throws, or
+    /// <para>
+    /// <b>The policy gates only the watcher's triggers; nothing gated the direct callers.</b>
+    /// Every verb ends with an awaited <c>RunRefreshAsync</c>, and a watcher-started refresh
+    /// can already be in flight when it begins — two <c>git status</c> reads overlapping, and
+    /// whichever finishes <i>last</i> wins. A read that started before an edit, a stash or a
+    /// checkout and applied after the fresh one reconciled <see cref="Changes"/> back to a
+    /// state the tree was no longer in — and the next switch's guard then reasoned about a
+    /// tree that did not exist: it offered a stash over a clean tree, the stash correctly
+    /// created nothing, and the switch was abandoned with nothing on screen to say why.
+    /// <c>AutoStashFlowTests</c> flaked one run in three on a loaded machine on exactly this,
+    /// a different test each time (FINDINGS 2026-08-26).
+    /// </para>
+    /// <para>
+    /// The gate serialises the <i>whole</i> refresh, not just the read, because the apply
+    /// half awaits too — <c>Sync.RefreshTreeAsync</c>, the merge-state probe — and two
+    /// applies interleaving at those awaits is the same clobber by instalments. Acquisition
+    /// order is completion order, and an awaited caller queues <i>behind</i> any stray, so by
+    /// the time it reads, every earlier reading has already been applied and superseded.
+    /// Reentrancy was checked before adding the gate: nothing inside
+    /// <see cref="RefreshCoreAsync"/> calls back into <c>RunRefreshAsync</c> — the remote
+    /// pack's refresh callback fires from its own verbs, never from a refresh.
+    /// </para>
+    /// <para>
+    /// The policy must still be told the refresh finished even when it throws, or
     /// <c>IsRunning</c> stays true for the rest of the session and automatic refreshing
     /// stops dead — a failure that would present as the panel going stale again.
+    /// </para>
     /// </remarks>
     private async Task RunRefreshAsync(RefreshTrigger trigger, IReadOnlyList<string>? paths)
     {
+        await _refreshGate.WaitAsync().ConfigureAwait(true);
         try
         {
             await RefreshCoreAsync(trigger, paths).ConfigureAwait(true);
@@ -2116,12 +2157,20 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         }
         finally
         {
+            _refreshGate.Release();
+
             if (_policy.OnRefreshCompleted())
             {
                 OnUi(() => _ = RunRefreshAsync(trigger, null));
             }
         }
     }
+
+    /// <summary>See <see cref="RunRefreshAsync"/>. Deliberately never disposed: a waiter on
+    /// a disposed semaphore throws from a fire-and-forget refresh during shutdown, and an
+    /// undisposed <see cref="SemaphoreSlim"/> that never touches its wait handle holds
+    /// nothing worth that trade.</summary>
+    private readonly SemaphoreSlim _refreshGate = new(1, 1);
 
     // ---------------------------------------------------------------- git panel
 
@@ -4376,6 +4425,26 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
             // Either the push failed or it found nothing to save, and both mean the same thing
             // here: the work is not somewhere it can be recovered from, so nothing else may
             // happen. Never fall through to the checkout, and never to a discard.
+            //
+            // A NOTIFICATION, not only the status line. An abandoned switch is an operation
+            // result, and StatusSummary keeps only durable state — the next background
+            // refresh overwrites it with "No changes" within about a second, which is
+            // exactly what used to happen: the one sentence explaining why the switch did
+            // not go through was erased before anybody could read it. Notifications exist
+            // so a refresh can no longer overwrite the answer to what the user just pressed
+            // (their own remarks say so), and this is that, refused.
+            if (push.Success)
+            {
+                Notifications.Warning("Nothing was stashed, so nothing was switched.",
+                    "The stash found no changes to save. If the tree looked dirty a moment " +
+                    "ago, refresh and try again.");
+            }
+            else
+            {
+                Notifications.Failure("The stash failed, so nothing was switched.",
+                    push.FailureReason ?? string.Empty);
+            }
+
             StatusSummary = push.Success
                 ? "Nothing was stashed, so nothing was switched."
                 : push.FailureReason ?? "the stash failed, so nothing was switched";

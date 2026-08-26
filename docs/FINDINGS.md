@@ -19,6 +19,60 @@ produce a diff touching everything else.
 
 ---
 
+### The suite's last flake was a real race: nothing serialised the status refreshes
+
+**Found 2026-08-26 by hunting the `AutoStashFlowTests` flake**, which had been documented as
+"contention for the git binary and the filesystem… wants a different fix" and had grown worse:
+flipping between 9/9 and 2–3 failures on identical binaries, a different test each time,
+occasionally even running alone.
+
+**The race.** `StatusRefreshPolicy` gates only the *watcher's* triggers. Every verb ends with
+an awaited `RunRefreshAsync`, and a watcher-started refresh can already be in flight when it
+begins — two `git status` reads overlapping, and whichever finishes **last** wins. A read that
+started *before* an edit, a stash or a checkout and applied *after* the fresh one reconciled
+`Changes` back to a state the tree was no longer in. The next switch's guard then reasoned
+about a tree that did not exist: it saw stale-dirty, offered a stash, the stash correctly
+found a clean tree and created nothing, and the switch was **silently abandoned** — which is
+exactly the shape of every observed failure ("expected 2 prompts, got 1"; "record not
+pruned"; "offer never made"). In the app the dispatcher makes the interleaving rarer, not
+impossible; in the tests there is no dispatcher, so the fire-and-forget refresh runs truly
+concurrent with the flow, and load widens the overlap — which is why the rate tracked machine
+load and why disposal quirks masked it.
+
+**The fix is a gate, not a timeout:** `RunRefreshAsync` now serialises the whole refresh
+through a `SemaphoreSlim(1,1)` — the apply half awaits too (`Sync.RefreshTreeAsync`, the
+merge-state probe), so serialising only the read would be the same clobber by instalments.
+Acquisition order is completion order, and an awaited caller queues behind any stray, so by
+the time it reads, every earlier reading has been applied and superseded. Reentrancy was
+checked before adding it: nothing inside `RefreshCoreAsync` calls back into
+`RunRefreshAsync`. `OpenAsync`'s initial refresh called `RefreshCoreAsync` *around* the
+funnel and now takes the gate too — the watcher deliberately starts before it, so the overlap
+was reachable on every open.
+
+**Two accomplices, fixed with it:**
+
+1. **The auto-stash refusal lived only in `StatusSummary`** — which "keeps only durable
+   state", by `Notifications`' own remarks — so the next refresh overwrote "Nothing was
+   stashed, so nothing was switched" with "No changes" within a second, in the app as in the
+   test that flaked on it. An abandoned switch is an operation result; it is a notification
+   now, and the test asserts the notification.
+2. **`OpenWithDirtyTreeAsync` disposed the shell it returned** — `using var shell` followed
+   by `return shell`, the same premature-disposal bug `GitPanelChromeTests.Build` documents
+   catching in itself. Every test on that helper ran watcher-less against a torn-down shell,
+   which mostly *hid* the race and sometimes raced the disposal itself.
+
+**Measured:** eighteen consecutive green runs of the class on an idle machine — twelve on
+the gate + notification + helper fixes, six more after the open-path hardening — against a
+pre-fix rate of roughly one failure per three runs under the same conditions, plus a fully
+green 672/672 full-suite run. The class also now finishes in 21–23 s per run where it took
+63–78 s before; the cause of that was not chased and no claim is made beyond the
+observation, but a test class that gets three times faster when its races are serialised
+was evidently spending its time somewhere. The flake's other historical shape —
+`GitHealthTests` and friends under full-suite load — shares the mechanism wherever a test
+asserts state a stray refresh can rewrite, and the gate is shell-wide.
+
+---
+
 ### Ctrl+F skipped the explorer, and a failed git show looked like a copy
 
 **Found 2026-08-26 by an audit of the UX remainder**, on `UxRemainder` before it shipped.
