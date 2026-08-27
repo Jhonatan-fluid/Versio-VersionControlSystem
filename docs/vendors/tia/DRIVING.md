@@ -34,7 +34,7 @@ and technology objects are coverage skips.
 
 | Project | Role |
 |---|---|
-| `Versio.Plc.TiaPortal` | Pure. Format (`.ap17`–`.ap21`, `.alXX` as template), directory payload, occupancy, transients, import planner, SCL header, SimaticML scrubber, `TiaPortalJob` / `TiaPortalProtocol` |
+| `Versio.Plc.TiaPortal` | Pure. Format (`.ap17`–`.ap21`, `.alXX` as template), directory payload, occupancy, transients, import planner, SCL header, SimaticML scrubber, data-block member-table parser, `TiaPortalJob` / `TiaPortalProtocol` |
 | `Versio.Plc.TiaPortal.Infrastructure` | Driven. Locator, toolchain (refuses if several Portal versions are installed), `LocalTiaPortalRunner`, `TiaPortalPack.Register()` |
 | `Versio.Plc.TiaPortal.Host` | net48 x64 exe. Reflection / `dynamic` against Openness. `[STAThread]`. `OpennessLoader` installs `AssemblyResolve` **before** any Openness type is touched. Split: `HostApp` (session), `HostExport`, `HostImport`, `HostReflection` |
 
@@ -351,6 +351,14 @@ DBs were NATIVE XML only on that run: `ProgrammingLanguage` is `DB`, so `Generat
 was never called. From 2026-08-22 a successful DB generate writes `*.scl` as `SCL_REVIEW`
 (export-only) beside the same XML (still `NATIVE`). Re-export to refresh the fixture.
 
+From 2026-08-26 the Rendered pane tables InstanceDB / GlobalDB members from the native
+XML (`TiaPortalMemberTableParser` in the Pure pack). External access is this vendor's
+`ExternalAccessible` / `ExternalWritable` pair, collapsed to `None` / `Read` /
+`Read/Write`; omitted flags are the IDE default (reachable), not locked. Raw is still
+the selected layer.
+This is not a second review language and does not apply the table back; SCL_REVIEW stays
+export-only. Function blocks and UDTs keep highlighted source.
+
 Namespaced as `ET 200SP station_2/CleaningStation/…`. Manifest schema 9. `_coverage.md`
 names Hardware, HMI, safety, technology.
 
@@ -479,6 +487,9 @@ queue was derived from, so a later session does not have to re-derive it.
    GUI writes and deletes the same `.info` marker** (§5). Nothing left open here.
 6. ~~**Data blocks as SimaticML only.**~~ — **export 2026-08-22.** `GenerateSource` for
    language `DB`; form `SCL_REVIEW`. Instance-DB import of that source is not this pass.
+   **Rendered table 2026-08-26** from native XML (`TiaPortalMemberTableParser`); Raw
+   unchanged. Grid plus external access (accessible/writable) the same day. Not a
+   second review language.
 
 ### Not this queue (coverage skips)
 

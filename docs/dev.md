@@ -648,6 +648,8 @@ anchors, no multi-line, no tags. Caller supplies key order. IronPython 2.7 and C
 do not agree about dict iteration order; depending on it would churn every export.
 
 C# reader: `LibraryCatalog` / `TaskCatalog` / `DeviceCatalog` in `Versio.Core/Projects`.
+`MemberTable` is the same kind of pane model, produced by a format on open rather than
+read from a sidecar.
 
 #### `versio_libraries.py` — library manager → YAML
 
@@ -1191,6 +1193,12 @@ New files diff as entirely added (`--no-index` against empty), not as "no diff a
 index.
 
 Layer chips in the header: ST / native / tasks / libraries.
+
+Rendered vs Raw is a pane dispatch, not a second diff. Catalogs (`LibraryCatalog`,
+`TaskCatalog`, `DeviceCatalog`) and a data-block `MemberTable` (a format parses the
+native file; App never sees who) draw as bordered tables (name, type, start
+value, external access, comment). Everything else is highlighted
+source. The table does not write back.
 
 ### Theme and progress
 

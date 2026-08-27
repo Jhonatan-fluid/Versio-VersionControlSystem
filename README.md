@@ -96,7 +96,7 @@ Both directions run automatically and deterministically. A per-project **directi
 | **Library references exported** (`<manager>.libraries.yaml`) | ✅ **the gap is closed.** One file per library manager, beside the object that owns it — 21 references on the fixture's application, 13 on its project, **all 34 placeholders**. Hand-written YAML on both sides, no third-party dependency. Export-only: change libraries in the IDE. A **fixed-version** reference records its version, company and title parsed from its own name, which is project state — reading them off `managed_library` reports what the exporting machine has *installed*, and answers nothing at all for a library it does not have |
 | **Device tree exported** (`<device>.devices.yaml`) | ✅ **the collision is closed.** One YAML inside each device directory: connectors, parameters, empty IO-Link slots keyed by index. Eight `<Empty>` children used to share one `%3CEmpty%3E.xml`. Export-only: change devices in the IDE. Parameter import and IEC mapping are not this pass |
 | Template generation | ⛔ needs a new operation and script — not assembly |
-| A second vendor — TIA Portal | ✅ the second pack; probe, export and SCL generate overwrite are gated. Data blocks emit `*.scl` for review (`SCL_REVIEW`). Hardware / HMI / safety stay coverage skips — see [`docs/STATUS.md`](docs/STATUS.md) and [`docs/vendors/tia/DRIVING.md`](docs/vendors/tia/DRIVING.md) |
+| A second vendor — TIA Portal | ✅ the second pack; probe, export and SCL generate overwrite are gated. Data blocks emit `*.scl` for review (`SCL_REVIEW`). **Rendered tables InstanceDB / GlobalDB members from the native XML** (read-only bordered grid, including external access). Hardware / HMI / safety stay coverage skips — see [`docs/STATUS.md`](docs/STATUS.md) and [`docs/vendors/tia/DRIVING.md`](docs/vendors/tia/DRIVING.md) |
 | A third vendor — TwinCAT 3 | ✅ the third pack; probe, export, ST overwrite and I/O catalog export are gated. Comment does not persist through Save. NC / safety / C++ stay coverage skips — see [`docs/vendors/twincat/DRIVING.md`](docs/vendors/twincat/DRIVING.md). Studio 5000 is not started |
 | **Git side panel** — one changes list, commit message, fetch/pull/push | ✅ checkboxes pick what the next commit or discard applies to; staging happens in the background. One operation at a time across every button |
 | **Changed files named as objects** — `FB_Motor · POU`, not `src/…/POU/FB_Motor.st` | ✅ resolved through the export manifest, so it costs no extra read. A file the manifest does not describe stays a path and is **never** guessed at. A library-reference file carries a lock: editing it does not reach the project |
@@ -206,11 +206,11 @@ Versio.sln
 ├─ tests/
 │  ├─ Versio.TestSupport/       not a test project: the three helpers more than one suite
 │  │                            needs (TestPaths, TestLogger, VendorSeamScanner)
-│  ├─ Versio.Core.Tests/        1,487 unit tests — pure, no IO, under a second
+│  ├─ Versio.Core.Tests/        1,488 unit tests — pure, no IO, under a second
 │  ├─ Versio.Integration.Tests/ 163 tests against real git and the real filesystem, ~10 s.
 │  │                            NO CODESYS: that is a different project now, so this one
 │  │                            needs no filter and cannot accidentally cost half an hour
-│  ├─ Versio.App.Tests/         630 tests that build the real windows and panels against
+│  ├─ Versio.App.Tests/         676 tests that build the real windows and panels against
 │  │                            the real stylesheet on an STA thread — none is ever shown
 │  ├─ Versio.Plc.Codesys.Pure.Tests/ 263 pure vendor tests — the planner, the codecs, the
 │  │                            protocol — under a second, needing nothing
@@ -218,7 +218,8 @@ Versio.sln
 │  │                            ~15 s, no CODESYS — python on PATH, skips cleanly without
 │  ├─ Versio.Plc.Codesys.Tests/ 55 tests against real CODESYS, ~30 min. The CODESYS gate
 │  │                            before a commit, and the only suite that needs that toolchain
-│  ├─ Versio.Plc.TiaPortal.Pure.Tests/ 22 pure vendor tests — format, planner, protocol
+│  ├─ Versio.Plc.TiaPortal.Pure.Tests/ 41 pure vendor tests — format, planner, protocol,
+│  │                            data-block member table
 │  ├─ Versio.Plc.TiaPortal.Tests/ 5 tests against real TIA Portal; skip with a count when
 │                               Openness membership or the install is missing
 │  ├─ Versio.Plc.TwinCat.Pure.Tests/ 21 pure vendor tests — format, planner, protocol
@@ -392,13 +393,13 @@ dotnet test tests/Versio.Core.Tests
 
 | Suite | Tests | Needs | Runs in |
 |---|---|---|---|
-| `Versio.Core.Tests` | 1,487 | nothing — pure, no IO, no clock, no UI | ~0.3 s |
+| `Versio.Core.Tests` | 1,488 | nothing — pure, no IO, no clock, no UI | ~0.3 s |
 | `Versio.Integration.Tests` | 163 | a real `git.exe` and the real filesystem | ~10 s |
 | `Versio.Arch.Tests` | 27 | nothing — it reads assembly metadata, IL, and the project files | instant |
-| `Versio.App.Tests` | 672 | Windows (WPF). Builds the real dialogs against the real stylesheet on an STA thread; **no window is ever shown** | ~50 s |
+| `Versio.App.Tests` | 676 | Windows (WPF). Builds the real dialogs against the real stylesheet on an STA thread; **no window is ever shown** | ~50 s |
 | `Versio.Plc.Codesys.Pure.Tests` | 263 | nothing — the vendor's planner, codecs and protocol, pure | under a second |
 | `Versio.Plc.Codesys.Parity.Tests` | 97 | `python` on PATH, no CODESYS — **skips cleanly without python, so check the count** | ~15 s |
-| `Versio.Plc.TiaPortal.Pure.Tests` | 22 | nothing — format, planner, protocol, scrubber | instant |
+| `Versio.Plc.TiaPortal.Pure.Tests` | 41 | nothing — format, planner, protocol, scrubber, member table | instant |
 | `Versio.Plc.TiaPortal.Tests` | 5 | **a real TIA Portal**; skips cleanly without Openness membership | seconds when skipped |
 | `Versio.Plc.TwinCat.Pure.Tests` | 21 | nothing — the vendor's planner, format and protocol, pure | instant |
 | `Versio.Plc.TwinCat.Tests` | 6 | **a real TwinCAT XAE**; skips cleanly without `TcXaeShell.DTE.17.0` | seconds when skipped; ~5 min when XAE runs the import gate |

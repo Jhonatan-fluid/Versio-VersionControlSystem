@@ -19,6 +19,86 @@ produce a diff touching everything else.
 
 ---
 
+### The refresh gate did not stop the auto-stash flake: the guard still did not wait
+
+**Found 2026-08-27**, after the 2026-08-26 gate: a full `Versio.App.Tests` run failed two
+`AutoStashFlowTests` (`A_stash_dropped_from_a_terminal_is_forgotten_rather_than_offered`,
+`Restoring_one_stops_offering_the_rest_until_the_next_arrival`); the class re-run was 9/9
+green. Same shape as before — switch abandoned, record not pruned, offer never made —
+on binaries that already serialised refreshes through `_refreshGate`.
+
+**The remaining hole.** The gate serialises refreshes against each other. `Ask()` did not
+wait for it. A fire-and-forget refresh (watcher, or a Manual follow-up from
+`OnRefreshCompleted`) still held `GitRead` Busy, or still had a stale `Changes`, when
+the next `SwitchBranchAsync` evaluated the guard. Tests answer every guard question
+`StashAndProceed`; git stash on a clean tree creates nothing; the switch is abandoned
+and `OfferStashedWorkAsync` never runs. In the app the dispatcher makes the overlap
+rarer; in the tests `OnUi` runs inline, so the window is the in-flight `StatusAsync`.
+
+**Fix:** `ClearForContextChangeAsync` drains the gate and re-reads git (no Busy) before
+`Ask()`, then releases so WaitThenProceed cannot deadlock with an export that itself
+refreshes. Manual follow-ups demote to `WorkingTree` so they do not light GitRead Busy.
+The overlap is now a test: `RefreshAsync` in flight, then switch on a clean tree, must
+not ask and must land on the other branch.
+
+**What was rejected:** holding the gate across `Ask()` / WaitThenProceed (export ending
+in a refresh deadlocks on the same semaphore). Calling `RunRefreshAsync` from inside
+the drain (re-entrant `WaitAsync` on the gate we hold). A timeout.
+
+Tests: `AutoStashFlowTests.A_switch_waits_for_an_in_flight_refresh_rather_than_stashing_a_ghost`.
+Ten consecutive green class runs (10/10, 22 s each) after the drain.
+
+---
+
+### The data-block pane was aligned text and dropped external access
+
+**Found 2026-08-26**, eyeballing `FIT100Liter_Type` on CleaningStation. Rendered listed
+NAME / TYPE / START VALUE / COMMENT as a sparse monospace listing: no grid lines,
+no row chrome, and the Interface `BooleanAttribute` flags
+(`ExternalAccessible` / `ExternalWritable`) were never read. Every Input member
+on that block is locked from outside; nested UDT members omit the flags and
+are the IDE default (reachable). The pane showed neither.
+
+**Fix:** the TIA parser collapses the two flags to one opaque `ExternalAccess`
+string (`None` / `Read` / `Read/Write`); omitted is the default, not `None`.
+The pane is a bordered grid with shared column widths. `ExternalVisible` is
+HMI-engineering visibility and is not this column.
+
+**What was rejected:** a WPF `DataGrid` (stock chrome, no theme tokens in this
+app). Putting the flag names in Core or in the column header (the seam).
+
+Tests: `TiaPortalMemberTableTests` (explicit flags, omitted default, visible-only,
+subelement inherit), `MemberTablePaneFlowTests` (dispatch still fills the field).
+
+---
+
+### TIA data blocks opened as XML in Rendered because nothing parsed the Interface tree
+
+**Found 2026-08-26**, looking at CleaningStation: `FIC100_Type` (an instance DB) and
+`Global_Limits_Interlocks` (the one global DB) showed as highlighted SimaticML in the
+Rendered pane. The Interface / Member / StartValue tree is already in the native XML.
+The 2026-08-22 `GenerateSource` work made a readable `.scl` sibling (`SCL_REVIEW`);
+the fixture on disk is still XML-only, and even after a re-export `PrimaryFile`
+prefers `.scl`, so Rendered would have been highlighted SCL rather than a table.
+
+**Fix:** the TIA format parses InstanceDB / GlobalDB XML into a vendor-neutral
+`MemberTable` (name, type, start value, external access, comment, dotted path). The shell asks
+`PlcFormats.All` for a table before falling through to `SourceRender`, and walks
+every sibling file so a `.scl` primary still tables from the native XML. The
+pane caption does not name a vendor. Raw is unchanged.
+
+**What was rejected:** a YAML sidecar at export (needs a re-export, second source
+of truth). Putting SimaticML XPath in App or Core (the seam). Rendering SimaticML
+in the diff — that was rejected on 2026-08-22 as a second language for one object,
+and this does not undo it. UDT / FB Interface tables — same schema, later pane.
+Edit-in-table write-back.
+
+Tests: `TiaPortalMemberTableTests` (inline XML, including FB/UDT/SCL returning
+null), `MemberTablePaneFlowTests` (dispatch, `.scl`+XML sibling, FB still source),
+`SecondVendorTests` (default `TryParseMemberTable` is null).
+
+---
+
 ### The suite's last flake was a real race: nothing serialised the status refreshes
 
 **Found 2026-08-26 by hunting the `AutoStashFlowTests` flake**, which had been documented as
@@ -67,7 +147,9 @@ pre-fix rate of roughly one failure per three runs under the same conditions, pl
 green 672/672 full-suite run. The class also now finishes in 21–23 s per run where it took
 63–78 s before; the cause of that was not chased and no claim is made beyond the
 observation, but a test class that gets three times faster when its races are serialised
-was evidently spending its time somewhere. The flake's other historical shape —
+was evidently spending its time somewhere. A second hole — `Ask()` still did not wait
+for that gate — showed up the next day under a full-suite run; see the 2026-08-27
+entry. The flake's other historical shape —
 `GitHealthTests` and friends under full-suite load — shares the mechanism wherever a test
 asserts state a stray refresh can rewrite, and the gate is shell-wide.
 

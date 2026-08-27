@@ -173,4 +173,7 @@ public sealed class TiaPortalProjectFormat : IPlcProjectFormat
 
     public ObjectTypeName? DisplayNameFor(string type) =>
         TiaPortalObjectTypeNames.TryFor(type);
+
+    public MemberTable? TryParseMemberTable(string relativePath, string content) =>
+        TiaPortalMemberTableParser.TryParse(relativePath, content);
 }

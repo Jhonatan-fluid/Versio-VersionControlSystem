@@ -1,6 +1,6 @@
 # Versio — status and what is next
 
-**Date:** 2026-08-26 · **This is the live page.** Where the project is, and what is next, live
+**Date:** 2026-08-27 · **This is the live page.** Where the project is, and what is next, live
 here and only here. Search [`FINDINGS.md`](FINDINGS.md) for defects. Completed plans and session
 handoffs are records in [`phase1/`](phase1/) and [`archive/`](archive/) — read them for why,
 never for state.
@@ -15,14 +15,13 @@ UX remainder) is built and tested as of 2026-08-25** — UX-6 find boxes, UX-7 `
 Escape, UX-8 copy-a-commit, UX-12 amend-while-unpushed — and its visual half joins the
 eyeball list in item 2. Do not start from `archive/` or a handoff.
 
-**Tests:** 2,818 across eleven projects, last counted 2026-08-26 (Core 1,487, App 672:
+**Tests:** 2,842 across eleven projects, last counted 2026-08-27 (Core 1,488, App 676:
 a guarded merge or rebase now asks in its own verb — `GuardIntent.Merge` / `Rebase`
-closed the known gap where all three bring-commits-in verbs said "pull"). **The suite's
-residual flake is fixed the same day**: nothing serialised the shell's status refreshes, so
-a stale reading could apply last and the next guard reasoned about a tree that did not
-exist. One gate in `RunRefreshAsync` now serialises them; 18 consecutive green
-`AutoStashFlowTests` runs and a fully green 672-test suite run are the measurement
-(FINDINGS 2026-08-26). The git panel is one CHANGES list: checkboxes pick the include set,
+closed the known gap where all three bring-commits-in verbs said "pull"). **The
+auto-stash suite flake had a second hole, closed 2026-08-27**: the 2026-08-26 gate
+serialised refreshes, and the next switch's guard still did not wait, so an in-flight
+refresh was read as work-in-flight or a dirty tree and the switch was abandoned.
+`ClearForContextChangeAsync` now drains before `Ask()`. The git panel is one CHANGES list: checkboxes pick the include set,
 Commit / Discard are the verbs, and a failed project no longer vetoes unrelated files.
 **Stop / Retry / close (2026-08-21):** the status bar kills
 in-flight work including an import; Try again lights after cancel; close asks even during
@@ -48,13 +47,13 @@ marking, duplicate-param keys, and the detail-pane lookup. All of them are in
 
 | Project | Tests | Time | Needs |
 |---|---|---|---|
-| `Versio.Core.Tests` | 1,487 | under a second | nothing |
+| `Versio.Core.Tests` | 1,488 | under a second | nothing |
 | `Versio.Integration.Tests` | 163 | ~10 s | real git |
-| `Versio.App.Tests` | 672 | ~50 s | nothing |
+| `Versio.App.Tests` | 676 | ~50 s | nothing |
 | `Versio.Arch.Tests` | 27 | instant | nothing |
 | `Versio.Plc.Codesys.Pure.Tests` | 263 | under a second | nothing |
 | `Versio.Plc.Codesys.Parity.Tests` | 97 | ~15 s | `python` on PATH — skips cleanly without it, so check the count |
-| `Versio.Plc.TiaPortal.Pure.Tests` | 22 | instant | nothing |
+| `Versio.Plc.TiaPortal.Pure.Tests` | 41 | instant | nothing |
 | `Versio.Plc.TiaPortal.Tests` | 5 | seconds when skipped; minutes when Portal runs the import gate | **real TIA Portal** — skips without Openness membership or LFS content |
 | `Versio.Plc.TwinCat.Pure.Tests` | 21 | instant | nothing |
 | `Versio.Plc.TwinCat.Tests` | 6 | seconds when skipped; ~5 min when XAE runs the import gate | **real TwinCAT XAE** — skips without `TcXaeShell.DTE.17.0` or the fixture |
@@ -107,7 +106,10 @@ when the parent dies, and Stop reaps only the Portal/XAE PID this run created.
   (`*.devices.yaml`, form `DEVICE_COMMENT`) ship 2026-08-20: export plus `SetAttribute`
   with verify-before-Save; never PlugNew. **Data blocks 2026-08-22:** `GenerateSource` to
   `*.scl` (`SCL_REVIEW`, export-only); SimaticML stays the import. Re-export to see them.
-  This fixture has no port-to-port partners.
+  **Rendered table 2026-08-26:** InstanceDB / GlobalDB members parse from the native XML
+  into a vendor-neutral `MemberTable` (name, type, start value, external access,
+  comment). Raw is still
+  XML or SCL. The table does not write back. This fixture has no port-to-port partners.
   HMI, safety and technology stay coverage skips. Gate fixture:
   `fixtures/projects/CleaningStation_V20_V21/` (Git LFS). Never the
   OneDrive original. Session notes: [`archive/HANDOFF-Siemens2.md`](archive/HANDOFF-Siemens2.md).
@@ -184,7 +186,10 @@ One list. Reorder it; do not copy it into another file.
    ahead/behind preview** (headless tests can only prove the dead half — a Popup with no
    presentation source refuses to open); right-click a history commit and copy all three
    things; and the Amend flow end to end — empty box loads the message, second press asks
-   with both subjects, the button vanishes after a push.
+   with both subjects, the button vanishes after a push. **TIA data-block Rendered table
+   (2026-08-26):** open `FIC100_Type`, `FIT100Liter_Type` and `Global_Limits_Interlocks`
+   on CleaningStation — Rendered is a bordered member table including external
+   access; Raw is still XML.
 3. ~~**UX remainder** — evidence and ranking in [`archive/UX-PLAN.md`](archive/UX-PLAN.md):~~
    **built and tested 2026-08-25**, three commits on `UxRemainder`; visual checks moved
    into item 2:
@@ -241,7 +246,8 @@ Close Versio **and** Portal before a host rebuild. Click **Yes to all** on Openn
 
 - **TIA data-block SCL is export-only.** `*.scl` beside a DB is `SCL_REVIEW`: readable,
   lock glyph, never applied back. Change start values in Portal or in the SimaticML.
-  Instance-DB `GenerateBlocksFromSource` is unmeasured (23 of CleaningStation's 24).
+  The Rendered pane tables the native Interface (2026-08-26); that view does not write
+  back. Instance-DB `GenerateBlocksFromSource` is unmeasured (23 of CleaningStation's 24).
 
 - **Library references are export-only.** Editing `Library Manager.libraries.yaml` changes
   nothing in the project. The changed-files row carries a lock glyph saying so.

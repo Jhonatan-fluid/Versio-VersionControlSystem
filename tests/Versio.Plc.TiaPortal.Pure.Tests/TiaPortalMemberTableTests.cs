@@ -1,0 +1,422 @@
+using Versio.Core.Projects;
+using Versio.Plc.TiaPortal;
+using Xunit;
+
+namespace Versio.Plc.TiaPortal.Tests;
+
+/// <summary>
+/// Native data-block XML becomes a member table; everything else stays null.
+/// </summary>
+/// <remarks>
+/// Inline fixtures, no LFS. The FB document exists so widening the local-name gate
+/// to any <c>SW.Blocks.*</c> goes red — that object has an Interface too.
+/// </remarks>
+public sealed class TiaPortalMemberTableTests
+{
+    private static MemberTable? Parse(string path, string xml) =>
+        TiaPortalMemberTableParser.TryParse(path, xml);
+
+    private static MemberTable MustParse(string xml) =>
+        Assert.IsType<MemberTable>(Parse("block.xml", xml));
+
+    [Fact]
+    public void A_global_data_block_tables_a_start_value()
+    {
+        var table = MustParse("""
+            <?xml version="1.0" encoding="utf-8"?>
+            <Document>
+              <SW.Blocks.GlobalDB ID="0">
+                <AttributeList>
+                  <Interface>
+                    <Sections xmlns="http://www.siemens.com/automation/Openness/SW/Interface/v5">
+                      <Section Name="Static">
+                        <Member Name="High" Datatype="Real">
+                          <StartValue>2900.0</StartValue>
+                        </Member>
+                      </Section>
+                    </Sections>
+                  </Interface>
+                  <MemoryLayout>Optimized</MemoryLayout>
+                  <Name>Limits</Name>
+                  <Number>58</Number>
+                </AttributeList>
+              </SW.Blocks.GlobalDB>
+            </Document>
+            """);
+
+        Assert.Equal("Limits", table.Name);
+        Assert.Equal("58", table.Number);
+        Assert.Equal(string.Empty, table.InstanceOf);
+        Assert.Equal("Optimized", table.MemoryLayout);
+
+        var row = Assert.Single(table.Members);
+        Assert.Equal("High", row.Name);
+        Assert.Equal("High", row.Path);
+        Assert.Equal("Real", row.Datatype);
+        Assert.Equal("Static", row.Section);
+        Assert.Equal("2900.0", row.StartValue);
+        Assert.Equal("Read/Write", row.ExternalAccess);
+        Assert.Equal(0, row.Depth);
+    }
+
+    [Fact]
+    public void An_instance_data_block_flattens_nested_members_and_fills_instance_of()
+    {
+        var table = MustParse("""
+            <?xml version="1.0" encoding="utf-8"?>
+            <Document>
+              <SW.Blocks.InstanceDB ID="0">
+                <AttributeList>
+                  <InstanceOfName>PidCtrl</InstanceOfName>
+                  <InstanceOfType>FB</InstanceOfType>
+                  <Interface>
+                    <Sections>
+                      <Section Name="Static">
+                        <Member Name="Pid" Datatype="&quot;PidCtrl&quot;">
+                          <Comment>
+                            <MultiLanguageText Lang="en-US">controller</MultiLanguageText>
+                          </Comment>
+                          <Sections>
+                            <Section Name="Input">
+                              <Member Name="Gain" Datatype="&quot;AnaVal&quot;">
+                                <Sections>
+                                  <Section Name="None">
+                                    <Member Name="Value" Datatype="Real">
+                                      <StartValue>1.5</StartValue>
+                                    </Member>
+                                  </Section>
+                                </Sections>
+                              </Member>
+                            </Section>
+                          </Sections>
+                        </Member>
+                      </Section>
+                    </Sections>
+                  </Interface>
+                  <Name>Fic</Name>
+                  <Number>13</Number>
+                </AttributeList>
+              </SW.Blocks.InstanceDB>
+            </Document>
+            """);
+
+        Assert.Equal("Fic", table.Name);
+        Assert.Equal("PidCtrl", table.InstanceOf);
+        Assert.Equal("Instance of PidCtrl", table.InstanceCaption);
+
+        Assert.Equal(3, table.Members.Count);
+        Assert.Equal("Pid", table.Members[0].Path);
+        Assert.Equal("controller", table.Members[0].Comment);
+        Assert.Equal("\"PidCtrl\"", table.Members[0].Datatype);
+        Assert.Equal("Pid.Gain", table.Members[1].Path);
+        Assert.Equal(1, table.Members[1].Depth);
+
+        var leaf = table.Members[2];
+        Assert.Equal("Pid.Gain.Value", leaf.Path);
+        Assert.Equal("Value", leaf.Name);
+        Assert.Equal("1.5", leaf.StartValue);
+        Assert.Equal(2, leaf.Depth);
+        Assert.Equal("Real", leaf.Datatype);
+    }
+
+    [Fact]
+    public void Array_subelements_become_indexed_rows()
+    {
+        var table = MustParse("""
+            <?xml version="1.0" encoding="utf-8"?>
+            <Document>
+              <SW.Blocks.GlobalDB ID="0">
+                <AttributeList>
+                  <Interface>
+                    <Sections>
+                      <Section Name="Static">
+                        <Member Name="Values" Datatype="Array[0..1] of Real">
+                          <Subelement Path="0">
+                            <StartValue>1.0</StartValue>
+                          </Subelement>
+                          <Subelement Path="1">
+                            <StartValue>2.0</StartValue>
+                          </Subelement>
+                        </Member>
+                      </Section>
+                    </Sections>
+                  </Interface>
+                  <Name>Samples</Name>
+                </AttributeList>
+              </SW.Blocks.GlobalDB>
+            </Document>
+            """);
+
+        Assert.Equal(3, table.Members.Count);
+        Assert.Equal("Values", table.Members[0].Path);
+        Assert.Equal("Values[0]", table.Members[1].Path);
+        Assert.Equal("1.0", table.Members[1].StartValue);
+        Assert.Equal(1, table.Members[1].Depth);
+        Assert.Equal("Values[1]", table.Members[2].Path);
+        Assert.Equal("2.0", table.Members[2].StartValue);
+        Assert.Equal("Read/Write", table.Members[0].ExternalAccess);
+        Assert.Equal("Read/Write", table.Members[1].ExternalAccess);
+    }
+
+    [Theory]
+    [InlineData("false", "false", "None")]
+    [InlineData("true", "false", "Read")]
+    [InlineData("true", "true", "Read/Write")]
+    [InlineData("false", "true", "None")]
+    public void External_access_flags_collapse_to_one_column(
+        string accessible, string writable, string expected)
+    {
+        // Writable without accessible is still None: there is nothing to write.
+        var table = MustParse($"""
+            <?xml version="1.0" encoding="utf-8"?>
+            <Document>
+              <SW.Blocks.GlobalDB ID="0">
+                <AttributeList>
+                  <Interface>
+                    <Sections>
+                      <Section Name="Static">
+                        <Member Name="PV" Datatype="Bool">
+                          <AttributeList>
+                            <BooleanAttribute Name="ExternalAccessible">{accessible}</BooleanAttribute>
+                            <BooleanAttribute Name="ExternalWritable">{writable}</BooleanAttribute>
+                          </AttributeList>
+                        </Member>
+                      </Section>
+                    </Sections>
+                  </Interface>
+                  <Name>Flags</Name>
+                </AttributeList>
+              </SW.Blocks.GlobalDB>
+            </Document>
+            """);
+
+        Assert.Equal(expected, Assert.Single(table.Members).ExternalAccess);
+    }
+
+    [Fact]
+    public void Omitted_external_flags_default_to_read_write()
+    {
+        // This vendor writes the flags only when they are not the IDE default.
+        // Nested UDT members on FIT100Liter_Type omit them; they are not None.
+        var table = MustParse("""
+            <?xml version="1.0" encoding="utf-8"?>
+            <Document>
+              <SW.Blocks.InstanceDB ID="0">
+                <AttributeList>
+                  <Interface>
+                    <Sections>
+                      <Section Name="Static">
+                        <Member Name="Scale" Datatype="&quot;ScaVal&quot;">
+                          <AttributeList>
+                            <BooleanAttribute Name="ExternalAccessible">false</BooleanAttribute>
+                            <BooleanAttribute Name="ExternalWritable">false</BooleanAttribute>
+                          </AttributeList>
+                          <Sections>
+                            <Section Name="None">
+                              <Member Name="High" Datatype="Real">
+                                <StartValue>3600.0</StartValue>
+                              </Member>
+                            </Section>
+                          </Sections>
+                        </Member>
+                      </Section>
+                    </Sections>
+                  </Interface>
+                  <Name>Fit</Name>
+                </AttributeList>
+              </SW.Blocks.InstanceDB>
+            </Document>
+            """);
+
+        Assert.Equal("None", table.Members[0].ExternalAccess);
+        Assert.Equal("Read/Write", table.Members[1].ExternalAccess);
+    }
+
+    [Fact]
+    public void External_visible_alone_is_not_access()
+    {
+        // Visibility in HMI engineering is a different flag. Painting it as None
+        // would hide members that are still reachable from outside.
+        var table = MustParse("""
+            <?xml version="1.0" encoding="utf-8"?>
+            <Document>
+              <SW.Blocks.GlobalDB ID="0">
+                <AttributeList>
+                  <Interface>
+                    <Sections>
+                      <Section Name="Static">
+                        <Member Name="Hidden" Datatype="Bool">
+                          <AttributeList>
+                            <BooleanAttribute Name="ExternalVisible">false</BooleanAttribute>
+                          </AttributeList>
+                        </Member>
+                      </Section>
+                    </Sections>
+                  </Interface>
+                  <Name>Flags</Name>
+                </AttributeList>
+              </SW.Blocks.GlobalDB>
+            </Document>
+            """);
+
+        Assert.Equal("Read/Write", Assert.Single(table.Members).ExternalAccess);
+    }
+
+    [Fact]
+    public void Array_subelements_inherit_the_member_access()
+    {
+        var table = MustParse("""
+            <?xml version="1.0" encoding="utf-8"?>
+            <Document>
+              <SW.Blocks.GlobalDB ID="0">
+                <AttributeList>
+                  <Interface>
+                    <Sections>
+                      <Section Name="Static">
+                        <Member Name="Values" Datatype="Array[0..0] of Real">
+                          <AttributeList>
+                            <BooleanAttribute Name="ExternalAccessible">true</BooleanAttribute>
+                            <BooleanAttribute Name="ExternalWritable">false</BooleanAttribute>
+                          </AttributeList>
+                          <Subelement Path="0">
+                            <StartValue>1.0</StartValue>
+                          </Subelement>
+                        </Member>
+                      </Section>
+                    </Sections>
+                  </Interface>
+                  <Name>Samples</Name>
+                </AttributeList>
+              </SW.Blocks.GlobalDB>
+            </Document>
+            """);
+
+        Assert.Equal("Read", table.Members[0].ExternalAccess);
+        Assert.Equal("Read", table.Members[1].ExternalAccess);
+    }
+
+    [Fact]
+    public void The_format_forwards_to_the_parser()
+    {
+        var xml = """
+            <?xml version="1.0" encoding="utf-8"?>
+            <Document>
+              <SW.Blocks.GlobalDB ID="0">
+                <AttributeList>
+                  <Name>Limits</Name>
+                </AttributeList>
+              </SW.Blocks.GlobalDB>
+            </Document>
+            """;
+
+        var table = TiaPortalProjectFormat.Instance.TryParseMemberTable("plc/Limits.xml", xml);
+        Assert.NotNull(table);
+        Assert.Equal("Limits", table.Name);
+        Assert.True(table.IsValid);
+    }
+
+    [Theory]
+    [InlineData("block.scl")]
+    [InlineData("block.st")]
+    public void A_non_xml_path_is_not_a_table(string path)
+    {
+        const string xml = """
+            <?xml version="1.0" encoding="utf-8"?>
+            <Document>
+              <SW.Blocks.GlobalDB ID="0">
+                <AttributeList><Name>Limits</Name></AttributeList>
+              </SW.Blocks.GlobalDB>
+            </Document>
+            """;
+
+        Assert.Null(Parse(path, xml));
+    }
+
+    [Fact]
+    public void A_function_block_with_an_interface_is_not_a_table()
+    {
+        // Same Interface schema as a DB. The local-name gate is the whole of
+        // "data blocks, not every block". Delete it and this goes green for the
+        // wrong object.
+        const string fb = """
+            <?xml version="1.0" encoding="utf-8"?>
+            <Document>
+              <SW.Blocks.FB ID="0">
+                <AttributeList>
+                  <Interface>
+                    <Sections>
+                      <Section Name="Input">
+                        <Member Name="Enable" Datatype="Bool">
+                          <StartValue>FALSE</StartValue>
+                        </Member>
+                      </Section>
+                    </Sections>
+                  </Interface>
+                  <Name>Motor</Name>
+                  <Number>1</Number>
+                </AttributeList>
+              </SW.Blocks.FB>
+            </Document>
+            """;
+
+        Assert.Null(Parse("Motor.xml", fb));
+    }
+
+    [Fact]
+    public void A_plc_data_type_is_not_a_table()
+    {
+        const string udt = """
+            <?xml version="1.0" encoding="utf-8"?>
+            <Document>
+              <SW.Types.PlcStruct ID="0">
+                <AttributeList>
+                  <Interface>
+                    <Sections>
+                      <Section Name="None">
+                        <Member Name="Value" Datatype="Real" />
+                      </Section>
+                    </Sections>
+                  </Interface>
+                  <Name>AnaVal</Name>
+                </AttributeList>
+              </SW.Types.PlcStruct>
+            </Document>
+            """;
+
+        Assert.Null(Parse("AnaVal.xml", udt));
+    }
+
+    [Fact]
+    public void Structured_text_is_not_a_table()
+    {
+        Assert.Null(Parse("Limits.xml", """
+            DATA_BLOCK "Limits"
+            VAR
+              High : Real := 2900.0;
+            END_VAR
+            """));
+    }
+
+    [Fact]
+    public void A_foreign_native_document_is_not_a_table()
+    {
+        Assert.Null(Parse("GVL.xml", """
+            <?xml version="1.0" encoding="utf-8"?>
+            <project>
+              <pou name="GVL" />
+            </project>
+            """));
+    }
+
+    [Fact]
+    public void An_empty_document_is_not_a_table()
+    {
+        Assert.Null(Parse("empty.xml", "<Document />"));
+    }
+
+    [Fact]
+    public void Malformed_xml_returns_null_rather_than_throwing()
+    {
+        Assert.Null(Parse("broken.xml", "<Document><SW.Blocks.GlobalDB>"));
+    }
+}

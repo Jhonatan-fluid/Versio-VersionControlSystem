@@ -210,6 +210,23 @@ public interface IPlcProjectFormat
     /// </para>
     /// </remarks>
     Projects.ObjectTypeName? DisplayNameFor(string type);
+
+    /// <summary>
+    /// A structured member pane for this file, or null when highlighted source is enough.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The format decides. The pane asks every registered format and takes the first
+    /// table; a vendor that has nothing to draw this way keeps the default and the
+    /// pane falls through to the file's own text. Default-null is load-bearing: every
+    /// stand-in format in the tests inherits it, and adding a vendor must not require
+    /// an App edit.
+    /// </para>
+    /// <para>
+    /// Handed the path and the content so the format stays pure — it never fetches.
+    /// </para>
+    /// </remarks>
+    Projects.MemberTable? TryParseMemberTable(string relativePath, string content) => null;
 }
 
 /// <summary>

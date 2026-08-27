@@ -25,6 +25,24 @@
             <ResourceDictionary.MergedDictionaries>
                 <ResourceDictionary Source="RowTemplates.xaml" />
             </ResourceDictionary.MergedDictionaries>
+            <!--
+                Member-table cell chrome. Lives here rather than on the DataTemplate
+                because a nested ItemsControl template cannot see that dictionary:
+                StaticResource misses it at compile, DynamicResource misses it at
+                the generated row. Window.Resources is on the lookup path for both.
+            -->
+            <Style x:Key="MemberTableCell" TargetType="Border">
+                <Setter Property="BorderBrush" Value="{DynamicResource Brush.Border.Subtle}" />
+                <Setter Property="BorderThickness" Value="0,0,1,1" />
+                <Setter Property="Padding" Value="8,5" />
+                <Setter Property="SnapsToDevicePixels" Value="True" />
+            </Style>
+            <Style x:Key="MemberTableCellLast" TargetType="Border">
+                <Setter Property="BorderBrush" Value="{DynamicResource Brush.Border.Subtle}" />
+                <Setter Property="BorderThickness" Value="0,0,0,1" />
+                <Setter Property="Padding" Value="8,5" />
+                <Setter Property="SnapsToDevicePixels" Value="True" />
+            </Style>
         </ResourceDictionary>
     </Window.Resources>
 
@@ -1083,6 +1101,138 @@
                                                    Margin="0,0,0,6" />
                                         <ItemsControl ItemsSource="{Binding Facts}"
                                                       ItemTemplate="{StaticResource FactRows}" />
+                                    </StackPanel>
+                                </ScrollViewer>
+                            </DataTemplate>
+
+                            <DataTemplate DataType="{x:Type projects:MemberTable}">
+                                <!--
+                                    A real grid, not a row of labels. The first pass was four
+                                    TextBlocks with fixed widths and no borders, so FIT100Liter_Type
+                                    read as a sparse listing. Cell BorderThickness is the whole
+                                    of the grid lines; delete it and this is a padded list again,
+                                    and nothing in the suite watches it.
+                                -->
+                                <ScrollViewer VerticalScrollBarVisibility="Auto"
+                                              HorizontalScrollBarVisibility="Auto">
+                                    <StackPanel Margin="8,4">
+                                        <TextBlock Text="{Binding Name}"
+                                                   FontFamily="{DynamicResource Font.UI}"
+                                                   FontSize="{DynamicResource Font.Size.Body}"
+                                                   FontWeight="{DynamicResource Font.Weight.Semibold}"
+                                                   Foreground="{DynamicResource Brush.Text.Primary}" />
+                                        <TextBlock Text="{Binding InstanceCaption}"
+                                                   Margin="0,2,0,0"
+                                                   FontFamily="{DynamicResource Font.UI}"
+                                                   FontSize="{DynamicResource Font.Size.Caption}"
+                                                   Foreground="{DynamicResource Brush.Text.Secondary}"
+                                                   Visibility="{Binding HasInstanceOf,
+                                                       Converter={StaticResource BoolToVisibility}}" />
+                                        <TextBlock Text="{Binding NumberCaption}"
+                                                   Margin="0,2,0,0"
+                                                   FontFamily="{DynamicResource Font.Mono}"
+                                                   FontSize="{DynamicResource Font.Size.Caption}"
+                                                   Foreground="{DynamicResource Brush.Text.Disabled}"
+                                                   Visibility="{Binding HasNumber,
+                                                       Converter={StaticResource BoolToVisibility}}" />
+                                        <TextBlock Text="{Binding MemoryLayout}"
+                                                   Margin="0,2,0,0"
+                                                   FontFamily="{DynamicResource Font.UI}"
+                                                   FontSize="{DynamicResource Font.Size.Caption}"
+                                                   Foreground="{DynamicResource Brush.Text.Disabled}"
+                                                   Visibility="{Binding HasMemoryLayout,
+                                                       Converter={StaticResource BoolToVisibility}}" />
+                                        <TextBlock Text="Read-only view of the data block interface. This table does not write back."
+                                                   TextWrapping="Wrap" Margin="0,2,0,8"
+                                                   FontFamily="{DynamicResource Font.UI}"
+                                                   FontSize="{DynamicResource Font.Size.Caption}"
+                                                   Foreground="{DynamicResource Brush.Text.Disabled}" />
+                                        <Border BorderBrush="{DynamicResource Brush.Border.Subtle}"
+                                                BorderThickness="1"
+                                                SnapsToDevicePixels="True"
+                                                Grid.IsSharedSizeScope="True">
+                                            <StackPanel>
+                                                <Grid Background="{DynamicResource Brush.Surface.Raised}">
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="Auto" SharedSizeGroup="MemName" MinWidth="160" />
+                                                        <ColumnDefinition Width="Auto" SharedSizeGroup="MemType" MinWidth="88" />
+                                                        <ColumnDefinition Width="Auto" SharedSizeGroup="MemStart" MinWidth="96" />
+                                                        <ColumnDefinition Width="Auto" SharedSizeGroup="MemAccess" MinWidth="108" />
+                                                        <ColumnDefinition Width="*" MinWidth="120" />
+                                                    </Grid.ColumnDefinitions>
+                                                    <Border Style="{StaticResource MemberTableCell}">
+                                                        <TextBlock Text="NAME" Style="{StaticResource SectionLabel}" />
+                                                    </Border>
+                                                    <Border Grid.Column="1" Style="{StaticResource MemberTableCell}">
+                                                        <TextBlock Text="TYPE" Style="{StaticResource SectionLabel}" />
+                                                    </Border>
+                                                    <Border Grid.Column="2" Style="{StaticResource MemberTableCell}">
+                                                        <TextBlock Text="START VALUE" Style="{StaticResource SectionLabel}" />
+                                                    </Border>
+                                                    <Border Grid.Column="3" Style="{StaticResource MemberTableCell}">
+                                                        <TextBlock Text="EXTERNAL ACCESS" Style="{StaticResource SectionLabel}" />
+                                                    </Border>
+                                                    <Border Grid.Column="4" Style="{StaticResource MemberTableCellLast}">
+                                                        <TextBlock Text="COMMENT" Style="{StaticResource SectionLabel}" />
+                                                    </Border>
+                                                </Grid>
+                                                <ItemsControl ItemsSource="{Binding Members}">
+                                                    <ItemsControl.ItemTemplate>
+                                                        <DataTemplate>
+                                                            <Grid>
+                                                                <Grid.ColumnDefinitions>
+                                                                    <ColumnDefinition Width="Auto" SharedSizeGroup="MemName" MinWidth="160" />
+                                                                    <ColumnDefinition Width="Auto" SharedSizeGroup="MemType" MinWidth="88" />
+                                                                    <ColumnDefinition Width="Auto" SharedSizeGroup="MemStart" MinWidth="96" />
+                                                                    <ColumnDefinition Width="Auto" SharedSizeGroup="MemAccess" MinWidth="108" />
+                                                                    <ColumnDefinition Width="*" MinWidth="120" />
+                                                                </Grid.ColumnDefinitions>
+                                                                <Border Style="{StaticResource MemberTableCell}">
+                                                                    <TextBlock Text="{Binding DisplayName}"
+                                                                               TextTrimming="CharacterEllipsis"
+                                                                               ToolTip="{Binding Path=Path}"
+                                                                               FontFamily="{DynamicResource Font.Mono}"
+                                                                               FontSize="{DynamicResource Font.Size.Caption}"
+                                                                               Foreground="{DynamicResource Brush.Text.Primary}" />
+                                                                </Border>
+                                                                <Border Grid.Column="1" Style="{StaticResource MemberTableCell}">
+                                                                    <TextBlock Text="{Binding Datatype}"
+                                                                               TextTrimming="CharacterEllipsis"
+                                                                               ToolTip="{Binding Datatype}"
+                                                                               FontFamily="{DynamicResource Font.Mono}"
+                                                                               FontSize="{DynamicResource Font.Size.Caption}"
+                                                                               Foreground="{DynamicResource Brush.Text.Secondary}" />
+                                                                </Border>
+                                                                <Border Grid.Column="2" Style="{StaticResource MemberTableCell}">
+                                                                    <TextBlock Text="{Binding StartValue}"
+                                                                               TextTrimming="CharacterEllipsis"
+                                                                               ToolTip="{Binding StartValue}"
+                                                                               FontFamily="{DynamicResource Font.Mono}"
+                                                                               FontSize="{DynamicResource Font.Size.Caption}"
+                                                                               Foreground="{DynamicResource Brush.Text.Secondary}" />
+                                                                </Border>
+                                                                <Border Grid.Column="3" Style="{StaticResource MemberTableCell}">
+                                                                    <TextBlock Text="{Binding ExternalAccess}"
+                                                                               TextTrimming="CharacterEllipsis"
+                                                                               ToolTip="{Binding ExternalAccess}"
+                                                                               FontFamily="{DynamicResource Font.Mono}"
+                                                                               FontSize="{DynamicResource Font.Size.Caption}"
+                                                                               Foreground="{DynamicResource Brush.Text.Secondary}" />
+                                                                </Border>
+                                                                <Border Grid.Column="4" Style="{StaticResource MemberTableCellLast}">
+                                                                    <TextBlock Text="{Binding Comment}"
+                                                                               TextTrimming="CharacterEllipsis"
+                                                                               ToolTip="{Binding Comment}"
+                                                                               FontFamily="{DynamicResource Font.UI}"
+                                                                               FontSize="{DynamicResource Font.Size.Caption}"
+                                                                               Foreground="{DynamicResource Brush.Text.Disabled}" />
+                                                                </Border>
+                                                            </Grid>
+                                                        </DataTemplate>
+                                                    </ItemsControl.ItemTemplate>
+                                                </ItemsControl>
+                                            </StackPanel>
+                                        </Border>
                                     </StackPanel>
                                 </ScrollViewer>
                             </DataTemplate>

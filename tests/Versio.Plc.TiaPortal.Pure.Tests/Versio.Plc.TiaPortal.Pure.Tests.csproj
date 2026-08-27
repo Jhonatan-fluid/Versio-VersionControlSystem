@@ -4,7 +4,8 @@
     <IsPackable>false</IsPackable>
     <RootNamespace>Versio.Plc.TiaPortal.Tests</RootNamespace>
     <!-- Everything about TIA Portal that needs neither TIA Portal nor the host process:
-         the planner, the format, the protocol, the SCL header, the native scrubber. -->
+         the planner, the format, the protocol, the SCL header, the native scrubber,
+         the data-block member-table parser. -->
   </PropertyGroup>
 
   <ItemGroup>

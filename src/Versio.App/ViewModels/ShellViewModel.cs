@@ -946,6 +946,16 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
     /// <returns>True when the switch may go ahead.</returns>
     private async Task<bool> ClearForContextChangeAsync(GuardIntent intent, string target)
     {
+        // Ask against a tree a refresh is not still rewriting. The 2026-08-26 gate
+        // serialised refreshes against each other, and the next switch's guard still
+        // did not wait: Ask() read Changes and Busy while a fire-and-forget refresh
+        // was in flight. Under load that is GitRead-busy answered as StashAndProceed
+        // (or stale-dirty the same way), git stash finds a clean tree, creates
+        // nothing, and the switch is abandoned — AutoStashFlowTests, a different
+        // test each time. Deleting this drain makes
+        // A_switch_waits_for_an_in_flight_refresh_rather_than_stashing_a_ghost red.
+        await AwaitFreshStatusForGuardAsync(intent).ConfigureAwait(true);
+
         // Ask, with the real working tree in it. This used to go through a wrapper that
         // passed WorkingTreeSnapshot.Clean deliberately - offering to stash before anything
         // could stash would be a button that lies about what it does - and the wrapper became
@@ -973,6 +983,47 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
             default:
                 _logger.Info(LogCategory.Ui, $"switch to {target} cancelled");
                 return false;
+        }
+    }
+
+    /// <summary>
+    /// Wait out any in-flight refresh, and re-read git when the guard will look at the tree.
+    /// </summary>
+    /// <remarks>
+    /// Held only for the read, not for <see cref="Ask"/> or WaitThenProceed: those can
+    /// sit in a dialog or wait for an export, and an export that itself ends in a
+    /// refresh would deadlock on this same gate. Re-entrancy is also why this calls
+    /// <see cref="RefreshCoreAsync"/> rather than <see cref="RunRefreshAsync"/> — the
+    /// latter waits on the gate we already hold.
+    /// </remarks>
+    private async Task AwaitFreshStatusForGuardAsync(GuardIntent intent)
+    {
+        await _refreshGate.WaitAsync().ConfigureAwait(true);
+        var noted = false;
+        try
+        {
+            if (intent is GuardIntent.SwitchBranch or GuardIntent.Pull
+                       or GuardIntent.Merge or GuardIntent.Rebase)
+            {
+                _policy.NoteExternalStart();
+                noted = true;
+                await RefreshCoreAsync(RefreshTrigger.WorkingTree, null).ConfigureAwait(true);
+            }
+        }
+        catch (Exception ex)
+        {
+            // Same swallow as RunRefreshAsync: a failed status is a report, not a
+            // crash of the dropdown's fire-and-forget SwitchBranchAsync.
+            ReportError(ex);
+        }
+        finally
+        {
+            _refreshGate.Release();
+
+            if (noted && _policy.OnRefreshCompleted())
+            {
+                OnUi(() => _ = RunRefreshAsync(RefreshTrigger.WorkingTree, null));
+            }
         }
     }
 
@@ -2161,7 +2212,12 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
 
             if (_policy.OnRefreshCompleted())
             {
-                OnUi(() => _ = RunRefreshAsync(trigger, null));
+                // A follow-up is owed work, not a second click. Reusing Manual would
+                // light GitRead Busy and the next guard would ask about a refresh —
+                // which is half of the AutoStashFlowTests flake after the gate itself.
+                OnUi(() => _ = RunRefreshAsync(
+                    trigger == RefreshTrigger.Manual ? RefreshTrigger.WorkingTree : trigger,
+                    null));
             }
         }
     }
@@ -6188,6 +6244,8 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
     /// <see cref="Versio.Core.Projects.DeviceCatalog"/> as the device table,
     /// <see cref="TaskDetailRender"/> as one task's facts,
     /// <see cref="DeviceDetailRender"/> as one connector, parameter or slot,
+    /// <see cref="Versio.Core.Projects.MemberTable"/> as a member table a format
+    /// built from a file it understands,
     /// <see cref="SourceRender"/> as the
     /// file's own highlighted content, and <see cref="ProjectSummaryRender"/> as the project
     /// card. The data is parsed on the click, from the same readers the tree already trusts
@@ -6397,6 +6455,27 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
                     && DeviceCatalog.Parse(devicesText) is { IsValid: true } devicesCatalog)
                 {
                     return devicesCatalog;
+                }
+
+                // Every registered format, every layer of this object. The readable
+                // sibling is often the primary file; the table lives in a native one
+                // beside it. Asking PrimaryFile alone would highlight that text and
+                // never offer the table. The format that does not understand the
+                // bytes returns null and costs a suffix check.
+                //
+                // Deleting this loop returns SourceRender for a data block and
+                // MemberTablePaneFlowTests goes red — the same class of silent-green
+                // as a dropped subscription.
+                foreach (var format in PlcFormats.All)
+                {
+                    foreach (var file in node.Files)
+                    {
+                        if (ReadOrNull(file) is { } text
+                            && format.TryParseMemberTable(file, text) is { IsValid: true } table)
+                        {
+                            return table;
+                        }
+                    }
                 }
 
                 if (row.PrimaryFile is { } primary

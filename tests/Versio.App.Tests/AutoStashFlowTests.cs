@@ -226,6 +226,37 @@ public sealed class AutoStashFlowTests : IDisposable
     }
 
     [SkippableFact]
+    public async Task A_switch_waits_for_an_in_flight_refresh_rather_than_stashing_a_ghost()
+    {
+        // The remaining flake after the 2026-08-26 gate: Ask() ran while a Manual
+        // refresh still held GitRead Busy. The hook answers StashAndProceed to every
+        // question, git stash on a clean tree creates nothing, and the switch is
+        // abandoned. Overlapping RefreshAsync with the switch is that window without
+        // waiting for machine load to open it. Delete AwaitFreshStatusForGuardAsync
+        // and this goes red.
+        Skip.IfNot(GitIsAvailable(), "git is not on PATH");
+
+        using var shell = Build();
+        await shell.OpenAsync(_path);
+
+        var asked = 0;
+        shell.Asked().Guard = _ =>
+        {
+            asked++;
+            return GuardChoice.StashAndProceed;
+        };
+
+        var refresh = shell.RefreshAsync();
+        await shell.SwitchBranchAsync(Other());
+        await refresh;
+
+        Assert.Equal(0, asked);
+        Assert.Equal("other", shell.BranchName);
+        Assert.Empty(Record().Entries);
+        Assert.Equal(string.Empty, Git("stash list").Trim());
+    }
+
+    [SkippableFact]
     public async Task A_stash_dropped_from_a_terminal_is_forgotten_rather_than_offered()
     {
         // An ordinary thing for a git user to do, and it must not read as an error.
