@@ -2270,6 +2270,20 @@ public sealed class SyncOrchestrator
             }
             : current.Baseline;
 
+        // A PUSH MOVES THE BASELINE, NEVER LastSynced.
+        //
+        // LastSynced answers "does the mirror reflect this project" — the hash gate and the
+        // commit gate both read it that way, and docs/dev.md says it moves on an export or an
+        // import only. A push publishes commits; it says nothing about whether the mirror
+        // caught up. Moving it here recorded the project's CURRENT hash as exported, so a save
+        // no export had run for — the IDE holding a directory project all day, a dropped
+        // watcher event, a throttle — was forgotten by the next push of anything: the retry
+        // when the IDE closed answered NoChange and the commit gate called the mirror up to
+        // date. Found 2026-09-14 answering whether a push works while TIA Portal is open.
+        //
+        // The other releases keep their behaviour on purpose: discard and acknowledge pass an
+        // empty project hash, which forces the next event to export rather than trusting
+        // anything; a forced release is the user overriding the lock by name.
         _locks[bindingId] = current with
         {
             Direction = transition.State,
@@ -2277,6 +2291,7 @@ public sealed class SyncOrchestrator
             Reason = reason ?? transition.Reason,
             Baseline = baseline,
             LastSynced = transition.State == SyncDirection.Clean
+                         && trigger is not SyncTrigger.PushSucceeded
                 ? new SyncedState { ProjectHash = projectHash, MirrorHash = mirrorHash }
                 : synced,
         };

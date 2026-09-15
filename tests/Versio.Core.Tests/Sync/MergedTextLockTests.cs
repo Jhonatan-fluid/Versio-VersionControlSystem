@@ -50,8 +50,9 @@ public sealed class MergedTextLockTests
             },
             CancellationToken.None);
 
-        // A push is what releases a direction lock, and it is what leaves LastSynced holding
-        // the state both sides are actually in.
+        // The export recorded LastSynced as the state both sides are actually in; the push
+        // releases the direction lock and moves only the baseline. (Until 2026-09-14 a push
+        // rewrote LastSynced too, which is how an unexported save got forgotten.)
         await harness.Orchestrator.ReleaseAfterPushAsync("head", CancellationToken.None);
 
         Assert.Empty(harness.Orchestrator.CaptureLocks());

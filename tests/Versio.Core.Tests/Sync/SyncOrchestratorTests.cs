@@ -1007,6 +1007,66 @@ public class SyncOrchestratorTests
             };
     }
 
+    // --- a push releases the lock, and says nothing about the mirror ---------------
+
+    [Fact]
+    public async Task A_push_does_not_mark_a_project_save_the_mirror_never_caught_as_exported()
+    {
+        // FOUND 2026-09-14, answering "can I push while TIA Portal is open". A push released
+        // every binding by recording the project's CURRENT hash as LastSynced — the value the
+        // hash gate and the commit gate both read as "the mirror reflects this". So a save no
+        // export ran for was forgotten by the next push of anything: the retry when the IDE
+        // closed answered NoChange, and the commit gate said up to date.
+        var h = new Harness();
+        h.Codesys.EnqueueSuccess("plc/A/Main.st");
+        Assert.Equal(SyncVerdict.Completed, (await h.ProjectChanged()).Verdict);
+        await h.Orchestrator.ReleaseAfterPushAsync("c1", CancellationToken.None);
+
+        // Saved, and no export ran for it - the IDE held the project, or the event was lost.
+        h.SetProject("v2");
+
+        // Then a push, of anything.
+        await h.Orchestrator.ReleaseAfterPushAsync("c2", CancellationToken.None);
+
+        var gate = await h.Orchestrator.EvaluateCommitGateAsync(CancellationToken.None);
+        Assert.Equal(GateDecision.ExportRequired, gate.Decision);
+
+        h.Codesys.EnqueueSuccess("plc/A/Main.st");
+        Assert.Equal(SyncVerdict.Completed, (await h.ProjectChanged()).Verdict);
+    }
+
+    [Fact]
+    public async Task A_push_does_not_mark_a_mirror_edit_nobody_imported_as_imported()
+    {
+        // The same defect in the other direction: a hand edit to the exported text, pushed
+        // before its import ran, was recorded as in sync and never offered again.
+        var h = new Harness();
+        h.Codesys.EnqueueSuccess("plc/A/Main.st");
+        Assert.Equal(SyncVerdict.Completed, (await h.ProjectChanged()).Verdict);
+        await h.Orchestrator.ReleaseAfterPushAsync("c1", CancellationToken.None);
+
+        h.SetExportedText("edited by hand, never imported");
+        await h.Orchestrator.ReleaseAfterPushAsync("c2", CancellationToken.None);
+
+        h.Codesys.EnqueueSuccess();
+        Assert.NotEqual(SyncVerdict.NoChange, (await h.TextChanged()).Verdict);
+    }
+
+    [Fact]
+    public async Task A_push_after_a_real_export_still_leaves_nothing_owed()
+    {
+        // The guard the other way: the fix must not turn every push into a re-export. When
+        // the export did run, the pushed state and the synced state are the same one.
+        var h = new Harness();
+        h.Codesys.EnqueueSuccess("plc/A/Main.st");
+        Assert.Equal(SyncVerdict.Completed, (await h.ProjectChanged()).Verdict);
+        await h.Orchestrator.ReleaseAfterPushAsync("c1", CancellationToken.None);
+
+        var gate = await h.Orchestrator.EvaluateCommitGateAsync(CancellationToken.None);
+        Assert.Equal(GateDecision.Proceed, gate.Decision);
+        Assert.Equal(SyncVerdict.NoChange, (await h.ProjectChanged()).Verdict);
+    }
+
     // --- the project is open in the IDE -------------------------------------------
 
     [Fact]
