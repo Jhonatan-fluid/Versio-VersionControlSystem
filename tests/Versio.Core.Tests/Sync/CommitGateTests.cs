@@ -254,6 +254,58 @@ public class CommitGateTests
         Assert.Equal(["tia"], result.StaleBindings);
     }
 
+    // --- after the export the gate asked for ------------------------------------------
+
+    [Fact]
+    public void A_wait_is_not_an_export()
+    {
+        // The IDE held a directory project, so the export before the commit refused - as a
+        // wait, deliberately not a failure. The commit flow stopped only on failures, so it
+        // went on to record the old mirror beside the new project until this existed.
+        var gate = CommitGate.Evaluate([Stale("b-1")]);
+        var waited = SyncOutcome.Refused(SyncVerdict.BlockedByOpenProject, "b-1",
+            "Station is open in the IDE, so it cannot be exported until it is closed.");
+
+        Assert.False(waited.IsFailure);
+        Assert.Equal(waited.Explanation, CommitGate.StillStaleAfterExport(gate, [waited]));
+    }
+
+    [Theory]
+    [InlineData(SyncVerdict.Completed)]
+    [InlineData(SyncVerdict.NoChange)]
+    public void An_export_that_ran_or_found_nothing_to_do_lets_the_commit_through(SyncVerdict verdict)
+    {
+        var gate = CommitGate.Evaluate([Stale("b-1")]);
+
+        Assert.Null(CommitGate.StillStaleAfterExport(
+            gate, [SyncOutcome.Refused(verdict, "b-1", "done")]));
+    }
+
+    [Theory]
+    [InlineData(SyncVerdict.BlockedByLock)]
+    [InlineData(SyncVerdict.BlockedByCircuitBreaker)]
+    [InlineData(SyncVerdict.Coalesced)]
+    public void Every_other_non_failure_leaves_the_mirror_stale_too(SyncVerdict verdict)
+    {
+        // Not only the IDE: any outcome that did not write the mirror or prove it current
+        // leaves the old export on disk.
+        var gate = CommitGate.Evaluate([Stale("b-1")]);
+
+        Assert.NotNull(CommitGate.StillStaleAfterExport(
+            gate, [SyncOutcome.Refused(verdict, "b-1", "did not run")]));
+    }
+
+    [Fact]
+    public void A_stale_binding_with_no_outcome_is_refused_rather_than_assumed_exported()
+    {
+        var gate = CommitGate.Evaluate([Stale("b-1"), Stale("b-2")]);
+
+        var why = CommitGate.StillStaleAfterExport(
+            gate, [SyncOutcome.Refused(SyncVerdict.Completed, "b-1", "done")]);
+
+        Assert.False(string.IsNullOrWhiteSpace(why));
+    }
+
     [Fact]
     public void The_explanation_is_always_something_a_user_can_read()
     {

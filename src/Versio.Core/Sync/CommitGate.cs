@@ -249,6 +249,52 @@ public static class CommitGate
                 && path.StartsWith(payload + "/", StringComparison.OrdinalIgnoreCase));
     }
 
+    /// <summary>
+    /// Why the export run before a commit did not leave every stale mirror current, or null
+    /// when it did.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>A wait is not an export.</b> Only <see cref="SyncVerdict.Completed"/> — the mirror
+    /// was written — and <see cref="SyncVerdict.NoChange"/> — the project turned out to match
+    /// what was last exported — leave a stale binding safe to commit. Every other verdict
+    /// leaves the old mirror in place: the IDE holding a directory project, the direction
+    /// lock, the circuit breaker. Those are deliberately not failures, so a caller that stopped
+    /// only on <see cref="SyncOutcome.IsFailure"/> committed the old mirror beside the new
+    /// project — which a TIA Portal project open all day did on every commit until 2026-09-14.
+    /// </para>
+    /// <para>
+    /// A stale binding with no outcome at all is refused as well, rather than assumed exported.
+    /// </para>
+    /// </remarks>
+    /// <returns>The sentence to show: the export's own, which says what to close.</returns>
+    public static string? StillStaleAfterExport(
+        CommitGateResult gate, IReadOnlyList<SyncOutcome> outcomes)
+    {
+        const string NotExported =
+            "A tracked project was not exported before the commit, so its mirror may not match it.";
+
+        foreach (var bindingId in gate.StaleBindings)
+        {
+            var outcome = outcomes.FirstOrDefault(
+                o => string.Equals(o.BindingId, bindingId, StringComparison.Ordinal));
+
+            if (outcome is null)
+            {
+                return NotExported;
+            }
+
+            if (outcome.Verdict is not (SyncVerdict.Completed or SyncVerdict.NoChange))
+            {
+                return string.IsNullOrWhiteSpace(outcome.Explanation)
+                    ? NotExported
+                    : outcome.Explanation;
+            }
+        }
+
+        return null;
+    }
+
     /// <summary>Convenience overload for the common single-binding case.</summary>
     public static CommitGateResult Evaluate(ProjectBinding binding, string currentHash, string exportedHash) =>
         Evaluate([

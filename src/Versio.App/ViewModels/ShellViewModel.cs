@@ -3284,6 +3284,24 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
                 return;
             }
 
+            // A WAIT IS NOT AN EXPORT.
+            //
+            // The check above stops only on a failure, and the refusal that matters most here is
+            // deliberately not one: "blocked by open project" is a wait. A directory project the
+            // IDE holds — a TIA Portal project open in its window, all day — therefore exported
+            // nothing, and this method went on to stage the OLD mirror beside the new project
+            // and say "Committed.": exactly what the gate exists to prevent. Refused with the
+            // export's own sentence, which names the IDE and what to close.
+            if (CommitGate.StillStaleAfterExport(gate, outcomes) is { } why)
+            {
+                _logger.Info(LogCategory.Sync,
+                    $"commit refused: the export before it did not bring every mirror current - {why}");
+                Notifications.Warning("Nothing was committed.",
+                    $"{why} Committing now would record the project beside an export that no " +
+                    "longer describes it. Leave that project's files out to commit the rest.");
+                return;
+            }
+
             var staged = await StageExportedTreesAsync(gate.StaleBindings).ConfigureAwait(true);
             _logger.Info(LogCategory.Git,
                 $"staged {staged} export path(s) before committing");
