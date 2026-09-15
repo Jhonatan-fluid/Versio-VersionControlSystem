@@ -252,6 +252,12 @@ do not register them. An ignore glob or a template project can be left out.
 - **Baseline** moves on push or discard. Answers: "is there work that has not been
   released?"
 
+**A push moves Baseline only.** Until 2026-09-14 it rewrote `LastSynced` too, recording the
+project's current hash as exported — so a save no export had run for (the IDE holding a
+directory project, a dropped event) was forgotten by the next push of anything. Discard and
+failure acknowledgement still reset `LastSynced`, to an empty project hash that forces the
+next event to export.
+
 Conflating those two was a real bug: an export either re-exported forever or dropped the
 lock that still guarded unpushed work.
 
@@ -946,6 +952,16 @@ sequenceDiagram
 **Commit gate** ([`CommitGate.cs`](../src/Versio.Core/Sync/CommitGate.cs)): if the project
 hash ≠ `LastSynced`, export and stage first. You cannot commit a project whose text
 disagrees with it.
+
+- A commit belongs to a project when it includes the pointer, a file in the mirror, or —
+  for a directory project — a file in the payload folder (`System/PEData.plf`). Before
+  2026-09-14 only the first two counted, so a commit of the program store alone skipped the
+  export.
+- **A wait is not an export.** If the export before the commit does not complete — the IDE
+  holds a directory project (`BlockedByOpenProject`), the direction lock refuses — the commit
+  is refused with that sentence (`CommitGate.StillStaleAfterExport`). Before 2026-09-14 only a
+  *failed* export stopped it, and a TIA Portal project open all day committed its old mirror.
+  Untick that project's files to commit the rest.
 
 Pull is `git pull --ff-only`. A named merge that touches a tracked project or mirror uses
 `MergePreflight` and then requires import (the merge made the text authoritative).

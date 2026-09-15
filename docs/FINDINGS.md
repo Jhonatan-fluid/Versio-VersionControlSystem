@@ -19,6 +19,63 @@ produce a diff touching everything else.
 
 ---
 
+### With TIA Portal open, a commit recorded a stale mirror and a push erased the export debt
+
+**Found 2026-09-14**, double-checking the LFS fix below and answering *"is there no way to
+push while TIA is open — do I really have to close it first?"* Three defects, each read out of
+the code, then reproduced by a test that fails against the old code.
+
+1. **A commit went through with a stale mirror.** The commit gate saw a changed project and
+   asked for an export. With the Portal window holding the project, that export refuses as
+   `BlockedByOpenProject` — a directory project cannot be exported from a copy
+   (`ExportHeldViaCopy` is false) — and that verdict is *deliberately* a wait rather than a
+   failure, so it neither fails the binding nor feeds the breaker. `CommitAsync` stopped only
+   on `IsFailure`, so it staged the old mirror beside the new project and said "Committed."
+   **Reproduced end to end:** with the new refusal disabled, the App test's HEAD moved
+   (`3cb87ec` → `5b314d7`). **Fix:** `CommitGate.StillStaleAfterExport` — only `Completed` and
+   `NoChange` leave a stale binding safe to commit; any other verdict, or no outcome at all,
+   refuses with the export's own sentence.
+2. **A push erased the export debt.** `ApplyAsync` recorded the project's and the mirror's
+   *current* hashes as `LastSynced` on every release to Clean, push included — the value the
+   hash gate and the commit gate read as "the mirror reflects this". `dev.md` already said it
+   moves on export or import only. So: save in Portal while it holds the project, push anything,
+   close Portal — the retry answered `NoChange`, the gate said up to date, and the mirror stayed
+   stale until the project changed again. The same held for a mirror edit pushed before its
+   import. **Fix:** a push moves `Baseline` only. Discard and failure acknowledgement are
+   unchanged: they pass an empty project hash, which forces the next event to export.
+3. **The gate did not recognise the program store.** `CommitGate.Owns` matched the pointer
+   exactly and the mirror by prefix, so a commit of only `System/PEData.plf` was "no tracked
+   project is part of this commit" and skipped the export. Whether Portal rewrites the `.apXX`
+   on every save is unmeasured — the fixture's history is one commit — so how often this was
+   reachable is unknown; the fix does not depend on it. **Fix:** `BindingFreshness.PayloadPath`,
+   filled from `PayloadPathFor`, empty for a file project, the repository root, or a folder
+   outside it.
+
+**What working with Portal open now looks like.** Pushing commits already made works — a push
+never touches the project. Committing PLC changes is refused with a sentence naming what to
+close; close the *project*, not Portal (the marker follows the project, TIA `DRIVING.md` §5).
+Committing unrelated files works — untick the project's files.
+
+**Mutation checks.** Refusal disabled in the commit flow → the App test red (the HEAD move
+above). The push condition removed → both push tests red, while "a push after a real export
+leaves nothing owed" stays green, so the fix does not turn every push into a re-export.
+Payload folder emptied at the orchestrator → the orchestrator-level gate test red, the pure
+gate tests green.
+
+**Rejected:** re-evaluating the gate after the export to decide the commit. It would hash a
+half-gigabyte TIA tree a second time per commit to learn what the outcomes already say, and a
+partial read of a file Portal holds open would make the answer depend on timing.
+
+**Not done:** exporting *without* closing, by attaching to the running Portal — unmeasured, needs
+the Siemens machine, and an attached export reads unsaved in-memory edits, so it would have to
+refuse or ask to save while the project `IsModified`. Also unmeasured: whether git can read
+`PEData.plf` while the Portal window holds it. And the LFS entry below has a measured side
+effect not yet surfaced in the app: in a repository adopted before those rules, adding them
+makes git report every already-committed store file as modified until the next commit
+converts them to pointers (history keeps the full blobs).
+
+---
+
 ### A TIA project's program store went into git outside LFS, and this repository's own TIA rules resolved wrong
 
 **Found 2026-09-14 answering a question** — how Versio tracks an `.ap20`, and whether the

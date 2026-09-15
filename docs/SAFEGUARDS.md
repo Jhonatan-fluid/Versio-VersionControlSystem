@@ -752,7 +752,9 @@ flagged: a pull that stages the mirror afterwards is two nested writes.
 
 Suppressing is only half. `AdoptExternalStateAsync` then takes the state git left as the truth
 without running anything — the project and mirror both came from the same commit and agree with
-each other, because the commit gate refuses to record one without the other. Without it the engine
+each other, because the commit gate refuses to record one without the other (for a directory
+project its IDE holds open, only since 2026-09-14 — until then a refused export let the commit
+through; FINDINGS). Without it the engine
 keeps measuring against the previous commit's hashes and exports on the next real save for a change
 nobody made. **Bindings holding a lock are refused**, not adopted: unsynced work is something the
 new commit does not contain, and the guard above the UI already prevents the checkout — which is

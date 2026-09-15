@@ -312,6 +312,25 @@ reporter appeared afterwards) — yet it still deleted the marker on the way out
 kill (`/F`) is the case that would leave the marker behind, and a leftover reads Held
 until cleared, which is the safe side.
 
+### Committing and pushing while Portal is open (2026-09-14)
+
+Versio exports by opening the project in its own headless Portal, and `Projects.Open` needs
+the project to itself. So while the Portal window holds it:
+
+| You want to | While the project is open |
+|---|---|
+| Push commits already made | **Works.** A push never touches the project. It no longer marks a save the mirror never caught as exported |
+| Commit PLC changes | **Refused, with a sentence naming what to close.** The mirror cannot be brought up to date, and committing the program beside an old export is what the commit gate exists to stop. Close the **project** — Portal itself can stay running, the marker follows the project |
+| Commit unrelated files | **Works** — untick the project's files (pointer, program store, mirror) |
+
+Until 2026-09-14 the commit went through with the stale mirror, a push erased the export
+debt, and a commit of only `System/` skipped the gate — FINDINGS 2026-09-14.
+
+Exporting *without* closing would mean attaching to the running Portal (§4.1: "a different
+design, not used"). Unmeasured: Portal asks the engineer to allow the access, and an attached
+export reads unsaved in-memory edits, so it would have to refuse — or ask to save — while the
+project `IsModified`.
+
 Closed, top-level names: `.ap21`, `System/`, `IM/`, `Logs/`, `tmp/`, `Vci/`, `XRef/`,
 `AdditionalFiles/`, `UserFiles/`, `src/`, `ProjectInfo.txt`. `System/` then is `PEData.idx`
 and `PEData.plf` only.
