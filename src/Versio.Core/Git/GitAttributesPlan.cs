@@ -7,6 +7,16 @@ public readonly record struct GitAttributesPlan(
     IReadOnlyList<string> AddedPatterns,
     bool UsesLfs)
 {
+    /// <summary>
+    /// Binary patterns that were asked for and deliberately not written, because each would
+    /// also have covered a mirror.
+    /// </summary>
+    /// <remarks>
+    /// Reported rather than dropped quietly: a folder left without its binary rule is a folder
+    /// git will store as text, and the caller says so in the log.
+    /// </remarks>
+    public IReadOnlyList<string> Withheld { get; init; } = [];
+
     public static GitAttributesPlan NoChange(string content) =>
         new(false, content, [], false);
 }
@@ -79,20 +89,43 @@ public static class GitAttributes
         IReadOnlyList<string>? mirrors = null)
     {
         var covered = ExistingPatterns(existing);
-        var missing = patterns
+
+        var mirrorRoots = (mirrors ?? [])
+            .Select(m => m.Replace('\\', '/').TrimEnd('/'))
+            .Where(m => m.Length > 0)
+            .ToList();
+
+        var candidates = patterns
             .Where(p => !covered.Contains(p))
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToList();
 
-        var missingMirrors = (mirrors ?? [])
-            .Select(m => m.Replace('\\', '/').TrimEnd('/') + "/**")
+        // NEVER A BINARY RULE OVER A MIRROR.
+        //
+        // A directory project keeps its mirror inside its own folder, so a folder-scoped
+        // binary rule can reach the export - and later attributes win, so appending one after
+        // the mirror's text rule silently undoes it. Measured on this repository's own TIA
+        // fixture, where a hand-written folder rule did exactly that: every mirror file
+        // resolved to diff unset and printed "Binary files differ". Withheld rather than
+        // written-and-overridden, because the planner never rewrites a line somebody already
+        // has, so it cannot guarantee its override would land after theirs.
+        var withheld = candidates
+            .Where(p => mirrorRoots.Any(m => CoversDirectory(p, m)))
+            .ToList();
+
+        var missing = candidates
+            .Where(p => !withheld.Contains(p, StringComparer.OrdinalIgnoreCase))
+            .ToList();
+
+        var missingMirrors = mirrorRoots
+            .Select(m => m + "/**")
             .Where(p => !covered.Contains(p))
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToList();
 
         if (missing.Count == 0 && missingMirrors.Count == 0)
         {
-            return GitAttributesPlan.NoChange(existing);
+            return GitAttributesPlan.NoChange(existing) with { Withheld = withheld };
         }
 
         var width = missing.Concat(missingMirrors).Max(p => p.Length);
@@ -168,7 +201,32 @@ public static class GitAttributes
         }
 
         return new GitAttributesPlan(
-            true, builder.ToString(), [.. missing, .. missingMirrors], lfsAvailable);
+            true, builder.ToString(), [.. missing, .. missingMirrors], lfsAvailable)
+        {
+            Withheld = withheld,
+        };
+    }
+
+    /// <summary>
+    /// True when a <c>dir/**</c> pattern reaches <paramref name="directory"/> or anything in it.
+    /// </summary>
+    /// <remarks>
+    /// Only the <c>/**</c> shape is judged, because it is the only shape a folder-scoped rule
+    /// takes and the only one that can swallow a whole mirror; an extension pattern such as
+    /// <c>*.project</c> never names an export directory. Case-insensitive, which withholds more
+    /// on a case-sensitive filesystem rather than less — the side that keeps the mirror text.
+    /// </remarks>
+    private static bool CoversDirectory(string pattern, string directory)
+    {
+        if (!pattern.EndsWith("/**", StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        var root = pattern[..^3].TrimStart('/');
+        return root.Length == 0
+               || string.Equals(directory, root, StringComparison.OrdinalIgnoreCase)
+               || directory.StartsWith(root + "/", StringComparison.OrdinalIgnoreCase);
     }
 
     /// <summary>

@@ -139,6 +139,29 @@ public interface IPlcProjectFormat
     /// </remarks>
     IReadOnlyList<string> TransientPatternsFor(string projectPath);
 
+    /// <summary>
+    /// Globs for the toolchain's own binary files beside the project pointer, which git must
+    /// store as binary — and through LFS where it can — rather than as text.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Default is none, which is right for a vendor whose project is one file: that file is
+    /// already covered by <see cref="ProjectExtensions"/>. A directory project is not. A TIA
+    /// Portal <c>.apXX</c> is a 150 KB pointer and the program is hundreds of megabytes in
+    /// folders beside it, so a repository whose only rule was <c>*.ap20</c> committed the
+    /// program as ordinary git blobs.
+    /// </para>
+    /// <para>
+    /// <b>Scoped to this project, never a bare extension</b> — the bargain
+    /// <see cref="TransientPatternsFor"/> already makes. <c>plc/Station/XRef/**</c>, not
+    /// <c>*.db</c>: marking every <c>.db</c> or <c>.idx</c> in somebody's repository binary on
+    /// the strength of one adopted project is not Versio's decision. Repo-relative, forward
+    /// slashes, each ending <c>/**</c>. The planner withholds any pattern that would also cover
+    /// a mirror, so a format need not know where the user put its export.
+    /// </para>
+    /// </remarks>
+    IReadOnlyList<string> BinaryPayloadPatternsFor(string projectPath) => [];
+
     /// <summary>Read a marker's contents. Never throws; unreadable means held.</summary>
     /// <remarks>
     /// Returns <see cref="OccupancyVerdict.Held"/> or <see cref="OccupancyVerdict.Free"/> only.

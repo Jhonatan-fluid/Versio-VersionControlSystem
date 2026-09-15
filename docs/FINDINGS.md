@@ -19,6 +19,66 @@ produce a diff touching everything else.
 
 ---
 
+### A TIA project's program store went into git outside LFS, and this repository's own TIA rules resolved wrong
+
+**Found 2026-09-14 answering a question** — how Versio tracks an `.ap20`, and whether the
+`.plf` files are what changes.
+
+**The gap.** A TIA Portal `.apXX` is a ~150 KB pointer; the program is `System/PEData.plf`
+(~445 MB on the gate fixture) and the store beside it. Adoption's `.gitattributes` step wrote
+one rule per registered extension — `*.ap17` … `*.al21` — which protected the pointer and
+nothing else. An adopted TIA repository would commit `PEData.plf` as an ordinary git blob;
+the commit's large-file check would ask first, which is a backstop, not a rule. This
+repository never showed the gap, because its TIA rules were written by hand.
+
+**The hand-written rules were wrong as well, and only `git check-attr` said so:**
+
+1. `merge: lfs` on the `.ap21`, `PEData.plf` and everything under `IM/` — `merge=lfs` after
+   `-merge`, the defect `GitAttributesPlan` already documents: git-lfs installs no such
+   driver, so git would text-merge the LFS pointer.
+2. `diff: unset` on every mirror file. The folder-wide LFS rule was undone for the mirror
+   with `-diff -merge`, and `-diff` means binary-for-diffing: `git log -p` on an exported
+   `.scl` printed `Binary files differ`.
+
+Both fixed in their own commit with `!diff !merge`, checked with `check-attr` and
+`git log -p` before and after, and `git status` showing no fixture file disturbed.
+
+**The fix.** `IPlcProjectFormat.BinaryPayloadPatternsFor(projectPath)`, default none. TIA
+answers one scoped rule per program-store folder — `System/**`, `IM/**`, `XRef/**`,
+`AdditionalFiles/**`, `UserFiles/**` — listed from `git ls-files` over the fixture rather
+than from memory. `RepoSetup` writes them at adoption and `TopUpRepositoryRulesAsync` on
+every open, so repositories adopted before the rule get it. The planner **withholds** any
+folder rule that would reach a mirror, and `RepoSetup` logs the withheld ones as a warning.
+
+**Rejected:**
+
+- *The whole project folder* (`plc/Station/**`). The mirror lives inside it, so the
+  reviewable export would become binary — defect 2 above, generalised — and a project at
+  the repository root would turn the rule into `**`.
+- *Global extensions* (`*.plf`, `*.idx`, `*.db`). Repository-wide on the strength of one
+  project, the overreach `TransientPatternsFor` already refuses; and the store is not only
+  `.plf` and `.idx` — `XRef/` is a `.db`, `IM/` a dozen index extensions.
+- *Treating an existing `dir/**` rule as covering `dir/System/**`.* That would suppress the
+  protective rule underneath somebody's `plc/** text eol=lf` and leave a binary as text.
+  Instead this repository carries the five rules literally, so opening Versio on it
+  appends nothing.
+
+**The double pass, by mutation.** Removing the project path from the *adoption* call left the
+shell-level test green: the open-time top-up runs straight after adoption and wrote the same
+rules, so nothing was watching adoption. A direct `RepoSetup.AdoptAsync` test was added. Then
+with the adoption path, the top-up path and the withhold guard each disabled, the adoption
+test, the top-up test and all three withheld tests went red.
+
+**Not done, on purpose:** `src/` is among Portal's top-level names but carries nothing in the
+fixture, so it is not claimed. A folder a later Portal version adds is not covered. TwinCAT
+keeps the default: its format calls `.TcPOU` and `.plcproj` the program, and its fixture
+commits them without LFS. **Noticed, not fixed:** for a project at the repository root,
+`TransientPatternsFor` builds from `PayloadPathFor`, which at the root answers with the
+pointer file itself, giving `Station.ap21/Logs/`. The new method computes the folder directly
+and does not share it.
+
+---
+
 ### The refresh gate did not stop the auto-stash flake: the guard still did not wait
 
 **Found 2026-08-27**, after the 2026-08-26 gate: a full `Versio.App.Tests` run failed two

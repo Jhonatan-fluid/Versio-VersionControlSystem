@@ -200,4 +200,88 @@ public sealed class GitAttributesTests
 
         Assert.Contains("plc/Machine/**", plan.Content, StringComparison.Ordinal);
     }
+
+    // ------------------------------------------------ a directory project's binary store
+
+    /// <summary>The first token of every rule line - what git reads as the pattern.</summary>
+    private static List<string> RulePatterns(string content) =>
+        [.. content.Split('\n')
+                   .Select(l => l.Trim())
+                   .Where(l => l.Length > 0 && l[0] != '#')
+                   .Select(l => l.Split(' ')[0])];
+
+    [Fact]
+    public void A_folder_rule_that_would_cover_a_mirror_is_withheld_and_reported()
+    {
+        // A directory project keeps its mirror inside its own folder. A binary rule over that
+        // folder makes the reviewable export undiffable - measured on this repository's own
+        // TIA fixture, where a hand-written folder rule did exactly that and every mirror file
+        // printed "Binary files differ". The store folder beside the mirror is still written.
+        var plan = GitAttributes.Plan(
+            string.Empty,
+            ["plc/Station/System/**", "plc/Station/**"],
+            lfsAvailable: true,
+            mirrors: ["plc/Station/Station"]);
+
+        Assert.Equal(["plc/Station/**"], plan.Withheld);
+        Assert.Contains("plc/Station/System/**", plan.AddedPatterns);
+        Assert.DoesNotContain("plc/Station/**", RulePatterns(plan.Content));
+        Assert.DoesNotContain("plc/Station/**", plan.AddedPatterns);
+    }
+
+    [Fact]
+    public void A_store_folder_named_exactly_like_the_mirror_is_withheld()
+    {
+        // The collision a fixed folder list can still hit: a project whose stem is one of
+        // the store's own folder names exports into that folder.
+        var plan = GitAttributes.Plan(
+            string.Empty, ["plc/System/**"], lfsAvailable: false, mirrors: ["plc/System"]);
+
+        Assert.Equal(["plc/System/**"], plan.Withheld);
+        Assert.Equal(["plc/System/**"], plan.AddedPatterns);
+        Assert.Contains("text eol=lf", plan.Content, StringComparison.Ordinal);
+        Assert.DoesNotContain("binary", plan.Content, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void A_withheld_rule_is_reported_even_when_nothing_else_changes()
+    {
+        // Otherwise a repository that is already otherwise covered would log nothing about
+        // the folder it is leaving as text - on every open, silently.
+        const string existing = "*.ap21 binary -diff -merge\nStation/Station/** text eol=lf\n";
+
+        var plan = GitAttributes.Plan(
+            existing, ["*.ap21", "Station/**"], lfsAvailable: false,
+            mirrors: ["Station/Station"]);
+
+        Assert.False(plan.ChangeNeeded);
+        Assert.Equal(existing, plan.Content);
+        Assert.Equal(["Station/**"], plan.Withheld);
+    }
+
+    [Fact]
+    public void An_extension_rule_is_never_withheld()
+    {
+        // Only a folder-shaped rule can swallow an export directory. Withholding *.project
+        // because a mirror exists would undo the protection this planner was written for.
+        var plan = GitAttributes.Plan(
+            string.Empty, ["*.project"], lfsAvailable: false, mirrors: ["plc/Machine"]);
+
+        Assert.Empty(plan.Withheld);
+        Assert.Contains("*.project", plan.AddedPatterns);
+    }
+
+    [Fact]
+    public void A_rule_somebody_already_wrote_over_the_mirror_is_theirs_and_not_reported()
+    {
+        // Withholding judges what this planner would add. A line already in the file is left
+        // exactly as it is, by the rule every other test here pins.
+        const string existing = "plc/Station/** binary\n";
+
+        var plan = GitAttributes.Plan(
+            existing, ["plc/Station/**"], lfsAvailable: false, mirrors: ["plc/Station/Station"]);
+
+        Assert.Empty(plan.Withheld);
+        Assert.StartsWith(existing, plan.Content, StringComparison.Ordinal);
+    }
 }

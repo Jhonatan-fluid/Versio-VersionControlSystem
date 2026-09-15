@@ -206,7 +206,7 @@ Versio.sln
 ├─ tests/
 │  ├─ Versio.TestSupport/       not a test project: the three helpers more than one suite
 │  │                            needs (TestPaths, TestLogger, VendorSeamScanner)
-│  ├─ Versio.Core.Tests/        1,488 unit tests — pure, no IO, under a second
+│  ├─ Versio.Core.Tests/        1,493 unit tests — pure, no IO, under a second
 │  ├─ Versio.Integration.Tests/ 163 tests against real git and the real filesystem, ~10 s.
 │  │                            NO CODESYS: that is a different project now, so this one
 │  │                            needs no filter and cannot accidentally cost half an hour
@@ -393,13 +393,13 @@ dotnet test tests/Versio.Core.Tests
 
 | Suite | Tests | Needs | Runs in |
 |---|---|---|---|
-| `Versio.Core.Tests` | 1,488 | nothing — pure, no IO, no clock, no UI | ~0.3 s |
+| `Versio.Core.Tests` | 1,493 | nothing — pure, no IO, no clock, no UI | ~0.3 s |
 | `Versio.Integration.Tests` | 163 | a real `git.exe` and the real filesystem | ~10 s |
 | `Versio.Arch.Tests` | 27 | nothing — it reads assembly metadata, IL, and the project files | instant |
-| `Versio.App.Tests` | 676 | Windows (WPF). Builds the real dialogs against the real stylesheet on an STA thread; **no window is ever shown** | ~50 s |
+| `Versio.App.Tests` | 679 | Windows (WPF). Builds the real dialogs against the real stylesheet on an STA thread; **no window is ever shown** | ~50 s |
 | `Versio.Plc.Codesys.Pure.Tests` | 263 | nothing — the vendor's planner, codecs and protocol, pure | under a second |
 | `Versio.Plc.Codesys.Parity.Tests` | 97 | `python` on PATH, no CODESYS — **skips cleanly without python, so check the count** | ~15 s |
-| `Versio.Plc.TiaPortal.Pure.Tests` | 41 | nothing — format, planner, protocol, scrubber, member table | instant |
+| `Versio.Plc.TiaPortal.Pure.Tests` | 43 | nothing — format, planner, protocol, scrubber, member table | instant |
 | `Versio.Plc.TiaPortal.Tests` | 5 | **a real TIA Portal**; skips cleanly without Openness membership | seconds when skipped |
 | `Versio.Plc.TwinCat.Pure.Tests` | 21 | nothing — the vendor's planner, format and protocol, pure | instant |
 | `Versio.Plc.TwinCat.Tests` | 6 | **a real TwinCAT XAE**; skips cleanly without `TcXaeShell.DTE.17.0` | seconds when skipped; ~5 min when XAE runs the import gate |

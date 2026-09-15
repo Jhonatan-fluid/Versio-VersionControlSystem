@@ -53,6 +53,46 @@ public sealed class TiaPortalFormatTests
         // vendor's sidecar trick; this format refuses it so Sync waits both ways.
         Assert.False(TiaPortalProjectFormat.Instance.Capabilities.ExportHeldViaCopy);
     }
+
+    [Fact]
+    public void The_binary_store_is_named_folder_by_folder_and_never_reaches_the_mirror()
+    {
+        // The .ap21 extension rule protects a 150 KB pointer. The program is System/PEData.plf
+        // beside it, and adoption used to write nothing for it. Each folder here is one the
+        // gate fixture actually commits.
+        var format = TiaPortalProjectFormat.Instance;
+        var patterns = format.BinaryPayloadPatternsFor(@"plc\Station\Station.ap21");
+
+        Assert.Equal(
+            ["plc/Station/System/**", "plc/Station/IM/**", "plc/Station/XRef/**",
+             "plc/Station/AdditionalFiles/**", "plc/Station/UserFiles/**"],
+            patterns);
+
+        // Not the whole folder: the mirror lives inside it, and a rule over plc/Station/**
+        // would make the reviewable export binary.
+        var mirror = format.ConventionalExportPath("plc/Station/Station.ap21");
+        Assert.DoesNotContain(patterns, p =>
+            mirror.Equals(p[..^3], StringComparison.OrdinalIgnoreCase)
+            || mirror.StartsWith(p[..^3] + "/", StringComparison.OrdinalIgnoreCase));
+
+        // Scratch is ignored rather than stored, so it gets no storage rule.
+        Assert.DoesNotContain(patterns, p =>
+            p.Contains("/Logs/", StringComparison.OrdinalIgnoreCase)
+            || p.Contains("/tmp/", StringComparison.OrdinalIgnoreCase)
+            || p.Contains("/Vci/", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public void A_project_at_the_repository_root_names_root_folders_not_the_pointer()
+    {
+        // PayloadPathFor answers with the pointer file itself at the root, which would have
+        // produced "Station.ap21/System/**" - a pattern that names nothing.
+        var patterns = TiaPortalProjectFormat.Instance.BinaryPayloadPatternsFor("Station.ap21");
+
+        Assert.Contains("System/**", patterns);
+        Assert.DoesNotContain(patterns, p => p.StartsWith("Station.ap21", StringComparison.OrdinalIgnoreCase));
+        Assert.DoesNotContain(patterns, p => p is "**" or "/**");
+    }
 }
 
 public sealed class TiaPortalSclHeaderTests

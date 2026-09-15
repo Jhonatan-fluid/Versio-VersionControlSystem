@@ -399,7 +399,19 @@ fixtures/projects/CleaningStation_V20_V21/CleaningStation_V20_V21/
 ```
 
 `Logs/`, `tmp/`, `Vci/` are not in the tree. `.gitattributes` sends the payload through LFS
-and keeps the mirror as text.
+and keeps the mirror as text — with `!diff !merge` on the mirror line, not `-diff -merge`,
+which made every exported `.scl` diff as binary until 2026-09-14, and with no `merge=lfs`
+anywhere, because it overrode `-merge` on the binaries.
+
+**What adoption writes for any TIA project (2026-09-14).** The `*.apXX` extension rule
+covers only the 150 KB pointer. `BinaryPayloadPatternsFor` adds one binary/LFS rule per
+program-store folder, scoped to that project: `System/**` (`PEData.plf`, `PEData.idx`),
+`IM/**`, `XRef/**`, `AdditionalFiles/**`, `UserFiles/**` — the folders this fixture actually
+commits. Not the whole project folder, because the mirror lives inside it; the planner
+withholds any rule that would reach a mirror, and logs it. The open-time top-up writes the
+same rules into repositories adopted before they existed. `src/` is not claimed (never seen
+with content), and a folder a later Portal version adds is left to the commit's large-file
+check.
 
 `ProjectInfo.txt`: TIA V21.0, STEP 7 Professional V21. Upgraded V20→V21 on 2026-08-19.
 HMI (`HMI_RT`) and MTP Creator exports are coverage skips.

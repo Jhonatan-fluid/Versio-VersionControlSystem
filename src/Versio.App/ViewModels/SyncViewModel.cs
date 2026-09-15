@@ -2965,9 +2965,10 @@ public sealed class SyncViewModel : ObservableObject
     /// Adoption writes the <c>.gitignore</c> and <c>.gitattributes</c> rules once, when a
     /// project is first tracked, and <see cref="AutoAdoptAsync"/> skips a project that is
     /// already bound. So <b>a rule added to Versio after a repository was adopted never
-    /// reaches it.</b> Three have been added in the time this repository has existed: the
-    /// mirror's <c>text eol=lf</c>, and the staging and trash directories an export swaps
-    /// through — and the repository that found the first of them was one adopted last week.
+    /// reaches it.</b> Four have been added in the time this repository has existed: the
+    /// mirror's <c>text eol=lf</c>, the staging and trash directories an export swaps
+    /// through, and a directory project's binary store beside its pointer — and the
+    /// repository that found the first of them was one adopted last week.
     /// </para>
     /// <para>
     /// Both planners already leave an existing rule alone and report no change when
@@ -2983,16 +2984,20 @@ public sealed class SyncViewModel : ObservableObject
         }
 
         var setup = new RepoSetup(_repositoryRoot, format: null, _logger);
-        var mirrors = _config.Bindings
-            .Where(b => b.Enabled)
-            .Select(b => b.ExportPath)
-            .ToList();
+        var enabled = _config.Bindings.Where(b => b.Enabled).ToList();
+        var mirrors = enabled.Select(b => b.ExportPath).ToList();
+
+        // The projects too, not only their mirrors: a directory project's binary store is
+        // scoped to the project, so the rules cannot be written without knowing which
+        // projects are bound. Without this an already-adopted repository would never get
+        // them - the exact gap this method exists to close.
+        var projects = enabled.Select(b => b.ProjectPath).ToList();
 
         try
         {
-            await setup.EnsureGitAttributesAsync(_git, ct, mirrors).ConfigureAwait(true);
+            await setup.EnsureGitAttributesAsync(_git, ct, mirrors, projects).ConfigureAwait(true);
 
-            foreach (var binding in _config.Bindings.Where(b => b.Enabled))
+            foreach (var binding in enabled)
             {
                 await setup.EnsureGitIgnoreAsync(binding.ProjectPath, ct, binding.ExportPath)
                     .ConfigureAwait(true);

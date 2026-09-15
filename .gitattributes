@@ -80,6 +80,16 @@ fixtures/projects/CleaningStation_V20_V21/** filter=lfs diff=lfs -merge -text
 fixtures/projects/CleaningStation_V20_V21/ProjectInfo.txt text eol=lf -filter !diff !merge
 fixtures/projects/CleaningStation_V20_V21/CleaningStation_V20_V21/** -filter !diff !merge text eol=lf
 
+# Portal's program store, folder by folder - the rules adoption now writes for every
+# TIA project (TiaPortalProjectFormat.BinaryPayloadPatternsFor). The folder rule above
+# already covers them here; they are written out so opening Versio on this repository
+# finds them present and leaves the file alone, rather than appending a surprise diff.
+fixtures/projects/CleaningStation_V20_V21/System/**          binary -diff -merge filter=lfs diff=lfs
+fixtures/projects/CleaningStation_V20_V21/IM/**              binary -diff -merge filter=lfs diff=lfs
+fixtures/projects/CleaningStation_V20_V21/XRef/**            binary -diff -merge filter=lfs diff=lfs
+fixtures/projects/CleaningStation_V20_V21/AdditionalFiles/** binary -diff -merge filter=lfs diff=lfs
+fixtures/projects/CleaningStation_V20_V21/UserFiles/**       binary -diff -merge filter=lfs diff=lfs
+
 # Added by Versio: a PLC project is a binary compound document. Marking it
 # binary -diff -merge stops git from attempting a line merge and corrupting it.
 *.tsproj  binary -diff -merge filter=lfs diff=lfs

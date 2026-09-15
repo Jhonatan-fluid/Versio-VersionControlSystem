@@ -150,6 +150,53 @@ public sealed class TiaPortalProjectFormat : IPlcProjectFormat
         ];
     }
 
+    /// <summary>
+    /// The folders of Portal's own program store, scoped to this project.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Listed from what the gate fixture actually commits (<c>git ls-files</c> over
+    /// CleaningStation, 2026-09-14): <c>System/</c> is <c>PEData.plf</c> and
+    /// <c>PEData.idx</c>, the program itself at ~445 MB; <c>IM/</c> is a search index
+    /// (<c>.cfs</c>, <c>.tis</c>, <c>.fdt</c> …); <c>XRef/</c> is a <c>.db</c>;
+    /// <c>AdditionalFiles/</c> and <c>UserFiles/</c> hold archives, <c>.rtid</c> files and
+    /// Portal-written support files. Nothing in any of them is something a person line-merges.
+    /// </para>
+    /// <para>
+    /// <b>Named folders, not the whole directory.</b> The mirror lives inside the project
+    /// folder — <c>plc/Station/Station/</c> beside <c>plc/Station/System/</c> — so a
+    /// <c>plc/Station/**</c> rule would make the reviewable text binary, which is the one thing
+    /// the mirror exists to prevent; and for a project at the repository root that rule is
+    /// <c>**</c>. <c>ProjectInfo.txt</c> stays text by being left out. <c>Logs/</c>,
+    /// <c>tmp/</c> and <c>Vci/</c> are ignored rather than stored (see
+    /// <see cref="TransientPatternsFor"/>). <c>src/</c> is among the measured top-level names
+    /// but carries nothing in the fixture, so its contents were never seen and it is not
+    /// claimed. A folder a later Portal version adds is not covered here; the commit's
+    /// large-file check still asks before a big file lands outside LFS.
+    /// </para>
+    /// </remarks>
+    public IReadOnlyList<string> BinaryPayloadPatternsFor(string projectPath)
+    {
+        if (string.IsNullOrEmpty(projectPath))
+        {
+            return [];
+        }
+
+        // The pointer's own folder rather than PayloadPathFor: at the repository root that
+        // answers with the pointer file itself, and "Station.ap21/System/**" names nothing.
+        // GetDirectoryName hands back backslashes on Windows; git patterns never contain one.
+        var dir = (System.IO.Path.GetDirectoryName(projectPath.Replace('\\', '/')) ?? string.Empty)
+            .Replace('\\', '/')
+            .TrimEnd('/');
+        var prefix = dir.Length == 0 ? string.Empty : dir + "/";
+
+        return [.. ProgramStoreFolders.Select(folder => prefix + folder + "/**")];
+    }
+
+    /// <summary>Portal's binary store, top-level. See <see cref="BinaryPayloadPatternsFor"/>.</summary>
+    private static readonly string[] ProgramStoreFolders =
+        ["System", "IM", "XRef", "AdditionalFiles", "UserFiles"];
+
     /// <remarks>
     /// Existence is the signal. The <c>.info</c> body was not parsed: a crashed session
     /// leaving the file behind is still Held, because guessing Free from an unknown

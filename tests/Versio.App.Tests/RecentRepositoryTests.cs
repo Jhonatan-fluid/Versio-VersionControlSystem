@@ -392,6 +392,158 @@ public sealed class RecentRepositoryTests
         Assert.Equal(first, File.ReadAllBytes(attributes));
     }
 
+    [SkippableFact]
+    public async Task A_tia_program_store_goes_through_lfs_and_its_mirror_stays_text()
+    {
+        // Reported as a question, found as a gap: adoption wrote a rule for *.ap21 - the
+        // 150 KB pointer - and nothing for System/PEData.plf, the half-gigabyte program beside
+        // it, which a commit then stored as an ordinary git blob.
+        //
+        // Asked of real git rather than of the file's text, because what matters is what git
+        // resolves - and this repository's own hand-written TIA rules read correctly while
+        // resolving wrong (merge=lfs on the binaries, a mirror that diffed as binary).
+        Skip.IfNot(GitIsAvailable(), "git is not on PATH");
+
+        using var repo = new TempRepo();
+        Directory.CreateDirectory(PathIn(repo, "Station/System"));
+        File.WriteAllText(PathIn(repo, "Station/Station.ap21"), "pointer");
+        File.WriteAllText(PathIn(repo, "Station/System/PEData.plf"), "program");
+
+        using (var shell = Build(new MemoryStore()))
+        {
+            await shell.OpenAsync(repo.Path);
+        }
+
+        var store = CheckAttr(repo, "Station/System/PEData.plf");
+        Assert.Equal("unset", store["merge"]);
+        Assert.Equal("unset", store["text"]);
+        if (LfsIsAvailable())
+        {
+            Assert.Equal("lfs", store["filter"]);
+        }
+
+        // The mirror sits INSIDE the project folder. That is why the rules are per store
+        // folder: one rule over Station/** would have made this binary.
+        var mirror = CheckAttr(repo, "Station/Station/FB_Main.scl");
+        Assert.Equal("set", mirror["text"]);
+        Assert.Equal("unspecified", mirror["diff"]);
+        Assert.Equal("unspecified", mirror["merge"]);
+        Assert.Equal("unspecified", mirror["filter"]);
+    }
+
+    [SkippableFact]
+    public async Task A_tia_repository_adopted_before_the_store_rules_existed_gets_them_on_open()
+    {
+        // The top-up half. Adoption writes rules once and the scan skips a project that is
+        // already bound, so every TIA repository adopted before this rule would have kept
+        // committing PEData.plf outside LFS forever. The open-time top-up has to know the
+        // PROJECTS, not only their mirrors, because the store is scoped to the project.
+        Skip.IfNot(GitIsAvailable(), "git is not on PATH");
+
+        using var repo = new TempRepo();
+        Directory.CreateDirectory(PathIn(repo, "Station/System"));
+        File.WriteAllText(PathIn(repo, "Station/Station.ap21"), "pointer");
+        File.WriteAllText(PathIn(repo, "Station/System/PEData.plf"), "program");
+
+        using (var shell = Build(new MemoryStore()))
+        {
+            await shell.OpenAsync(repo.Path);
+        }
+
+        // Back to what an older Versio left: the extension rule and the mirror rule only.
+        var attributes = PathIn(repo, ".gitattributes");
+        File.WriteAllText(attributes,
+            "*.ap21 binary -diff -merge" + Environment.NewLine +
+            "Station/Station/** text eol=lf" + Environment.NewLine);
+
+        using (var shell = Build(new MemoryStore()))
+        {
+            await shell.OpenAsync(repo.Path);
+        }
+
+        var topped = File.ReadAllText(attributes);
+        Assert.Contains("Station/System/**", topped, StringComparison.Ordinal);
+        Assert.Contains("*.ap21 binary -diff -merge", topped, StringComparison.Ordinal);
+        Assert.Equal("unset", CheckAttr(repo, "Station/System/PEData.plf")["merge"]);
+    }
+
+    [SkippableFact]
+    public async Task Adopting_a_tia_project_writes_its_store_rules_itself()
+    {
+        // The adoption half, called directly - and it has to be. Removing the project path
+        // from AdoptAsync's attribute call left the shell-level test above green, because the
+        // open-time top-up runs straight after adoption and writes the same rules. So that
+        // test watches the top-up, and nothing watched adoption: the path every non-shell
+        // caller of RepoSetup takes.
+        Skip.IfNot(GitIsAvailable(), "git is not on PATH");
+
+        using var repo = new TempRepo();
+        Directory.CreateDirectory(PathIn(repo, "Station/System"));
+        File.WriteAllText(PathIn(repo, "Station/Station.ap21"), "pointer");
+
+        var setup = new Versio.Infrastructure.Bindings.RepoSetup(
+            repo.Path, Versio.Plc.TiaPortal.TiaPortalProjectFormat.Instance);
+        var result = await setup.AdoptAsync(
+            "Station/Station.ap21", git: null, profile: null, CancellationToken.None);
+
+        Assert.True(result.Adopted, result.Decision.Explanation);
+        Assert.Contains("Station/System/**", result.GitAttributePatterns);
+        Assert.Contains("Station/System/**",
+            File.ReadAllText(PathIn(repo, ".gitattributes")), StringComparison.Ordinal);
+        Assert.Equal("unset", CheckAttr(repo, "Station/System/PEData.plf")["merge"]);
+
+        // And the mirror is still text: adoption hands the planner the mirror it just chose.
+        Assert.Equal("set", CheckAttr(repo, "Station/Station/FB_Main.scl")["text"]);
+    }
+
+    /// <summary>What git resolves for one path: attribute name to its reported value.</summary>
+    private static Dictionary<string, string> CheckAttr(TempRepo repo, string path)
+    {
+        using var git = Process.Start(new ProcessStartInfo
+        {
+            FileName = "git",
+            Arguments = $"check-attr text diff merge filter -- \"{path}\"",
+            WorkingDirectory = repo.Path,
+            UseShellExecute = false,
+            CreateNoWindow = true,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+        });
+
+        var output = git!.StandardOutput.ReadToEnd();
+        git.WaitForExit();
+
+        // "Station/System/PEData.plf: merge: unset" - the value is after the last ": ".
+        return output
+            .Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Select(line => line.Split(": "))
+            .Where(parts => parts.Length >= 3)
+            .ToDictionary(parts => parts[^2], parts => parts[^1], StringComparer.Ordinal);
+    }
+
+    private static bool LfsIsAvailable()
+    {
+        try
+        {
+            using var git = Process.Start(new ProcessStartInfo
+            {
+                FileName = "git",
+                Arguments = "lfs version",
+                UseShellExecute = false,
+                CreateNoWindow = true,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+            });
+
+            git!.WaitForExit();
+            return git.ExitCode == 0;
+        }
+        catch (System.ComponentModel.Win32Exception)
+        {
+            return false;
+        }
+    }
+
     private static string PathIn(TempRepo repo, string name) =>
         System.IO.Path.Combine(repo.Path, name);
 

@@ -95,7 +95,7 @@ public sealed class RepoSetup(
         }
 
         var attributes = await EnsureGitAttributesAsync(
-            git, ct, [decision.Binding!.ExportPath]).ConfigureAwait(false);
+            git, ct, [decision.Binding!.ExportPath], [projectPath]).ConfigureAwait(false);
         var ignores = await EnsureGitIgnoreAsync(
             projectPath, ct, decision.Binding!.ExportPath).ConfigureAwait(false);
         var updated = await store.AddBindingAsync(decision.Binding!, ct).ConfigureAwait(false);
@@ -207,8 +207,14 @@ public sealed class RepoSetup(
     /// Export directories that need <c>text eol=lf</c>, so a clone with
     /// <c>core.autocrlf=true</c> lands the mirror byte-identical to what the exporter wrote.
     /// </param>
+    /// <param name="projects">
+    /// Repo-relative project paths whose binary store beside the pointer needs its own rules
+    /// — see <see cref="IPlcProjectFormat.BinaryPayloadPatternsFor"/>. Empty for a vendor whose
+    /// project is a single file.
+    /// </param>
     public async Task<GitAttributesPlan> EnsureGitAttributesAsync(
-        IGitClient? git, CancellationToken ct, IReadOnlyList<string>? mirrors = null)
+        IGitClient? git, CancellationToken ct, IReadOnlyList<string>? mirrors = null,
+        IReadOnlyList<string>? projects = null)
     {
         var existing = File.Exists(GitAttributesPath)
             ? await File.ReadAllTextAsync(GitAttributesPath, ct).ConfigureAwait(false)
@@ -221,8 +227,30 @@ public sealed class RepoSetup(
         // Every registered vendor's extensions, not just the one being adopted: the rules are
         // repository-wide, and writing them one vendor at a time would leave a TwinCAT project
         // line-mergeable until somebody happened to adopt one.
-        var patterns = PlcFormats.AllExtensions.Select(e => $"*{e}").ToList();
+        //
+        // Then each project's binary store, scoped to that project. The extension rule covers
+        // a file project completely and a directory project hardly at all: a TIA Portal
+        // repository whose only rule was *.ap20 protected the 150 KB pointer and committed the
+        // half-gigabyte System/PEData.plf beside it as an ordinary git blob. Resolved per
+        // path, the same way adoption resolves the vendor, so a mixed repository asks each
+        // project's own format.
+        var payload = (projects ?? [])
+            .SelectMany(p => (format ?? PlcFormats.ForPath(p))?.BinaryPayloadPatternsFor(p) ?? [])
+            .Select(p => p.Replace('\\', '/'));
+        var patterns = PlcFormats.AllExtensions.Select(e => $"*{e}").Concat(payload).ToList();
         var plan = GitAttributes.Plan(existing, patterns, lfs, mirrors);
+
+        if (plan.Withheld.Count > 0)
+        {
+            // Warn, because the consequence is a folder git stores as text. The alternative —
+            // a binary rule over the mirror — makes the reviewable export undiffable, which is
+            // worse, and the commit's large-file check still asks before a big file lands
+            // outside LFS.
+            _log.Warn(LogCategory.Git,
+                $"left {string.Join(", ", plan.Withheld)} without a binary rule: " +
+                "each would also cover a mirror, and a binary rule over the mirror makes " +
+                "the export undiffable");
+        }
 
         if (plan.ChangeNeeded)
         {

@@ -1,6 +1,6 @@
 # Versio — status and what is next
 
-**Date:** 2026-08-27 · **This is the live page.** Where the project is, and what is next, live
+**Date:** 2026-09-14 · **This is the live page.** Where the project is, and what is next, live
 here and only here. Search [`FINDINGS.md`](FINDINGS.md) for defects. Completed plans and session
 handoffs are records in [`phase1/`](phase1/) and [`archive/`](archive/) — read them for why,
 never for state.
@@ -15,7 +15,9 @@ UX remainder) is built and tested as of 2026-08-25** — UX-6 find boxes, UX-7 `
 Escape, UX-8 copy-a-commit, UX-12 amend-while-unpushed — and its visual half joins the
 eyeball list in item 2. Do not start from `archive/` or a handoff.
 
-**Tests:** 2,842 across eleven projects, last counted 2026-08-27 (Core 1,488, App 676:
+**Tests:** 2,852 across eleven projects, last counted 2026-09-14 (Core 1,493, App 679,
+TIA Pure 43: a TIA project's program store now gets LFS rules at adoption and on open,
+not only its pointer — FINDINGS 2026-09-14. Earlier:
 a guarded merge or rebase now asks in its own verb — `GuardIntent.Merge` / `Rebase`
 closed the known gap where all three bring-commits-in verbs said "pull"). **The
 auto-stash suite flake had a second hole, closed 2026-08-27**: the 2026-08-26 gate
@@ -47,13 +49,13 @@ marking, duplicate-param keys, and the detail-pane lookup. All of them are in
 
 | Project | Tests | Time | Needs |
 |---|---|---|---|
-| `Versio.Core.Tests` | 1,488 | under a second | nothing |
+| `Versio.Core.Tests` | 1,493 | under a second | nothing |
 | `Versio.Integration.Tests` | 163 | ~10 s | real git |
-| `Versio.App.Tests` | 676 | ~50 s | nothing |
+| `Versio.App.Tests` | 679 | ~50 s | nothing |
 | `Versio.Arch.Tests` | 27 | instant | nothing |
 | `Versio.Plc.Codesys.Pure.Tests` | 263 | under a second | nothing |
 | `Versio.Plc.Codesys.Parity.Tests` | 97 | ~15 s | `python` on PATH — skips cleanly without it, so check the count |
-| `Versio.Plc.TiaPortal.Pure.Tests` | 41 | instant | nothing |
+| `Versio.Plc.TiaPortal.Pure.Tests` | 43 | instant | nothing |
 | `Versio.Plc.TiaPortal.Tests` | 5 | seconds when skipped; minutes when Portal runs the import gate | **real TIA Portal** — skips without Openness membership or LFS content |
 | `Versio.Plc.TwinCat.Pure.Tests` | 21 | instant | nothing |
 | `Versio.Plc.TwinCat.Tests` | 6 | seconds when skipped; ~5 min when XAE runs the import gate | **real TwinCAT XAE** — skips without `TcXaeShell.DTE.17.0` or the fixture |
