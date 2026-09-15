@@ -142,6 +142,26 @@ public sealed class TreePayloadTests
         Assert.False(h.Fs.DirectoryExists(Path.Combine(Root, "plc", "A.project")));
     }
 
+    [Fact]
+    public async Task The_commit_gate_owns_the_program_under_the_pointer()
+    {
+        // The orchestrator has to hand the gate the payload folder. Without it a commit that
+        // records only the program store - not the pointer, not the mirror - is "no tracked
+        // project is part of this commit", and the program lands beside a stale export.
+        var h = Harness.Create();
+        h.WritePayload("System/program.bin", "the program");
+        h.Runner.EnqueueSuccess("plc/plant-export/Main.scl");
+        Assert.Equal(SyncVerdict.Completed, (await h.ProjectChanged()).Verdict);
+
+        h.WritePayload("System/program.bin", "saved again, not exported");
+
+        var gate = await h.Orchestrator.EvaluateCommitGateAsync(
+            ["plc/plant/System/program.bin"], CancellationToken.None);
+
+        Assert.Equal(GateDecision.ExportRequired, gate.Decision);
+        Assert.Equal([BindingId], gate.StaleBindings);
+    }
+
     /// <summary>A format whose project is the directory containing the pointer file.</summary>
     private sealed class TreeFormat : IPlcProjectFormat
     {

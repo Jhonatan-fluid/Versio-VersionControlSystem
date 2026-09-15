@@ -62,6 +62,18 @@ public sealed record BindingFreshness
     /// <summary>Repo-relative export tree. Empty in callers that have not scoped the gate yet.</summary>
     public string ExportPath { get; init; } = string.Empty;
 
+    /// <summary>
+    /// Repo-relative folder that <i>is</i> the project, for a vendor whose project is a
+    /// directory. Empty when the project is a single file.
+    /// </summary>
+    /// <remarks>
+    /// A TIA Portal <c>.apXX</c> is a pointer; the program is <c>System/PEData.plf</c> and the
+    /// store beside it. Without this, <see cref="CommitGate.Owns"/> matched the pointer and the
+    /// mirror only, so a commit of the program store alone — the files a Portal save actually
+    /// rewrites — was "no tracked project is part of this commit" and skipped the gate.
+    /// </remarks>
+    public string PayloadPath { get; init; } = string.Empty;
+
     /// <summary>What to call this project in a sentence. Binding id if nobody supplied a name.</summary>
     public string Name { get; init; } = string.Empty;
 }
@@ -205,24 +217,36 @@ public static class CommitGate
     }
 
     /// <summary>
-    /// Does this binding's project or mirror contain the given repo-relative path?
+    /// Does this binding's project, its payload folder, or its mirror contain the given
+    /// repo-relative path?
     /// </summary>
     /// <remarks>
-    /// The project is matched exactly and the mirror by prefix, in that order, and the prefix
+    /// <para>
+    /// The project is matched exactly and the mirror and payload by prefix, and every prefix
     /// carries its separator: <c>plc/A.project</c> sits beside <c>plc/A</c>, and a careless
-    /// prefix test would have the mirror claim the project. Same rule the orchestrator uses
-    /// when deciding whether a conflict belongs to a binding.
+    /// prefix test would have the mirror claim the project — or <c>plc/Station</c> claim
+    /// <c>plc/StationB</c>. Same rule the orchestrator uses when deciding whether a conflict
+    /// belongs to a binding.
+    /// </para>
+    /// <para>
+    /// <b>The payload folder is the program for a directory project.</b> Matching the pointer
+    /// alone let a commit of <c>System/PEData.plf</c> — what a TIA Portal save rewrites — through
+    /// the gate unexported. An empty payload is the file-project case and claims nothing.
+    /// </para>
     /// </remarks>
     public static bool Owns(BindingFreshness binding, string repoRelativePath)
     {
         var path = repoRelativePath.Replace('\\', '/');
         var project = binding.ProjectPath.Replace('\\', '/');
         var export = binding.ExportPath.Replace('\\', '/').TrimEnd('/');
+        var payload = binding.PayloadPath.Replace('\\', '/').TrimEnd('/');
 
         return (project.Length > 0
                 && string.Equals(path, project, StringComparison.OrdinalIgnoreCase))
             || (export.Length > 0
-                && path.StartsWith(export + "/", StringComparison.OrdinalIgnoreCase));
+                && path.StartsWith(export + "/", StringComparison.OrdinalIgnoreCase))
+            || (payload.Length > 0
+                && path.StartsWith(payload + "/", StringComparison.OrdinalIgnoreCase));
     }
 
     /// <summary>Convenience overload for the common single-binding case.</summary>

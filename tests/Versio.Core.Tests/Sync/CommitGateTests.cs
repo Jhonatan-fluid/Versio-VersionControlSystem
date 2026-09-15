@@ -215,6 +215,46 @@ public class CommitGateTests
     }
 
     [Fact]
+    public void A_file_inside_a_directory_projects_folder_counts_as_owned()
+    {
+        // A TIA Portal .apXX is a pointer; the program is System/PEData.plf beside it. Owns
+        // matched only the pointer and the mirror, so a commit of the program store alone -
+        // the file a Portal save actually rewrites - skipped the gate and recorded the program
+        // beside a mirror that did not describe it.
+        var binding = Tracked("tia", "plc/Station/Station.ap21", "plc/Station/Station")
+            with { PayloadPath = "plc/Station" };
+
+        Assert.True(CommitGate.Owns(binding, "plc/Station/System/PEData.plf"));
+
+        // A sibling folder that merely starts with the same name is somebody else's.
+        Assert.False(CommitGate.Owns(binding, "plc/StationB/System/PEData.plf"));
+        Assert.False(CommitGate.Owns(binding, "plc/Station.txt"));
+    }
+
+    [Fact]
+    public void A_file_project_has_no_folder_to_claim_files_by()
+    {
+        // Empty payload is the file-project case. It must not start owning everything under
+        // the repository root.
+        var binding = Tracked("plc", "plc/Machine.project", "plc/Machine");
+
+        Assert.False(CommitGate.Owns(binding, "plc/Other.project"));
+        Assert.False(CommitGate.Owns(binding, "docs/README.md"));
+    }
+
+    [Fact]
+    public void A_commit_of_only_the_program_store_still_exports_first()
+    {
+        var result = CommitGate.Evaluate(
+            [Tracked("tia", "plc/Station/Station.ap21", "plc/Station/Station", stale: true)
+                with { PayloadPath = "plc/Station" }],
+            includePaths: ["plc/Station/System/PEData.plf"]);
+
+        Assert.Equal(GateDecision.ExportRequired, result.Decision);
+        Assert.Equal(["tia"], result.StaleBindings);
+    }
+
+    [Fact]
     public void The_explanation_is_always_something_a_user_can_read()
     {
         foreach (var bindings in new[]

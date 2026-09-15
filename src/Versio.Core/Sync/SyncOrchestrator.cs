@@ -1840,6 +1840,7 @@ public sealed class SyncOrchestrator
                     binding.ProjectPath.Replace('/', Path.DirectorySeparatorChar)),
                 ProjectPath = binding.ProjectPath,
                 ExportPath = binding.ExportPath,
+                PayloadPath = PayloadFolderRelative(binding),
                 CurrentProjectHash = await ProjectHashAsync(binding, ct).ConfigureAwait(false),
                 ExportedProjectHash = _locks[binding.Id].LastSynced.ProjectHash,
                 Enabled = binding.Enabled,
@@ -1859,6 +1860,30 @@ public sealed class SyncOrchestrator
                 : $" [{string.Join(", ", result.StaleBindings)}]"));
 
         return result;
+    }
+
+    /// <summary>
+    /// The repo-relative folder a directory project lives in, or empty for a file project.
+    /// </summary>
+    /// <remarks>
+    /// Handed to the commit gate so a commit of the program store — not the pointer, not the
+    /// mirror — is still recognised as this project's. Empty rather than a path in three cases,
+    /// each of which would make the gate claim the wrong files: a file project, whose payload
+    /// is the project itself; a payload that is the repository root, which would own every
+    /// path; and one outside the root, which no repo-relative path can name.
+    /// </remarks>
+    private string PayloadFolderRelative(ProjectBinding binding)
+    {
+        var project = Absolute(binding.ProjectPath);
+        var payload = PayloadPath(binding);
+
+        if (string.Equals(payload, project, StringComparison.OrdinalIgnoreCase))
+        {
+            return string.Empty;
+        }
+
+        var relative = Relative(payload).TrimEnd('/');
+        return relative.Length == 0 || Path.IsPathRooted(relative) ? string.Empty : relative;
     }
 
     /// <summary>Run a blocking export for every stale binding, then re-check the gate.</summary>
