@@ -35,9 +35,9 @@
 # ---------------------------------------------------------------------------
 # Vendored dependencies (see docs/PLAN.md section 13.3)
 # ---------------------------------------------------------------------------
-third_party/**/*.nupkg   filter=lfs diff=lfs merge=lfs -text
-third_party/**/*.7z.exe  filter=lfs diff=lfs merge=lfs -text
-third_party/**/*.zip     filter=lfs diff=lfs merge=lfs -text
+third_party/**/*.nupkg   filter=lfs diff=lfs -merge -text
+third_party/**/*.7z.exe  filter=lfs diff=lfs -merge -text
+third_party/**/*.zip     filter=lfs diff=lfs -merge -text
 
 # Added by Versio: the mirror is text, and must arrive byte-identical everywhere.
 # Without eol=lf a core.autocrlf=true clone lands CRLF, which git calls clean and
@@ -52,24 +52,33 @@ fixtures/projects/RefrigeratorControl/** text eol=lf
 # a text merge on something it cannot reason about; the readable diff lives in
 # the Versio mirror beside the pointer
 # (fixtures/projects/CleaningStation_V20_V21/CleaningStation_V20_V21/).
-*.ap17           binary -diff -merge filter=lfs diff=lfs merge=lfs
-*.ap18           binary -diff -merge filter=lfs diff=lfs merge=lfs
-*.ap19           binary -diff -merge filter=lfs diff=lfs merge=lfs
-*.ap20           binary -diff -merge filter=lfs diff=lfs merge=lfs
-*.ap21           binary -diff -merge filter=lfs diff=lfs merge=lfs
-*.al17           binary -diff -merge filter=lfs diff=lfs merge=lfs
-*.al18           binary -diff -merge filter=lfs diff=lfs merge=lfs
-*.al19           binary -diff -merge filter=lfs diff=lfs merge=lfs
-*.al20           binary -diff -merge filter=lfs diff=lfs merge=lfs
-*.al21           binary -diff -merge filter=lfs diff=lfs merge=lfs
-*.plf            binary -diff -merge filter=lfs diff=lfs merge=lfs
-*.idx            binary -diff -merge filter=lfs diff=lfs merge=lfs
+#
+# No merge=lfs anywhere in this file - the rule GitAttributesPlan states and tests.
+# git-lfs installs no merge driver by that name, so merge=lfs overrides -merge and
+# git falls back to a text merge of the LFS pointer. `git check-attr merge` answered
+# "lfs" on the fixture's .ap21 and System/PEData.plf until 2026-09-14.
+*.ap17           binary -diff -merge filter=lfs diff=lfs
+*.ap18           binary -diff -merge filter=lfs diff=lfs
+*.ap19           binary -diff -merge filter=lfs diff=lfs
+*.ap20           binary -diff -merge filter=lfs diff=lfs
+*.ap21           binary -diff -merge filter=lfs diff=lfs
+*.al17           binary -diff -merge filter=lfs diff=lfs
+*.al18           binary -diff -merge filter=lfs diff=lfs
+*.al19           binary -diff -merge filter=lfs diff=lfs
+*.al20           binary -diff -merge filter=lfs diff=lfs
+*.al21           binary -diff -merge filter=lfs diff=lfs
+*.plf            binary -diff -merge filter=lfs diff=lfs
+*.idx            binary -diff -merge filter=lfs diff=lfs
 
 # Other Siemens binary leftovers inside a working tree. Path-scoped so a random
 # .zip elsewhere is not forced through LFS.
-fixtures/projects/CleaningStation_V20_V21/** filter=lfs diff=lfs merge=lfs -text
-fixtures/projects/CleaningStation_V20_V21/ProjectInfo.txt text eol=lf -filter -diff -merge
-fixtures/projects/CleaningStation_V20_V21/CleaningStation_V20_V21/** -filter -diff -merge text eol=lf
+fixtures/projects/CleaningStation_V20_V21/** filter=lfs diff=lfs -merge -text
+# The two text exceptions undo the line above with !diff !merge - back to git's
+# default - and NOT -diff -merge. -diff means "binary for diffing": with it every
+# mirror file printed "Binary files differ", so the reviewable export could not be
+# reviewed through git at all until 2026-09-14.
+fixtures/projects/CleaningStation_V20_V21/ProjectInfo.txt text eol=lf -filter !diff !merge
+fixtures/projects/CleaningStation_V20_V21/CleaningStation_V20_V21/** -filter !diff !merge text eol=lf
 
 # Added by Versio: a PLC project is a binary compound document. Marking it
 # binary -diff -merge stops git from attempting a line merge and corrupting it.
