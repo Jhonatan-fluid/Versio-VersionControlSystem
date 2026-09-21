@@ -1253,7 +1253,7 @@
                             </DataTemplate>
 
                             <DataTemplate DataType="{x:Type vm:SourceRender}">
-                                <views:DiffView DiffText="{Binding PseudoDiff}"
+                                <views:DiffView SourceRows="{Binding Rows}"
                                                 FilePath="{Binding Path}" />
                             </DataTemplate>
                         </ContentControl.Resources>

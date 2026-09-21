@@ -6,6 +6,7 @@ using System.Windows.Input;
 using System.Windows.Documents;
 using System.Windows.Media;
 using Versio.Core.Diff;
+using Versio.Core.Iec;
 
 namespace Versio.App.Views;
 
@@ -64,6 +65,26 @@ public class DiffView : ListBox
     public static readonly DependencyProperty SideBySideProperty =
         DependencyProperty.Register(nameof(SideBySide), typeof(bool), typeof(DiffView),
             new PropertyMetadata(false, OnInputChanged));
+
+    /// <summary>
+    /// A file to show as itself rather than as a diff. Takes precedence over
+    /// <see cref="DiffText"/> when set.
+    /// </summary>
+    /// <remarks>
+    /// Rows instead of a diff string because the Rendered pane is not comparing anything: one
+    /// gutter, no marker column, no hunk header, and the declaration/implementation divider
+    /// drawn as a divider. The layout — which lines, which numbers — is decided in Core by
+    /// <see cref="StSourceLayout"/>, so this control only draws it.
+    /// </remarks>
+    public static readonly DependencyProperty SourceRowsProperty =
+        DependencyProperty.Register(nameof(SourceRows), typeof(IReadOnlyList<SourceRow>),
+            typeof(DiffView), new PropertyMetadata(null, OnInputChanged));
+
+    public IReadOnlyList<SourceRow>? SourceRows
+    {
+        get => (IReadOnlyList<SourceRow>?)GetValue(SourceRowsProperty);
+        set => SetValue(SourceRowsProperty, value);
+    }
 
     public string DiffText
     {
@@ -154,30 +175,7 @@ public class DiffView : ListBox
     /// </remarks>
     private void OnCopy(object sender, ExecutedRoutedEventArgs e)
     {
-        if (SelectedItems.Count == 0)
-        {
-            return;
-        }
-
-        // Split rows paste as the unified excerpt they stand for: a context row once, an
-        // edited pair as its − line then its + line. The pasted text is still a diff —
-        // reconstructing the two-column layout in a chat message helps nobody.
-        var text = ItemsSource switch
-        {
-            IReadOnlyList<DiffLine> lines => CopyText(
-                lines.Where(SelectedItems.OfType<DiffLine>().ToHashSet().Contains)),
-
-            IReadOnlyList<SideBySideRow> rows => CopyText(
-                rows.Where(SelectedItems.OfType<SideBySideRow>().ToHashSet().Contains)
-                    .SelectMany(row =>
-                        row.Spanning is { } spanning ? new[] { spanning }
-                        : ReferenceEquals(row.Left, row.Right) ? new[] { row.Left! }
-                        : new[] { row.Left, row.Right }.OfType<DiffLine>().ToArray())),
-
-            _ => null,
-        };
-
-        if (text is null)
+        if (SelectionText() is not { } text)
         {
             return;
         }
@@ -193,6 +191,51 @@ public class DiffView : ListBox
         }
 
         e.Handled = true;
+    }
+
+    /// <summary>What a copy of the current selection pastes, or null when nothing is.</summary>
+    /// <remarks>
+    /// Separate from the clipboard write so a test can read it: the clipboard is shared with
+    /// every other process on the machine, and a test asserting through it measures them too.
+    /// </remarks>
+    internal string? SelectionText()
+    {
+        if (SelectedItems.Count == 0)
+        {
+            return null;
+        }
+
+        // Split rows paste as the unified excerpt they stand for: a context row once, an
+        // edited pair as its − line then its + line. The pasted text is still a diff —
+        // reconstructing the two-column layout in a chat message helps nobody.
+        return ItemsSource switch
+        {
+            IReadOnlyList<DiffLine> lines => CopyText(
+                lines.Where(SelectedItems.OfType<DiffLine>().ToHashSet().Contains)),
+
+            IReadOnlyList<SideBySideRow> rows => CopyText(
+                rows.Where(SelectedItems.OfType<SideBySideRow>().ToHashSet().Contains)
+                    .SelectMany(row =>
+                        row.Spanning is { } spanning ? new[] { spanning }
+                        : ReferenceEquals(row.Left, row.Right) ? new[] { row.Left! }
+                        : new[] { row.Left, row.Right }.OfType<DiffLine>().ToArray())),
+
+            // A file shown as itself pastes as the file: no markers, because there is no
+            // change to mark, and a divider as the delimiter line it stands for — so an
+            // excerpt spanning both halves still pastes as valid .st. The synthetic
+            // "Declaration" divider stands for no line and pastes nothing.
+            IReadOnlyList<SourceRow> source => string.Join(Environment.NewLine,
+                source.Where(SelectedItems.OfType<SourceRow>().ToHashSet().Contains)
+                    .Select(row => row switch
+                    {
+                        SourceCodeLine line => line.Text,
+                        SourceDivider divider => divider.FileText,
+                        _ => null,
+                    })
+                    .OfType<string>()),
+
+            _ => null,
+        };
     }
 
     /// <summary>Document order and the marker on every line — the excerpt is still a diff.</summary>
@@ -216,6 +259,18 @@ public class DiffView : ListBox
         var generation = ++_generation;
 
         _language = LanguageCatalog.ForPath(path);
+
+        if (SourceRows is { } source)
+        {
+            // Nothing to parse, so nothing to put off the dispatcher. The generation bump
+            // above still matters: it stops a diff parse already in flight from landing on
+            // top of these rows. Stretch rather than Left so a divider runs the full width
+            // of the pane; source rows carry no tint for a stretched row to smear.
+            ScrollViewer.SetHorizontalScrollBarVisibility(this, ScrollBarVisibility.Auto);
+            HorizontalContentAlignment = HorizontalAlignment.Stretch;
+            ItemsSource = source;
+            return;
+        }
 
         // Rows own their width in split mode. Unified rows are content-sized and the list
         // scrolls sideways; split rows stretch to the viewport and give each file half,
@@ -277,8 +332,81 @@ public class DiffView : ListBox
         {
             DiffLine line => BuildRow(line, _language),
             SideBySideRow row => BuildSplitRow(row, _language),
+            SourceCodeLine line => BuildSourceRow(line, _language),
+            SourceDivider divider => BuildDivider(divider),
             _ => container.Content,
         };
+    }
+
+    /// <summary>One line of a file shown as itself: one gutter, then the code.</summary>
+    /// <remarks>
+    /// The diff row's second gutter and marker column are gone because on a file that is not
+    /// being compared they only ever held a copy of the first number and a blank. The gutter
+    /// keeps the diff row's width so switching between Raw and Rendered does not shift the
+    /// code sideways under the reader's eye.
+    /// </remarks>
+    private UIElement BuildSourceRow(SourceCodeLine line, SyntaxLanguage language)
+    {
+        var grid = new Grid();
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(46) });
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+
+        grid.Children.Add(Gutter(line.Number, 0));
+
+        var content = Highlighted(line.Text, language);
+        content.Margin = new Thickness(6, 0, 12, 0);
+        Grid.SetColumn(content, 1);
+        grid.Children.Add(content);
+
+        return grid;
+    }
+
+    /// <summary>The boundary between declaration and implementation, drawn as one.</summary>
+    /// <remarks>
+    /// The label sits in the code column, not the gutter, so it lines up with the code it
+    /// names; the rule runs from its end to the pane's edge. It is the reason the numbers
+    /// below it start at 1 again, so it has to be seen — Secondary rather than Disabled —
+    /// without competing with the code: UI font, caption size, no fill.
+    /// </remarks>
+    private UIElement BuildDivider(SourceDivider divider)
+    {
+        var grid = new Grid
+        {
+            // Air above a divider that follows code. The one divider standing for no file
+            // line is the Declaration label at the very top, which needs none.
+            Margin = new Thickness(0, divider.FileText is null ? 2 : 10, 0, 4),
+        };
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(46) });
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        grid.ColumnDefinitions.Add(new ColumnDefinition
+        {
+            Width = new GridLength(1, GridUnitType.Star),
+        });
+
+        var label = new TextBlock
+        {
+            Text = divider.Label.ToUpperInvariant(),
+            Foreground = Resolve("Brush.Text.Secondary"),
+            FontFamily = (FontFamily)FindResource("Font.UI"),
+            FontSize = (double)FindResource("Font.Size.Caption"),
+            FontWeight = (FontWeight)FindResource("Font.Weight.Semibold"),
+            VerticalAlignment = VerticalAlignment.Center,
+            Margin = new Thickness(6, 0, 8, 0),
+        };
+        Grid.SetColumn(label, 1);
+        grid.Children.Add(label);
+
+        var rule = new Border
+        {
+            Height = 1,
+            Background = Resolve("Brush.Border.Subtle"),
+            VerticalAlignment = VerticalAlignment.Center,
+            Margin = new Thickness(0, 0, 12, 0),
+        };
+        Grid.SetColumn(rule, 2);
+        grid.Children.Add(rule);
+
+        return grid;
     }
 
     /// <summary>One split row: the old file's cell, a divider, the new file's cell.</summary>

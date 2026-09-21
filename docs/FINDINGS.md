@@ -19,6 +19,49 @@ produce a diff touching everything else.
 
 ---
 
+### The Rendered view numbered an ST object's code differently from the IDE
+
+**Found 2026-09-20**, from the owner's side-by-side screenshots of `FB_Alarm` in Versio
+and in CODESYS, while asking for the blue `@@` line to go and for the variables to be
+visibly separated from the code.
+
+**The defect.** The Rendered tab drew a file by wrapping it in a made-up diff of unchanged
+lines (`SourceRender.PseudoDiff`) and passing that to `DiffView`. So it showed the file's
+own line numbers, and the .st mirror joins the declaration and the implementation into one
+file with `// --- BEGIN IMPLEMENTATION ---` between them. The IDE shows two panes, each
+numbered from 1, and its compiler messages quote those numbers: `IF NOT Settings.Latch
+THEN` was **line 44 in Versio and line 16 in CODESYS**. A reader given a compile error could
+not find the line. The made-up diff also brought along an `@@ -1,47 +1,47 @@` header, a second
+gutter that always repeated the first, an empty marker column, and a line 47 that was only
+the empty string after the last newline.
+
+**The fix.** `Versio.Core.Iec.StSourceLayout` lays the file out as rows: a Declaration
+label, the declaration, an Implementation divider standing in for the delimiter line, the
+implementation numbered from 1. The numbers are `StTextCodec.Split`'s rather than an
+approximation of them — the delimiter is found the way Split finds it, and the whitespace-
+only lines Split trims from each section's edges (the codec's own blank line either side
+of the delimiter) are left out. A delimiter that shares its line with code, which Split
+would cut mid-line, falls back to plain file numbering rather than a divider drawn in the
+wrong place. `DiffView.SourceRows` draws the rows with one gutter; Raw keeps the pseudo-
+diff, `@@` and file numbers included, because Raw is where the file is shown as it is.
+This lives in `Iec/`, beside the codec, because the delimiter is part of the IEC
+support TwinCAT shares, not CODESYS's.
+
+**One trap on the way.** The first version of `SourceCodeLine` was `(Number, Text)`. A
+blank line 13 in the declaration and a blank line 13 in the implementation are then the
+same record, and a WPF list holding two equal items selects both when either is clicked
+(and a copy pastes both). `FB_Alarm` has exactly that pair. `FileLine` is on the record so
+no two rows are equal.
+
+**Evidence.** `StSourceLayoutTests` (11) measures every number against `Split` itself.
+`RenderedSourceTests` (6) covers the wiring. Two deliberate breakages each turned one
+test red: rebinding the Rendered template back to `PseudoDiff`, and skipping the
+generation bump for source rows (which let a stale diff parse replace them). An offscreen
+render of the real `FB_Alarm.st` showed declaration 1–25 and implementation 1–18, matching
+the CODESYS screenshot line for line.
+
+---
+
 ### With TIA Portal open, a commit recorded a stale mirror and a push erased the export debt
 
 **Found 2026-09-14**, double-checking the LFS fix below and answering *"is there no way to

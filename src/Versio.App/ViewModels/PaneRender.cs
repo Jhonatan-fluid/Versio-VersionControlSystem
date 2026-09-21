@@ -1,5 +1,6 @@
 using System.IO;
 using Versio.Core.Diff;
+using Versio.Core.Iec;
 using Versio.Core.Projects;
 
 namespace Versio.App.ViewModels;
@@ -11,16 +12,28 @@ public sealed record FactRow(string Label, string Value);
 /// A file's own content, shaped for the diff control to draw.
 /// </summary>
 /// <remarks>
+/// <para>
 /// The pane's renderer is <c>DiffView</c> — virtualized, gutter-numbered, syntax-coloured —
-/// and a full file is expressible as a diff of all-context lines, so rendering content
-/// reuses the one code-drawing control instead of growing a second. The hunk header is
-/// included so the gutter numbers from 1; the caller showing one of these never offers
-/// hunk actions, so the header row carries no button.
+/// so rendering content reuses the one code-drawing control instead of growing a second.
+/// </para>
+/// <para>
+/// <b>Two shapes of the same file, one per tab.</b> <see cref="PseudoDiff"/> is the file as a
+/// diff of all-context lines: the Raw tab shows a clean file through it, <c>@@</c> header
+/// and file line numbers included, because Raw is where the file is shown as the file.
+/// <see cref="Rows"/> is what the Rendered tab draws, and it used to be the pseudo-diff too —
+/// which is how the Rendered view came to carry a blue <c>@@ -1,47 +1,47 @@</c> line, two
+/// gutters that always agreed, and an empty marker column, none of which say anything about
+/// a file that is not being compared with anything. The rows are laid out the way the IDE
+/// shows the object instead; see <see cref="StSourceLayout"/>.
+/// </para>
 /// </remarks>
 public sealed record SourceRender
 {
     public required string Path { get; init; }
     public required string PseudoDiff { get; init; }
+
+    /// <summary>The Rendered tab's rows: sectioned and numbered as the IDE numbers them.</summary>
+    public required IReadOnlyList<SourceRow> Rows { get; init; }
 
     /// <summary>Said out loud on the rendered view: the file is clean right now.</summary>
     public bool NoChanges { get; init; }
@@ -56,6 +69,7 @@ public sealed record SourceRender
         {
             Path = repoRelativePath,
             PseudoDiff = builder.ToString(),
+            Rows = StSourceLayout.Lay(text),
             NoChanges = noChanges,
         };
     }

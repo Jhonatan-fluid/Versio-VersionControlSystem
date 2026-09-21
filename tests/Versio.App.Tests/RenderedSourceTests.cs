@@ -1,0 +1,193 @@
+using System.Windows;
+using System.Windows.Controls;
+using System.Windows.Data;
+using System.Windows.Documents;
+using System.Windows.Media;
+using Versio.App.ViewModels;
+using Versio.App.Views;
+using Versio.Core.Diff;
+using Versio.Core.Iec;
+using Versio.Core.Logging;
+using Versio.Infrastructure.Platform;
+using Xunit;
+
+namespace Versio.App.Tests;
+
+/// <summary>
+/// The Rendered tab draws a file as itself: one gutter, no <c>@@</c> line, the
+/// declaration and implementation behind a divider, numbered as the IDE numbers them.
+/// </summary>
+/// <remarks>
+/// Which lines and which numbers is Core's (<c>StSourceLayoutTests</c>). What these prove
+/// is the wiring that compiles clean when deleted: the Rendered template binding the rows
+/// rather than the pseudo-diff, the row builder drawing them, and the copy pasting them.
+/// </remarks>
+[Collection("theme")]
+public sealed class RenderedSourceTests
+{
+    private const string FbAlarm =
+        "FUNCTION_BLOCK FB_Alarm\nVAR\n\tState : INT;\n\nEND_VAR\n\n"
+        + StTextCodec.ImplementationDelimiter
+        + "\n\n// Reset Latch\nIF NOT Latch THEN\n\tState := 0;\nEND_IF\n";
+
+    private sealed class Openable : DiffView
+    {
+        public UIElement RowFor(object item)
+        {
+            var container = new ListBoxItem();
+            PrepareContainerForItemOverride(container, item);
+            return Assert.IsAssignableFrom<UIElement>(container.Content);
+        }
+    }
+
+    [Fact]
+    public void The_rendered_template_draws_rows_not_the_pseudo_diff()
+    {
+        // Revert the template's binding to PseudoDiff and this is the test that notices: the
+        // items become DiffLines again, @@ header and all.
+        StaHarness.Run(async () =>
+        {
+            var logger = new VersioLogger(new SystemClock());
+            var sink = new InMemoryLogSink();
+            logger.AddSink(sink);
+            using var shell = new ShellViewModel(logger, new LogViewModel(sink));
+            var window = new MainWindow(shell);
+
+            var rendered = Assert.Single(Logical(window).OfType<ContentControl>(),
+                c => BindingOperations.GetBinding(c, ContentControl.ContentProperty)
+                         ?.Path.Path == nameof(ShellViewModel.RenderedContent));
+
+            var template = Assert.IsType<DataTemplate>(
+                rendered.TryFindResource(new DataTemplateKey(typeof(SourceRender))));
+            var view = Assert.IsAssignableFrom<DiffView>(template.LoadContent());
+
+            var source = Source();
+            view.DataContext = source;
+
+            // A template's content outside a tree binds on the dispatcher's DataBind pass,
+            // not on the assignment.
+            await System.Windows.Threading.Dispatcher.Yield(
+                System.Windows.Threading.DispatcherPriority.Background);
+
+            Assert.Same(source.Rows, view.ItemsSource);
+            Assert.DoesNotContain(view.Items.OfType<object>(), i => i is DiffLine);
+        });
+    }
+
+    [Fact]
+    public void A_code_row_has_one_gutter_and_no_marker_column()
+    {
+        StaHarness.Run(() =>
+        {
+            var view = new Openable { FilePath = "FB_Alarm.st" };
+            var row = Assert.IsType<Grid>(view.RowFor(new SourceCodeLine(2, "IF NOT Latch THEN", 12)));
+
+            Assert.Equal(2, row.ColumnDefinitions.Count);
+            var texts = row.Children.OfType<TextBlock>().Select(Text).ToList();
+
+            // The section's number, not the file's: the IDE calls this line 2.
+            Assert.Equal("2", texts[0]);
+            Assert.Equal("IF NOT Latch THEN", texts[1]);
+        });
+    }
+
+    [Fact]
+    public void A_divider_is_drawn_with_its_label_and_a_rule()
+    {
+        StaHarness.Run(() =>
+        {
+            var view = new Openable { FilePath = "FB_Alarm.st" };
+            var row = Assert.IsType<Grid>(view.RowFor(
+                new SourceDivider(StSourceLayout.ImplementationLabel, StTextCodec.ImplementationDelimiter)));
+
+            Assert.Contains(row.Children.OfType<TextBlock>(), t => t.Text == "IMPLEMENTATION");
+            Assert.Contains(row.Children.OfType<Border>(), b => b.Height == 1);
+        });
+    }
+
+    [Fact]
+    public void Source_rows_win_over_diff_text_even_when_the_parse_lands_later()
+    {
+        // The generation guard is what stops a parse already in flight from replacing the
+        // rows. Without it this view would end on DiffLines.
+        StaHarness.Run(async () =>
+        {
+            var view = new DiffView
+            {
+                FilePath = "FB_Alarm.st",
+                DiffText = "@@ -1,1 +1,1 @@\n x\n",
+            };
+            var rows = StSourceLayout.Lay(FbAlarm);
+            view.SourceRows = rows;
+
+            await Task.Delay(100);
+
+            Assert.Same(rows, view.ItemsSource);
+        });
+    }
+
+    [Fact]
+    public void Copying_across_the_divider_pastes_the_file()
+    {
+        // No markers, because nothing is being compared; the divider as the delimiter line it
+        // stands for, so the excerpt is still valid .st; the Declaration label as nothing.
+        StaHarness.Run(() =>
+        {
+            var rows = StSourceLayout.Lay(FbAlarm);
+            var view = new DiffView { FilePath = "FB_Alarm.st", SourceRows = rows };
+
+            foreach (var row in rows)
+            {
+                view.SelectedItems.Add(row);
+            }
+
+            var lines = view.SelectionText()!.Split(Environment.NewLine);
+
+            Assert.Equal("FUNCTION_BLOCK FB_Alarm", lines[0]);
+            Assert.Contains(StTextCodec.ImplementationDelimiter, lines);
+            Assert.DoesNotContain(StSourceLayout.DeclarationLabel, lines);
+            Assert.Equal("END_IF", lines[^1]);
+        });
+    }
+
+    [Fact]
+    public void Selecting_one_blank_line_selects_only_that_one()
+    {
+        // Line 4 is blank in the declaration; the implementation has none, so add one that
+        // shares its section number. Equal records would both be selected by one click.
+        StaHarness.Run(() =>
+        {
+            var rows = StSourceLayout.Lay(
+                StTextCodec.Join("A\nB\nC\n\nD", "1\n2\n3\n\n5"));
+            var view = new DiffView { FilePath = "x.st", SourceRows = rows };
+
+            var blanks = rows.OfType<SourceCodeLine>().Where(l => l.Number == 4).ToList();
+            Assert.Equal(2, blanks.Count);
+
+            view.SelectedItems.Add(blanks[0]);
+
+            Assert.Single(view.SelectedItems);
+            Assert.Equal(string.Empty, view.SelectionText());
+        });
+    }
+
+    private static SourceRender Source() =>
+        new() { Path = "FB_Alarm.st", PseudoDiff = "@@ -1,1 +1,1 @@\n x\n", Rows = StSourceLayout.Lay(FbAlarm) };
+
+    private static string Text(TextBlock block) =>
+        block.Inlines.Count == 0
+            ? block.Text
+            : string.Concat(block.Inlines.OfType<Run>().Select(r => r.Text));
+
+    private static IEnumerable<DependencyObject> Logical(DependencyObject root)
+    {
+        yield return root;
+        foreach (var child in LogicalTreeHelper.GetChildren(root).OfType<DependencyObject>())
+        {
+            foreach (var descendant in Logical(child))
+            {
+                yield return descendant;
+            }
+        }
+    }
+}
