@@ -72,10 +72,18 @@ public sealed class TreeRowChromeTests
         });
     }
 
+    /// <summary>Lay out, let the item generators run, and lay out again.</summary>
+    /// <remarks>
+    /// A tree's containers are generated from the dispatcher, and with the suite's one STA
+    /// thread busy they can land a pass later than the first layout. Alone this test passed
+    /// on one layout; in the full suite it looked before the row existed.
+    /// </remarks>
     private static void Lay(FrameworkElement content)
     {
         content.Measure(new Size(1400, 900));
         content.Arrange(new Rect(0, 0, 1400, 900));
+        content.UpdateLayout();
+        content.Dispatcher.Invoke(() => { }, System.Windows.Threading.DispatcherPriority.Background);
         content.UpdateLayout();
     }
 
