@@ -136,6 +136,10 @@ public partial class App : Application
             // So "Open logs folder" opens where the logs actually are, not where they would
             // have gone had the sink attached successfully.
             FileLogDirectory = fileSink?.LogDirectory,
+
+            // Real only here. A launch whose repository is already open elsewhere on this
+            // machine hands over to that window instead of drawing an empty one of its own.
+            BringWindowForward = Versio.App.Views.WindowActivation.TryBringToFront,
         };
 
         // The shell holds a filesystem watcher on the open repository, and a live
@@ -207,7 +211,7 @@ public partial class App : Application
             // Fire-and-forget, but never silently: an exception inside an un-awaited Task is
             // swallowed by default, so the app would open on an empty window with no
             // explanation anywhere for the repository that failed to load.
-            _ = shell.OpenAsync(candidate).ContinueWith(
+            _ = shell.OpenAtStartupAsync(candidate).ContinueWith(
                 t => logger.Error(LogCategory.App,
                     $"failed to open {candidate} at startup", t.Exception?.GetBaseException()),
                 CancellationToken.None,

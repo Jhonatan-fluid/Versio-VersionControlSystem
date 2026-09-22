@@ -52,6 +52,13 @@ public partial class MainWindow : Window
         // a Cancel beside it would imply an alternative that does not exist.
         shell.RepositoryBusyElsewhere += why => Tell("Already open", why);
 
+        // The same refusal at launch, when the other window could be brought forward: this one
+        // has nothing to show and goes. Posted rather than called, because the event is raised
+        // from inside the open's busy scope - closing there would ask the close guard about an
+        // "Opening…" that is about to end by itself.
+        shell.HandedOverToOtherWindow += () =>
+            Dispatcher.BeginInvoke(Close, System.Windows.Threading.DispatcherPriority.Background);
+
         // Every dialog the application can open, in one class rather than as a run of
         // closures here. Handed to the shell, which passes them down to Sync - so the two
         // view models share one set of questions and this is the only line that wires them.

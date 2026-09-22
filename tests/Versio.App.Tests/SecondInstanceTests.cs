@@ -123,6 +123,128 @@ public sealed class SecondInstanceTests
         Assert.Null(shell.RepositoryPath);
     }
 
+    // ------------------------------------------------------------ the hand-over at launch
+    //
+    // Seen on 2026-09-21: clicking Versio in the Start menu while it was running drew a whole
+    // empty shell with a modal naming the other window's pid. A launch has nothing else to
+    // show, so it brings that window forward and goes.
+
+    [Fact]
+    public async Task A_launch_whose_repository_is_open_elsewhere_hands_over_to_that_window()
+    {
+        using var repo = new TempRepo();
+        var holder = Environment.ProcessId + 1;
+        GivenAMarker(repo, Marker(Environment.MachineName, holder, BootTime()));
+
+        using var shell = Shell(new Running());
+        int? broughtForward = null;
+        shell.BringWindowForward = pid =>
+        {
+            broughtForward = pid;
+            return true;
+        };
+
+        var handedOver = false;
+        var told = false;
+        shell.HandedOverToOtherWindow += () => handedOver = true;
+        shell.RepositoryBusyElsewhere += _ => told = true;
+
+        await shell.OpenAtStartupAsync(repo.Path);
+
+        Assert.Equal(holder, broughtForward);
+        Assert.True(handedOver, "the window was not told to close");
+        Assert.False(told, "a dialog was raised over a window that is about to close");
+        Assert.Null(shell.RepositoryPath);
+    }
+
+    [Fact]
+    public void The_window_that_handed_over_closes_itself()
+    {
+        // The window's half. The shell raising the event proves nothing if MainWindow stopped
+        // listening: it would sit there empty, which is the state the hand-over removes.
+        StaHarness.Run(async () =>
+        {
+            using var repo = new TempRepo();
+            GivenAMarker(repo, Marker(
+                Environment.MachineName, Environment.ProcessId + 1, BootTime()));
+
+            using var shell = Shell(new Running());
+            shell.BringWindowForward = _ => true;
+
+            var window = new Versio.App.Views.MainWindow(shell)
+            {
+                WindowStartupLocation = System.Windows.WindowStartupLocation.Manual,
+                ShowInTaskbar = false,
+                Left = -32000,
+                Top = -32000,
+                Width = 400,
+                Height = 300,
+            };
+            var closed = false;
+            window.Closed += (_, _) => closed = true;
+            window.Show();
+
+            await shell.OpenAtStartupAsync(repo.Path);
+
+            // Posted at Background by the window, then re-posted once by its close guard.
+            for (var i = 0; i < 3 && !closed; i++)
+            {
+                await window.Dispatcher.InvokeAsync(
+                    () => { }, System.Windows.Threading.DispatcherPriority.ApplicationIdle);
+            }
+
+            Assert.True(closed, "the window stayed open after handing over");
+        });
+    }
+
+    [Fact]
+    public async Task A_launch_that_cannot_reach_the_other_window_still_explains()
+    {
+        // The window gone between the check and now, or Windows refusing the focus change:
+        // the dialog is the fallback, and the window stays so it has something to sit on.
+        using var repo = new TempRepo();
+        GivenAMarker(repo, Marker(
+            Environment.MachineName, Environment.ProcessId + 1, BootTime()));
+
+        using var shell = Shell(new Running());
+        shell.BringWindowForward = _ => false;
+
+        var handedOver = false;
+        var told = false;
+        shell.HandedOverToOtherWindow += () => handedOver = true;
+        shell.RepositoryBusyElsewhere += _ => told = true;
+
+        await shell.OpenAtStartupAsync(repo.Path);
+
+        Assert.False(handedOver);
+        Assert.True(told);
+    }
+
+    [Fact]
+    public async Task Switching_repository_inside_a_running_window_never_closes_it()
+    {
+        // Only a launch hands over. A window somebody is working in, choosing a repository
+        // from its own dropdown, keeps the dialog and stays open.
+        using var repo = new TempRepo();
+        GivenAMarker(repo, Marker(
+            Environment.MachineName, Environment.ProcessId + 1, BootTime()));
+
+        using var shell = Shell(new Running());
+        var asked = false;
+        shell.BringWindowForward = _ => asked = true;
+
+        var handedOver = false;
+        var told = false;
+        shell.HandedOverToOtherWindow += () => handedOver = true;
+        shell.RepositoryBusyElsewhere += _ => told = true;
+
+        await shell.OpenAsync(repo.Path);
+
+        Assert.False(asked, "a plain open reached for another window");
+        Assert.False(handedOver);
+        Assert.True(told);
+    }
+
     [Fact]
     public async Task A_marker_left_by_a_dead_session_does_not_stop_anybody()
     {

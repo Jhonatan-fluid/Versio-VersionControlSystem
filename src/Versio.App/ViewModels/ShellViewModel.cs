@@ -1762,6 +1762,28 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
     /// </remarks>
     public event Action<string>? RepositoryBusyElsewhere;
 
+    /// <summary>
+    /// This window's startup repository is open in another window, which is now in front, so
+    /// this one has nothing to show and should close.
+    /// </summary>
+    /// <remarks>
+    /// Raised instead of <see cref="RepositoryBusyElsewhere"/>, never beside it: a dialog over a
+    /// window that is about to go would be one more thing to click for nothing.
+    /// </remarks>
+    public event Action? HandedOverToOtherWindow;
+
+    /// <summary>
+    /// Bring the Versio with this process id to the front; true if it worked.
+    /// </summary>
+    /// <remarks>
+    /// Answers false by default, so a shell nobody configured — every test, every harness —
+    /// keeps the dialog and never reaches for a real window. The host sets the real one.
+    /// </remarks>
+    public Func<int, bool> BringWindowForward { get; set; } = static _ => false;
+
+    /// <summary>Set for the duration of <see cref="OpenAtStartupAsync"/>.</summary>
+    private bool _openingAtStartup;
+
     /// <summary>The marker store for the repository this window has open, if any.</summary>
     private JsonSessionMarkerStore? _session;
 
@@ -1795,6 +1817,24 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         {
             _logger.Warn(LogCategory.App, $"{path}: {verdict.Explanation}");
             StatusSummary = "Already open in another Versio window";
+
+            // At startup, and only then, the refusal becomes a hand-over. A launch that finds
+            // its repository taken has nothing else to show: the second window used to draw an
+            // empty shell with a modal naming a pid, from nothing more than clicking Versio in
+            // the Start menu while it was running. Switching repository inside a window that
+            // is already in use keeps the dialog — closing a window somebody was working in,
+            // because of a choice in its own dropdown, would be a surprise.
+            if (_openingAtStartup &&
+                verdict.LocalHolder is { } holder &&
+                BringWindowForward(holder))
+            {
+                _logger.Info(LogCategory.App,
+                    $"{path}: brought the Versio window that has it open (pid {holder}) to " +
+                    "the front; this window closes");
+                HandedOverToOtherWindow?.Invoke();
+                return false;
+            }
+
             RepositoryBusyElsewhere?.Invoke(verdict.Explanation);
             return false;
         }
@@ -1822,6 +1862,26 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
     {
         _session?.Release(RepositoryPresence.SessionIdOf(_machine));
         _session = null;
+    }
+
+    /// <summary>
+    /// <see cref="OpenAsync"/>, for the repository a launch opens on its own.
+    /// </summary>
+    /// <remarks>
+    /// The one difference is what happens when another window already has it: see
+    /// <see cref="HandedOverToOtherWindow"/>.
+    /// </remarks>
+    public async Task OpenAtStartupAsync(string path)
+    {
+        _openingAtStartup = true;
+        try
+        {
+            await OpenAsync(path).ConfigureAwait(true);
+        }
+        finally
+        {
+            _openingAtStartup = false;
+        }
     }
 
     /// <summary>

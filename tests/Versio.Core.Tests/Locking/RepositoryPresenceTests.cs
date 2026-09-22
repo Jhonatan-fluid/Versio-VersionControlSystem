@@ -75,6 +75,10 @@ public sealed class RepositoryPresenceTests
         // Names the process, because "already open" invites "where?" from somebody with four
         // windows on three monitors.
         Assert.Contains("pid 2000", verdict.Explanation);
+
+        // And hands it over as a number, so a launch can bring that window forward instead of
+        // only naming it.
+        Assert.Equal(2000, verdict.LocalHolder);
     }
 
     [Fact]
@@ -146,6 +150,10 @@ public sealed class RepositoryPresenceTests
         Assert.Equal(RepositoryAvailability.HeldElsewhere, verdict.Availability);
         Assert.Contains("LINE-2-HMI", verdict.Explanation);
         Assert.Contains(RepositoryPresence.MarkerPath, verdict.Explanation);
+
+        // A pid on another machine means nothing here. Handing it over would let a launch
+        // bring forward whatever local process happens to have the same number.
+        Assert.Null(verdict.LocalHolder);
     }
 
     [Fact]

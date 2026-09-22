@@ -36,8 +36,16 @@ public enum RepositoryAvailability
 }
 
 /// <summary>What the marker means for this process, and the sentence to say about it.</summary>
+/// <param name="Availability">Whether this process may open the repository.</param>
+/// <param name="Explanation">The sentence to say about it.</param>
+/// <param name="LocalHolder">
+/// The process id of the Versio holding it, when that Versio is running on THIS machine and
+/// was confirmed alive — the one case where the refusal can be turned into "here it is"
+/// instead of "go and find it". Null for a holder on another machine, which cannot be
+/// reached, and for every verdict that is not a refusal.
+/// </param>
 public readonly record struct SessionVerdict(
-    RepositoryAvailability Availability, string Explanation)
+    RepositoryAvailability Availability, string Explanation, int? LocalHolder = null)
 {
     public bool CanOpen => Availability is not RepositoryAvailability.HeldElsewhere;
 }
@@ -137,7 +145,8 @@ public static class RepositoryPresence
         return new SessionVerdict(
             RepositoryAvailability.HeldElsewhere,
             $"This repository is already open in another Versio window " +
-            $"(pid {marker.ProcessId}). Use that one, or close it first.");
+            $"(pid {marker.ProcessId}). Use that one, or close it first.",
+            LocalHolder: marker.ProcessId);
     }
 
     /// <summary>The marker this process would write.</summary>
