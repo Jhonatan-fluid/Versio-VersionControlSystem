@@ -48,6 +48,7 @@ public sealed class RollingFileSink : ILogSink, IDisposable
     private StreamWriter? _writer;
     private DateOnly _openFor;
     private string _openPath = string.Empty;
+    private bool _disposed;
 
     /// <summary>
     /// Where logs live for the current user: <c>%LOCALAPPDATA%\VersioUser\logs</c>.
@@ -104,6 +105,15 @@ public sealed class RollingFileSink : ILogSink, IDisposable
         {
             lock (_gate)
             {
+                // Named, never reopened, once disposed: a property read that quietly opened a
+                // file handle after Dispose would leak it for the rest of the process.
+                if (_disposed)
+                {
+                    return _openPath.Length > 0
+                        ? _openPath
+                        : Path.Combine(_directory, FileNameFor(Today()));
+                }
+
                 EnsureOpen(Today());
                 return _openPath;
             }
@@ -225,6 +235,7 @@ public sealed class RollingFileSink : ILogSink, IDisposable
         {
             _writer?.Dispose();
             _writer = null;
+            _disposed = true;
         }
     }
 }

@@ -275,6 +275,22 @@ public sealed class RollingFileSinkTests : IDisposable
         Assert.Contains("after naming", ReadShared(named));
     }
 
+    [Fact]
+    public void Asking_a_disposed_sink_where_it_wrote_opens_nothing()
+    {
+        // CurrentFile opens the file when nothing has yet, because only the open knows the
+        // name. After Dispose that would be a handle nobody will ever close.
+        var sink = new RollingFileSink(_dir);
+        sink.Emit(Entry(LogLevel.Information, "one line"));
+        var path = sink.CurrentFile;
+        sink.Dispose();
+
+        Assert.Equal(path, sink.CurrentFile);
+
+        // Nothing holds it: an exclusive open succeeds.
+        using var exclusive = new FileStream(path, FileMode.Open, FileAccess.ReadWrite, FileShare.None);
+    }
+
     private static string ReadShared(string path)
     {
         using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
