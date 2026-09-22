@@ -249,7 +249,15 @@
                     docking beside it, and behind it, so the first row covers it.
                 -->
                 <Grid>
-                <TextBlock HorizontalAlignment="Center" VerticalAlignment="Center"
+                <!-- The sentence and the two ways to act on it. It used to be the
+                     sentence alone, with the buttons that answer it as two unlabelled
+                     icons at the far end of the top bar - an empty window that says
+                     "open a repository" should be the place to do it. Seen on a fresh
+                     window on 2026-09-21. Hidden with the sentence, by the same trigger. -->
+                <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center"
+                            Visibility="{Binding Visibility, ElementName=OpenRepositoryHint}">
+                <TextBlock x:Name="OpenRepositoryHint"
+                           HorizontalAlignment="Center"
                            TextAlignment="Center" TextWrapping="Wrap"
                            Margin="12"
                            FontFamily="{DynamicResource Font.UI}"
@@ -272,6 +280,20 @@
                         </Style>
                     </TextBlock.Style>
                 </TextBlock>
+                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
+                        <Button Content="Open a repository…"
+                                Style="{StaticResource AccentButton}"
+                                Height="{DynamicResource Size.Control.Height}"
+                                Command="ApplicationCommands.Open"
+                                ToolTip="Choose a folder that is a Git repository (Ctrl+O)" />
+                        <Button Content="Clone…" Margin="8,0,0,0"
+                                Style="{StaticResource GhostButton}"
+                                Height="{DynamicResource Size.Control.Height}"
+                                Padding="14,0"
+                                Command="{Binding CloneCommand}"
+                                ToolTip="Copy a repository from a server" />
+                    </StackPanel>
+                </StackPanel>
                 <TreeView ItemsSource="{Binding Sync.Tree}"
                           AutomationProperties.Name="Project contents"
                           Background="Transparent" BorderThickness="0"

@@ -2,6 +2,7 @@ using System.IO;
 using System.Windows;
 using System.Windows.Automation;
 using System.Windows.Controls;
+using System.Windows.Input;
 using System.Windows.Media;
 using Versio.App.ViewModels;
 using Versio.App.Views;
@@ -180,9 +181,19 @@ public sealed class ProjectPanelCalmStateTests
             Lay(content);
             Assert.Equal(Visibility.Visible, EmptyState(panel).Visibility);
 
+            // The sentence carries the two ways to act on it, and Open reaches the window's
+            // folder picker through the routed command (the picker itself cannot open here).
+            var open = OpenButton(panel);
+            var actions = (FrameworkElement)((FrameworkElement)open.Parent).Parent;
+            Assert.Equal(Visibility.Visible, actions.Visibility);
+            Assert.Same(ApplicationCommands.Open, open.Command);
+            Assert.Contains(window.CommandBindings.OfType<CommandBinding>(),
+                b => b.Command == ApplicationCommands.Open);
+
             await OpenAndSettleAsync(repo, shell);
             Lay(content);
             Assert.NotEqual(Visibility.Visible, EmptyState(panel).Visibility);
+            Assert.NotEqual(Visibility.Visible, actions.Visibility);
 
             var calm = CalmList(panel);
             Assert.Equal(Visibility.Visible, calm.Visibility);
@@ -201,6 +212,9 @@ public sealed class ProjectPanelCalmStateTests
 
     private static TextBlock EmptyState(DependencyObject panel) =>
         Assert.Single(Descendants(panel).OfType<TextBlock>(), t => t.Text == OpenARepository);
+
+    private static Button OpenButton(DependencyObject panel) =>
+        Assert.Single(Descendants(panel).OfType<Button>(), b => Equals(b.Content, "Open a repository…"));
 
     private static StackPanel CalmList(DependencyObject panel) =>
         Assert.Single(Descendants(panel).OfType<StackPanel>(),

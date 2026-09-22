@@ -52,6 +52,13 @@ public partial class MainWindow : Window
         // a Cancel beside it would imply an alternative that does not exist.
         shell.RepositoryBusyElsewhere += why => Tell("Already open", why);
 
+        // "Open a repository" as a routed command, so a button anywhere in the window - the
+        // project panel's empty state is the one that needed it - reaches the folder picker
+        // without holding a reference to this window. The picker stays here, where dialogs
+        // live. ApplicationCommands.Open carries Ctrl+O, which is also now the shortcut.
+        CommandBindings.Add(new CommandBinding(
+            ApplicationCommands.Open, async (_, _) => await PickRepositoryAsync()));
+
         // The same refusal at launch, when the other window could be brought forward: this one
         // has nothing to show and goes. Posted rather than called, because the event is raised
         // from inside the open's busy scope - closing there would ask the close guard about an
