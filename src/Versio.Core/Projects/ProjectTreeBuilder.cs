@@ -88,6 +88,20 @@ public sealed record ProjectTreeNode
     public string? Type { get; init; }
 
     /// <summary>
+    /// <see cref="Type"/> as a reader writes it — <c>Persistent GVL</c>, not
+    /// <c>gvl_persistent</c> — in the vocabulary of the vendor that exported it. Null for a
+    /// folder.
+    /// </summary>
+    /// <remarks>
+    /// Resolved here, where the manifest's vendor is in hand, because a tree row has no other
+    /// way to learn it. The tree drew the raw type lowercased in a code font
+    /// (<c>library_manager</c>, <c>task_configuration</c>) while
+    /// <see cref="ObjectTypeNames"/> — which the git panel already used — sat unasked beside
+    /// it. Seen in the running window on 2026-09-21.
+    /// </remarks>
+    public string? TypeName { get; init; }
+
+    /// <summary>
     /// A short phrase shown beside the name, when the node has one.
     /// </summary>
     /// <remarks>
@@ -297,7 +311,7 @@ public static class ProjectTreeBuilder
         var objects = manifest.Objects
             .Where(o => !string.IsNullOrEmpty(o.Path))
             .GroupBy(o => string.IsNullOrEmpty(o.Guid) ? o.Path : o.Guid, StringComparer.Ordinal)
-            .Select(g => BuildLeaf(g.ToList(), root, status))
+            .Select(g => BuildLeaf(g.ToList(), root, status, manifest.Vendor))
             .ToList();
 
         objects = AttachLibraries(objects, libraries);
@@ -501,7 +515,10 @@ public static class ProjectTreeBuilder
 
     /// <summary>Turn every file of one object into a single node with its layers.</summary>
     private static Leaf BuildLeaf(
-        List<ProjectObject> files, string root, IReadOnlyDictionary<string, ChangeKind> status)
+        List<ProjectObject> files,
+        string root,
+        IReadOnlyDictionary<string, ChangeKind> status,
+        Plc.PlcVendor vendor)
     {
         // Deterministic layer order, so the diff pane's default does not depend on the order
         // the export happened to walk the project in.
@@ -527,6 +544,7 @@ public static class ProjectTreeBuilder
                 Kind = ProjectNodeKind.Object,
                 Guid = string.IsNullOrEmpty(first.Guid) ? null : first.Guid,
                 Type = first.Type,
+                TypeName = ObjectTypeNames.Chip(vendor, first.Type),
                 Files = paths,
 
                 // The strongest state across the object's layers. Editing the .st and leaving

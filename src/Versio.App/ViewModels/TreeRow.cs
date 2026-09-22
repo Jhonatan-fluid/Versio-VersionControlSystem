@@ -170,9 +170,36 @@ public sealed class TreeRow : ObservableObject
     /// </remarks>
     public bool IsFile => Node.Kind == ProjectNodeKind.File;
 
+    /// <summary>
+    /// The resource key of the glyph drawn before the name: what KIND of row this is.
+    /// </summary>
+    /// <remarks>
+    /// The tree drew every row in the same face with nothing before the name, so a folder, an
+    /// object and a library manager differed only by whether a chevron happened to sit beside
+    /// them. Seen in the running window on 2026-09-21. By kind, never by object type: which
+    /// glyph a POU deserves is a vendor's word, and the kinds are what every vendor's tree is
+    /// built from.
+    /// </remarks>
+    public string IconKey => Node.Kind switch
+    {
+        ProjectNodeKind.Folder => "Icon.Folder",
+        ProjectNodeKind.Project => "Icon.Project",
+        ProjectNodeKind.Library => "Icon.Library",
+        ProjectNodeKind.Task => "Icon.Task",
+        ProjectNodeKind.Device => "Icon.Device",
+        ProjectNodeKind.File => "Icon.Document",
+        _ => "Icon.Code",
+    };
+
     /// <summary>The object's type, shown beside the name. Empty for anything else.</summary>
+    /// <remarks>
+    /// The vendor's own word for it (see <see cref="ProjectTreeNode.TypeName"/>). The raw type
+    /// is the fallback only for a node built without one, which is a test's hand-made node.
+    /// </remarks>
     public string TypeLabel =>
-        Node.Kind == ProjectNodeKind.Object ? Node.Type?.ToLowerInvariant() ?? "" : string.Empty;
+        Node.Kind == ProjectNodeKind.Object
+            ? Node.TypeName ?? Node.Type ?? string.Empty
+            : string.Empty;
 
     /// <summary>Export state for a project row, empty elsewhere.</summary>
     public string Detail => Node.Detail;

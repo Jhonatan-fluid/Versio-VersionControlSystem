@@ -71,6 +71,14 @@
 
     <sys:String x:Key="Icon.Folder">&#xE8B7;</sys:String>
     <sys:String x:Key="Icon.Document">&#xE8A5;</sys:String>
+    <!-- The tree's row kinds. Kinds, not object types: which glyph a POU or a GVL deserves
+         is a vendor's vocabulary, and the tree's kinds are the neutral ones every vendor's
+         project is drawn with. -->
+    <sys:String x:Key="Icon.Project">&#xE7B8;</sys:String>
+    <sys:String x:Key="Icon.Code">&#xE943;</sys:String>
+    <sys:String x:Key="Icon.Library">&#xE8F1;</sys:String>
+    <sys:String x:Key="Icon.Task">&#xE916;</sys:String>
+    <sys:String x:Key="Icon.Device">&#xE772;</sys:String>
     <sys:String x:Key="Icon.Refresh">&#xE72C;</sys:String>
     <sys:String x:Key="Icon.Settings">&#xE713;</sys:String>
     <sys:String x:Key="Icon.Sync">&#xE895;</sys:String>

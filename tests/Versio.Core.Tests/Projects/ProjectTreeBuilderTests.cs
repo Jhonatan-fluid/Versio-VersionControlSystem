@@ -65,6 +65,27 @@ public sealed class ProjectTreeBuilderTests
     }
 
     [Fact]
+    public void An_object_carries_its_type_as_a_reader_writes_it()
+    {
+        // The tree drew the raw type lowercased - "method", "gvl_persistent" - while the
+        // vocabulary that names it sat unused beside it. IEC's words need no vendor pack.
+        var tree = Build(Manifest(Obj("Start", "App/FB/Start.st", "g1", "METHOD")), []);
+
+        var node = Find(tree, "Start");
+        Assert.Equal("METHOD", node.Type);
+        Assert.Equal("Method", node.TypeName);
+    }
+
+    [Fact]
+    public void An_unknown_type_is_named_exactly_as_the_exporter_wrote_it()
+    {
+        // Fall back, never fabricate - ObjectTypeNames' rule, reaching the tree unchanged.
+        var tree = Build(Manifest(Obj("Thing", "App/Thing.xml", "g1", "SOME_FUTURE_TYPE")), []);
+
+        Assert.Equal("SOME_FUTURE_TYPE", Find(tree, "Thing").TypeName);
+    }
+
+    [Fact]
     public void The_root_is_named_after_the_project_not_the_directory()
     {
         var tree = Build(Manifest(Obj("Main", "Main.st", "g1")), []);

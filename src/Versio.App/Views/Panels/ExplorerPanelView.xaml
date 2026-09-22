@@ -92,32 +92,42 @@
                                            FontWeight="{DynamicResource Font.Weight.Semibold}"
                                            Foreground="{Binding BrushKey,
                                                Converter={StaticResource ResourceKey}}" />
-                                <TextBlock Grid.Column="1" Text="{Binding Name}"
-                                           VerticalAlignment="Center"
-                                           FontSize="{DynamicResource Font.Size.Body}"
-                                           Foreground="{DynamicResource Brush.Text.Primary}"
-                                           TextTrimming="CharacterEllipsis"
-                                           ToolTip="{Binding Node.Path}">
-                                    <TextBlock.Style>
-                                        <Style TargetType="TextBlock">
-                                            <Setter Property="FontFamily"
-                                                    Value="{DynamicResource Font.UI}" />
-                                            <Style.Triggers>
-                                                <DataTrigger Binding="{Binding IsFile}" Value="True">
-                                                    <Setter Property="FontFamily"
-                                                            Value="{DynamicResource Font.Mono}" />
-                                                </DataTrigger>
-                                                <DataTrigger Binding="{Binding IsProject}" Value="True">
-                                                    <Setter Property="FontWeight"
-                                                            Value="{DynamicResource Font.Weight.Semibold}" />
-                                                </DataTrigger>
-                                            </Style.Triggers>
-                                        </Style>
-                                    </TextBlock.Style>
-                                </TextBlock>
+                                <DockPanel Grid.Column="1">
+                                    <!-- What kind of row, before its name. Dim, so the
+                                         name stays what the eye lands on. -->
+                                    <TextBlock DockPanel.Dock="Left" Margin="0,0,6,0"
+                                               Style="{StaticResource IconText}" FontSize="12"
+                                               VerticalAlignment="Center"
+                                               Foreground="{DynamicResource Brush.Text.Secondary}"
+                                               Text="{Binding IconKey,
+                                                   Converter={StaticResource ResourceKey}}" />
+                                    <TextBlock Text="{Binding Name}"
+                                               VerticalAlignment="Center"
+                                               FontSize="{DynamicResource Font.Size.Body}"
+                                               Foreground="{DynamicResource Brush.Text.Primary}"
+                                               TextTrimming="CharacterEllipsis"
+                                               ToolTip="{Binding Node.Path}">
+                                        <TextBlock.Style>
+                                            <Style TargetType="TextBlock">
+                                                <Setter Property="FontFamily"
+                                                        Value="{DynamicResource Font.UI}" />
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding IsFile}" Value="True">
+                                                        <Setter Property="FontFamily"
+                                                                Value="{DynamicResource Font.Mono}" />
+                                                    </DataTrigger>
+                                                    <DataTrigger Binding="{Binding IsProject}" Value="True">
+                                                        <Setter Property="FontWeight"
+                                                                Value="{DynamicResource Font.Weight.Semibold}" />
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </TextBlock.Style>
+                                    </TextBlock>
+                                </DockPanel>
                                 <TextBlock Grid.Column="2" Text="{Binding Annotation}"
                                            VerticalAlignment="Center" Margin="8,0,0,0"
-                                           FontFamily="{DynamicResource Font.Mono}"
+                                           FontFamily="{DynamicResource Font.UI}"
                                            FontSize="{DynamicResource Font.Size.Caption}"
                                            Foreground="{DynamicResource Brush.Text.Disabled}" />
                                 <Border Grid.Column="3" Margin="8,0,4,0"
