@@ -109,6 +109,14 @@ public static class UnifiedDiffParser
         var newLine = 0;
         var hunk = -1;
 
+        // Lines the open hunk still owes on each side, from its @@ header. While either is
+        // above zero every line is content, whatever it starts with: a removed line reading
+        // "-- x" arrives as "--- x", and was taken for a file header - dimmed, uncounted, and
+        // out of step with the line numbers after it. The header check below runs only
+        // between hunks.
+        var oldLeft = 0;
+        var newLeft = 0;
+
         foreach (var raw in diff.Replace("\r\n", "\n").Split('\n'))
         {
             if (raw.Length == 0)
@@ -118,7 +126,7 @@ public static class UnifiedDiffParser
 
             if (raw.StartsWith("@@", StringComparison.Ordinal))
             {
-                (oldLine, newLine) = ParseHunkHeader(raw);
+                (oldLine, newLine, oldLeft, newLeft) = ParseHunkHeader(raw);
                 hunk++;
                 lines.Add(new DiffLine
                 {
@@ -129,7 +137,7 @@ public static class UnifiedDiffParser
                 continue;
             }
 
-            if (IsFileHeader(raw))
+            if (oldLeft <= 0 && newLeft <= 0 && IsFileHeader(raw))
             {
                 if (raw.StartsWith("Binary files", StringComparison.Ordinal) ||
                     raw.StartsWith("GIT binary patch", StringComparison.Ordinal))
@@ -156,6 +164,7 @@ public static class UnifiedDiffParser
             {
                 case '+':
                     added++;
+                    newLeft--;
                     lines.Add(new DiffLine
                     {
                         Kind = DiffLineKind.Added,
@@ -167,6 +176,7 @@ public static class UnifiedDiffParser
 
                 case '-':
                     removed++;
+                    oldLeft--;
                     lines.Add(new DiffLine
                     {
                         Kind = DiffLineKind.Removed,
@@ -179,6 +189,8 @@ public static class UnifiedDiffParser
                 default:
                     // A context line starts with a space, but git omits it for an empty
                     // line — so anything else here is context too.
+                    oldLeft--;
+                    newLeft--;
                     lines.Add(new DiffLine
                     {
                         Kind = DiffLineKind.Context,
@@ -217,13 +229,21 @@ public static class UnifiedDiffParser
         line.StartsWith("GIT binary patch", StringComparison.Ordinal);
 
     /// <summary>Read the starting line numbers out of <c>@@ -a,b +c,d @@</c>.</summary>
-    private static (int Old, int New) ParseHunkHeader(string header)
+    /// <remarks>
+    /// Only the two range tokens are read. The text after the closing <c>@@</c> is the
+    /// enclosing function's first line, and it can start with <c>-</c> or <c>+</c> itself —
+    /// reading every token let <c>@@ -1 +1 @@ -x</c> move the old side's start. The counts
+    /// default to 1 when git leaves them out, which it does for a one-line range.
+    /// </remarks>
+    private static (int Old, int New, int OldCount, int NewCount) ParseHunkHeader(string header)
     {
         var old = 1;
         var @new = 1;
+        var oldCount = 1;
+        var newCount = 1;
 
         var parts = header.Split(' ', StringSplitOptions.RemoveEmptyEntries);
-        foreach (var part in parts)
+        foreach (var part in parts.Skip(1).Take(2))
         {
             if (part.Length < 2)
             {
@@ -236,16 +256,20 @@ public static class UnifiedDiffParser
                 continue;
             }
 
+            var count = numbers.Length > 1 && int.TryParse(numbers[1], out var c) ? c : 1;
+
             if (part[0] == '-')
             {
                 old = start;
+                oldCount = count;
             }
             else if (part[0] == '+')
             {
                 @new = start;
+                newCount = count;
             }
         }
 
-        return (old, @new);
+        return (old, @new, oldCount, newCount);
     }
 }

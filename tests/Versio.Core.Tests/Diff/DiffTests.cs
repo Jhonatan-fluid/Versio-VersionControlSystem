@@ -77,6 +77,31 @@ public class UnifiedDiffParserTests
     }
 
     [Fact]
+    public void A_removed_line_that_looks_like_a_header_is_still_a_removed_line()
+    {
+        // "-- x" removed arrives as "--- x"; "++ y" added as "+++ y". Inside a hunk those are
+        // content. They were taken for file headers - dimmed, uncounted, and every line
+        // number after them one out.
+        var doc = UnifiedDiffParser.Parse("@@ -1,2 +1,2 @@\n--- x\n+++ y\n same\n");
+
+        Assert.Equal(1, doc.Removed);
+        Assert.Equal(1, doc.Added);
+        Assert.Equal("-- x", doc.Lines.Single(l => l.Kind == DiffLineKind.Removed).Text);
+        Assert.Equal(2, doc.Lines.Single(l => l.Kind == DiffLineKind.Context).NewLine);
+    }
+
+    [Fact]
+    public void The_function_context_after_a_hunk_header_does_not_move_its_start()
+    {
+        // git prints the enclosing line after the second @@, and it can begin with - or +.
+        var doc = UnifiedDiffParser.Parse("@@ -10,1 +20,1 @@ -x +y\n ctx\n");
+
+        var context = Assert.Single(doc.Lines, l => l.Kind == DiffLineKind.Context);
+        Assert.Equal(10, context.OldLine);
+        Assert.Equal(20, context.NewLine);
+    }
+
+    [Fact]
     public void A_binary_diff_is_detected()
     {
         var doc = UnifiedDiffParser.Parse(
