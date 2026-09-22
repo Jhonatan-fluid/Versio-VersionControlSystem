@@ -5,6 +5,12 @@ here and only here. Search [`FINDINGS.md`](FINDINGS.md) for defects. Completed p
 handoffs are records in [`phase1/`](phase1/) and [`archive/`](archive/) — read them for why,
 never for state.
 
+**Branch `UiLook` (2026-09-21/22) is not merged.** Twenty commits from one look at the running
+window: all twelve findings fixed, plus two defects found under them (a second Versio wrote no
+log file; the diff parser read a removed `--` line as a file header). Everything is tested and
+the working loop is green; the visual half is item 2's first bullet. FINDINGS 2026-09-21 has
+the list.
+
 **Continue from here — item 2 of *What is next*: the owner eyeballs.** Item 1 is done:
 `Versio.Plc.Codesys.Tests` ran on `Siemens2` on 2026-08-19 evening — **54/54 green in
 39 m 33 s, zero skips**, on an idle machine with the IDE closed, over the Core seam
@@ -15,8 +21,8 @@ UX remainder) is built and tested as of 2026-08-25** — UX-6 find boxes, UX-7 `
 Escape, UX-8 copy-a-commit, UX-12 amend-while-unpushed — and its visual half joins the
 eyeball list in item 2. Do not start from `archive/` or a handoff.
 
-**Tests:** 2,884 across eleven projects, last counted 2026-09-20 (Core 1,518, App 686,
-TIA Pure 43). **The Rendered view of an ST object reads like the IDE (2026-09-20):** no
+**Tests:** 2,952 across eleven projects, last counted 2026-09-22 on `UiLook` (Core 1,535,
+Integration 168, App 732, TIA Pure 43). **The Rendered view of an ST object reads like the IDE (2026-09-20):** no
 `@@` line, one gutter, a Declaration / Implementation divider, and the implementation
 numbered from 1 so a compile error's line number can be found — FINDINGS 2026-09-20. **With TIA Portal open, a commit no longer records a stale mirror**: the
 commit is refused with what to close, a push no longer marks an unexported save as
@@ -54,9 +60,9 @@ marking, duplicate-param keys, and the detail-pane lookup. All of them are in
 
 | Project | Tests | Time | Needs |
 |---|---|---|---|
-| `Versio.Core.Tests` | 1,518 | under a second | nothing |
-| `Versio.Integration.Tests` | 163 | ~10 s | real git |
-| `Versio.App.Tests` | 686 | ~50 s | nothing |
+| `Versio.Core.Tests` | 1,535 | under a second | nothing |
+| `Versio.Integration.Tests` | 168 | ~10 s | real git |
+| `Versio.App.Tests` | 732 | ~3.6 min (measured 2026-09-22) | nothing |
 | `Versio.Arch.Tests` | 27 | instant | nothing |
 | `Versio.Plc.Codesys.Pure.Tests` | 263 | under a second | nothing |
 | `Versio.Plc.Codesys.Parity.Tests` | 97 | ~15 s | `python` on PATH — skips cleanly without it, so check the count |
@@ -179,7 +185,17 @@ One list. Reorder it; do not copy it into another file.
    39 m 33 s, zero skips**, IDE closed, machine otherwise idle. The first vendor's gate has
    now seen `ExportHeldViaCopy`, the held-wait, the occupancy-then-hash path and the
    locked-pointer skip, and the run is the counted gate `LOCK-1` owed.
-2. **Owner eyeball leftovers.** Merge dialog; both themes on the rail badge. **Git panel is
+2. **Owner eyeball leftovers.** **`UiLook` first**, in the dark theme, on this repository:
+   the Project panel with nothing changed lists IN SYNC projects (no "Open a repository");
+   an empty window has Open / Clone and Ctrl+O works; launching Versio a second time brings
+   the first window forward; the log pill says "N new" only for warnings; no white square
+   where the diff's scrollbars meet; the pane header reads FILE / DIFF / PROJECT / COMMIT with
+   the name first; Rendered | Raw looks like one control; explorer rows have kind icons and
+   "Persistent GVL"-style types, and hovering a deep row lights only that row; a disabled
+   Commit is grey; the caption reads "Versio — Versio"; history rows carry branch/tag pills;
+   a commit opens with its message body and one heading per file, highlighted. Also check
+   the light theme — the look on 2026-09-21 was dark only.
+   Merge dialog; both themes on the rail badge. **Git panel is
    one CHANGES list** (no STAGED / NOT STAGED splitter); two-line rows are 40 px so they no
    longer overlap. **Stop / Retry / close:** start an export, click Stop, confirm the
    log names the operation (not `the session is ending`), Try again lights, then close during a

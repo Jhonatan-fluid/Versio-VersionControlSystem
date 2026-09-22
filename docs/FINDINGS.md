@@ -19,6 +19,85 @@ produce a diff touching everything else.
 
 ---
 
+### Twelve things the running window showed that no test could, and two defects under them
+
+**Found 2026-09-21**, by looking. Until then Versio's UI had only ever been checked through
+its log and the owner's eyes: the shell has no interactive desktop. The installed build is in
+the Start menu now, so computer-use can see it — and one pass over the four panels of the
+owner's own window, on this repository, found everything below. Branch `UiLook`, one commit
+per item.
+
+**The ones that were wrong, not merely plain.**
+
+- **The project panel told its user to open the repository they had open.** Four projects in
+  sync, and the middle of the panel said *"Open a repository to see what is in it"*. The
+  empty-state trigger read `Tree.Count == 0`, which is true both with no repository and with
+  nothing changed — the tree hides in-sync projects on purpose. It now reads
+  `Sync.HasRepository`, and the hidden projects get an IN SYNC list of their own.
+  `ProjectPanelCalmStateTests`; putting the old trigger back turns the window test red.
+- **A second launch drew an empty window with a modal naming a pid.** Clicking Versio while it
+  ran: "already open in another Versio window (pid 4552)". At startup the refusal is now a
+  hand-over — the verdict carries a live local holder's pid, that window is restored and
+  focused, and the new one closes. Switching repository inside a running window keeps the
+  dialog. Verified live: the installed window came forward and the dev build logged the
+  hand-over and exited. `SecondInstanceTests`.
+- **A second Versio wrote nothing to disk.** Found while looking for that hand-over's log line
+  and finding it nowhere. Both processes aimed at `versio-<date>.log`; the first holds it for
+  writing, so every write from the second failed, reported once in its own log panel. It now
+  writes `versio-<date>-<pid>.log`. Rejected: sharing the file for writing (interleaved lines
+  with nothing saying whose). `RollingFileSinkTests`.
+- **An idle window with CODESYS open wrote ~1,400 identical lines an hour.** The IDE rewrites
+  its `.~u` marker every five seconds and each settle was logged twice — once by the watcher,
+  once by the sync panel repeating it. The duplicate is gone and the watcher folds a repeating
+  path through `RepeatCollapser` (first line prints, repeats inside five minutes are counted
+  into the next). The event is never folded: the IDE closing is only ever seen as one.
+- **The log badge counted Debug.** It climbed by sixty a minute with nothing happening.
+  Collapsed, it now says "N new" for unseen warnings and errors, and is absent otherwise.
+- **A white square in the dark diff view**, where the scrollbars meet: the stock ScrollViewer
+  paints that cell from `SystemColors.ControlBrushKey` (`#F0F0F0`). Redefined as transparent
+  in an implicit ScrollViewer style's resources; no bar test could see it.
+- **Pointing at a tree row lit every folder above it.** The hover trigger read the
+  TreeViewItem's `IsMouseOver`, which is true for every ancestor of the hovered row. Sourced
+  from the row's own strip now — the trap the template already avoided for keyboard focus.
+- **A disabled Commit stayed a bright accent slab.** Ghost's disabled trigger only dims text;
+  on AccentButton the fill is the loud part.
+- **A removed line starting `--` was parsed as a file header.** Found by a test written for the
+  file titles below. `-- x` removed arrives as `--- x`; the parser matched header prefixes
+  anywhere, so the line was dimmed, uncounted, and every line number after it one out (a
+  Markdown rule or an SQL comment is enough). The parser now counts down each hunk's budget
+  from its `@@` and checks for headers only between hunks; it also stops reading the `@@` line
+  at its two range tokens, because the function context after it can start with `-`. Fixed
+  in its own commit, `a5e914f`.
+
+**The ones that were plain.** The pane said DIFF over everything, with the path trimmed from
+its end so the object's name was what the ellipsis ate (`PaneHeading`); the Rendered/Raw pair
+were filter chips whose off state reads as disabled (`SegmentChip`); the tree drew raw type
+identifiers (`gvl_persistent`) in a code font while `ObjectTypeNames` sat unused, and nothing
+before a row's name (`ProjectTreeNode.TypeName`, `TreeRow.IconKey`); an empty window said "open
+a repository" with no button (now Open, bound to `ApplicationCommands.Open` and Ctrl+O, and
+Clone); the caption said "Versio" above a brand row saying "Versio" (now `<repository> —
+Versio`, so two windows differ in the taskbar); the history had no branch or tag labels (`%D`,
+`CommitRef`); and a commit showed as raw `git show` text with no highlighting and no message
+body — file header blocks are now one `FileTitle` per file with its counts, each file is
+highlighted in its own language, and a header shows the body, author, size and the git
+panel's object sentence (`CommitHeading`).
+
+**Rejected.** Drawing a custom title bar to merge the toolbar into it: the caption is already
+painted in the theme's surface colour, and custom chrome takes on snap layouts, the system menu
+and the resize border for about 30 px. Glyphs per object *type*: which icon a POU deserves is a
+vendor's word; the icons are per tree *kind*, which every vendor shares.
+
+**Measured on the way.** `Versio.App.Tests` takes **3.6–3.7 minutes** on this machine — on
+`main` (3.70 min, 686 tests) and on `UiLook` (3.63 min, 732 tests) alike, measured one after
+the other on 2026-09-22. The "~50 s" in the docs had gone stale; the slowest tests are the
+three theme switches (42 s, 22 s, 14 s on `main`), which repaint every window earlier tests
+built and never closed. One unrelated flake seen twice: `HistoryCopyTests` fails with
+`CLIPBRD_E_CANT_OPEN` when another program holds the clipboard, and passes on rerun.
+
+**Still owed to a person.** Everything visual on this branch: see STATUS *What is next* item 2.
+
+---
+
 ### The Rendered view numbered an ST object's code differently from the IDE
 
 **Found 2026-09-20**, from the owner's side-by-side screenshots of `FB_Alarm` in Versio

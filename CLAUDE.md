@@ -152,13 +152,21 @@ dotnet build src/Versio.App/Versio.App.csproj
 start "" "src/Versio.App/bin/Debug/net9.0-windows/Versio.exe" "C:/GIT/Versio"
 ```
 
-It cannot be screenshotted from here — no interactive desktop — so read
+The shell itself has no interactive desktop, so first read
 `%LOCALAPPDATA%\VersioUser\logs\versio-<date>.log` for what happened, and **filter to the launch
 window**: stack-trace lines carry no timestamp, so an old exception grepped out of context
 reads as a live one. Zero `ERR` lines after startup means the window constructed, the panels
 realised and the bindings resolved.
 
-Then ask the owner to eyeball anything visual. **Close the app before rebuilding** — a running
+**It can be looked at, with the owner's leave.** Since 2026-09-21 the computer-use tools can
+see and drive the window (the installed build is in the Start menu as "Versio"). One look at
+the four panels found twelve things no test could — FINDINGS 2026-09-21. Ask before taking the
+screen: it is the owner's desktop, and it may have a game or their own work in front. Two
+traps: `open_application("Versio")` **starts a second instance** when one is running (which now
+hands over and exits, but still), and a second Versio on the same repository hands over to the
+first rather than opening — point a dev build at a different repository.
+
+Then ask the owner to eyeball anything visual you could not look at yourself. **Close the app before rebuilding** — a running
 `Versio.exe` locks its own binaries, and a running test host locks the test DLLs.
 
 ---
@@ -236,9 +244,9 @@ stays that way.
 
 | Suite | Count | Time | Needs |
 |---|---|---|---|
-| `Versio.Core.Tests` | 1,518 | under a second | nothing |
-| `Versio.Integration.Tests` | 163 | ~10 s | real git |
-| `Versio.App.Tests` | 686 | ~50 s, STA, no window shown | nothing |
+| `Versio.Core.Tests` | 1,535 | under a second | nothing |
+| `Versio.Integration.Tests` | 168 | ~10 s | real git |
+| `Versio.App.Tests` | 732 | ~3.6 min, STA, no window shown (measured 2026-09-22; it was ~50 s once) | nothing |
 | `Versio.Arch.Tests` | 27 | instant | nothing — it reads assembly metadata, IL and the `.csproj` files |
 | `Versio.Plc.Codesys.Pure.Tests` | 263 | under a second | nothing — the planner, the codecs, the protocol |
 | `Versio.Plc.Codesys.Parity.Tests` | 97 | ~15 s | `python` on PATH — **skips cleanly without it, so check the count, not the colour** |
@@ -265,7 +273,9 @@ C:\Users\elli_\AppData\Local\Microsoft\dotnet\dotnet.exe test tests\Versio.Plc.T
 C:\Users\elli_\AppData\Local\Microsoft\dotnet\dotnet.exe test tests\Versio.Plc.TwinCat.Pure.Tests
 ```
 
-About thirty seconds together, plus fifty for `Versio.App.Tests` when the UI is in play.
+About thirty seconds together, plus about three and a half minutes for `Versio.App.Tests` when
+the UI is in play (measured 2026-09-22 on `main` and on `UiLook` alike; it was fifty seconds
+once, and nobody noticed it grow).
 `Versio.Plc.Codesys.Tests` is the gate before a commit — and any change to the python touches
 the parity project's subject, so run it before believing a script edit.
 
