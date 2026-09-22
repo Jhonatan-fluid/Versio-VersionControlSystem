@@ -68,12 +68,97 @@ public class UnifiedDiffParserTests
     }
 
     [Fact]
-    public void File_headers_are_kept_but_marked_as_such()
+    public void A_file_header_block_becomes_one_title_with_the_file_counts()
     {
+        // diff --git, index, --- and +++ say only "this file"; a commit of twelve files read
+        // as one run of text with the boundaries the hardest thing to find.
         var doc = UnifiedDiffParser.Parse(Sample);
 
-        Assert.Contains(doc.Lines, l => l.Kind == DiffLineKind.FileHeader &&
-                                        l.Text.StartsWith("diff --git", StringComparison.Ordinal));
+        var title = Assert.Single(doc.Lines, l => l.Kind == DiffLineKind.FileTitle);
+        Assert.Equal("plc/Main.st", title.Text);
+        Assert.Equal(new DiffFileTitle("plc/Main.st", null, DiffFileChange.Modified, 2, 1), title.Title);
+        Assert.DoesNotContain(doc.Lines, l => l.Text.StartsWith("diff --git", StringComparison.Ordinal)
+                                           || l.Text.StartsWith("index ", StringComparison.Ordinal)
+                                           || l.Text.StartsWith("+++", StringComparison.Ordinal));
+        Assert.Equal([title.Title!], doc.Files);
+    }
+
+    [Fact]
+    public void Each_file_of_a_commit_gets_its_own_title_and_counts()
+    {
+        var doc = UnifiedDiffParser.Parse("""
+            diff --git a/docs/STATUS.md b/docs/STATUS.md
+            index 1..2 100644
+            --- a/docs/STATUS.md
+            +++ b/docs/STATUS.md
+            @@ -1 +1 @@
+            -old
+            +new
+            diff --git a/plc/New.st b/plc/New.st
+            new file mode 100644
+            index 0000000..3
+            --- /dev/null
+            +++ b/plc/New.st
+            @@ -0,0 +1,2 @@
+            +one
+            +two
+            diff --git a/plc/Gone.st b/plc/Gone.st
+            deleted file mode 100644
+            index 4..0000000
+            --- a/plc/Gone.st
+            +++ /dev/null
+            @@ -1 +0,0 @@
+            -bye
+            diff --git a/plc/Old Name.st b/plc/New Name.st
+            similarity index 100%
+            rename from plc/Old Name.st
+            rename to plc/New Name.st
+            """);
+
+        Assert.Equal(
+            [
+                new DiffFileTitle("docs/STATUS.md", null, DiffFileChange.Modified, 1, 1),
+                new DiffFileTitle("plc/New.st", null, DiffFileChange.Added, 2, 0),
+                new DiffFileTitle("plc/Gone.st", null, DiffFileChange.Deleted, 0, 1),
+                new DiffFileTitle("plc/New Name.st", "plc/Old Name.st", DiffFileChange.Renamed, 0, 0),
+            ],
+            doc.Files);
+    }
+
+    [Fact]
+    public void A_path_with_spaces_survives_the_diff_git_line()
+    {
+        // A header with no +++ line (a mode change) takes its path from `diff --git` alone,
+        // which is ambiguous when the path contains " b/".
+        var doc = UnifiedDiffParser.Parse(
+            "diff --git a/Device/Plc Logic/a b/x.st b/Device/Plc Logic/a b/x.st\n" +
+            "old mode 100644\n" +
+            "new mode 100755\n");
+
+        Assert.Equal("Device/Plc Logic/a b/x.st", Assert.Single(doc.Files).Path);
+
+        // And what the title does not say stays on screen.
+        Assert.Contains(doc.Lines, l => l is { Kind: DiffLineKind.FileHeader, Text: "new mode 100755" });
+    }
+
+    [Fact]
+    public void A_bare_hunk_with_no_diff_git_line_keeps_its_header_lines()
+    {
+        var doc = UnifiedDiffParser.Parse("--- a/x\n+++ b/x\n@@ -1 +1 @@\n-a\n+b\n");
+
+        Assert.Empty(doc.Files);
+        Assert.Contains(doc.Lines, l => l is { Kind: DiffLineKind.FileHeader, Text: "+++ b/x" });
+    }
+
+    [Fact]
+    public void A_removed_line_that_looks_like_a_header_is_content()
+    {
+        // "--- x" inside a hunk is a removed line reading "-- x". Folding is only for the
+        // header block before a file's first @@.
+        var doc = UnifiedDiffParser.Parse(
+            "diff --git a/n.md b/n.md\n--- a/n.md\n+++ b/n.md\n@@ -1 +1 @@\n--- x\n+++ y\n");
+
+        Assert.Equal(new DiffFileTitle("n.md", null, DiffFileChange.Modified, 1, 1), Assert.Single(doc.Files));
     }
 
     [Fact]

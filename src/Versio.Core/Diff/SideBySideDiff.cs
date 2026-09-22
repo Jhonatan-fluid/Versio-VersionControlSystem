@@ -48,6 +48,7 @@ public static class SideBySideDiff
 
             if (line.Kind is DiffLineKind.HunkHeader
                           or DiffLineKind.FileHeader
+                          or DiffLineKind.FileTitle
                           or DiffLineKind.NoNewline)
             {
                 rows.Add(new SideBySideRow { Spanning = line });

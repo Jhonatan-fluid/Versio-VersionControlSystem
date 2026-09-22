@@ -248,6 +248,47 @@ public class DiffView : ListBox
     // Set before ItemsSource, so a container can never be prepared without one.
     private SyntaxLanguage _language = LanguageCatalog.ForPath(null);
 
+    /// <summary>
+    /// Each line's own file's language, when the document holds more than one file.
+    /// </summary>
+    /// <remarks>
+    /// A commit's patch is many files under one pane path - the commit's caption - so the one
+    /// language the view had came from a name with no extension and nothing was highlighted.
+    /// Keyed by reference: lines are records, and two identical context lines in two files are
+    /// equal by value. Null for a single file, where <see cref="_language"/> already is it.
+    /// </remarks>
+    private IReadOnlyDictionary<DiffLine, SyntaxLanguage>? _fileLanguages;
+
+    private SyntaxLanguage LanguageFor(DiffLine? line) =>
+        line is not null && _fileLanguages is { } map && map.TryGetValue(line, out var language)
+            ? language
+            : _language;
+
+    /// <summary>Which file each line belongs to, as a language — only worth it for several files.</summary>
+    private static IReadOnlyDictionary<DiffLine, SyntaxLanguage>? LanguagesByFile(DiffDocument document)
+    {
+        if (document.Files.Count < 2)
+        {
+            return null;
+        }
+
+        var map = new Dictionary<DiffLine, SyntaxLanguage>(
+            document.Lines.Count, ReferenceEqualityComparer.Instance);
+        var current = LanguageCatalog.ForPath(null);
+
+        foreach (var line in document.Lines)
+        {
+            if (line.Title is { } title)
+            {
+                current = LanguageCatalog.ForPath(title.Path);
+            }
+
+            map[line] = current;
+        }
+
+        return map;
+    }
+
     /// <summary>Guards against a slow parse landing after a newer selection.</summary>
     private int _generation;
 
@@ -259,6 +300,7 @@ public class DiffView : ListBox
         var generation = ++_generation;
 
         _language = LanguageCatalog.ForPath(path);
+        _fileLanguages = null;
 
         if (SourceRows is { } source)
         {
@@ -292,10 +334,10 @@ public class DiffView : ListBox
         // still tens of thousands of them, and none of that work needs the UI thread.
         // The emphasis pass and the split fold ride along: both are linear too, and both
         // exist so a row can be BUILT cheaply when it is realised.
-        var (document, rows) = await Task.Run(() =>
+        var (document, rows, languages) = await Task.Run(() =>
         {
             var parsed = IntralineEmphasis.Annotate(UnifiedDiffParser.Parse(text));
-            return (parsed, split ? SideBySideDiff.Build(parsed) : null);
+            return (parsed, split ? SideBySideDiff.Build(parsed) : null, LanguagesByFile(parsed));
         }).ConfigureAwait(true);
 
         // A user clicking down a list faster than the parses complete would otherwise see
@@ -304,6 +346,10 @@ public class DiffView : ListBox
         {
             return;
         }
+
+        // Before ItemsSource, for the same reason _language is: a container prepared by the
+        // assignment below must find its file's language already there.
+        _fileLanguages = languages;
 
         ItemsSource = document.IsEmpty
             ? null
@@ -330,8 +376,8 @@ public class DiffView : ListBox
 
         container.Content = item switch
         {
-            DiffLine line => BuildRow(line, _language),
-            SideBySideRow row => BuildSplitRow(row, _language),
+            DiffLine line => BuildRow(line, LanguageFor(line)),
+            SideBySideRow row => BuildSplitRow(row, LanguageFor(row.Left ?? row.Right ?? row.Spanning)),
             SourceCodeLine line => BuildSourceRow(line, _language),
             SourceDivider divider => BuildDivider(divider),
             _ => container.Content,
@@ -486,6 +532,11 @@ public class DiffView : ListBox
 
     private UIElement BuildRow(DiffLine line, SyntaxLanguage language)
     {
+        if (line is { Kind: DiffLineKind.FileTitle, Title: { } title })
+        {
+            return BuildFileTitle(title);
+        }
+
         var grid = new Grid { Background = BackgroundFor(line) };
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(46) });
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(46) });
@@ -660,6 +711,69 @@ public class DiffView : ListBox
         block.Margin = new Thickness(0, 0, 8, 0);
         Grid.SetColumn(block, column);
         return block;
+    }
+
+    /// <summary>
+    /// One file's heading: what happened to it, its path, and its own +/− counts.
+    /// </summary>
+    /// <remarks>
+    /// Stands where <c>diff --git</c>, <c>index</c>, <c>---</c> and <c>+++</c> used to, dimmed,
+    /// four lines per file — so in a commit of a dozen files the boundaries were the hardest
+    /// thing on screen to find. A sunken band with space above it, the path in the body's
+    /// weight, and the counts in the diff's own colours, so a reader scrolling a long commit
+    /// sees where each file starts and how much of it changed before reading any of it.
+    /// </remarks>
+    private Border BuildFileTitle(DiffFileTitle title)
+    {
+        var line = new TextBlock
+        {
+            FontFamily = (FontFamily)FindResource("Font.Mono"),
+            FontSize = (double)FindResource("Font.Size.Code"),
+            TextWrapping = TextWrapping.NoWrap,
+            VerticalAlignment = VerticalAlignment.Center,
+        };
+
+        var (word, brush) = title.Change switch
+        {
+            DiffFileChange.Added => ("added", "Brush.Status.Added"),
+            DiffFileChange.Deleted => ("deleted", "Brush.Status.Deleted"),
+            DiffFileChange.Renamed => ("renamed", "Brush.Status.Renamed"),
+            _ => (string.Empty, "Brush.Text.Secondary"),
+        };
+
+        if (word.Length > 0)
+        {
+            line.Inlines.Add(new Run(word + "  ") { Foreground = Resolve(brush) });
+        }
+
+        if (title.OldPath is { } from)
+        {
+            line.Inlines.Add(new Run(from + " → ") { Foreground = Resolve("Brush.Text.Secondary") });
+        }
+
+        line.Inlines.Add(new Run(title.Path)
+        {
+            Foreground = Resolve("Brush.Text.Primary"),
+            FontWeight = (FontWeight)FindResource("Font.Weight.Semibold"),
+        });
+
+        if (title.Added > 0)
+        {
+            line.Inlines.Add(new Run($"   +{title.Added}") { Foreground = Resolve("Brush.Status.Added") });
+        }
+
+        if (title.Removed > 0)
+        {
+            line.Inlines.Add(new Run($"   −{title.Removed}") { Foreground = Resolve("Brush.Status.Deleted") });
+        }
+
+        return new Border
+        {
+            Background = Resolve("Brush.Surface.Sunken"),
+            Margin = new Thickness(0, 10, 0, 2),
+            Padding = new Thickness(12, 4, 12, 4),
+            Child = line,
+        };
     }
 
     private TextBlock Mono(string text, Brush foreground) => new()

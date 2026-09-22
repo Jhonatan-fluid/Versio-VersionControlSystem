@@ -13,6 +13,12 @@ public enum DiffLineKind
     /// <summary>File headers, index lines, mode changes — shown dimmed.</summary>
     FileHeader,
 
+    /// <summary>
+    /// One file's heading: its path, what happened to it, and its own +/− counts. See
+    /// <see cref="DiffFileTitle"/>.
+    /// </summary>
+    FileTitle,
+
     /// <summary>"\ No newline at end of file".</summary>
     NoNewline,
 }
@@ -51,6 +57,9 @@ public sealed record DiffLine
     /// </remarks>
     public IReadOnlyList<TextSpan> Emphasis { get; init; } = [];
 
+    /// <summary>The file this heading introduces. Set only on a <see cref="DiffLineKind.FileTitle"/>.</summary>
+    public DiffFileTitle? Title { get; init; }
+
     public string Marker => Kind switch
     {
         DiffLineKind.Added => "+",
@@ -58,6 +67,24 @@ public sealed record DiffLine
         _ => " ",
     };
 }
+
+/// <summary>What a diff did to one file.</summary>
+public enum DiffFileChange
+{
+    Modified,
+    Added,
+    Deleted,
+    Renamed,
+}
+
+/// <summary>One file's heading inside a diff that may hold several.</summary>
+/// <param name="Path">The file's path after the change — or before it, for a deletion.</param>
+/// <param name="OldPath">Where a renamed file came from; null otherwise.</param>
+/// <param name="Change">What happened to it.</param>
+/// <param name="Added">Lines added to this file.</param>
+/// <param name="Removed">Lines removed from this file.</param>
+public sealed record DiffFileTitle(
+    string Path, string? OldPath, DiffFileChange Change, int Added, int Removed);
 
 /// <summary>A parsed unified diff, ready to render.</summary>
 public sealed record DiffDocument
@@ -69,6 +96,9 @@ public sealed record DiffDocument
 
     /// <summary>How many hunks the diff contains, across every file in it.</summary>
     public int Hunks { get; init; }
+
+    /// <summary>Every file's heading, in order. Empty for a diff with no <c>diff --git</c> line.</summary>
+    public IReadOnlyList<DiffFileTitle> Files { get; init; } = [];
 
     public bool IsEmpty => Lines.Count == 0;
 
@@ -91,6 +121,20 @@ public sealed record DiffDocument
 /// is the difference between a diff you can discuss ("line 213") and one you can only
 /// squint at.
 /// </para>
+/// <para>
+/// <b>Each file's header block becomes one title line.</b> A commit's patch arrived as
+/// <c>diff --git</c>, <c>index</c>, <c>---</c> and <c>+++</c> per file, dimmed but raw, so a
+/// twelve-file commit read as one long run of text with the file boundaries the hardest thing
+/// to find in it. Seen in the running window on 2026-09-21. Those lines say only which file,
+/// and whether it was added, deleted or renamed — so they fold into a
+/// <see cref="DiffLineKind.FileTitle"/> carrying exactly that, plus the file's own counts. A
+/// mode change and a binary notice say something the title does not, and stay as dimmed
+/// lines. A diff with no <c>diff --git</c> at all — a bare hunk — keeps the old handling.
+/// </para>
+/// <para>
+/// This is the view's model only. Staging a hunk rebuilds its patch from git's raw text
+/// (<see cref="HunkPatchBuilder"/>), never from these lines, so nothing git needs is lost.
+/// </para>
 /// </remarks>
 public static class UnifiedDiffParser
 {
@@ -109,6 +153,15 @@ public static class UnifiedDiffParser
         var newLine = 0;
         var hunk = -1;
 
+        // The file being read, while inside a `diff --git` block: where its title sits in
+        // `lines`, and what it has learned about the file so far. Finished (counts filled in)
+        // when the next file starts, and at the end.
+        var titleAt = -1;
+        DiffFileTitle? title = null;
+        var inHeader = false;
+        var fileAdded = 0;
+        var fileRemoved = 0;
+
         // Lines the open hunk still owes on each side, from its @@ header. While either is
         // above zero every line is content, whatever it starts with: a removed line reading
         // "-- x" arrives as "--- x", and was taken for a file header - dimmed, uncounted, and
@@ -116,12 +169,62 @@ public static class UnifiedDiffParser
         // between hunks.
         var oldLeft = 0;
         var newLeft = 0;
+        var files = new List<DiffFileTitle>();
+
+        void FinishFile()
+        {
+            if (titleAt < 0 || title is null)
+            {
+                return;
+            }
+
+            // Counted in plain integers and applied once here: a record copy per changed line
+            // would allocate for every line of the 33,644-line visualisation diff the fixture
+            // produces.
+            var done = title with { Added = fileAdded, Removed = fileRemoved };
+            lines[titleAt] = lines[titleAt] with { Text = done.Path, Title = done };
+            files.Add(done);
+            titleAt = -1;
+            title = null;
+            fileAdded = 0;
+            fileRemoved = 0;
+        }
 
         foreach (var raw in diff.Replace("\r\n", "\n").Split('\n'))
         {
             if (raw.Length == 0)
             {
                 continue;
+            }
+
+            if (raw.StartsWith("diff --git ", StringComparison.Ordinal))
+            {
+                FinishFile();
+                var path = PathFromDiffGit(raw);
+                title = new DiffFileTitle(path, null, DiffFileChange.Modified, 0, 0);
+                titleAt = lines.Count;
+                inHeader = true;
+                lines.Add(new DiffLine { Kind = DiffLineKind.FileTitle, Text = path, Title = title });
+                continue;
+            }
+
+            // Inside a file's header block - after its `diff --git`, before its first `@@` -
+            // the lines the title already says are absorbed into it; the rest fall through to
+            // be kept as dimmed header lines. Only there: a removed line reading "-- x" inside
+            // a hunk is content, not a header.
+            if (inHeader && title is not null)
+            {
+                var folded = title;
+                if (Absorb(raw, ref folded))
+                {
+                    title = folded;
+                    continue;
+                }
+            }
+
+            if (raw.StartsWith("@@", StringComparison.Ordinal))
+            {
+                inHeader = false;
             }
 
             if (raw.StartsWith("@@", StringComparison.Ordinal))
@@ -164,7 +267,9 @@ public static class UnifiedDiffParser
             {
                 case '+':
                     added++;
+                    fileAdded++;
                     newLeft--;
+
                     lines.Add(new DiffLine
                     {
                         Kind = DiffLineKind.Added,
@@ -176,7 +281,9 @@ public static class UnifiedDiffParser
 
                 case '-':
                     removed++;
+                    fileRemoved++;
                     oldLeft--;
+
                     lines.Add(new DiffLine
                     {
                         Kind = DiffLineKind.Removed,
@@ -203,6 +310,8 @@ public static class UnifiedDiffParser
             }
         }
 
+        FinishFile();
+
         return new DiffDocument
         {
             Lines = lines,
@@ -210,7 +319,98 @@ public static class UnifiedDiffParser
             Removed = removed,
             IsBinary = binary,
             Hunks = hunk + 1,
+            Files = files,
         };
+    }
+
+    /// <summary>
+    /// Fold one header line into the title, or say it is not one to fold.
+    /// </summary>
+    private static bool Absorb(string raw, ref DiffFileTitle title)
+    {
+        if (raw.StartsWith("index ", StringComparison.Ordinal) ||
+            raw.StartsWith("similarity index", StringComparison.Ordinal) ||
+            raw.StartsWith("dissimilarity index", StringComparison.Ordinal))
+        {
+            return true;
+        }
+
+        if (raw.StartsWith("new file mode", StringComparison.Ordinal))
+        {
+            title = title with { Change = DiffFileChange.Added };
+            return true;
+        }
+
+        if (raw.StartsWith("deleted file mode", StringComparison.Ordinal))
+        {
+            title = title with { Change = DiffFileChange.Deleted };
+            return true;
+        }
+
+        if (raw.StartsWith("rename from ", StringComparison.Ordinal))
+        {
+            title = title with { Change = DiffFileChange.Renamed, OldPath = raw["rename from ".Length..] };
+            return true;
+        }
+
+        if (raw.StartsWith("rename to ", StringComparison.Ordinal))
+        {
+            title = title with { Change = DiffFileChange.Renamed, Path = raw["rename to ".Length..] };
+            return true;
+        }
+
+        if (raw.StartsWith("--- ", StringComparison.Ordinal))
+        {
+            // A deletion's only real path is on this side.
+            if (title.Change == DiffFileChange.Deleted && raw.StartsWith("--- a/", StringComparison.Ordinal))
+            {
+                title = title with { Path = raw["--- a/".Length..] };
+            }
+
+            return true;
+        }
+
+        if (raw.StartsWith("+++ ", StringComparison.Ordinal))
+        {
+            if (raw.StartsWith("+++ b/", StringComparison.Ordinal))
+            {
+                title = title with { Path = raw["+++ b/".Length..] };
+            }
+
+            return true;
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// The path out of <c>diff --git a/P b/P</c>, which is ambiguous when P contains " b/".
+    /// </summary>
+    /// <remarks>
+    /// Provisional: the <c>+++ b/</c> line, when there is one, replaces it. For the ordinary
+    /// case the two halves are the same path, so the line splits exactly in the middle; that
+    /// is tried first, and only then the last " b/", which is right for any rename without
+    /// " b/" in its new name — and a rename's real names arrive on their own lines anyway.
+    /// </remarks>
+    private static string PathFromDiffGit(string raw)
+    {
+        var rest = raw["diff --git ".Length..];
+
+        if (rest.Length % 2 == 1)
+        {
+            var half = (rest.Length - 1) / 2;
+            var a = rest[..half];
+            var b = rest[(half + 1)..];
+            if (a.StartsWith("a/", StringComparison.Ordinal) &&
+                b.StartsWith("b/", StringComparison.Ordinal) &&
+                a[2..] == b[2..])
+            {
+                return b[2..];
+            }
+        }
+
+        var split = rest.LastIndexOf(" b/", StringComparison.Ordinal);
+        return split >= 0 ? rest[(split + 3)..] : rest;
     }
 
     private static bool IsFileHeader(string line) =>

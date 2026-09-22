@@ -64,6 +64,7 @@ public sealed class SideBySideDiffTests
 
         Assert.Equal(2, rows.Count(r => r.Spanning is not null));
         Assert.Contains(rows, r => r.Spanning is { Kind: DiffLineKind.HunkHeader });
+        Assert.Contains(rows, r => r.Spanning is { Kind: DiffLineKind.FileTitle });
     }
 
     [Fact]

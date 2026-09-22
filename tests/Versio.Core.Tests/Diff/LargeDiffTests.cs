@@ -41,7 +41,9 @@ public sealed class LargeDiffTests
         var document = UnifiedDiffParser.Parse(text);
         watch.Stop();
 
-        Assert.Equal(33_644 + 5, document.Lines.Count);
+        // The body, the hunk header, and ONE title for the file: its diff --git, new file
+        // mode, --- and +++ fold into it.
+        Assert.Equal(33_644 + 2, document.Lines.Count);
 
         // Generous on purpose: this is a regression guard against the parse becoming
         // quadratic, not a benchmark. A per-line substring search over a 2.5 MB string would
