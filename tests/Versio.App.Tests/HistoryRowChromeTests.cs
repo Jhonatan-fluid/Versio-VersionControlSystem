@@ -53,6 +53,40 @@ public sealed class HistoryRowChromeTests
         _ => Task.CompletedTask);
 
     [Fact]
+    public void A_realised_commit_row_shows_the_branches_and_tags_on_it()
+    {
+        // The parser can read %D perfectly and the row still draw nothing; this is the row.
+        StaHarness.Run(() =>
+        {
+            var (window, shell) = Build();
+            var content = Assert.IsAssignableFrom<FrameworkElement>(window.Content);
+            Assert.IsType<RadioButton>(window.FindName("RailHistory")).IsChecked = true;
+
+            shell.History.Commits.Add(new CommitRow(
+                new CommitEntry
+                {
+                    Id = "c0ffee1234567890",
+                    ShortId = "c0ffee1",
+                    Subject = "Release",
+                    Refs =
+                    [
+                        new CommitRef("main", IsTag: false, IsHead: true),
+                        new CommitRef("v0.1.1", IsTag: true, IsHead: false),
+                    ],
+                },
+                _ => Task.CompletedTask));
+
+            content.Measure(new Size(1400, 900));
+            content.Arrange(new Rect(0, 0, 1400, 900));
+            content.UpdateLayout();
+
+            var texts = AllOf<TextBlock>(content).Select(t => t.Text).ToList();
+            Assert.Contains("main", texts);
+            Assert.Contains("v0.1.1", texts);
+        });
+    }
+
+    [Fact]
     public void A_realised_commit_file_row_shows_its_path()
     {
         StaHarness.Run(() =>

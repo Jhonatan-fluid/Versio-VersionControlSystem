@@ -36,6 +36,41 @@ public sealed class GitLogParserTests
     }
 
     [Fact]
+    public void A_commit_carries_the_branches_and_tags_that_point_at_it()
+    {
+        var commit = Assert.Single(GitLogParser.ParseCommits(Commit(
+            "ab1b6e1f4c2d9e8a7b6c5d4e3f2a1b0c9d8e7f60", "ab1b6e1", "Subject", "someone",
+            "2026-08-12T09:50:03-07:00", "2 hours ago",
+            "HEAD -> main, origin/main, origin/HEAD, tag: v0.1.1")));
+
+        Assert.Equal(
+            [
+                new CommitRef("main", IsTag: false, IsHead: true),
+                new CommitRef("origin/main", IsTag: false, IsHead: false),
+                new CommitRef("v0.1.1", IsTag: true, IsHead: false),
+            ],
+            commit.Refs);
+    }
+
+    [Fact]
+    public void A_commit_with_no_names_and_a_record_without_the_field_both_read_as_none()
+    {
+        // The field is empty for most commits, and absent from a format that predates it.
+        Assert.Empty(Assert.Single(GitLogParser.ParseCommits(Commit(
+            "a", "a", "s", "x", "2026-08-12T09:50:03-07:00", "now", ""))).Refs);
+        Assert.Empty(Assert.Single(GitLogParser.ParseCommits(Commit(
+            "a", "a", "s", "x", "2026-08-12T09:50:03-07:00", "now"))).Refs);
+    }
+
+    [Fact]
+    public void A_detached_HEAD_is_its_own_label()
+    {
+        Assert.Equal(
+            [new CommitRef("HEAD", IsTag: false, IsHead: true)],
+            GitLogParser.ParseRefs("HEAD"));
+    }
+
+    [Fact]
     public void Several_commits_come_back_in_the_order_git_listed_them()
     {
         // Newest first is git's order and the one the panel wants; re-sorting here would only

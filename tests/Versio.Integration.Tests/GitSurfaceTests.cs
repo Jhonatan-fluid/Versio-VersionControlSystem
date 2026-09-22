@@ -147,6 +147,36 @@ public sealed class GitSurfaceTests(ITestOutputHelper output) : IDisposable
     /// is the client keeping the contract they now rely on.
     /// </remarks>
     [SkippableFact]
+    public async Task The_branch_and_tag_on_a_commit_reach_the_history()
+    {
+        // %D is git's own decoration, and its shape - "HEAD -> main, tag: v1" - is exactly the
+        // kind of thing a parser is written against a guess of. Asked of real git.
+        Skip.IfNot(GitAvailable, "git not on PATH");
+        await InitAsync();
+
+        Write("a.st", "one\n");
+        await RunRawAsync("add", "-A");
+        await RunRawAsync("commit", "-m", "first");
+        await RunRawAsync("tag", "v0.1.0");
+        await RunRawAsync("branch", "side");
+
+        Write("a.st", "two\n");
+        await RunRawAsync("add", "-A");
+        await RunRawAsync("commit", "-m", "second");
+
+        var commits = await Client.RecentCommitsAsync(10, 0, CancellationToken.None);
+
+        var head = commits[0];
+        var branch = Assert.Single(head.Refs);
+        Assert.True(branch.IsHead);
+        Assert.False(branch.IsTag);
+
+        var first = commits[1];
+        Assert.Contains(first.Refs, r => r is { Name: "v0.1.0", IsTag: true });
+        Assert.Contains(first.Refs, r => r is { Name: "side", IsTag: false, IsHead: false });
+    }
+
+    [SkippableFact]
     public async Task A_missing_commit_returns_null_and_a_blank_message_does_not()
     {
         Skip.IfNot(GitAvailable, "git not on PATH");

@@ -172,6 +172,54 @@
                                            Visibility="{Binding IsUnpushed,
                                                Converter={StaticResource BoolToVisibility}}" />
 
+                                <!-- Where the branches and tags are. First on the line,
+                                     because they are what the eye scans a history for -
+                                     "where is main, has origin caught up, which one is
+                                     the release" - and the list gave no anchor at all.
+                                     The branch HEAD is on is the accent; a tag is the
+                                     rename colour, so it reads apart from branches without
+                                     a legend. -->
+                                <ItemsControl ItemsSource="{Binding Refs}"
+                                              Focusable="False" VerticalAlignment="Center"
+                                              AutomationProperties.Name="Branches and tags"
+                                              Visibility="{Binding HasRefs,
+                                                  Converter={StaticResource BoolToVisibility}}">
+                                    <ItemsControl.ItemsPanel>
+                                        <ItemsPanelTemplate>
+                                            <StackPanel Orientation="Horizontal" />
+                                        </ItemsPanelTemplate>
+                                    </ItemsControl.ItemsPanel>
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <Border Style="{StaticResource Pill}"
+                                                    Padding="6,0" Margin="0,0,5,0">
+                                                <TextBlock Text="{Binding Name}"
+                                                           FontFamily="{DynamicResource Font.Mono}"
+                                                           FontSize="{DynamicResource Font.Size.Caption}">
+                                                    <TextBlock.Style>
+                                                        <Style TargetType="TextBlock">
+                                                            <Setter Property="Foreground"
+                                                                    Value="{DynamicResource Brush.Text.Secondary}" />
+                                                            <Style.Triggers>
+                                                                <DataTrigger Binding="{Binding IsTag}" Value="True">
+                                                                    <Setter Property="Foreground"
+                                                                            Value="{DynamicResource Brush.Status.Renamed}" />
+                                                                </DataTrigger>
+                                                                <DataTrigger Binding="{Binding IsHead}" Value="True">
+                                                                    <Setter Property="Foreground"
+                                                                            Value="{DynamicResource Brush.Accent.Default}" />
+                                                                    <Setter Property="FontWeight"
+                                                                            Value="{DynamicResource Font.Weight.Semibold}" />
+                                                                </DataTrigger>
+                                                            </Style.Triggers>
+                                                        </Style>
+                                                    </TextBlock.Style>
+                                                </TextBlock>
+                                            </Border>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+
                                 <TextBlock Text="{Binding ShortId}"
                                            FontFamily="{DynamicResource Font.Mono}"
                                            FontSize="{DynamicResource Font.Size.Caption}"

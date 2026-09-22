@@ -124,6 +124,12 @@ public sealed class CommitRow : ObservableObject
 
     public string Author => Entry.Author;
 
+    /// <summary>Branches and tags on this commit. See <see cref="CommitEntry.Refs"/>.</summary>
+    public IReadOnlyList<CommitRef> Refs => Entry.Refs;
+
+    /// <summary>For the template: a row with no names draws no label strip at all.</summary>
+    public bool HasRefs => Entry.Refs.Count > 0;
+
     /// <summary>
     /// When the commit was authored, in the reader's own timezone.
     /// </summary>

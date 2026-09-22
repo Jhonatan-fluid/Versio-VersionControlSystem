@@ -24,7 +24,23 @@ public sealed record CommitEntry
     /// kind of small disagreement that makes a tool feel like it is guessing.
     /// </remarks>
     public string Age { get; init; } = string.Empty;
+
+    /// <summary>The branches and tags pointing at this commit, as git decorates it.</summary>
+    /// <remarks>
+    /// The history listed every commit identically, so where <c>main</c> was, where
+    /// <c>origin/main</c> had got to, and which commit a release tag named could only be found
+    /// in a terminal. Seen in the running window on 2026-09-21, on a list of fifty commits
+    /// with nothing to anchor the eye.
+    /// </remarks>
+    public IReadOnlyList<CommitRef> Refs { get; init; } = [];
 }
+
+/// <summary>One name pointing at a commit.</summary>
+/// <param name="Name">As git prints it: <c>main</c>, <c>origin/main</c>, <c>v0.1.1</c>.</param>
+/// <param name="IsTag">A tag rather than a branch.</param>
+/// <param name="IsHead">The branch HEAD is on — or, with <paramref name="Name"/> <c>HEAD</c>,
+/// a detached HEAD.</param>
+public sealed record CommitRef(string Name, bool IsTag, bool IsHead);
 
 /// <summary>One entry in the stash.</summary>
 public sealed record StashEntry
@@ -96,8 +112,12 @@ public static class GitLogParser
     /// as raw bytes in the argument. Both work, but a control character has to survive
     /// <c>ProcessStartInfo</c>, the Windows command line and whatever encoding sits between —
     /// and an escape git expands itself has none of that to survive.
+    /// <para>
+    /// <c>%D</c> is last and optional to the parser, so a record from a format without it still
+    /// reads; it is the decoration without the parentheses <c>%d</c> adds.
+    /// </para>
     /// </remarks>
-    public const string CommitFormat = "--format=%H%x1f%h%x1f%s%x1f%an%x1f%aI%x1f%ar%x1e";
+    public const string CommitFormat = "--format=%H%x1f%h%x1f%s%x1f%an%x1f%aI%x1f%ar%x1f%D%x1e";
 
     /// <summary>The <c>--format</c> that produces what <see cref="ParseStashes"/> reads.</summary>
     /// <remarks>
@@ -122,6 +142,7 @@ public static class GitLogParser
                 Author = fields[3],
                 When = ParseDate(fields[4]),
                 Age = fields[5],
+                Refs = fields.Length > 6 ? ParseRefs(fields[6]) : [],
             });
         }
 
@@ -219,6 +240,46 @@ public static class GitLogParser
                 yield return fields;
             }
         }
+    }
+
+    /// <summary>
+    /// Read git's <c>%D</c>: <c>HEAD -&gt; main, origin/main, tag: v0.1.1</c>.
+    /// </summary>
+    /// <remarks>
+    /// <c>origin/HEAD</c> is dropped: it is the remote's idea of its default branch, it sits on
+    /// the same commit as <c>origin/main</c> almost always, and a label repeated for no new
+    /// information is the clutter this list is trying not to grow.
+    /// </remarks>
+    public static IReadOnlyList<CommitRef> ParseRefs(string decoration)
+    {
+        if (string.IsNullOrWhiteSpace(decoration))
+        {
+            return [];
+        }
+
+        var refs = new List<CommitRef>();
+        foreach (var raw in decoration.Split(", ", StringSplitOptions.RemoveEmptyEntries
+                                                  | StringSplitOptions.TrimEntries))
+        {
+            if (raw.StartsWith("HEAD -> ", StringComparison.Ordinal))
+            {
+                refs.Add(new CommitRef(raw["HEAD -> ".Length..], IsTag: false, IsHead: true));
+            }
+            else if (raw == "HEAD")
+            {
+                refs.Add(new CommitRef("HEAD", IsTag: false, IsHead: true));
+            }
+            else if (raw.StartsWith("tag: ", StringComparison.Ordinal))
+            {
+                refs.Add(new CommitRef(raw["tag: ".Length..], IsTag: true, IsHead: false));
+            }
+            else if (!raw.EndsWith("/HEAD", StringComparison.Ordinal))
+            {
+                refs.Add(new CommitRef(raw, IsTag: false, IsHead: false));
+            }
+        }
+
+        return refs;
     }
 
     private static DateTimeOffset? ParseDate(string value) =>
