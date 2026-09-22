@@ -4815,8 +4815,11 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
     /// the right answer to "what did it do to this file?" — the panel offers both because they
     /// are different questions, and the expensive one is not the one asked by default.
     /// </remarks>
-    private Task ShowCommitAsync(CommitEntry commit) =>
-        ShowCommitPatchAsync(commit.Id, commit.ShortId, $"{commit.ShortId} {commit.Subject}");
+    private Task ShowCommitAsync(CommitEntry commit)
+    {
+        _shownCommitEntry = commit;
+        return ShowCommitPatchAsync(commit.Id, commit.ShortId, $"{commit.ShortId} {commit.Subject}");
+    }
 
     private async Task ShowCommitPatchAsync(string commitId, string shortId, string caption)
     {
@@ -4852,6 +4855,21 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
               "No patch to show. This is usually a merge commit, whose changes are a diff " +
               "against several parents rather than one patch."
             : patch;
+
+        // The header is extra: a message that cannot be read leaves the patch on screen and
+        // says nothing, the same as a history row whose files could not be listed.
+        var message = await _git.CommitMessageAsync(commitId, CancellationToken.None)
+            .ConfigureAwait(true);
+        var parsed = await Task.Run(() => UnifiedDiffParser.Parse(patch)).ConfigureAwait(true);
+
+        if (!string.Equals(SelectedDiffPath, caption, StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        CommitDetail = CommitHeading.Of(
+            _shownCommitEntry?.Id == commitId ? _shownCommitEntry : null,
+            message, parsed, Sync.Objects);
     }
 
     /// <summary>Show what one commit did to one file.</summary>
@@ -6302,8 +6320,30 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
             {
                 OnPropertyChanged(nameof(Heading));
             }
+
+            // One place for it to go, rather than one per route: the header belongs to a
+            // whole commit, and every other thing the pane can show is not one.
+            if (value != PaneMode.Commit)
+            {
+                CommitDetail = null;
+            }
         }
     }
+
+    private CommitHeading? _commitDetail;
+
+    /// <summary>The header above a whole commit's patch; null for anything else.</summary>
+    public CommitHeading? CommitDetail
+    {
+        get => _commitDetail;
+        private set => SetProperty(ref _commitDetail, value);
+    }
+
+    /// <summary>
+    /// The history row last opened as a whole commit, for its author and date. Kept because
+    /// the patch is reloaded without it when a diff option changes.
+    /// </summary>
+    private CommitEntry? _shownCommitEntry;
 
     /// <summary>The pane header: kind, name, folder, and whether the diff options apply.</summary>
     public PaneHeading Heading => PaneHeading.Of(

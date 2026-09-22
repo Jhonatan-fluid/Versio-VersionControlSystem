@@ -745,6 +745,60 @@
                                       ToolTip="Show every line of the file, with the changes still highlighted" />
                         </StackPanel>
                     </Grid>
+                    <!-- A WHOLE COMMIT'S HEADER: the rest of its message, who and when,
+                         and what it touched. The subject is already the pane's title. It
+                         opened as its patch alone, and this repository's commit bodies are
+                         where the reasoning lives - nowhere in the app until now. The body
+                         scrolls inside a bounded box so a long one never pushes the patch
+                         off the screen. See CommitHeading. -->
+                    <Border DockPanel.Dock="Top" Margin="6,0,6,8" Padding="14,10"
+                            AutomationProperties.Name="Commit details"
+                            Background="{DynamicResource Brush.Surface.Sunken}"
+                            CornerRadius="{DynamicResource Radius.Control}">
+                        <Border.Style>
+                            <Style TargetType="Border">
+                                <Setter Property="Visibility" Value="Visible" />
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding CommitDetail}" Value="{x:Null}">
+                                        <Setter Property="Visibility" Value="Collapsed" />
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </Border.Style>
+                        <StackPanel>
+                            <WrapPanel>
+                                <TextBlock Text="{Binding CommitDetail.Byline}" Margin="0,0,14,0"
+                                           FontFamily="{DynamicResource Font.UI}"
+                                           FontSize="{DynamicResource Font.Size.Caption}"
+                                           Foreground="{DynamicResource Brush.Text.Secondary}" />
+                                <TextBlock Text="{Binding CommitDetail.Stats}" Margin="0,0,14,0"
+                                           FontFamily="{DynamicResource Font.Mono}"
+                                           FontSize="{DynamicResource Font.Size.Caption}"
+                                           Foreground="{DynamicResource Brush.Text.Secondary}" />
+                                <TextBlock Text="{Binding CommitDetail.Objects}"
+                                           FontFamily="{DynamicResource Font.UI}"
+                                           FontSize="{DynamicResource Font.Size.Caption}"
+                                           Foreground="{DynamicResource Brush.Text.Primary}"
+                                           Visibility="{Binding CommitDetail.HasObjects,
+                                               Converter={StaticResource BoolToVisibility}}" />
+                            </WrapPanel>
+                            <ScrollViewer MaxHeight="160" Margin="0,8,0,0"
+                                          VerticalScrollBarVisibility="Auto"
+                                          HorizontalScrollBarVisibility="Disabled"
+                                          Visibility="{Binding CommitDetail.HasBody,
+                                              Converter={StaticResource BoolToVisibility}}">
+                                <TextBox Text="{Binding CommitDetail.Body, Mode=OneWay}"
+                                         IsReadOnly="True" TextWrapping="Wrap"
+                                         BorderThickness="0" Background="Transparent"
+                                         Padding="0"
+                                         AutomationProperties.Name="Commit message"
+                                         FontFamily="{DynamicResource Font.UI}"
+                                         FontSize="{DynamicResource Font.Size.Body}"
+                                         Foreground="{DynamicResource Brush.Text.Primary}" />
+                            </ScrollViewer>
+                        </StackPanel>
+                    </Border>
+
                     <!-- The failure pane. A failed project stops syncing until a person has
                          seen the failure - that gate is deliberate - so this is where they
                          see it: the reason the toolchain gave, and one button that clears the
