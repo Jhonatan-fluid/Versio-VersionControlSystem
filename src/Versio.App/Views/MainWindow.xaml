@@ -5,7 +5,7 @@
         xmlns:panels="clr-namespace:Versio.App.Views.Panels"
         xmlns:vm="clr-namespace:Versio.App.ViewModels"
         xmlns:projects="clr-namespace:Versio.Core.Projects;assembly=Versio.Core"
-        Title="Versio" Height="840" Width="1420" WindowState="Maximized"
+        Title="{Binding WindowTitle}" Height="840" Width="1420" WindowState="Maximized"
         Background="{DynamicResource Brush.Surface.Sunken}"
         TextOptions.TextFormattingMode="Display"
         TextOptions.TextRenderingMode="ClearType"
@@ -130,20 +130,16 @@
                     <ColumnDefinition Width="Auto" />   <!-- settings                  -->
                 </Grid.ColumnDefinitions>
 
-                <!-- The mark and the word together. The mark is the app's own icon geometry
-                     (Theme/controls/Brand.xaml); the word is no longer accent-coloured,
-                     because accent had been spent on nine different things at once and a
-                     brand that is not clickable was the least useful of them. -->
+                <!-- The mark, without the word. The mark is the app's own icon geometry
+                     (Theme/controls/Brand.xaml). The word sat directly under a window caption
+                     that also said "Versio" - the name twice, one line apart. The caption keeps
+                     it (WindowTitle), after the repository's name. -->
                 <StackPanel Grid.Column="0" Orientation="Horizontal"
-                            VerticalAlignment="Center" Margin="4,0,16,0">
+                            VerticalAlignment="Center" Margin="4,0,12,0">
                     <ContentControl Template="{StaticResource BrandMark}"
                                     Width="20" Height="20" Focusable="False"
-                                    IsTabStop="False" />
-                    <TextBlock Text="Versio" VerticalAlignment="Center" Margin="8,0,0,0"
-                               FontFamily="{DynamicResource Font.UI}"
-                               FontSize="{DynamicResource Font.Size.Subtitle}"
-                               FontWeight="{DynamicResource Font.Weight.Semibold}"
-                               Foreground="{DynamicResource Brush.Text.Primary}" />
+                                    IsTabStop="False"
+                                    AutomationProperties.Name="Versio" />
                 </StackPanel>
 
                 <!-- Repository dropdown.

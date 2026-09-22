@@ -1443,12 +1443,25 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
             if (SetProperty(ref _repositoryPath, value))
             {
                 OnPropertyChanged(nameof(RepositoryName));
+                OnPropertyChanged(nameof(WindowTitle));
             }
         }
     }
 
     public string RepositoryName =>
         _repositoryPath is null ? "Open a repository…" : Path.GetFileName(_repositoryPath);
+
+    /// <summary>
+    /// The window's caption: the repository first, the app after it.
+    /// </summary>
+    /// <remarks>
+    /// It was "Versio", always, directly above a brand row that also said "Versio" - the name
+    /// twice and the one fact that tells two windows apart nowhere in the caption. Two windows
+    /// on two repositories is allowed, and the taskbar and Alt+Tab show only the caption, so
+    /// both read "Versio". Repository first because the taskbar truncates from the end.
+    /// </remarks>
+    public string WindowTitle =>
+        _repositoryPath is null ? "Versio" : $"{Path.GetFileName(_repositoryPath)} — Versio";
 
     public string BranchName
     {
