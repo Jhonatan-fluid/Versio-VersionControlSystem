@@ -484,6 +484,7 @@ public sealed class SyncViewModel : ObservableObject
     {
         _repositoryRoot = repositoryRoot;
         _git = git;
+        OnPropertyChanged(nameof(HasRepository));
 
         // Before the first tree build, because rows read their expansion at construction:
         // a state restored after the build would apply to nothing until the next refresh.
@@ -722,6 +723,7 @@ public sealed class SyncViewModel : ObservableObject
 
         _repositoryRoot = null;
         _git = null;
+        OnPropertyChanged(nameof(HasRepository));
         _orchestrator = null;
         _caughtUp = false;
         _staleBindings.Clear();
@@ -730,6 +732,7 @@ public sealed class SyncViewModel : ObservableObject
         Findings.Clear();
         OnPropertyChanged(nameof(FindingsSummary));
         Tree.Clear();
+        InSyncProjects.Clear();
 
         // The last git status this panel was built from. Left behind, the next tree rebuild
         // would be handed the previous repository's file list to mark changes against.
@@ -2052,6 +2055,30 @@ public sealed class SyncViewModel : ObservableObject
     /// </summary>
     public ObservableCollection<TreeRow> Tree { get; } = [];
 
+    /// <summary>
+    /// The tracked projects the tree leaves out because nothing about them needs a person.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The tree hides an in-sync project on purpose: its job is "what is there to review",
+    /// and a clean project has nothing. But hiding them left the panel blank on the calmest
+    /// day the tool has, with the fact that everything was safe reduced to a grey footnote
+    /// under an empty card. Seen in the running window on 2026-09-21: four projects in sync,
+    /// and the middle of the panel said "Open a repository to see what is in it" — because
+    /// the empty-state trigger read <c>Tree.Count == 0</c>, which is true both with no
+    /// repository and with nothing changed.
+    /// </para>
+    /// <para>
+    /// So the calm state gets rows of its own, one line each, and never enters the tree:
+    /// expanding a clean project would put the whole Explorer back into a panel whose
+    /// premise is changes.
+    /// </para>
+    /// </remarks>
+    public ObservableCollection<InSyncProjectRow> InSyncProjects { get; } = [];
+
+    /// <summary>A repository is open. The panel's "open one" empty state reads this, not the tree.</summary>
+    public bool HasRepository => _repositoryRoot is not null;
+
     /// <summary>Which rows are open, kept across rebuilds.</summary>
     private readonly TreeExpansion _expansion = new();
 
@@ -2447,6 +2474,7 @@ public sealed class SyncViewModel : ObservableObject
         if (_git is null)
         {
             Tree.Clear();
+            InSyncProjects.Clear();
             return;
         }
 
@@ -2500,6 +2528,7 @@ public sealed class SyncViewModel : ObservableObject
         if (_repositoryRoot is null)
         {
             Tree.Clear();
+            InSyncProjects.Clear();
             TreeSummary = string.Empty;
             return;
         }
@@ -2703,19 +2732,34 @@ public sealed class SyncViewModel : ObservableObject
         var shownProjects = roots.Count(r => r.Kind == ProjectNodeKind.Project);
         var hidden = built.Tracked - shownProjects;
 
+        // The hidden ones, by name, so the panel can list them beside the tree rather than
+        // only counting them. Taken from the sources rather than re-derived: a project is
+        // hidden exactly when the builder returned no root for its path.
+        var shownPaths = roots
+            .Where(r => r.Kind == ProjectNodeKind.Project)
+            .Select(r => r.Path)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        ReconcileInSync(sources
+            .Where(s => !shownPaths.Contains(s.ProjectPath.Replace('\\', '/')))
+            .Select(s => new InSyncProjectRow(
+                System.IO.Path.GetFileName(s.ProjectPath), s.ProjectPath, s.State))
+            .OrderBy(r => r.Name, StringComparer.OrdinalIgnoreCase)
+            .ToList());
+
         // An empty panel has to say why it is empty. A tracked project that is simply in sync
-        // is now hidden, and a panel that went blank without explaining itself reads as a
-        // broken scan - which is the failure this wording exists to prevent.
+        // is hidden from the tree, and a panel that went blank without explaining itself reads
+        // as a broken scan - which is the failure this wording exists to prevent. The hidden
+        // ones are listed under IN SYNC now, so the sentence points there instead of saying
+        // they are not listed.
         TreeSummary = (Tree.Count, hidden) switch
         {
             (0, 0) when built.Tracked == 0 => "No PLC projects tracked in this repository.",
-            (0, 1) => "Nothing has changed. 1 tracked project is in sync, so it is not listed.",
-            (0, var h) when h > 1 =>
-                $"Nothing has changed. {h} tracked projects are in sync, so they are not listed.",
+            (0, 1) => "Nothing has changed. The tracked project is in sync.",
+            (0, var h) when h > 1 => $"Nothing has changed. All {h} tracked projects are in sync.",
             (0, _) => "Nothing has changed.",
             (_, 0) => $"{objects} object(s) · {changed} changed file(s).",
             var (_, h) => $"{objects} object(s) · {changed} changed file(s) · " +
-                          $"{h} project(s) in sync, not listed.",
+                          $"{h} project(s) in sync.",
         };
 
         _logger.Debug(LogCategory.Sync,
@@ -2725,6 +2769,24 @@ public sealed class SyncViewModel : ObservableObject
         // Last, and it raises. Whatever is listening runs synchronously on the back of this
         // assignment, so it has to find the tree already settled rather than half-reconciled.
         Objects = built.Objects;
+    }
+
+    /// <summary>
+    /// Replace the in-sync rows only when they differ, so a refresh that changes nothing does
+    /// not make the list blink or drop the keyboard's place in it.
+    /// </summary>
+    private void ReconcileInSync(IReadOnlyList<InSyncProjectRow> rows)
+    {
+        if (rows.SequenceEqual(InSyncProjects))
+        {
+            return;
+        }
+
+        InSyncProjects.Clear();
+        foreach (var row in rows)
+        {
+            InSyncProjects.Add(row);
+        }
     }
 
     /// <summary>A manifest's identity for change detection: when it was written, and how big.</summary>

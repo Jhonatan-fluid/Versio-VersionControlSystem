@@ -154,6 +154,77 @@
                            FontSize="{DynamicResource Font.Size.Caption}"
                            Foreground="{DynamicResource Brush.Text.Disabled}" />
 
+                <!-- IN SYNC: the tracked projects the tree leaves out.
+
+                     The tree hides a clean project on purpose - its premise is "what
+                     is there to review". Before this list the calm state had no rows
+                     at all: four projects in sync drew an empty card whose middle
+                     said "Open a repository", with the truth in a grey footnote.
+
+                     Docked under the search box while the tree is empty, so the calm
+                     day reads top-down like any other; docked at the bottom once there
+                     are changes, so the changes keep the top of the panel. One row per
+                     project, never expandable - the Explorer is where a clean project's
+                     objects are browsed. -->
+                <StackPanel Margin="0,6,0,0"
+                            AutomationProperties.Name="Projects in sync">
+                    <StackPanel.Style>
+                        <Style TargetType="StackPanel">
+                            <Setter Property="DockPanel.Dock" Value="Bottom" />
+                            <Setter Property="Visibility" Value="Visible" />
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding Sync.Tree.Count}" Value="0">
+                                    <Setter Property="DockPanel.Dock" Value="Top" />
+                                </DataTrigger>
+                                <DataTrigger Binding="{Binding Sync.InSyncProjects.Count}"
+                                             Value="0">
+                                    <Setter Property="Visibility" Value="Collapsed" />
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </StackPanel.Style>
+                    <TextBlock Text="IN SYNC" Margin="2,0,0,4"
+                               FontFamily="{DynamicResource Font.UI}"
+                               FontSize="{DynamicResource Font.Size.Caption}"
+                               FontWeight="{DynamicResource Font.Weight.Semibold}"
+                               Foreground="{DynamicResource Brush.Text.Secondary}" />
+                    <ItemsControl ItemsSource="{Binding Sync.InSyncProjects}"
+                                  Focusable="False">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <Grid Height="{DynamicResource Size.Row.Tree}"
+                                      Background="Transparent"
+                                      ToolTip="{Binding Path}">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="14" />
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <!-- The one green thing on a calm screen. A dot
+                                         rather than a tick glyph, so it cannot be read
+                                         as a checkbox. -->
+                                    <Ellipse Grid.Column="0" Width="6" Height="6"
+                                             HorizontalAlignment="Left"
+                                             VerticalAlignment="Center" Margin="3,0,0,0"
+                                             Fill="{DynamicResource Brush.Status.Added}" />
+                                    <TextBlock Grid.Column="1" Text="{Binding Name}"
+                                               VerticalAlignment="Center"
+                                               TextTrimming="CharacterEllipsis"
+                                               FontFamily="{DynamicResource Font.UI}"
+                                               FontSize="{DynamicResource Font.Size.Body}"
+                                               FontWeight="{DynamicResource Font.Weight.Semibold}"
+                                               Foreground="{DynamicResource Brush.Text.Primary}" />
+                                    <TextBlock Grid.Column="2" Text="{Binding State}"
+                                               VerticalAlignment="Center" Margin="8,0,4,0"
+                                               FontFamily="{DynamicResource Font.UI}"
+                                               FontSize="{DynamicResource Font.Size.Caption}"
+                                               Foreground="{DynamicResource Brush.Text.Secondary}" />
+                                </Grid>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </StackPanel>
+
                 <!-- WPF TreeView virtualization is OFF by default and the cost is
                      not marginal: measured at 94.7 ms virtualized against
                      10,635 ms at the defaults on a 5,002-node CODESYS-shaped tree.
@@ -185,12 +256,16 @@
                            FontSize="{DynamicResource Font.Size.Body}"
                            Foreground="{DynamicResource Brush.Text.Disabled}"
                            Text="Open a repository to see what is in it">
+                    <!-- Keyed on the repository, not on the tree. It used to read
+                         Tree.Count == 0, which is also what a repository with every
+                         project in sync looks like - so the calmest state the tool has
+                         told its user to open the repository they had open. -->
                     <TextBlock.Style>
                         <Style TargetType="TextBlock">
                             <Setter Property="Visibility" Value="Collapsed" />
                             <Style.Triggers>
-                                <DataTrigger Binding="{Binding Sync.Tree.Count}"
-                                             Value="0">
+                                <DataTrigger Binding="{Binding Sync.HasRepository}"
+                                             Value="False">
                                     <Setter Property="Visibility" Value="Visible" />
                                 </DataTrigger>
                             </Style.Triggers>
