@@ -4812,8 +4812,9 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
             return;
         }
 
-        SelectedDiffPath = caption;
         _shownCommit = (commitId, shortId, caption, null);
+        PaneMode = PaneMode.Commit;
+        SelectedDiffPath = caption;
         _selectedDiffStaged = false;
         DiffLayers = [];
         ClearRendered();
@@ -4855,8 +4856,9 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         // identically to the working-tree diff of the same file, which is the one thing a
         // reviewer must not confuse it with.
         var header = $"{path} @ {shortId}";
-        SelectedDiffPath = header;
         _shownCommit = (commitId, shortId, header, path);
+        PaneMode = PaneMode.CommitFile;
+        SelectedDiffPath = header;
         _selectedDiffStaged = false;
         CanStageHunks = false;
         DiffLayers = [];
@@ -6263,8 +6265,36 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
     public string SelectedDiffPath
     {
         get => _selectedDiffPath;
-        private set => SetProperty(ref _selectedDiffPath, value);
+        private set
+        {
+            if (SetProperty(ref _selectedDiffPath, value))
+            {
+                OnPropertyChanged(nameof(Heading));
+            }
+        }
     }
+
+    private PaneMode _paneMode;
+
+    /// <summary>
+    /// Which route filled the pane. Set by each route as it claims the pane, beside
+    /// <see cref="SelectedDiffPath"/>; <see cref="Heading"/> is derived from the two.
+    /// </summary>
+    public PaneMode PaneMode
+    {
+        get => _paneMode;
+        private set
+        {
+            if (SetProperty(ref _paneMode, value))
+            {
+                OnPropertyChanged(nameof(Heading));
+            }
+        }
+    }
+
+    /// <summary>The pane header: kind, name, folder, and whether the diff options apply.</summary>
+    public PaneHeading Heading => PaneHeading.Of(
+        _paneMode, _selectedDiffPath, _shownCommit?.ShortId, _shownCommit?.Path);
 
     private IReadOnlyList<DiffLayerChoice> _diffLayers = [];
 
@@ -6400,6 +6430,7 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         SelectedDiff = string.Empty;
         SelectedDiffPath = string.Empty;
         _shownCommit = null;
+        PaneMode = PaneMode.Empty;
         _selectedDiffStaged = false;
         CanStageHunks = false;
         DiffLayers = [];
@@ -6862,8 +6893,9 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
     {
         if (row.IsProject)
         {
-            SelectedDiffPath = row.Node.Path;
             _shownCommit = null;
+            PaneMode = PaneMode.Project;
+            SelectedDiffPath = row.Node.Path;
             _selectedDiffStaged = false;
             CanStageHunks = false;
             DiffLayers = [];
@@ -6917,6 +6949,7 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
             _shownCommit = null;
             _selectedDiffStaged = false;
             PaneNote = string.Empty;
+            PaneMode = PaneMode.File;
             SelectedDiffPath = row.PrimaryFile ?? row.Node.Path;
 
             if (RenderedContent is SourceRender source)
@@ -6987,8 +7020,9 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         }
 
         ReconcileDiffLayers(path);
-        SelectedDiffPath = path;
         _shownCommit = null;
+        PaneMode = PaneMode.Diff;
+        SelectedDiffPath = path;
 
         try
         {
@@ -7033,6 +7067,9 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
                 SelectedDiff = content.PseudoDiff;
                 PaneNote = "No changes right now — showing the whole file.";
                 CanStageHunks = false;
+
+                // Asked for as a diff, shown whole: the header says what is on screen.
+                PaneMode = PaneMode.File;
                 return;
             }
 

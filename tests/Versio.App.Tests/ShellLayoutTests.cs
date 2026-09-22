@@ -1,4 +1,6 @@
+using System.IO;
 using System.Windows;
+using System.Windows.Automation;
 using System.Windows.Controls;
 using System.Windows.Media;
 using Versio.App.ViewModels;
@@ -235,20 +237,47 @@ public sealed class ShellLayoutTests : IDisposable
     }
 
     [Fact]
-    public void The_diff_header_keeps_its_label_clear_of_the_path()
+    public void The_diff_header_keeps_the_shown_name_clear_of_its_options()
     {
         // Same defect, other pane: DIFF, a checkbox and a 420 px path all shared one cell.
-        StaHarness.Run(() =>
+        //
+        // Driven into a real diff with a deep path, at the narrow width. The options exist only
+        // while something is being compared, so an empty pane - which this test used to measure
+        // - has no checkbox to collide with, and would pass without checking anything.
+        StaHarness.Run(async () =>
         {
+            using var repo = new TempRepo(identity: true);
+            var deep = "fixtures/projects/RefrigeratorControl/Device/Plc Logic/Application/Library/Alarm/POUs";
+            Directory.CreateDirectory(Path.Combine(repo.Path, deep));
+            File.WriteAllText(Path.Combine(repo.Path, deep, "FB_Alarm.st"), "FUNCTION_BLOCK FB_Alarm\n");
+
             var window = Build();
+            var shell = (ShellViewModel)window.DataContext;
+            await shell.OpenAsync(repo.Path);
+            await shell.ShowWorkingTreePathAsync(deep + "/FB_Alarm.st");
+
             var content = Arrange(window);
 
-            var label = Text(content, "DIFF");
+            var name = Descendants(content).OfType<TextBlock>()
+                .Single(t => AutomationProperties.GetName(t) == "Shown item");
             var check = Descendants(content).OfType<CheckBox>()
                 .Single(c => Equals(c.Content, "Show full file"));
 
-            Assert.False(BoundsIn(label, content).IntersectsWith(BoundsIn(check, content)),
-                         "the DIFF label and 'Show full file' overlap");
+            Assert.Equal("FB_Alarm.st", name.Text);
+            Assert.True(BoundsIn(name, content).Width > 0, "the shown name did not render");
+            Assert.True(BoundsIn(check, content).Width > 0, "'Show full file' did not render");
+            Assert.False(BoundsIn(name, content).IntersectsWith(BoundsIn(check, content)),
+                         "the shown name and 'Show full file' overlap");
+
+            // And over a whole file there is nothing to compare, so the options go.
+            File.WriteAllText(Path.Combine(repo.Path, "clean.st"), "PROGRAM Clean\n");
+            repo.Git("add clean.st");
+            repo.Git("commit -q -m clean");
+            await shell.ShowWorkingTreePathAsync("clean.st");
+            Arrange(window);
+
+            Assert.Equal("FILE", shell.Heading.Label);
+            Assert.NotEqual(Visibility.Visible, check.Visibility);
         });
     }
 

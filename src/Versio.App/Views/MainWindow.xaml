@@ -603,17 +603,47 @@
             <Border Grid.Column="2" Background="{DynamicResource Brush.Surface.Base}"
                     Margin="0,8,8,8" CornerRadius="{DynamicResource Radius.Card}">
                 <DockPanel>
+                    <!--
+                        THE HEADER NAMES WHAT IS SHOWN.
+
+                        It said DIFF over everything - a whole file browsed from the
+                        explorer, a project card, a commit - with the path at the far right
+                        trimmed from its end, so the object's name was the part the ellipsis
+                        ate. Now: a small label for the kind of view (DIFF, FILE, PROJECT,
+                        COMMIT), the name in the body face where it cannot be trimmed away by
+                        its folder, and the folder after it in the quiet one. The full path
+                        is the tooltip. See PaneHeading.
+
+                        The name column is the one that gives way (*), and the controls keep
+                        their size (Auto): a long folder shortens before a chip moves.
+                    -->
                     <Grid DockPanel.Dock="Top" Margin="14,12,12,8">
                         <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="Auto" />
                             <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
                         </Grid.ColumnDefinitions>
 
-                        <TextBlock Grid.Column="0" VerticalAlignment="Center"
-                                   Style="{StaticResource SectionLabel}" Text="DIFF" />
+                        <DockPanel Grid.Column="0" VerticalAlignment="Center"
+                                   ToolTip="{Binding SelectedDiffPath}">
+                            <TextBlock DockPanel.Dock="Left" VerticalAlignment="Center"
+                                       Style="{StaticResource SectionLabel}"
+                                       Text="{Binding Heading.Label}" />
+                            <TextBlock DockPanel.Dock="Left" VerticalAlignment="Center"
+                                       Margin="10,0,0,0" TextTrimming="CharacterEllipsis"
+                                       AutomationProperties.Name="Shown item"
+                                       FontFamily="{DynamicResource Font.UI}"
+                                       FontSize="{DynamicResource Font.Size.Body}"
+                                       FontWeight="{DynamicResource Font.Weight.Semibold}"
+                                       Foreground="{DynamicResource Brush.Text.Primary}"
+                                       Text="{Binding Heading.Title}" />
+                            <TextBlock VerticalAlignment="Center" Margin="8,0,0,0"
+                                       Style="{StaticResource Mono}"
+                                       AutomationProperties.Name="Shown item location"
+                                       TextTrimming="CharacterEllipsis"
+                                       Foreground="{DynamicResource Brush.Text.Disabled}"
+                                       Text="{Binding Heading.Subtitle}" />
+                        </DockPanel>
 
-                        <!-- Right-aligned inside its own column, so the path can be long
-                             without reaching the label. -->
                         <StackPanel Grid.Column="1" Orientation="Horizontal"
                                     Margin="12,0,0,0" HorizontalAlignment="Right">
                             <!-- RENDERED | RAW. Two answers to one click: what the file
@@ -685,9 +715,15 @@
                                 </ItemsControl.ItemTemplate>
                             </ItemsControl>
                             <!-- Old left, new right. Render-only — the same diff, folded —
-                                 so unlike its neighbour it re-reads nothing. -->
+                                 so unlike its neighbour it re-reads nothing.
+
+                                 Both options exist only while something is being compared.
+                                 Over a whole file, a project card or an empty pane they were
+                                 two boxes whose ticking changed nothing visible. -->
                             <CheckBox Content="Side by side" VerticalAlignment="Center"
                                       Margin="0,0,14,0"
+                                      Visibility="{Binding Heading.IsComparing,
+                                          Converter={StaticResource BoolToVisibility}}"
                                       IsChecked="{Binding DiffSideBySide}"
                                       Foreground="{DynamicResource Brush.Text.Secondary}"
                                       FontFamily="{DynamicResource Font.UI}"
@@ -700,15 +736,13 @@
                                  changed lines stay marked and coloured. -->
                             <CheckBox Content="Show full file" VerticalAlignment="Center"
                                       Margin="0,0,14,0"
+                                      Visibility="{Binding Heading.IsComparing,
+                                          Converter={StaticResource BoolToVisibility}}"
                                       IsChecked="{Binding ShowFullFile}"
                                       Foreground="{DynamicResource Brush.Text.Secondary}"
                                       FontFamily="{DynamicResource Font.UI}"
                                       FontSize="{DynamicResource Font.Size.Caption}"
                                       ToolTip="Show every line of the file, with the changes still highlighted" />
-                            <TextBlock Style="{StaticResource Mono}" VerticalAlignment="Center"
-                                       Text="{Binding SelectedDiffPath}"
-                                       Foreground="{DynamicResource Brush.Text.Disabled}"
-                                       TextTrimming="CharacterEllipsis" MaxWidth="420" />
                         </StackPanel>
                     </Grid>
                     <!-- The failure pane. A failed project stops syncing until a person has
