@@ -143,6 +143,33 @@
         </Style.Triggers>
     </Style>
 
+    <!-- ============================================================ THE CORNER -->
+    <!--
+        The square where a horizontal and a vertical bar meet.
+
+        WPF's ScrollViewer template fills it with a Rectangle painted from
+        SystemColors.ControlBrushKey - the light Windows control grey, whatever the app's theme.
+        So a dark diff view with long lines had a bright white square in its bottom-right
+        corner. Seen in the running window on 2026-09-21; every test of the bars passed,
+        because the square is not part of either bar.
+
+        Redefined on the ScrollViewer's style, not on the application. The template looks the
+        brush up dynamically and a Style's Resources are on that lookup's path, so this reaches
+        the corner. It also reaches whatever sits INSIDE a scroll viewer that asks for the same
+        key - nothing in this app does (no view names SystemColors), and the stock controls
+        that might are restyled by the theme already. Redefining it on the application would
+        instead repaint every stock control everywhere. Transparent rather than a surface token,
+        so the corner is whatever the pane behind it is in either theme.
+
+        This is not the ScrollViewer retemplate the comment above declines; the template is
+        untouched.
+    -->
+    <Style TargetType="ScrollViewer">
+        <Style.Resources>
+            <SolidColorBrush x:Key="{x:Static SystemColors.ControlBrushKey}" Color="Transparent" />
+        </Style.Resources>
+    </Style>
+
     <!-- ================================================================ SPLITTER -->
     <!--
         A splitter you can find.

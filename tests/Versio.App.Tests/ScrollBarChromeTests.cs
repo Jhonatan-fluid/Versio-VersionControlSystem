@@ -180,6 +180,38 @@ public sealed class ScrollBarChromeTests
         return bar;
     }
 
+    [Fact]
+    public void The_corner_where_both_bars_meet_is_not_painted_the_system_grey()
+    {
+        // Seen in the running window: a bright square at the bottom-right of the dark diff
+        // view. The stock template fills it from SystemColors.ControlBrushKey, which knows
+        // nothing about the app's theme, and no bar test could see it - it is not in a bar.
+        StaHarness.Run(() =>
+        {
+            var viewer = new ScrollViewer
+            {
+                HorizontalScrollBarVisibility = ScrollBarVisibility.Visible,
+                VerticalScrollBarVisibility = ScrollBarVisibility.Visible,
+                Content = new Border { Width = 2000, Height = 2000 },
+            };
+
+            var host = new Grid { Width = 400, Height = 300 };
+            host.Children.Add(viewer);
+            host.Measure(new Size(400, 300));
+            host.Arrange(new Rect(0, 0, 400, 300));
+            host.UpdateLayout();
+
+            // Found by where it sits rather than by name: the name is the stock template's
+            // business, the cell between the two bars is the defect's.
+            var corner = Descendants(viewer).OfType<System.Windows.Shapes.Rectangle>()
+                .Single(r => Grid.GetRow(r) == 1 && Grid.GetColumn(r) == 1);
+
+            var fill = Assert.IsAssignableFrom<SolidColorBrush>(corner.Fill);
+            Assert.True(fill.Color.A == 0,
+                $"the scroll corner is painted {fill.Color}, not left to the pane behind it");
+        });
+    }
+
     private static Track Track(ScrollBar bar) => Descendants(bar).OfType<Track>().Single();
 
     private static IEnumerable<DependencyObject> Descendants(DependencyObject root)
