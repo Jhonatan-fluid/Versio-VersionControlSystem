@@ -46,6 +46,12 @@ public sealed class FileChangeWatcher : IDisposable
 {
     private readonly List<FileSystemWatcher> _watchers = [];
     private readonly Dictionary<string, DateTimeOffset> _pending = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// Folds a file that keeps settling into one line every few minutes. Read under
+    /// <c>_gate</c>: the settle timer's callbacks can overlap when one runs long.
+    /// </summary>
+    private readonly RepeatCollapser _repeats = new();
     private readonly Dictionary<string, (long Size, DateTime Written)> _known
         = new(StringComparer.OrdinalIgnoreCase);
     private readonly Lock _gate = new();
@@ -189,7 +195,22 @@ public sealed class FileChangeWatcher : IDisposable
 
             // Debug: one line per saved file, which during an export is dozens. Enough to
             // reconstruct what the watcher saw without making it the loudest thing in the log.
-            _log.Debug(LogCategory.Watch, $"settled: {path}");
+            //
+            // Except the same file again and again, which is folded: the IDE rewrites its
+            // open-project marker every five seconds for as long as the project is open, and
+            // logging each one made an idle window the loudest thing in the log. See
+            // RepeatCollapser.
+            string? line;
+            lock (_gate)
+            {
+                line = _repeats.Next(path, $"settled: {path}", _clock.UtcNow);
+            }
+
+            if (line is not null)
+            {
+                _log.Debug(LogCategory.Watch, line);
+            }
+
             Settled?.Invoke(new WatchedChange(path, _clock.UtcNow, WatchTier.Watcher));
         }
     }

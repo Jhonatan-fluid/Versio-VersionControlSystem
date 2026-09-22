@@ -1866,8 +1866,9 @@ public sealed class SyncViewModel : ObservableObject
     /// </remarks>
     private void OnFileSettled(WatchedChange change)
     {
-        _logger.Debug(LogCategory.Watch,
-            $"settled: {change.Path} (tier {change.Tier})");
+        // No line of its own. The watcher already logs each settle, and a tier other than
+        // the watcher's as a warning, so this used to write every settle a second time -
+        // two identical lines every five seconds while an IDE held a project open.
 
         // The vendor's open-project marker is not a side of any binding — Locate would
         // shrug at it — so it is routed before the ordinary flow. Most of these events are
