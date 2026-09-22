@@ -87,6 +87,8 @@ public sealed class LogViewModel : ObservableObject, IDisposable
     private bool _isExpanded;
     private bool _isPaused;
     private int _heldCount;
+    private int _unseenProblems;
+    private bool _unseenHasError;
 
     public LogViewModel(InMemoryLogSink sink)
     {
@@ -134,7 +136,54 @@ public sealed class LogViewModel : ObservableObject, IDisposable
     public bool IsExpanded
     {
         get => _isExpanded;
-        set => SetProperty(ref _isExpanded, value);
+        set
+        {
+            // Opening the log is reading it: whatever was unseen has now been seen.
+            if (SetProperty(ref _isExpanded, value) && value)
+            {
+                UnseenProblems = 0;
+                UnseenHasError = false;
+            }
+        }
+    }
+
+    /// <summary>
+    /// Warnings and errors that arrived while the log was collapsed.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>What the collapsed strip's pill says now.</b> It used to carry the total row count,
+    /// and the total is driven by Debug: an idle window with an IDE holding a project climbed
+    /// by sixty a minute (seen 2026-09-21), so the one number always on screen measured the
+    /// chattiest poller and said nothing a reader could act on. "Two warnings you have not
+    /// looked at" is the thing a collapsed log is worth interrupting for.
+    /// </para>
+    /// <para>
+    /// Counted as entries arrive, not from the rows: the level chips filter rows, and a
+    /// warning is unseen whether or not a filter would hide it. Entries held by a pause are
+    /// counted when the pause lets them through, the same moment they are drawn.
+    /// </para>
+    /// </remarks>
+    public int UnseenProblems
+    {
+        get => _unseenProblems;
+        private set
+        {
+            if (SetProperty(ref _unseenProblems, value))
+            {
+                OnPropertyChanged(nameof(HasUnseenProblems));
+            }
+        }
+    }
+
+    /// <summary>For the pill's visibility: a trigger tests equality only, so "more than none" needs a bool.</summary>
+    public bool HasUnseenProblems => _unseenProblems > 0;
+
+    /// <summary>At least one of <see cref="UnseenProblems"/> is an error, so the pill says so in colour.</summary>
+    public bool UnseenHasError
+    {
+        get => _unseenHasError;
+        private set => SetProperty(ref _unseenHasError, value);
     }
 
     /// <summary>
@@ -188,6 +237,24 @@ public sealed class LogViewModel : ObservableObject, IDisposable
         }
     }
 
+    /// <summary>Count what arrived while nobody was looking. Called on the UI thread, per batch.</summary>
+    private void NoteUnseen(IEnumerable<LogEvent> batch)
+    {
+        if (IsExpanded)
+        {
+            return;
+        }
+
+        foreach (var entry in batch)
+        {
+            if (entry.Level >= LogLevel.Warning)
+            {
+                UnseenProblems++;
+                UnseenHasError |= entry.Level >= LogLevel.Error;
+            }
+        }
+    }
+
     private void Drain()
     {
         if (IsPaused)
@@ -207,6 +274,8 @@ public sealed class LogViewModel : ObservableObject, IDisposable
             batch = [.. _incoming];
             _incoming.Clear();
         }
+
+        NoteUnseen(batch);
 
         var appended = false;
         foreach (var entry in batch)

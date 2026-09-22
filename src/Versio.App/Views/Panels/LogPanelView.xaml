@@ -29,7 +29,7 @@
                 for a list nobody is looking at. They appear with the list they filter.
 
                 Two things survive collapse, because both change what the strip MEANS:
-                the entry count, and the paused state.
+                what arrived that is worth opening it for, and the paused state.
             -->
             <Grid DockPanel.Dock="Top" Height="38">
                 <Grid.ColumnDefinitions>
@@ -57,9 +57,56 @@
                     </StackPanel>
                 </Button>
 
-                <Border Grid.Column="1" Style="{StaticResource Pill}" Margin="4,0,0,0">
+                <!--
+                    Two pills in one column, never both at once.
+
+                    Open, the total: somebody reading the list wants to know how much of it
+                    there is. Collapsed, only the warnings and errors that arrived since the
+                    log was last open, and nothing at all when there are none. The total
+                    used to show collapsed too, and it is driven by Debug - it climbed by
+                    sixty a minute in an idle window while an IDE held a project open, so
+                    the one number always on screen measured the chattiest poller.
+                -->
+                <Border Grid.Column="1" Style="{StaticResource Pill}" Margin="4,0,0,0"
+                        AutomationProperties.Name="Log entries"
+                        Visibility="{Binding Log.IsExpanded,
+                            Converter={StaticResource BoolToVisibility}}">
                     <TextBlock Text="{Binding Log.Rows.Count}"
                                Style="{StaticResource PillText}" />
+                </Border>
+
+                <Border Grid.Column="1" Margin="4,0,0,0"
+                        AutomationProperties.Name="Unseen warnings and errors"
+                        ToolTip="Warnings and errors since the log was last open. Open it to read them.">
+                    <Border.Style>
+                        <Style TargetType="Border" BasedOn="{StaticResource Pill}">
+                            <Setter Property="Visibility" Value="Collapsed" />
+                            <Style.Triggers>
+                                <MultiDataTrigger>
+                                    <MultiDataTrigger.Conditions>
+                                        <Condition Binding="{Binding Log.IsExpanded}" Value="False" />
+                                        <Condition Binding="{Binding Log.HasUnseenProblems}" Value="True" />
+                                    </MultiDataTrigger.Conditions>
+                                    <Setter Property="Visibility" Value="Visible" />
+                                </MultiDataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </Border.Style>
+                    <TextBlock Text="{Binding Log.UnseenProblems, StringFormat={}{0} new}"
+                               FontWeight="{DynamicResource Font.Weight.Semibold}">
+                        <TextBlock.Style>
+                            <Style TargetType="TextBlock" BasedOn="{StaticResource PillText}">
+                                <Setter Property="Foreground"
+                                        Value="{DynamicResource Brush.Status.Modified}" />
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding Log.UnseenHasError}" Value="True">
+                                        <Setter Property="Foreground"
+                                                Value="{DynamicResource Brush.Status.Deleted}" />
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </TextBlock.Style>
+                    </TextBlock>
                 </Border>
 
                 <!--
