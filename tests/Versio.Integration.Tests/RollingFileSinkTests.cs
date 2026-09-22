@@ -235,6 +235,46 @@ public sealed class RollingFileSinkTests : IDisposable
         Assert.True(File.Exists(sink.CurrentFile), "the reported current file does not exist");
     }
 
+    [Fact]
+    public void A_second_Versio_writing_the_same_day_gets_a_file_of_its_own()
+    {
+        // Two windows on two repositories is allowed, and both aimed at one file. The first
+        // held it for writing, so every write from the second failed and nothing it did
+        // reached disk - found on 2026-09-22, when a second launch's log line was nowhere.
+        // Two sinks in one test process stand in for two processes: the handle is what
+        // collides, not the pid.
+        using var first = new RollingFileSink(_dir);
+        using var second = new RollingFileSink(_dir);
+
+        first.Emit(Entry(LogLevel.Information, "from the first window"));
+        second.Emit(Entry(LogLevel.Information, "from the second window"));
+
+        Assert.NotEqual(first.CurrentFile, second.CurrentFile);
+        Assert.Contains("from the first window", ReadShared(first.CurrentFile));
+        Assert.Contains("from the second window", ReadShared(second.CurrentFile));
+        Assert.DoesNotContain("from the second window", ReadShared(first.CurrentFile));
+
+        // Named so the folder still sorts by day, and so pruning still finds it.
+        Assert.Matches(
+            $@"^versio-\d{{4}}-\d{{2}}-\d{{2}}-{Environment.ProcessId}\.log$",
+            Path.GetFileName(second.CurrentFile));
+    }
+
+    [Fact]
+    public void The_current_file_is_named_before_anything_is_written()
+    {
+        // Startup logs "logging to <CurrentFile>" before its first entry. For a second
+        // process that name is only known once the file is opened, so reading it opens it.
+        using var first = new RollingFileSink(_dir);
+        first.Emit(Entry(LogLevel.Information, "held"));
+
+        using var second = new RollingFileSink(_dir);
+        var named = second.CurrentFile;
+        second.Emit(Entry(LogLevel.Information, "after naming"));
+
+        Assert.Contains("after naming", ReadShared(named));
+    }
+
     private static string ReadShared(string path)
     {
         using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);

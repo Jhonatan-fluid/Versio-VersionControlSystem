@@ -26,6 +26,16 @@ namespace Versio.Infrastructure.Logging;
 /// that matter most are the ones written immediately before a crash — and those are exactly
 /// the ones a buffer loses.
 /// </para>
+/// <para>
+/// <b>One process per file.</b> Two Versio windows are allowed at once — on two repositories —
+/// and both used to aim at the same <c>versio-&lt;date&gt;.log</c>. The first one holds it
+/// open for writing, so the second's every write failed: the logger reported the dead sink
+/// once, in the second window's own log panel, and nothing that window did reached disk.
+/// Found on 2026-09-22 when a second launch's log line could not be found anywhere. The
+/// second process now writes <c>versio-&lt;date&gt;-&lt;pid&gt;.log</c> beside it, rather than
+/// sharing the file: two processes appending to one file interleave their lines with nothing
+/// saying which line is whose.
+/// </para>
 /// </remarks>
 public sealed class RollingFileSink : ILogSink, IDisposable
 {
@@ -37,6 +47,7 @@ public sealed class RollingFileSink : ILogSink, IDisposable
     private readonly Lock _gate = new();
     private StreamWriter? _writer;
     private DateOnly _openFor;
+    private string _openPath = string.Empty;
 
     /// <summary>
     /// Where logs live for the current user: <c>%LOCALAPPDATA%\VersioUser\logs</c>.
@@ -82,7 +93,22 @@ public sealed class RollingFileSink : ILogSink, IDisposable
     public string LogDirectory => _directory;
 
     /// <summary>Full path of the file today's entries are going to.</summary>
-    public string CurrentFile => Path.Combine(_directory, FileNameFor(Today()));
+    /// <remarks>
+    /// Opens it if nothing has been written yet, because the name is not known until then:
+    /// another Versio holding today's file sends this one to its own. Read at startup to log
+    /// where the log is, so it has to name the file that is really being written.
+    /// </remarks>
+    public string CurrentFile
+    {
+        get
+        {
+            lock (_gate)
+            {
+                EnsureOpen(Today());
+                return _openPath;
+            }
+        }
+    }
 
     public void Emit(LogEvent entry)
     {
@@ -93,33 +119,69 @@ public sealed class RollingFileSink : ILogSink, IDisposable
             // was about, and the file name is what somebody picks when asked for "yesterday's
             // log".
             var day = DateOnly.FromDateTime(entry.Timestamp.ToLocalTime().DateTime);
-            if (_writer is null || day != _openFor)
-            {
-                _writer?.Dispose();
-                _writer = new StreamWriter(
-                    Path.Combine(_directory, FileNameFor(day)),
-                    append: true,
-                    new UTF8Encoding(encoderShouldEmitUTF8Identifier: false))
-                {
-                    AutoFlush = true,
-                };
-
-                var rolled = _openFor;
-                _openFor = day;
-
-                // Prune on the roll, not only at construction. Versio is a desktop app that
-                // gets left open for days at a time; pruning once at startup would let the
-                // folder grow for as long as the session lasts, which is precisely the
-                // machine where nobody is restarting anything.
-                if (rolled != default)
-                {
-                    Prune();
-                }
-            }
-
-            _writer.WriteLine(entry.Format());
+            EnsureOpen(day);
+            _writer!.WriteLine(entry.Format());
         }
     }
+
+    /// <summary>Have a writer open on <paramref name="day"/>'s file. Called under the gate.</summary>
+    private void EnsureOpen(DateOnly day)
+    {
+        if (_writer is not null && day == _openFor)
+        {
+            return;
+        }
+
+        _writer?.Dispose();
+        _writer = null;
+
+        (_writer, _openPath) = OpenFor(day);
+
+        var rolled = _openFor;
+        _openFor = day;
+
+        // Prune on the roll, not only at construction. Versio is a desktop app that
+        // gets left open for days at a time; pruning once at startup would let the
+        // folder grow for as long as the session lasts, which is precisely the
+        // machine where nobody is restarting anything.
+        if (rolled != default)
+        {
+            Prune();
+        }
+    }
+
+    /// <summary>
+    /// The day's shared file, or this process's own beside it when another Versio holds it.
+    /// </summary>
+    /// <remarks>
+    /// Shared for reading, so the file can be opened in an editor — or tailed — while Versio
+    /// writes it. Not shared for writing: that is what sends a second process to its own
+    /// file, see the class remarks. A failure on the fallback too is left to throw; the
+    /// logger reports a dead sink once, which is the right answer when neither file can be
+    /// written.
+    /// </remarks>
+    private (StreamWriter Writer, string Path) OpenFor(DateOnly day)
+    {
+        var shared = Path.Combine(_directory, FileNameFor(day));
+        try
+        {
+            return (Open(shared), shared);
+        }
+        catch (IOException) when (File.Exists(shared))
+        {
+            var own = Path.Combine(
+                _directory, $"versio-{day:yyyy-MM-dd}-{Environment.ProcessId}.log");
+            return (Open(own), own);
+        }
+    }
+
+    private static StreamWriter Open(string path) =>
+        new(
+            new FileStream(path, FileMode.Append, FileAccess.Write, FileShare.Read),
+            new UTF8Encoding(encoderShouldEmitUTF8Identifier: false))
+        {
+            AutoFlush = true,
+        };
 
     /// <summary>Delete files older than the retention window.</summary>
     /// <remarks>
