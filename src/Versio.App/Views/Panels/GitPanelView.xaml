@@ -772,7 +772,7 @@
                         </Popup>
                         </Grid>
 
-                        <!-- ITS OWN ROW, FULL WIDTH, AND NOT BESIDE FETCH.
+                        <!-- ITS OWN ROW, AND NOT BESIDE FETCH.
 
                              GP-H already measured what a fourth button on that row
                              does: it overflows the 380 px panel outright. And it
@@ -793,9 +793,15 @@
                              things: create one, go to the one that exists, or open
                              the list on a forge that cannot tell us which. It is
                              also in the forge's own vocabulary - GitLab has merge
-                             requests, the other four have pull requests. -->
+                             requests, the other four have pull requests.
+
+                             LEFT-ALIGNED, like the verbs above it. It was stretched
+                             across the card with its caption centred, which on a clean
+                             panel - where nothing else is below it - read as a line of
+                             grey text floating in the middle rather than as a button.
+                             Seen in the running window on 2026-09-21. -->
                         <Button Content="{Binding MergeRequest.Label}"
-                                Margin="0,8,0,0" HorizontalAlignment="Stretch"
+                                Margin="0,8,0,0" HorizontalAlignment="Left" Padding="10,0"
                                 Style="{StaticResource GhostButton}"
                                 Height="{DynamicResource Size.Control.Compact}"
                                 ToolTipService.ShowOnDisabled="True"
@@ -823,13 +829,26 @@
                              convention, amber over it, red past git's own wrap.
                              The bare number was undecodable to anyone who did not
                              hover it. -->
+                        <!-- And absent while there is no subject: a "0" over an empty box
+                             measured nothing and read as a count of something. -->
                         <TextBlock Grid.Column="1" Margin="8,0,0,0"
+                                   AutomationProperties.Name="Subject length"
                                    Text="{Binding CommitSubjectLength}"
                                    FontFamily="{DynamicResource Font.Mono}"
                                    FontSize="{DynamicResource Font.Size.Caption}"
                                    Foreground="{Binding CommitSubjectBrushKey,
                                        Converter={StaticResource ResourceKey}}"
-                                   ToolTip="Subject length. The convention is 50 characters, hard limit 72." />
+                                   ToolTip="Subject length. The convention is 50 characters, hard limit 72.">
+                            <TextBlock.Style>
+                                <Style TargetType="TextBlock">
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding CommitSubjectLength}" Value="0">
+                                            <Setter Property="Visibility" Value="Collapsed" />
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </TextBlock.Style>
+                        </TextBlock>
                     </Grid>
 
                     <!-- What this commit is about to record, counted as OBJECTS.

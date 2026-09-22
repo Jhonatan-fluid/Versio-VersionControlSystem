@@ -121,6 +121,17 @@
         <Setter Property="Foreground" Value="{DynamicResource Brush.Text.OnAccent}" />
         <Setter Property="FontWeight" Value="{DynamicResource Font.Weight.Medium}" />
         <Setter Property="Padding" Value="14,0" />
+        <Style.Triggers>
+            <!-- Disabled gives up the accent fill, not only the text colour. Ghost's trigger
+                 dims the foreground, which is all a transparent button needs - but on this one
+                 the fill is the loud part, so a disabled Commit on a clean tree stayed a bright
+                 blue slab with grey writing on it and read as the one thing to press. Seen in
+                 the running window on 2026-09-21. -->
+            <Trigger Property="IsEnabled" Value="False">
+                <Setter Property="Background" Value="{DynamicResource Brush.Surface.Sunken}" />
+                <Setter Property="Foreground" Value="{DynamicResource Brush.Text.Disabled}" />
+            </Trigger>
+        </Style.Triggers>
     </Style>
 
     <!--
