@@ -652,20 +652,23 @@
                                  The chips exist only when a rendered view does; the default
                                  follows the selection - changed files open on Raw because
                                  the diff is what review is. -->
-                            <ToggleButton Style="{StaticResource FilterChip}"
-                                          Content="Rendered"
-                                          IsChecked="{Binding ShowRendered}"
-                                          Foreground="{DynamicResource Brush.Text.Secondary}"
-                                          ToolTip="The file as a table, card or highlighted source"
-                                          Visibility="{Binding HasRenderedView,
-                                              Converter={StaticResource BoolToVisibility}}" />
-                            <ToggleButton Style="{StaticResource FilterChip}"
-                                          Content="Raw" Margin="0,0,14,0"
-                                          IsChecked="{Binding ShowRawTab}"
-                                          Foreground="{DynamicResource Brush.Text.Secondary}"
-                                          ToolTip="The diff, or the plain file when nothing changed"
-                                          Visibility="{Binding HasRenderedView,
-                                              Converter={StaticResource BoolToVisibility}}" />
+                            <!-- A choice, so a segmented pair rather than two filter chips:
+                                 the view not chosen stays at full strength. See SegmentChip. -->
+                            <Border Style="{StaticResource SegmentGroup}" Margin="0,0,14,0"
+                                    AutomationProperties.Name="Rendered or raw"
+                                    Visibility="{Binding HasRenderedView,
+                                        Converter={StaticResource BoolToVisibility}}">
+                                <StackPanel Orientation="Horizontal">
+                                    <ToggleButton Style="{StaticResource SegmentChip}"
+                                                  Content="Rendered"
+                                                  IsChecked="{Binding ShowRendered}"
+                                                  ToolTip="The file as a table, card or highlighted source" />
+                                    <ToggleButton Style="{StaticResource SegmentChip}"
+                                                  Content="Raw"
+                                                  IsChecked="{Binding ShowRawTab}"
+                                                  ToolTip="The diff, or the plain file when nothing changed" />
+                                </StackPanel>
+                            </Border>
 
                             <!-- One sentence about the whole view, when it needs one -
                                  "no changes right now". In the header, not the text,
@@ -693,10 +696,11 @@
                                  this strip is the way in. It follows the SHOWN path, not the
                                  tree selection, so it disappears the moment the pane shows
                                  anything that is not one of these files. -->
+                            <Border Style="{StaticResource SegmentGroup}" Margin="0,0,14,0"
+                                    Visibility="{Binding HasDiffLayers,
+                                        Converter={StaticResource BoolToVisibility}}">
                             <ItemsControl ItemsSource="{Binding DiffLayers}"
-                                          VerticalAlignment="Center" Margin="0,0,14,0"
-                                          Visibility="{Binding HasDiffLayers,
-                                              Converter={StaticResource BoolToVisibility}}">
+                                          VerticalAlignment="Center">
                                 <ItemsControl.ItemsPanel>
                                     <ItemsPanelTemplate>
                                         <StackPanel Orientation="Horizontal" />
@@ -704,16 +708,16 @@
                                 </ItemsControl.ItemsPanel>
                                 <ItemsControl.ItemTemplate>
                                     <DataTemplate>
-                                        <ToggleButton Style="{StaticResource FilterChip}"
+                                        <ToggleButton Style="{StaticResource SegmentChip}"
                                                       Content="{Binding Label}"
                                                       IsChecked="{Binding IsActive, Mode=OneWay}"
                                                       Command="{Binding ShowCommand}"
-                                                      Foreground="{DynamicResource Brush.Text.Secondary}"
                                                       AutomationProperties.Name="{Binding Label}"
                                                       ToolTip="{Binding Path}" />
                                     </DataTemplate>
                                 </ItemsControl.ItemTemplate>
                             </ItemsControl>
+                            </Border>
                             <!-- Old left, new right. Render-only — the same diff, folded —
                                  so unlike its neighbour it re-reads nothing.
 

@@ -210,6 +210,63 @@
     </Style>
 
     <!--
+        One option of a choice: Rendered | Raw, ST | native.
+
+        NOT a FilterChip, though it was one. A filter chip's OFF state is dimmed to 35 %
+        because off means "this filter is not applied", and four of them read at a glance.
+        A choice has no off: the option not taken is the other view, one click away, and at
+        35 % it read as disabled - "Raw" beside "Rendered" looked like a control that could
+        not be pressed. Seen in the running window on 2026-09-21.
+
+        So the unchosen option keeps full opacity in the secondary text colour, and the chosen
+        one is filled and in the primary colour. Sit these in a SegmentGroup, which draws the
+        track that makes two chips read as one control.
+    -->
+    <Style x:Key="SegmentChip" TargetType="ToggleButton">
+        <Setter Property="FocusVisualStyle" Value="{StaticResource FocusRing}" />
+        <Setter Property="Cursor" Value="Hand" />
+        <Setter Property="Height" Value="18" />
+        <Setter Property="FontFamily" Value="{DynamicResource Font.UI}" />
+        <Setter Property="FontSize" Value="{DynamicResource Font.Size.Caption}" />
+        <Setter Property="Foreground" Value="{DynamicResource Brush.Text.Secondary}" />
+        <Setter Property="SnapsToDevicePixels" Value="True" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="ToggleButton">
+                    <Border x:Name="Root" CornerRadius="9" Padding="10,0"
+                            Background="Transparent">
+                        <ContentPresenter x:Name="Label"
+                                          HorizontalAlignment="Center"
+                                          VerticalAlignment="Center" />
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="Root" Property="Background"
+                                    Value="{DynamicResource Brush.Surface.Hover}" />
+                        </Trigger>
+                        <Trigger Property="IsChecked" Value="True">
+                            <Setter TargetName="Root" Property="Background"
+                                    Value="{DynamicResource Brush.Surface.Raised}" />
+                            <Setter Property="Foreground"
+                                    Value="{DynamicResource Brush.Text.Primary}" />
+                            <Setter Property="FontWeight"
+                                    Value="{DynamicResource Font.Weight.Semibold}" />
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!-- The track a run of SegmentChips sits in. -->
+    <Style x:Key="SegmentGroup" TargetType="Border">
+        <Setter Property="CornerRadius" Value="11" />
+        <Setter Property="Padding" Value="2" />
+        <Setter Property="VerticalAlignment" Value="Center" />
+        <Setter Property="Background" Value="{DynamicResource Brush.Surface.Sunken}" />
+    </Style>
+
+    <!--
         A small stated fact: a count, a state, a mode. Not clickable, and shaped so it does
         not read as a button somebody is failing to press.
     -->

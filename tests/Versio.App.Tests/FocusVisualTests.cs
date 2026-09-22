@@ -43,6 +43,7 @@ public sealed class FocusVisualTests
         { "FlatCombo", typeof(ComboBox) },
         { "FlatTextBox", typeof(TextBox) },
         { "FilterChip", typeof(ToggleButton) },
+        { "SegmentChip", typeof(ToggleButton) },
     };
 
     [Theory]
