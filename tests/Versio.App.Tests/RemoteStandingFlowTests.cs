@@ -59,6 +59,45 @@ public sealed class RemoteStandingFlowTests
     }
 
     [Fact]
+    public async Task The_push_beside_commit_shows_only_while_commits_wait_to_go_up()
+    {
+        // In sync: nothing to send, so no accent button beside Commit. One local commit later
+        // there is, and a push takes it away again. The notification is asserted as well as
+        // the value - a property that is right but never raised leaves the button where it was.
+        using var repo = new TempRepo(published: true);
+        using var shell = Shell();
+
+        await shell.OpenAsync(repo.Path);
+        Assert.False(shell.Remote.ReadyToPush);
+
+        var raised = false;
+        shell.Remote.PropertyChanged += (_, e) =>
+            raised |= e.PropertyName == nameof(GitRemoteViewModel.ReadyToPush);
+
+        repo.Commit("local work");
+        await shell.RefreshAsync();
+
+        Assert.True(shell.Remote.ReadyToPush);
+        Assert.True(raised, "ReadyToPush changed without telling the button");
+
+        await Eventually.Press(shell.Remote.PushCommand, "push");
+        await Eventually.Until(() => !shell.Remote.ReadyToPush, "the push emptied the queue");
+    }
+
+    [Fact]
+    public async Task A_branch_never_pushed_offers_no_push_beside_commit()
+    {
+        // Publish, not push: a plain push on a branch with no upstream fails outright.
+        using var repo = new TempRepo(withRemote: true);
+        using var shell = Shell();
+
+        await shell.OpenAsync(repo.Path);
+
+        Assert.True(shell.Remote.ShowPublish);
+        Assert.False(shell.Remote.ReadyToPush);
+    }
+
+    [Fact]
     public async Task Publishing_sets_the_upstream_and_flips_the_button_back_to_push()
     {
         using var repo = new TempRepo(withRemote: true);

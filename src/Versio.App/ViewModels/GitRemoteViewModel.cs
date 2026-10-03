@@ -206,6 +206,17 @@ public sealed class GitRemoteViewModel : ObservableObject, IDisposable
 
     public string PullLabel => "Pull" + _standing.PullCountSuffix;
 
+    /// <summary>Committed work waiting to go up: a tracked branch with commits ahead.</summary>
+    /// <remarks>
+    /// Drives the second Push, the one beside Commit. Commit is at the foot of the panel and
+    /// Push was only at its head, so the natural next press after committing meant crossing
+    /// the whole panel to a ghost button among Fetch and Pull (owner, 2026-10-03). It shows
+    /// only when there is something to send, because a dead accent button beside Commit all
+    /// day would be furniture. A branch with no upstream answers false: that is Publish, a
+    /// different operation, and it keeps its own accent button at the top.
+    /// </remarks>
+    public bool ReadyToPush => ShowPush && HasAhead;
+
     /// <summary>The push button's tooltip: the standing, plus the shortcut (GP-L §10.6).</summary>
     /// <remarks>
     /// The discoverability is most of the shortcut's value — a key nobody can find is a key
@@ -465,8 +476,10 @@ public sealed class GitRemoteViewModel : ObservableObject, IDisposable
         Standing = RemoteStanding.For(branch, _hasRemote);
 
         // Unconditionally, not inside countsMoved: publishing a branch changes the upstream
-        // without moving a single count, and the amend offer has to follow that too.
+        // without moving a single count, and the amend offer has to follow that too - and so
+        // does the push beside Commit, which reads the standing as well as the counts.
         OnPropertyChanged(nameof(HeadIsUnpushed));
+        OnPropertyChanged(nameof(ReadyToPush));
     }
 
     /// <summary>Start watching the remote. Idempotent.</summary>
@@ -491,6 +504,7 @@ public sealed class GitRemoteViewModel : ObservableObject, IDisposable
         OnPropertyChanged(nameof(HasAhead));
         OnPropertyChanged(nameof(HasBehind));
         OnPropertyChanged(nameof(HeadIsUnpushed));
+        OnPropertyChanged(nameof(ReadyToPush));
 
         _poller.Stop();
         _poller.Resume();

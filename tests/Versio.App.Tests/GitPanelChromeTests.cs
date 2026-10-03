@@ -1,4 +1,5 @@
 using System.Windows;
+using System.Windows.Automation;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
 using System.Windows.Data;
@@ -296,6 +297,26 @@ public sealed class GitPanelChromeTests : IDisposable
             ShowGitPanel(window);
 
             Assert.NotEqual(shell.Remote.ShowPush, shell.Remote.ShowPublish);
+        });
+    }
+
+    [Fact]
+    public void The_push_beside_commit_is_hidden_with_nothing_to_send()
+    {
+        // The half that is XAML: the view model is covered in RemoteStandingFlowTests, but a
+        // misspelt binding path falls back to Visible, and the accent Push would then sit
+        // beside Commit all day. No repository open means nothing to send.
+        StaHarness.Run(() =>
+        {
+            var (window, shell) = Build();
+            var (panel, _) = ShowGitPanel(window);
+
+            var push = Assert.Single(AllOf<Button>(panel),
+                b => AutomationProperties.GetName(b) == "Push committed work");
+
+            Assert.False(shell.Remote.ReadyToPush);
+            Assert.Equal(Visibility.Collapsed, push.Visibility);
+            Assert.Same(shell.Remote.PushCommand, push.Command);
         });
     }
 

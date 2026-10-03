@@ -161,21 +161,22 @@
                      at all: four projects in sync drew an empty card whose middle
                      said "Open a repository", with the truth in a grey footnote.
 
-                     Docked under the search box while the tree is empty, so the calm
-                     day reads top-down like any other; docked at the bottom once there
-                     are changes, so the changes keep the top of the panel. One row per
+                     Always docked at the bottom, just above the summary, and drawn as a
+                     note rather than as rows. It used to sit under the search box with
+                     a green dot and a bold name per project whenever the tree was empty,
+                     which made it the loudest thing on the calmest screen: seen in the
+                     running window on 2026-10-03, four in-sync projects at the top of
+                     the panel read as the panel's content - as if they were the things
+                     to review - rather than as the absence of any. Nothing here needs
+                     acting on, so nothing here is coloured or emphasised. One line per
                      project, never expandable - the Explorer is where a clean project's
                      objects are browsed. -->
-                <StackPanel Margin="0,6,0,0"
+                <StackPanel DockPanel.Dock="Bottom" Margin="2,6,0,0"
                             AutomationProperties.Name="Projects in sync">
                     <StackPanel.Style>
                         <Style TargetType="StackPanel">
-                            <Setter Property="DockPanel.Dock" Value="Bottom" />
                             <Setter Property="Visibility" Value="Visible" />
                             <Style.Triggers>
-                                <DataTrigger Binding="{Binding Sync.Tree.Count}" Value="0">
-                                    <Setter Property="DockPanel.Dock" Value="Top" />
-                                </DataTrigger>
                                 <DataTrigger Binding="{Binding Sync.InSyncProjects.Count}"
                                              Value="0">
                                     <Setter Property="Visibility" Value="Collapsed" />
@@ -183,43 +184,31 @@
                             </Style.Triggers>
                         </Style>
                     </StackPanel.Style>
-                    <TextBlock Text="IN SYNC" Margin="2,0,0,4"
+                    <TextBlock Text="In sync, nothing to review:" Margin="0,0,0,2"
                                FontFamily="{DynamicResource Font.UI}"
                                FontSize="{DynamicResource Font.Size.Caption}"
-                               FontWeight="{DynamicResource Font.Weight.Semibold}"
-                               Foreground="{DynamicResource Brush.Text.Secondary}" />
+                               Foreground="{DynamicResource Brush.Text.Disabled}" />
                     <ItemsControl ItemsSource="{Binding Sync.InSyncProjects}"
                                   Focusable="False">
                         <ItemsControl.ItemTemplate>
                             <DataTemplate>
-                                <Grid Height="{DynamicResource Size.Row.Tree}"
-                                      Background="Transparent"
-                                      ToolTip="{Binding Path}">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="14" />
-                                        <ColumnDefinition Width="*" />
-                                        <ColumnDefinition Width="Auto" />
-                                    </Grid.ColumnDefinitions>
-                                    <!-- The one green thing on a calm screen. A dot
-                                         rather than a tick glyph, so it cannot be read
-                                         as a checkbox. -->
-                                    <Ellipse Grid.Column="0" Width="6" Height="6"
-                                             HorizontalAlignment="Left"
-                                             VerticalAlignment="Center" Margin="3,0,0,0"
-                                             Fill="{DynamicResource Brush.Status.Added}" />
-                                    <TextBlock Grid.Column="1" Text="{Binding Name}"
-                                               VerticalAlignment="Center"
-                                               TextTrimming="CharacterEllipsis"
-                                               FontFamily="{DynamicResource Font.UI}"
-                                               FontSize="{DynamicResource Font.Size.Body}"
-                                               FontWeight="{DynamicResource Font.Weight.Semibold}"
-                                               Foreground="{DynamicResource Brush.Text.Primary}" />
-                                    <TextBlock Grid.Column="2" Text="{Binding State}"
-                                               VerticalAlignment="Center" Margin="8,0,4,0"
-                                               FontFamily="{DynamicResource Font.UI}"
-                                               FontSize="{DynamicResource Font.Size.Caption}"
-                                               Foreground="{DynamicResource Brush.Text.Secondary}" />
-                                </Grid>
+                                <!-- The state stays in the tooltip with the path: every
+                                     row here says "in sync", so a column repeating it
+                                     was the same word four times. -->
+                                <TextBlock Text="{Binding Name}" Margin="8,0,0,0"
+                                           TextTrimming="CharacterEllipsis"
+                                           Background="Transparent"
+                                           FontFamily="{DynamicResource Font.UI}"
+                                           FontSize="{DynamicResource Font.Size.Caption}"
+                                           Foreground="{DynamicResource Brush.Text.Disabled}">
+                                    <TextBlock.ToolTip>
+                                        <TextBlock>
+                                            <Run Text="{Binding Path, Mode=OneWay}" />
+                                            <Run Text=" — " />
+                                            <Run Text="{Binding State, Mode=OneWay}" />
+                                        </TextBlock>
+                                    </TextBlock.ToolTip>
+                                </TextBlock>
                             </DataTemplate>
                         </ItemsControl.ItemTemplate>
                     </ItemsControl>

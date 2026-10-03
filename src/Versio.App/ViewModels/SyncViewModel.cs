@@ -2750,8 +2750,8 @@ public sealed class SyncViewModel : ObservableObject
         // An empty panel has to say why it is empty. A tracked project that is simply in sync
         // is hidden from the tree, and a panel that went blank without explaining itself reads
         // as a broken scan - which is the failure this wording exists to prevent. The hidden
-        // ones are listed under IN SYNC now, so the sentence points there instead of saying
-        // they are not listed.
+        // ones are listed by name in a quiet note at the foot of the panel, so the sentence
+        // points there instead of saying they are not listed.
         TreeSummary = (Tree.Count, hidden) switch
         {
             (0, 0) when built.Tracked == 0 => "No PLC projects tracked in this repository.",

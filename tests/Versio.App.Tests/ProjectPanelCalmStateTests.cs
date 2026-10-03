@@ -198,8 +198,12 @@ public sealed class ProjectPanelCalmStateTests
             var calm = CalmList(panel);
             Assert.Equal(Visibility.Visible, calm.Visibility);
 
-            // Under the search box while the tree is empty, so the calm day reads top-down.
-            Assert.Equal(Dock.Top, DockPanel.GetDock(calm));
+            // At the bottom even with the tree empty, and drawn as a note: the top of the panel
+            // belongs to what needs review, and a calm project does not. It used to dock under
+            // the search box with a green dot per row, and read as the panel's content (seen
+            // 2026-10-03).
+            Assert.Equal(Dock.Bottom, DockPanel.GetDock(calm));
+            Assert.Empty(Descendants(calm).OfType<System.Windows.Shapes.Ellipse>());
         });
     }
 

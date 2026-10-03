@@ -186,7 +186,9 @@ One list. Reorder it; do not copy it into another file.
    now seen `ExportHeldViaCopy`, the held-wait, the occupancy-then-hash path and the
    locked-pointer skip, and the run is the counted gate `LOCK-1` owed.
 2. **Owner eyeball leftovers.** **`UiLook` first**, in the dark theme, on this repository:
-   the Project panel with nothing changed lists IN SYNC projects (no "Open a repository");
+   the Project panel with nothing changed names its in-sync projects in a muted note at the
+   bottom — no green dots, nothing at the top (no "Open a repository"); with commits ahead,
+   an accent Push sits beside Commit at the same height, and is gone when nothing waits;
    an empty window has Open / Clone and Ctrl+O works; launching Versio a second time brings
    the first window forward; the log pill says "N new" only for warnings; no white square
    where the diff's scrollbars meet; the pane header reads FILE / DIFF / PROJECT / COMMIT with

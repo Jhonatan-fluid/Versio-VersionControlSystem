@@ -904,6 +904,27 @@
                                 ToolTipService.ShowOnDisabled="True"
                                 ToolTip="{Binding CommitExplanation}" />
 
+                        <!-- THE NEXT PRESS AFTER COMMIT, WHERE THE HAND ALREADY IS.
+
+                             The same command, label and tooltip as the Push at the top
+                             - one operation, two places, so nothing about it can drift.
+                             The top one stays because Fetch, Pull and Push are one
+                             rhythm. This one exists because pushing is what follows a
+                             commit, and Push was only at the far end of the panel from
+                             it (owner, 2026-10-03).
+
+                             Same size as Commit and an accent, but HIDDEN until there are
+                             commits to send: Remote.ReadyToPush. Not shown for Publish -
+                             that is a different operation with its own button. -->
+                        <Button Content="{Binding Remote.PushLabel}" Margin="8,0,0,0"
+                                AutomationProperties.Name="Push committed work"
+                                Style="{StaticResource AccentButton}"
+                                Command="{Binding Remote.PushCommand}"
+                                ToolTipService.ShowOnDisabled="True"
+                                ToolTip="{Binding Remote.PushTooltip}"
+                                Visibility="{Binding Remote.ReadyToPush,
+                                    Converter={StaticResource BoolToVisibility}}" />
+
                         <!-- OFFERED, NEVER APPLIED, AND NEVER OVER TYPED WORDS.
 
                              The button goes dead the moment the box has anything
