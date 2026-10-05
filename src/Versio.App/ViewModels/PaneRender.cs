@@ -1,6 +1,7 @@
 using System.IO;
 using Versio.Core.Diff;
 using Versio.Core.Iec;
+using Versio.Core.Iec.Ladder;
 using Versio.Core.Projects;
 using Versio.Core.Text;
 
@@ -108,7 +109,42 @@ public sealed record MarkdownRender
 public sealed record InterfaceRender
 {
     public required MemberTable Table { get; init; }
-    public required SourceRender Source { get; init; }
+
+    /// <summary>The code as text. Null when the code is drawn as <see cref="Ladder"/> instead.</summary>
+    public SourceRender? Source { get; init; }
+
+    /// <summary>The code as a ladder diagram, for a block written in ladder.</summary>
+    public LadderRender? Ladder { get; init; }
+
+    /// <summary>What sits under the table: the diagram when there is one, else the text.</summary>
+    public object? Code => (object?)Ladder ?? Source;
+}
+
+/// <summary>
+/// A ladder block's Rendered view: its networks drawn, the committed version beside the working
+/// one.
+/// </summary>
+/// <remarks>
+/// <para>
+/// Everything vendor-shaped happened before this record: a format's
+/// <c>TryParseLadder</c> read the file, and <c>Versio.Core.Iec.Ladder</c> compared it. This holds
+/// only the result and the vendor's drawing conventions, and <c>LadderPageView</c> draws it.
+/// </para>
+/// <para>
+/// <b><see cref="Pending"/>.</b> A changed block's committed copy is a git read, done after the
+/// pane is shown, as the member table's marks are. Until it lands the page draws nothing. Drawing
+/// the block as "no changes" for a moment would be a claim that is false.
+/// </para>
+/// </remarks>
+public sealed record LadderRender
+{
+    public required string Path { get; init; }
+
+    public required LadderComparison Comparison { get; init; }
+
+    public required LadderStyle Style { get; init; }
+
+    public bool Pending { get; init; }
 }
 
 /// <summary>The project row's rendered view: the facts a glance should answer.</summary>

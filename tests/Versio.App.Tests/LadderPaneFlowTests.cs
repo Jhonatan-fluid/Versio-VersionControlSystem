@@ -1,0 +1,264 @@
+using System.IO;
+using Versio.App.ViewModels;
+using Versio.Core.Iec.Ladder;
+using Xunit;
+
+namespace Versio.App.Tests;
+
+/// <summary>
+/// A ladder block's Rendered pane is its networks drawn, compared with the committed copy, not
+/// highlighted XML.
+/// </summary>
+/// <remarks>
+/// <para>
+/// Driven through <c>SelectedNode</c>, the door a click enters by. Like the member table and
+/// Markdown arms, the ladder probe in <c>BuildRenderedContent</c> is a pure addition in front of
+/// <c>SourceRender</c>. Deleting it would leave everything else green, so this class is what goes
+/// red.
+/// </para>
+/// <para>
+/// Does not reference a vendor parser. The shell asks the registry; the pack that understands
+/// the bytes answers. The block XML here is the hand-written specimen shape (see
+/// <c>TiaPortalLadderTests</c>), trimmed to one rung.
+/// </para>
+/// </remarks>
+public sealed class LadderPaneFlowTests
+{
+    private static ShellViewModel Shell() => TestShell.Build();
+
+    /// <summary>One LAD network: a contact, a closed contact, a coil.</summary>
+    private static string Rung(string a, string b, string coil) => $"""
+                  <SW.Blocks.CompileUnit ID="3" CompositionName="CompileUnits">
+                    <AttributeList>
+                      <NetworkSource>
+                        <FlgNet xmlns="http://www.siemens.com/automation/Openness/SW/NetworkSource/FlgNet/v5">
+                          <Parts>
+                            <Access Scope="GlobalVariable" UId="21"><Symbol><Component Name="{a}" /></Symbol></Access>
+                            <Access Scope="GlobalVariable" UId="22"><Symbol><Component Name="{b}" /></Symbol></Access>
+                            <Access Scope="GlobalVariable" UId="23"><Symbol><Component Name="{coil}" /></Symbol></Access>
+                            <Part Name="Contact" UId="24" />
+                            <Part Name="Contact" UId="25"><Negated Name="operand" /></Part>
+                            <Part Name="Coil" UId="26" />
+                          </Parts>
+                          <Wires>
+                            <Wire UId="31"><Powerrail /><NameCon UId="24" Name="in" /></Wire>
+                            <Wire UId="32"><IdentCon UId="21" /><NameCon UId="24" Name="operand" /></Wire>
+                            <Wire UId="33"><NameCon UId="24" Name="out" /><NameCon UId="25" Name="in" /></Wire>
+                            <Wire UId="34"><IdentCon UId="22" /><NameCon UId="25" Name="operand" /></Wire>
+                            <Wire UId="35"><NameCon UId="25" Name="out" /><NameCon UId="26" Name="in" /></Wire>
+                            <Wire UId="36"><IdentCon UId="23" /><NameCon UId="26" Name="operand" /></Wire>
+                          </Wires>
+                        </FlgNet>
+                      </NetworkSource>
+                      <ProgrammingLanguage>LAD</ProgrammingLanguage>
+                    </AttributeList>
+                  </SW.Blocks.CompileUnit>
+        """;
+
+    private static string Organisation(string rung) => $"""
+        <?xml version="1.0" encoding="utf-8"?>
+        <Document>
+          <SW.Blocks.OB ID="0">
+            <AttributeList>
+              <Name>Main</Name>
+              <ProgrammingLanguage>LAD</ProgrammingLanguage>
+            </AttributeList>
+            <ObjectList>
+        {rung}
+            </ObjectList>
+          </SW.Blocks.OB>
+        </Document>
+        """;
+
+    private static string FunctionBlock(string rung) => $"""
+        <?xml version="1.0" encoding="utf-8"?>
+        <Document>
+          <SW.Blocks.FB ID="0">
+            <AttributeList>
+              <Interface>
+                <Sections>
+                  <Section Name="Input">
+                    <Member Name="Enable" Datatype="Bool" />
+                  </Section>
+                </Sections>
+              </Interface>
+              <Name>Conveyor</Name>
+              <ProgrammingLanguage>LAD</ProgrammingLanguage>
+            </AttributeList>
+            <ObjectList>
+        {rung}
+            </ObjectList>
+          </SW.Blocks.FB>
+        </Document>
+        """;
+
+    private static string BlockPath(TempRepo repo, string name) =>
+        Path.Combine(repo.Path, "plc", "Station", "Blocks", name + ".xml");
+
+    private static void GivenAPortalProjectWithLadder(TempRepo repo)
+    {
+        var versio = Path.Combine(repo.Path, ".versio");
+        Directory.CreateDirectory(versio);
+        File.WriteAllText(Path.Combine(versio, "repo.json"), """
+        {
+          "schema": 1,
+          "bindings": [
+            { "id": "b1", "projectPath": "plc/Station.ap21", "exportPath": "plc/Station",
+              "vendor": "TiaPortal", "enabled": true }
+          ]
+        }
+        """);
+
+        Directory.CreateDirectory(Path.Combine(repo.Path, "plc", "Station", "Blocks"));
+        File.WriteAllText(Path.Combine(repo.Path, "plc", "Station.ap21"), "pointer");
+        File.WriteAllText(Path.Combine(repo.Path, "plc", "Station", "_manifest.json"), """
+        {
+          "schema": 8,
+          "vendor": "TiaPortal",
+          "bindingId": "b1",
+          "project": "Station.ap21",
+          "objectCount": 2,
+          "objects": [
+            { "guid": "ob1", "name": "Main", "type": "OB", "form": "NATIVE",
+              "path": "Blocks/Main.xml", "hash": "sha256:0", "bytes": 1 },
+            { "guid": "fb1", "name": "Conveyor", "type": "FB", "form": "NATIVE",
+              "path": "Blocks/Conveyor.xml", "hash": "sha256:0", "bytes": 1 }
+          ],
+          "warnings": [],
+          "skipped": []
+        }
+        """);
+
+        File.WriteAllText(BlockPath(repo, "Main"), Organisation(Rung("Start", "Stop", "Motor")));
+        File.WriteAllText(BlockPath(repo, "Conveyor"), FunctionBlock(Rung("Run", "Jam", "Belt")));
+    }
+
+    private static void CommitEverything(TempRepo repo)
+    {
+        repo.Git("add -A");
+        repo.Git("commit -q -m blocks");
+    }
+
+    private static async Task<TreeRow> Row(ShellViewModel shell, string name)
+    {
+        TreeRow? found = null;
+        await Eventually.Until(
+            () => (found = Find(shell.Sync.Tree, name)) is not null,
+            $"a row named '{name}' appeared in the tree");
+        return found!;
+    }
+
+    private static TreeRow? Find(IEnumerable<TreeRow> rows, string name)
+    {
+        foreach (var row in rows)
+        {
+            if (row.Name == name)
+            {
+                return row;
+            }
+
+            if (Find(row.Children, name) is { } found)
+            {
+                return found;
+            }
+        }
+
+        return null;
+    }
+
+    [Fact]
+    public async Task An_unchanged_ladder_block_is_drawn_at_once_with_nothing_marked()
+    {
+        using var repo = new TempRepo();
+        GivenAPortalProjectWithLadder(repo);
+        CommitEverything(repo);
+
+        using var shell = Shell();
+        await shell.OpenAsync(repo.Path);
+        shell.Sync.SelectedNode = await Row(shell, "Main");
+
+        var ladder = Assert.IsType<LadderRender>(shell.RenderedContent);
+        Assert.False(ladder.Pending);
+        Assert.Equal("Main", ladder.Comparison.BlockName);
+        Assert.False(ladder.Comparison.HasChanges);
+        Assert.True(shell.ShowRenderedPane);
+    }
+
+    [Fact]
+    public async Task A_changed_ladder_block_is_compared_with_its_committed_copy()
+    {
+        using var repo = new TempRepo();
+        GivenAPortalProjectWithLadder(repo);
+        CommitEverything(repo);
+        File.WriteAllText(BlockPath(repo, "Main"), Organisation(Rung("Start", "Stop_Ok", "Motor")));
+
+        using var shell = Shell();
+        await shell.OpenAsync(repo.Path);
+        shell.Sync.SelectedNode = await Row(shell, "Main");
+
+        await Eventually.Until(
+            () => shell.RenderedContent is LadderRender { Pending: false },
+            "the committed copy was read and compared");
+
+        var ladder = Assert.IsType<LadderRender>(shell.RenderedContent);
+        var row = Assert.Single(ladder.Comparison.Rows);
+        Assert.Equal(LadderChange.Changed, row.Change);
+        Assert.Equal(LdMark.Modified, row.New!.Marks["25"]);
+    }
+
+    [Fact]
+    public async Task A_ladder_block_never_committed_says_there_is_nothing_to_compare_with()
+    {
+        using var repo = new TempRepo();
+        GivenAPortalProjectWithLadder(repo);
+
+        using var shell = Shell();
+        await shell.OpenAsync(repo.Path);
+        shell.Sync.SelectedNode = await Row(shell, "Main");
+
+        await Eventually.Until(
+            () => shell.RenderedContent is LadderRender { Pending: false },
+            "the missing committed copy was answered");
+
+        var ladder = Assert.IsType<LadderRender>(shell.RenderedContent);
+        Assert.False(ladder.Comparison.HasOldSide);
+    }
+
+    [Fact]
+    public async Task A_ladder_function_block_draws_its_networks_under_its_interface_table()
+    {
+        using var repo = new TempRepo();
+        GivenAPortalProjectWithLadder(repo);
+        CommitEverything(repo);
+
+        using var shell = Shell();
+        await shell.OpenAsync(repo.Path);
+        shell.Sync.SelectedNode = await Row(shell, "Conveyor");
+
+        var render = Assert.IsType<InterfaceRender>(shell.RenderedContent);
+        Assert.Equal("Conveyor", render.Table.Name);
+        Assert.Null(render.Source);
+        Assert.NotNull(render.Ladder);
+        Assert.Same(render.Ladder, render.Code);
+    }
+
+    [Fact]
+    public async Task A_late_comparison_never_lands_on_another_block()
+    {
+        // Selection moves on while git reads the first block's committed copy: the second
+        // block must keep its own render, never the first one's comparison.
+        using var repo = new TempRepo();
+        GivenAPortalProjectWithLadder(repo);
+        CommitEverything(repo);
+        File.WriteAllText(BlockPath(repo, "Main"), Organisation(Rung("Start", "Stop_Ok", "Motor")));
+
+        using var shell = Shell();
+        await shell.OpenAsync(repo.Path);
+        shell.Sync.SelectedNode = await Row(shell, "Main");
+        shell.Sync.SelectedNode = await Row(shell, "Conveyor");
+
+        await Task.Delay(500);
+        var render = Assert.IsType<InterfaceRender>(shell.RenderedContent);
+        Assert.Equal("Conveyor", render.Ladder!.Comparison.BlockName);
+    }
+}

@@ -8,6 +8,7 @@ using Versio.Core.Abstractions;
 using Versio.Core.Diff;
 using Versio.Core.Git;
 using Versio.Core.Guarding;
+using Versio.Core.Iec.Ladder;
 using Versio.Core.Locking;
 using Versio.Core.Logging;
 using Versio.Core.Plc;
@@ -6987,6 +6988,103 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
     private (IPlcProjectFormat Format, string File)? _tableSource;
 
     /// <summary>
+    /// The format, file and parsed ladder of the last ladder drawn, so its committed copy can be
+    /// compared once git has read it. Reset on every build, like <see cref="_tableSource"/>.
+    /// </summary>
+    private (IPlcProjectFormat Format, string File, LadderDocument Document, bool Pending)? _ladderSource;
+
+    /// <summary>
+    /// Counts builds of the rendered half. A late git read compares it with the count it started
+    /// under and drops its result when they differ: by then somebody else's block is on screen.
+    /// </summary>
+    private int _renderGeneration;
+
+    /// <summary>
+    /// Mark what changed since the last commit: the table's members, then the ladder's networks.
+    /// </summary>
+    /// <remarks>
+    /// One after the other, not side by side: each replaces <see cref="RenderedContent"/> and
+    /// checks it is still the object it started from. Two running at once would each see the
+    /// other's replacement and drop its own result.
+    /// </remarks>
+    private async Task MarkChangesAsync(
+        (IPlcProjectFormat Format, string File)? table,
+        (IPlcProjectFormat Format, string File, LadderDocument Document, bool Pending)? ladder,
+        int generation)
+    {
+        if (table is { } t)
+        {
+            await MarkTableChangesAsync(t.Format, t.File, RenderedContent).ConfigureAwait(true);
+        }
+
+        if (ladder is { } l && generation == _renderGeneration)
+        {
+            await CompareLadderAsync(l.Format, l.File, l.Document, generation).ConfigureAwait(true);
+        }
+    }
+
+    /// <summary>
+    /// Compare the drawn ladder with its committed copy, and draw the comparison in place of the
+    /// pending page.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The committed copy is parsed by the same format as the working one, so both sides go
+    /// through one parser and differ only in what the files say. No committed copy (a new block,
+    /// a mirror never committed) or one that is not ladder (the block's language changed) means
+    /// there is nothing to compare with, and the page says so rather than inventing an old side.
+    /// </para>
+    /// <para>
+    /// Dropped if the selection moved while git worked, for the reason the table's marks are.
+    /// A failed read is logged and drawn as "nothing to compare with", never left pending: a
+    /// blank page that never fills in would look like a hang.
+    /// </para>
+    /// </remarks>
+    private async Task CompareLadderAsync(IPlcProjectFormat format, string file, LadderDocument document, int generation)
+    {
+        LadderBody? old = null;
+        if (_git is not null)
+        {
+            try
+            {
+                var head = await _git.ShowAtHeadAsync(file, CancellationToken.None).ConfigureAwait(true);
+                old = head.Length == 0 ? null : format.TryParseLadder(file, head)?.Body;
+            }
+            catch (Exception ex)
+            {
+                _logger.Warn(LogCategory.Git, $"could not read {file} at HEAD to compare its ladder: {ex.Message}");
+            }
+        }
+
+        if (generation != _renderGeneration)
+        {
+            return;
+        }
+
+        var comparison = LadderDiff.Compare(old, document.Body);
+        LogLadder(file, document.Body, comparison);
+        RenderedContent = RenderedContent switch
+        {
+            LadderRender l => l with { Comparison = comparison, Pending = false },
+            InterfaceRender { Ladder: { } l } i => i with { Ladder = l with { Comparison = comparison, Pending = false } },
+            var other => other,
+        };
+    }
+
+    /// <summary>One line per ladder drawn: what is on screen, and anything drawn less than faithfully.</summary>
+    private void LogLadder(string file, LadderBody body, LadderComparison comparison)
+    {
+        var unrecognised = body.Networks.Sum(n => n.Nodes.OfType<LdUnsupported>().Count());
+        var otherLanguage = body.Networks.Count(n => n.UnsupportedLanguage is not null);
+        var byRank = body.Networks.Count(n => n.UnsupportedLanguage is null && !LadderStructure.Of(n).IsSeriesParallel);
+        var against = comparison.HasOldSide ? "against HEAD" : "with nothing committed to compare";
+        _logger.Info(LogCategory.Ui,
+            $"ladder {file}: {body.Networks.Count} networks {against}; {comparison.ChangedCount} changed, "
+            + $"{comparison.AddedCount} added, {comparison.RemovedCount} removed, {comparison.MovedCount} moved; "
+            + $"{unrecognised} unrecognised parts, {otherLanguage} networks in another language, {byRank} drawn by rank");
+    }
+
+    /// <summary>
     /// Mark the shown table with what changed since the last commit.
     /// </summary>
     /// <remarks>
@@ -7066,6 +7164,8 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
     private object? BuildRenderedContent(TreeRow row)
     {
         _tableSource = null;
+        _ladderSource = null;
+        _renderGeneration++;
 
         if (RepositoryPath is not { } root)
         {
@@ -7091,6 +7191,26 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
             {
                 return null;
             }
+        }
+
+        // A ladder block, drawn. Unchanged, it is complete at once; changed, it waits for the
+        // committed copy (MarkChangesAsync) rather than claiming "no changes" in the meantime.
+        LadderRender? LadderFor(IPlcProjectFormat format, string file, string text)
+        {
+            if (format.TryParseLadder(file, text) is not { } document)
+            {
+                return null;
+            }
+
+            var pending = node.Status != ChangeKind.Unmodified;
+            _ladderSource = (format, file, document, pending);
+            var comparison = LadderDiff.Compare(document.Body, document.Body);
+            if (!pending)
+            {
+                LogLadder(file, document.Body, comparison);
+            }
+
+            return new LadderRender { Path = file, Comparison = comparison, Style = document.Style, Pending = pending };
         }
 
         switch (node.Kind)
@@ -7160,6 +7280,16 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
                             var table = LinkTypes(parsed, file);
                             _tableSource = (format, file);
 
+                            // A ladder block's code is a diagram, not text: drawn under its
+                            // table the way the IDE shows the interface above the networks.
+                            if (table.IsInterface
+                                && row.PrimaryFile is { } ladderFile
+                                && ReadOrNull(ladderFile) is { } ladderText
+                                && LadderFor(format, ladderFile, ladderText) is { } drawn)
+                            {
+                                return new InterfaceRender { Table = table, Ladder = drawn };
+                            }
+
                             // A code block is its interface AND its code. The table alone
                             // would take the code out of the Rendered tab it was always in,
                             // so the source rides underneath it.
@@ -7186,6 +7316,21 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
                             }
 
                             return table;
+                        }
+                    }
+                }
+
+                // A ladder block with no table above it (an organisation block has no interface
+                // the table draws): the networks alone. Every format, every layer, as for the
+                // table, and before the source layout, which would otherwise highlight the
+                // vendor's XML. Deleting this loop turns LadderPaneFlowTests red.
+                foreach (var format in PlcFormats.All)
+                {
+                    foreach (var file in node.Files)
+                    {
+                        if (ReadOrNull(file) is { } text && LadderFor(format, file, text) is { } ladder)
+                        {
+                            return ladder;
                         }
                     }
                 }
@@ -7556,10 +7701,12 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         WebPagePath = WebPageFor(row.PrimaryFile);
         ShowRendered = HasRenderedView;
 
-        // A changed object's table learns what changed once the committed copy is read.
-        if (_tableSource is { } tableSource && row.Node.Status != ChangeKind.Unmodified)
+        // A changed object's table and ladder learn what changed once the committed copy is read.
+        var tableSource = row.Node.Status != ChangeKind.Unmodified ? _tableSource : null;
+        var ladderSource = _ladderSource is { Pending: true } ? _ladderSource : null;
+        if (tableSource is not null || ladderSource is not null)
         {
-            _ = MarkTableChangesAsync(tableSource.Format, tableSource.File, RenderedContent);
+            _ = MarkChangesAsync(tableSource, ladderSource, _renderGeneration);
         }
 
         if (visualizeOnly)

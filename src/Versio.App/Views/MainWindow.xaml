@@ -1557,10 +1557,21 @@
                                     <!-- Breathing room under the divider: with the BEGIN line gone
                                          the body's first line sat right against it and read as
                                          cluttered (owner, 2026-10-05). -->
-                                    <views:DiffView Grid.Row="2" Margin="0,14,0,0"
-                                                    SourceRows="{Binding Source.Rows}"
-                                                    FilePath="{Binding Source.Path}" />
+                                    <!-- The code: text, or for a ladder block the diagram. Code
+                                         is whichever the render holds, and the templates in
+                                         this ContentControl's resources pick the view. -->
+                                    <ContentControl Grid.Row="2" Margin="0,14,0,0" Focusable="False"
+                                                    Content="{Binding Code}" />
                                 </Grid>
+                            </DataTemplate>
+
+                            <!-- A ladder block: its networks drawn, the committed version beside
+                                 the working one. See LadderPageView. -->
+                            <DataTemplate DataType="{x:Type vm:LadderRender}">
+                                <views:LadderPageView Ladder="{Binding}"
+                                                      AutomationProperties.Name="Ladder diagram"
+                                                      ReportCommand="{Binding DataContext.WebPageReportCommand,
+                                                          RelativeSource={RelativeSource AncestorType=Window}}" />
                             </DataTemplate>
 
                             <DataTemplate DataType="{x:Type vm:ProjectSummaryRender}">
