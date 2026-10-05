@@ -338,11 +338,8 @@ copy of `TC3_PlcSample_reStrText`. Studio 5000 remains additive, not this queue.
 
 **Design record, not this queue.** [`outpost/PLAN.md`](outpost/PLAN.md) is Versio Outpost:
 a packaged worker that backs up and, on confirmation, restores controller programs, with a
-React page and an agent on the same API. It is not an item above until it is put there.
-
-**Design record, not this queue.** [`outpost/PLAN.md`](outpost/PLAN.md) is Versio Outpost:
-a packaged worker that backs up and, on confirmation, restores controller programs, with a
-React page and an agent on the same API. It is not an item above until it is put there.
+React page and an agent on the same API. §16 of that file is still open. It is not an item
+above until it is put there.
 
 ---
 
