@@ -399,7 +399,7 @@ dotnet test tests/Versio.Core.Tests
 | `Versio.App.Tests` | 759 | Windows (WPF). Builds the real dialogs against the real stylesheet on an STA thread; **no window is ever shown** | ~3.6 min |
 | `Versio.Plc.Codesys.Pure.Tests` | 263 | nothing — the vendor's planner, codecs and protocol, pure | under a second |
 | `Versio.Plc.Codesys.Parity.Tests` | 97 | `python` on PATH, no CODESYS — **skips cleanly without python, so check the count** | ~15 s |
-| `Versio.Plc.TiaPortal.Pure.Tests` | 51 | nothing — format, planner, protocol, scrubber, member table | instant |
+| `Versio.Plc.TiaPortal.Pure.Tests` | 52 | nothing — format, planner, protocol, scrubber, member table | instant |
 | `Versio.Plc.TiaPortal.Tests` | 5 | **a real TIA Portal**; skips cleanly without Openness membership | seconds when skipped |
 | `Versio.Plc.TwinCat.Pure.Tests` | 21 | nothing — the vendor's planner, format and protocol, pure | instant |
 | `Versio.Plc.TwinCat.Tests` | 6 | **a real TwinCAT XAE**; skips cleanly without `TcXaeShell.DTE.17.0` | seconds when skipped; ~5 min when XAE runs the import gate |

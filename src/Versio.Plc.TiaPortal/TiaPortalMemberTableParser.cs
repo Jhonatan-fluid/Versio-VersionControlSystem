@@ -54,7 +54,11 @@ public static class TiaPortalMemberTableParser
         XDocument doc;
         try
         {
-            doc = XDocument.Parse(content);
+            // The export writes a UTF-8 byte-order mark. File.ReadAllText strips it, but the
+            // committed copy read through `git show` keeps it as a character in front of
+            // <?xml, which XDocument rejects - so every changed table compared against
+            // nothing and stayed unmarked (owner's demo, 2026-10-05). Same bytes, two readers.
+            doc = XDocument.Parse(content.TrimStart('\uFEFF'));
         }
         catch (System.Xml.XmlException)
         {

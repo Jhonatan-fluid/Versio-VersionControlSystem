@@ -82,6 +82,12 @@ to show on the table ... rendered first always, raw view optional."
   one summary line under the title. An object that changed outside its members (a comment
   in the SCL) says that, rather than a "modified" row over an unmarked table. Late results
   are dropped if the selection moved. Disabling the swap turns two flow tests red (checked).
+- **...and it marked nothing on the owner's machine.** The log said the HEAD copy "is not a
+  member table". TIA writes its XML with a UTF-8 byte-order mark; `File.ReadAllText` strips
+  it, but `git show` hands it over as a character in front of `<?xml`, which `XDocument`
+  rejects - so the committed side never parsed. The flow test's fixture had no BOM, which is
+  why it passed. The parser now skips a leading BOM, the fixture is written with one, and
+  removing the skip turns both marking tests red (checked).
 
 **And one older defect found by looking at it.** "Select a file to see what changed" sits
 behind the diff and assumed whatever covers it is opaque. The interface split is not, so the

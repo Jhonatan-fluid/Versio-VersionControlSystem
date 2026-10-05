@@ -189,7 +189,10 @@ public sealed class MemberTablePaneFlowTests
         Directory.CreateDirectory(types);
         File.WriteAllText(Path.Combine(types, "AnaVal.udt"),
             "TYPE \"AnaVal\"\nVERSION : 0.1\n   STRUCT\n      Value : Real;\n   END_STRUCT;\nEND_TYPE\n");
-        File.WriteAllText(Path.Combine(types, "AnaVal.xml"), DataType);
+        // With a byte-order mark, as the real export writes it: the committed copy then
+        // arrives from `git show` with the BOM as a character, which is the path that left
+        // the owner's changed UDT unmarked until the parser learned to skip it.
+        File.WriteAllText(Path.Combine(types, "AnaVal.xml"), DataType, new System.Text.UTF8Encoding(true));
     }
 
     private static async Task<TreeRow> Row(ShellViewModel shell, string name)

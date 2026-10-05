@@ -460,6 +460,22 @@ public sealed class TiaPortalMemberTableTests
     }
 
     [Fact]
+    public void A_byte_order_mark_in_front_of_the_document_is_not_a_reason_to_refuse_it()
+    {
+        // How the committed copy arrives from `git show`: the export's BOM as a character.
+        var table = MustParse("\uFEFF" + """
+            <?xml version="1.0" encoding="utf-8"?>
+            <Document>
+              <SW.Types.PlcStruct ID="0">
+                <AttributeList><Name>AnaVal</Name></AttributeList>
+              </SW.Types.PlcStruct>
+            </Document>
+            """);
+
+        Assert.Equal("AnaVal", table.Name);
+    }
+
+    [Fact]
     public void An_organization_block_is_not_a_table()
     {
         // Same Interface schema as every block. The local-name gate is the whole of "the
