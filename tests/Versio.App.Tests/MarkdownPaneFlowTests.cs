@@ -1,4 +1,5 @@
 using System.IO;
+using System.Windows;
 using System.Windows.Documents;
 using Versio.App.ViewModels;
 using Versio.App.Views;
@@ -19,6 +20,7 @@ namespace Versio.App.Tests;
 /// would leave everything else green; the first test here is what goes red.
 /// </para>
 /// </remarks>
+[Collection("theme")]
 public sealed class MarkdownPaneFlowTests
 {
     private static ShellViewModel Shell() => TestShell.Build();
@@ -100,6 +102,67 @@ public sealed class MarkdownPaneFlowTests
 
         Assert.Same(before, shell.RenderedContent);
         Assert.Equal("docs/PLAN.md", shell.SelectedDiffPath);
+    }
+
+    [Fact]
+    public void The_page_is_built_escaped_and_walled_without_starting_a_browser()
+    {
+        // The browser cannot run in this suite; the page it would be handed can be read. What
+        // matters: the document's own markup arrives as text, the security policy is there,
+        // diagrams are in the form mermaid reads, and a hidden view starts no browser.
+        StaHarness.Run(() =>
+        {
+            var view = new MarkdownPageView
+            {
+                Visibility = Visibility.Collapsed,
+                Blocks = Markdown.Parse("# T\n\n<script>bad()</script>\n\n```mermaid\nflowchart TB\n a --> b\n```"),
+            };
+
+            var page = view.PageHtml;
+            Assert.Contains("Content-Security-Policy", page, StringComparison.Ordinal);
+            Assert.Contains($"script-src {MarkdownPage.Origin};", page, StringComparison.Ordinal);
+            Assert.DoesNotContain("<script>bad", page, StringComparison.Ordinal);
+            Assert.Contains("<pre class=\"mermaid\">flowchart TB\n a --&gt; b</pre>", page, StringComparison.Ordinal);
+            Assert.Null(view.Child);
+        });
+    }
+
+    [Fact]
+    public void A_theme_switch_rebuilds_the_page_in_the_new_colours()
+    {
+        // The page is HTML with the colours baked in; nothing about it is a DynamicResource.
+        // The resource-referenced ThemeBrush is the only thing that notices a switch.
+        StaHarness.Run(() =>
+        {
+            Versio.App.Theme.ThemeManager.Apply(Versio.App.Theme.AppTheme.Dark);
+            // In a window, as in the app: WPF walks open windows to tell resource references
+            // about a theme switch, and an element in no window is never told.
+            var view = new MarkdownPageView { Visibility = Visibility.Collapsed, Blocks = Markdown.Parse("text") };
+            var window = new Window { Content = view };
+            var dark = view.PageHtml;
+
+            Versio.App.Theme.ThemeManager.Apply(Versio.App.Theme.AppTheme.Light);
+            var light = view.PageHtml;
+
+            Assert.NotEqual(dark, light);
+            Assert.Contains("data-mermaid-theme=\"dark\"", dark, StringComparison.Ordinal);
+            Assert.Contains("data-mermaid-theme=\"default\"", light, StringComparison.Ordinal);
+
+            window.Close();
+            Versio.App.Theme.ThemeManager.Apply(Versio.App.Theme.AppTheme.System);
+        });
+    }
+
+    [Fact]
+    public void Mermaid_is_embedded_in_the_app()
+    {
+        // The page is not allowed a network, so a missing resource would be every diagram
+        // silently drawn as nothing.
+        using var stream = typeof(MarkdownPageView).Assembly
+            .GetManifestResourceStream("Versio.App.Assets.mermaid.mermaid.min.js");
+
+        Assert.NotNull(stream);
+        Assert.True(stream!.Length > 1_000_000, "mermaid.min.js is embedded but implausibly small");
     }
 
     [Fact]

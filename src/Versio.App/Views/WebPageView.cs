@@ -1,10 +1,8 @@
-using System.IO;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using Microsoft.Web.WebView2.Core;
 using Microsoft.Web.WebView2.Wpf;
-using Versio.Infrastructure.FileSystem;
 
 namespace Versio.App.Views;
 
@@ -30,8 +28,8 @@ namespace Versio.App.Views;
 /// right one for a review tool. Relative CSS and images beside the file still load.
 /// </para>
 /// <para>
-/// <b>Its own profile folder</b>, under <c>%LOCALAPPDATA%\VersioUser\WebView2</c>. The
-/// default is beside the executable, which is not ours to write to in every install.
+/// The browser process and its profile folder are shared with the Markdown page view; see
+/// <see cref="BrowserEnvironment"/>.
 /// </para>
 /// </remarks>
 public sealed class WebPageView : Border
@@ -46,7 +44,7 @@ public sealed class WebPageView : Border
     public static readonly DependencyProperty ReportCommandProperty =
         DependencyProperty.Register(nameof(ReportCommand), typeof(ICommand), typeof(WebPageView));
 
-    private WebView2? _browser;
+    private WebView2CompositionControl? _browser;
     private Task? _starting;
     private string? _shown;
 
@@ -141,11 +139,12 @@ public sealed class WebPageView : Border
 
     private async Task Start()
     {
-        var profile = Path.Combine(AppUserPaths.Root, "WebView2");
-        Directory.CreateDirectory(profile);
+        var environment = await BrowserEnvironment.GetAsync().ConfigureAwait(true);
 
-        var environment = await CoreWebView2Environment.CreateAsync(null, profile).ConfigureAwait(true);
-        var browser = new WebView2 { DefaultBackgroundColor = System.Drawing.Color.White };
+        // The composition control, not the HWND one: an HWND sits above every WPF element
+        // regardless of z-order (the airspace problem), so the branch menu and the toasts
+        // would open underneath the page.
+        var browser = new WebView2CompositionControl { DefaultBackgroundColor = System.Drawing.Color.White };
         Child = browser;
         await browser.EnsureCoreWebView2Async(environment).ConfigureAwait(true);
 

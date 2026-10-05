@@ -21,8 +21,8 @@ UX remainder) is built and tested as of 2026-08-25** — UX-6 find boxes, UX-7 `
 Escape, UX-8 copy-a-commit, UX-12 amend-while-unpushed — and its visual half joins the
 eyeball list in item 2. Do not start from `archive/` or a handoff.
 
-**Tests:** 2,992 across eleven projects, last counted 2026-10-04 on `UiLook` (Core 1,558,
-Integration 168, App 749, TIA Pure 43). **The Rendered view of an ST object reads like the IDE (2026-09-20):** no
+**Tests:** 3,003 across eleven projects, last counted 2026-10-04 on `UiLook` (Core 1,566,
+Integration 168, App 752, TIA Pure 43). **The Rendered view of an ST object reads like the IDE (2026-09-20):** no
 `@@` line, one gutter, a Declaration / Implementation divider, and the implementation
 numbered from 1 so a compile error's line number can be found — FINDINGS 2026-09-20. **With TIA Portal open, a commit no longer records a stale mirror**: the
 commit is refused with what to close, a push no longer marks an unexported save as
@@ -60,9 +60,9 @@ marking, duplicate-param keys, and the detail-pane lookup. All of them are in
 
 | Project | Tests | Time | Needs |
 |---|---|---|---|
-| `Versio.Core.Tests` | 1,558 | under a second | nothing |
+| `Versio.Core.Tests` | 1,566 | under a second | nothing |
 | `Versio.Integration.Tests` | 168 | ~10 s | real git |
-| `Versio.App.Tests` | 749 | ~3.6 min (measured 2026-09-22) | nothing |
+| `Versio.App.Tests` | 752 | ~3.6 min (measured 2026-09-22) | nothing |
 | `Versio.Arch.Tests` | 27 | instant | nothing |
 | `Versio.Plc.Codesys.Pure.Tests` | 263 | under a second | nothing |
 | `Versio.Plc.Codesys.Parity.Tests` | 97 | ~15 s | `python` on PATH — skips cleanly without it, so check the count |
@@ -189,7 +189,8 @@ One list. Reorder it; do not copy it into another file.
    the Project panel with nothing changed names its in-sync projects in a muted note at the
    bottom — no green dots, nothing at the top (no "Open a repository"); with commits ahead,
    an accent Push sits beside Commit at the same height, and is gone when nothing waits;
-   a `.md` file's Rendered tab is a page (headings, tables, lists) in both themes, and a
+   a `.md` file's Rendered tab is a page (headings, tables, lists) in both themes - PLAN.md's
+   four-column table sized by content and its Mermaid flowchart drawn - and a
    `../STATUS.md` link in it opens that document; an `.html` file shows Rendered | Raw |
    Web page, the page draws with its scripts off, and a web link in it opens the browser;
    an empty window has Open / Clone and Ctrl+O works; launching Versio a second time brings

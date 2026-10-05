@@ -50,6 +50,23 @@ engineering log that was most of the files anybody opens outside the PLC tree.
   which is worse than not drawing it). **Cost:** the app's second package,
   `Microsoft.Web.WebView2`, BSD-licensed and in THIRD-PARTY-NOTICES.
 
+**The FlowDocument did not survive the owner's first look (same day).** On PLAN.md's
+four-column table it gave the last column almost no width - FlowDocument tables have no
+automatic column layout, only equal or weighted shares - so its text wrapped a few letters to
+a line and every row stood hundreds of pixels tall. Reproduced off-screen by rendering the view
+to a PNG in the test harness. And the ```` ```mermaid ```` flowchart above it was its source,
+because a diagram is JavaScript. Both are what a browser does, so the Rendered view is now
+`MarkdownPageView`: `MarkdownHtml` (Core, 8 tests) turns the blocks into HTML with **every
+character of the document escaped and links in `data-href`, never `href`**; the page runs only
+mermaid (11.17.2, embedded, pinned by sha256) and its own click handler, under a CSP that
+allows script from the app's origin alone; every request is answered from memory or refused.
+Checked in headless Edge in both themes with the CSP enforced: tables size by content, the
+diagram draws. The FlowDocument `MarkdownView` stays as the fallback when WebView2 cannot
+start. Both page views use the composition control, so the branch menu and toasts still draw
+over them, and share one browser process. A theme switch rebuilds the page;
+`MarkdownPaneFlowTests` goes red if it does not (checked). **Rejected:** a WebView2 per diagram
+inside the FlowDocument (one browser per chart, and the table problem untouched).
+
 **Not covered by any test:** the browser itself (it cannot start in the suite) and the link
 binding from the Markdown template to the shell's command. Both are owner-eyeball items in
 STATUS. Also not done: the Git panel and History still show `.md`/`.html` as a diff only - the

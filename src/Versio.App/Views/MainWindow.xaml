@@ -1349,14 +1349,18 @@
                                 </ScrollViewer>
                             </DataTemplate>
 
-                            <!-- A document is a page, not a line list: see MarkdownView.
-                                 The link command is the shell's, reached past this template's
-                                 own DataContext (the MarkdownRender) by the window. -->
+                            <!-- A document is a page, not a line list: drawn by the browser
+                                 engine so tables lay out and Mermaid diagrams draw, with the
+                                 FlowDocument MarkdownView as its fallback. See MarkdownPageView.
+                                 The commands are the shell's, reached past this template's own
+                                 DataContext (the MarkdownRender) by the window. -->
                             <DataTemplate DataType="{x:Type vm:MarkdownRender}">
-                                <views:MarkdownView Blocks="{Binding Blocks}"
-                                                    AutomationProperties.Name="Rendered document"
-                                                    LinkCommand="{Binding DataContext.OpenLinkCommand,
-                                                        RelativeSource={RelativeSource AncestorType=Window}}" />
+                                <views:MarkdownPageView Blocks="{Binding Blocks}"
+                                                        AutomationProperties.Name="Rendered document"
+                                                        LinkCommand="{Binding DataContext.OpenLinkCommand,
+                                                            RelativeSource={RelativeSource AncestorType=Window}}"
+                                                        ReportCommand="{Binding DataContext.WebPageReportCommand,
+                                                            RelativeSource={RelativeSource AncestorType=Window}}" />
                             </DataTemplate>
 
                             <DataTemplate DataType="{x:Type vm:SourceRender}">

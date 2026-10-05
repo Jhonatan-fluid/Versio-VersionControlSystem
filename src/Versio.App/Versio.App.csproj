@@ -42,6 +42,13 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- Mermaid 11.17.2, pinned by file (sha256 581ed7d7...390eb8, MIT; LICENSE beside it).
+         Draws ```mermaid diagrams in a rendered Markdown page. Embedded rather than fetched:
+         a plant PC is often offline, and the page is not allowed a network anyway. -->
+    <EmbeddedResource Include="Assets\mermaid\mermaid.min.js" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\Versio.Core\Versio.Core.csproj" />
     <ProjectReference Include="..\Versio.Infrastructure\Versio.Infrastructure.csproj" />
 
