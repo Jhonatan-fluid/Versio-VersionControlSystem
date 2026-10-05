@@ -252,17 +252,20 @@ public interface IPlcProjectFormat
     Projects.MemberTable? TryParseMemberTable(string relativePath, string content) => null;
 
     /// <summary>
-    /// The zero-based line where a block's code begins in its readable source, after the
-    /// declaration a member table already shows; null when the format cannot say.
+    /// The zero-based lines of a block's code body in its readable source - from the first
+    /// line after the declaration to the line before the block's closing keyword (end
+    /// exclusive) - or null when the format cannot say.
     /// </summary>
     /// <remarks>
     /// Asked only once a member table drew the block's interface. Without it the code pane
     /// under the table repeats the whole declaration - the owner's FC on 2026-10-05 showed
-    /// its thirteen header lines twice, once as a table and once as text. Where code begins
-    /// is the language's business (an SCL <c>BEGIN</c>, say), so the format answers; null
-    /// keeps the whole file, which is the honest fallback.
+    /// its thirteen header lines twice, once as a table and once as text - and then the
+    /// owner asked for the body alone: no <c>BEGIN</c>, no <c>END_FUNCTION_BLOCK</c>, the
+    /// common indent gone and lines numbered from 1. Where the body starts and ends is the
+    /// language's business, so the format answers; null keeps the whole file, the honest
+    /// fallback.
     /// </remarks>
-    int? CodeStartLine(string relativePath, string content) => null;
+    (int Start, int End)? CodeBody(string relativePath, string content) => null;
 }
 
 /// <summary>

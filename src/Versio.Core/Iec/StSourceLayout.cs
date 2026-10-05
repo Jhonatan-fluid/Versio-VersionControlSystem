@@ -119,6 +119,68 @@ public static class StSourceLayout
         return -1;
     }
 
+    /// <summary>
+    /// Lines [start, end) of a file as a block's body: blank edges dropped, the indent every
+    /// non-blank line shares removed, numbered from 1.
+    /// </summary>
+    /// <remarks>
+    /// For the code pane under a block's interface table. The owner, 2026-10-05: the
+    /// <c>BEGIN</c> / <c>END_FUNCTION_BLOCK</c> marks are not necessary, the tab on the left
+    /// should go, and the lines should restart rather than begin at 22. The shared prefix is
+    /// removed character for character - a tab is not taken for four spaces - so a body indented
+    /// with tabs and nested with spaces keeps its nesting exactly. <see cref="SourceCodeLine.FileLine"/>
+    /// still holds the line's place in the file, for anything that needs to find it there.
+    /// </remarks>
+    public static IReadOnlyList<SourceRow> Body(string? content, int start, int end)
+    {
+        var lines = SplitLines(content);
+        start = Math.Clamp(start, 0, lines.Count);
+        end = Math.Clamp(end, start, lines.Count);
+
+        while (start < end && string.IsNullOrWhiteSpace(lines[start]))
+        {
+            start++;
+        }
+
+        while (end > start && string.IsNullOrWhiteSpace(lines[end - 1]))
+        {
+            end--;
+        }
+
+        string? shared = null;
+        for (var i = start; i < end; i++)
+        {
+            if (string.IsNullOrWhiteSpace(lines[i]))
+            {
+                continue;
+            }
+
+            var indent = lines[i][..(lines[i].Length - lines[i].TrimStart(' ', '\t').Length)];
+            shared = shared is null ? indent : CommonPrefix(shared, indent);
+        }
+
+        var cut = shared?.Length ?? 0;
+        var rows = new List<SourceRow>(end - start);
+        for (var i = start; i < end; i++)
+        {
+            var text = lines[i].Length >= cut ? lines[i][cut..] : lines[i].TrimStart(' ', '\t');
+            rows.Add(new SourceCodeLine(i - start + 1, text, i + 1));
+        }
+
+        return rows;
+    }
+
+    private static string CommonPrefix(string a, string b)
+    {
+        var n = 0;
+        while (n < a.Length && n < b.Length && a[n] == b[n])
+        {
+            n++;
+        }
+
+        return a[..n];
+    }
+
     private static List<SourceRow> Plain(List<string> lines)
     {
         var rows = new List<SourceRow>(lines.Count);

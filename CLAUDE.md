@@ -244,13 +244,13 @@ stays that way.
 
 | Suite | Count | Time | Needs |
 |---|---|---|---|
-| `Versio.Core.Tests` | 1,574 | under a second | nothing |
+| `Versio.Core.Tests` | 1,577 | under a second | nothing |
 | `Versio.Integration.Tests` | 168 | ~10 s | real git |
 | `Versio.App.Tests` | 759 | ~3.6 min, STA, no window shown (measured 2026-09-22; it was ~50 s once) | nothing |
 | `Versio.Arch.Tests` | 27 | instant | nothing — it reads assembly metadata, IL and the `.csproj` files |
 | `Versio.Plc.Codesys.Pure.Tests` | 263 | under a second | nothing — the planner, the codecs, the protocol |
 | `Versio.Plc.Codesys.Parity.Tests` | 97 | ~15 s | `python` on PATH — **skips cleanly without it, so check the count, not the colour** |
-| `Versio.Plc.TiaPortal.Pure.Tests` | 52 | instant | nothing — format, planner, protocol |
+| `Versio.Plc.TiaPortal.Pure.Tests` | 53 | instant | nothing — format, planner, protocol |
 | `Versio.Plc.TiaPortal.Tests` | 5 | seconds when skipped; minutes when Portal runs the import gate | **real TIA Portal** — skips cleanly without Openness membership or LFS content. Import Fact is green |
 | `Versio.Plc.TwinCat.Pure.Tests` | 21 | instant | nothing — format, planner, protocol |
 | `Versio.Plc.TwinCat.Tests` | 6 | seconds when skipped; ~5 min when XAE runs the import gate | **real TwinCAT XAE** — skips cleanly without `TcXaeShell.DTE.17.0` or the fixture. Import Fact is green |

@@ -323,13 +323,15 @@ public sealed class MemberTablePaneFlowTests
         Assert.True(render.Table.IsInterface);
         Assert.Equal(["Input", "Enable", "InOut", "Drive", "Temp", "Level"],
             render.Table.Members.Select(m => m.Name));
-        // Only the code: the declaration is the table above it, and showing it twice was the
-        // owner's complaint on 2026-10-05. Line numbers stay the file's, so BEGIN is still 7.
+        // Only the body (owner, 2026-10-05): no declaration - that is the table above - no
+        // BEGIN or END_FUNCTION_BLOCK, the shared indent gone, numbered from 1. The file's own
+        // line is kept underneath, and Raw still has the whole file.
         var lines = render.Source.Rows.OfType<Versio.Core.Iec.SourceCodeLine>().ToList();
-        Assert.Equal("BEGIN", lines[0].Text);
-        Assert.Equal(7, lines[0].FileLine);
-        Assert.DoesNotContain(lines, l => l.Text.Contains("VAR_INPUT", StringComparison.Ordinal));
-        Assert.Contains("#Enable := TRUE;", render.Source.PseudoDiff, StringComparison.Ordinal);
+        var only = Assert.Single(lines);
+        Assert.Equal("#Enable := TRUE;", only.Text);
+        Assert.Equal(1, only.Number);
+        Assert.Equal(8, only.FileLine);
+        Assert.Contains("END_FUNCTION_BLOCK", render.Source.PseudoDiff, StringComparison.Ordinal);
     }
 
     /// <summary>Commit the data type only, so the block stays in the tree and the type is clean.</summary>

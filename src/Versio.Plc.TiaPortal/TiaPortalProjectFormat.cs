@@ -225,11 +225,16 @@ public sealed class TiaPortalProjectFormat : IPlcProjectFormat
         TiaPortalMemberTableParser.TryParse(relativePath, content);
 
     /// <summary>
-    /// An SCL block's code starts on its <c>BEGIN</c> line: everything above is the header and
-    /// the VAR sections the interface table already shows. Only for <c>.scl</c>, and only a
-    /// line that is <c>BEGIN</c> alone - the keyword inside a comment or a string is not it.
+    /// An SCL block's body: the lines after <c>BEGIN</c> up to the block's closing keyword
+    /// (<c>END_FUNCTION_BLOCK</c>, <c>END_FUNCTION</c>, <c>END_ORGANIZATION_BLOCK</c>).
     /// </summary>
-    public int? CodeStartLine(string relativePath, string content)
+    /// <remarks>
+    /// Only for <c>.scl</c>, and only lines that are the keyword alone - the word inside a
+    /// comment or a string is not it. The closing keyword is the last such line, so an
+    /// <c>END_FUNCTION</c> mentioned earlier cannot cut the body short. With no closing
+    /// keyword the body runs to the end of the file rather than being refused.
+    /// </remarks>
+    public (int Start, int End)? CodeBody(string relativePath, string content)
     {
         if (!relativePath.EndsWith(".scl", StringComparison.OrdinalIgnoreCase))
         {
@@ -237,14 +242,18 @@ public sealed class TiaPortalProjectFormat : IPlcProjectFormat
         }
 
         var lines = content.Replace("\r\n", "\n", StringComparison.Ordinal).Split('\n');
-        for (var i = 0; i < lines.Length; i++)
+        var begin = Array.FindIndex(lines, l => Is(l, "BEGIN"));
+        if (begin < 0)
         {
-            if (string.Equals(lines[i].Trim(), "BEGIN", StringComparison.OrdinalIgnoreCase))
-            {
-                return i;
-            }
+            return null;
         }
 
-        return null;
+        var end = Array.FindLastIndex(lines, l =>
+            Is(l, "END_FUNCTION_BLOCK") || Is(l, "END_FUNCTION") || Is(l, "END_ORGANIZATION_BLOCK"));
+
+        return (begin + 1, end > begin ? end : lines.Length);
+
+        static bool Is(string line, string keyword) =>
+            string.Equals(line.Trim(), keyword, StringComparison.OrdinalIgnoreCase);
     }
 }

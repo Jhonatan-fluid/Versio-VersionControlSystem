@@ -7169,18 +7169,16 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
                                        noChanges: node.Status == ChangeKind.Unmodified) is { } codeView
                                 && !codeView.PseudoDiff.Contains('\0'))
                             {
-                                // Only the code: the declaration above it is the table. The
-                                // format says where code begins; the rows keep their file line
-                                // numbers, so BEGIN still reads as line 14 and matches Raw.
+                                // Only the body: the declaration above it is the table, and the
+                                // BEGIN / END_ marks around it say nothing a reader needs. The
+                                // format says where the body is; Core strips its shared indent and
+                                // numbers it from 1 (owner, 2026-10-05). Raw keeps the file.
                                 if (ReadOrNull(code) is { } codeText
-                                    && format.CodeStartLine(code, codeText) is { } start)
+                                    && format.CodeBody(code, codeText) is { } body)
                                 {
                                     codeView = codeView with
                                     {
-                                        Rows = codeView.Rows
-                                            .Where(r => r is not Versio.Core.Iec.SourceCodeLine line
-                                                        || line.FileLine > start)
-                                            .ToList(),
+                                        Rows = Versio.Core.Iec.StSourceLayout.Body(codeText, body.Start, body.End),
                                     };
                                 }
 

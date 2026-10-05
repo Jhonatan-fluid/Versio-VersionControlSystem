@@ -89,6 +89,13 @@ to show on the table ... rendered first always, raw view optional."
   why it passed. The parser now skips a leading BOM, the fixture is written with one, and
   removing the skip turns both marking tests red (checked).
 
+**The code pane is the body alone.** The owner, on PT1: `BEGIN` and `END_FUNCTION_BLOCK` are
+not necessary, the tab on the left should go, and the lines should not start at 22. The
+format's hook is now `CodeBody` - the range between `BEGIN` and the last closing keyword alone
+on its line - and `StSourceLayout.Body` drops blank edges, strips the indent every line shares
+(character for character, so a tab is never taken for four spaces) and numbers from 1, keeping
+each line's file line underneath. Raw still shows the file.
+
 **Open: `CommitWhileIdeHoldsProjectTests` times out in the full suite.** Three of nine full
 App runs on 2026-10-05 failed it at ~33 s (one 30 s wait plus setup); it passed every time
 alone (5 of 5) and in the other six full runs. The first failure followed the Windows SDK TFM

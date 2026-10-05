@@ -159,4 +159,40 @@ public class StSourceLayoutTests
         Assert.Equal([new SourceCodeLine(1, string.Empty, 1)], StSourceLayout.Lay(string.Empty));
         Assert.Equal([new SourceCodeLine(1, string.Empty, 1)], StSourceLayout.Lay(null));
     }
+
+    [Fact]
+    public void A_body_drops_its_shared_indent_and_blank_edges_and_numbers_from_one()
+    {
+        // The owner's PT1 (2026-10-05): every body line tab-indented, nesting under that,
+        // a blank line before END_FUNCTION_BLOCK. Lines 2..6 of this file are the body.
+        var file = "BEGIN\n\n\tIF #On THEN\n\t    #Out := 1;\n\tEND_IF;\n\n\t#Done := TRUE;\nEND_FUNCTION_BLOCK";
+
+        var rows = StSourceLayout.Body(file, 1, 7);
+
+        Assert.Equal(
+        [
+            new SourceCodeLine(1, "IF #On THEN", 3),
+            new SourceCodeLine(2, "    #Out := 1;", 4),
+            new SourceCodeLine(3, "END_IF;", 5),
+            new SourceCodeLine(4, string.Empty, 6),
+            new SourceCodeLine(5, "#Done := TRUE;", 7),
+        ], rows);
+    }
+
+    [Fact]
+    public void A_tab_and_four_spaces_are_not_the_same_indent()
+    {
+        // Character for character: a body indented with a tab on one line and spaces on
+        // another shares no indent, so nothing is cut and nothing is misaligned.
+        var rows = StSourceLayout.Body("\tA;\n    B;", 0, 2);
+
+        Assert.Equal(["\tA;", "    B;"], rows.Cast<SourceCodeLine>().Select(r => r.Text));
+    }
+
+    [Fact]
+    public void An_out_of_range_body_is_clamped_not_thrown()
+    {
+        Assert.Empty(StSourceLayout.Body("A;", 5, 9));
+        Assert.Equal(["A;"], StSourceLayout.Body("A;", -3, 99).Cast<SourceCodeLine>().Select(r => r.Text));
+    }
 }

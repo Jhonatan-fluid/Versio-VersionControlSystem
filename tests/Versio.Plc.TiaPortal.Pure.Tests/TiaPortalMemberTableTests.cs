@@ -450,13 +450,23 @@ public sealed class TiaPortalMemberTableTests
     }
 
     [Theory]
-    [InlineData("Block.scl", "FUNCTION \"F\" : Void\nVAR_INPUT\n  In : Real;\nEND_VAR\n\nBEGIN\n  #x := 1;\nEND_FUNCTION\n", 5)]
-    [InlineData("Block.scl", "FUNCTION \"F\" : Void\n// BEGIN is not here\nbegin\n", 2)]
-    [InlineData("Block.scl", "FUNCTION \"F\" : Void\n// BEGIN is mentioned, never alone\n", null)]
-    [InlineData("Block.xml", "BEGIN\n", null)]
-    public void Code_starts_on_the_line_that_is_begin_alone(string path, string content, int? expected)
+    // The body sits between the line after BEGIN and the closing keyword, both excluded.
+    [InlineData("Block.scl", "FUNCTION \"F\" : Void\nVAR_INPUT\n  In : Real;\nEND_VAR\n\nBEGIN\n  #x := 1;\nEND_FUNCTION\n", 6, 7)]
+    // An END_ keyword inside a comment is not the end; the last one alone on its line is.
+    [InlineData("Block.scl", "FUNCTION_BLOCK \"B\"\nBEGIN\n  // END_FUNCTION_BLOCK is in here\n  #y := 2;\nEND_FUNCTION_BLOCK\n", 2, 4)]
+    // No closing keyword: the body runs to the end rather than being refused.
+    [InlineData("Block.scl", "FUNCTION \"F\" : Void\n// BEGIN is not here\nbegin\n  #z := 3;", 3, 4)]
+    public void The_body_lies_between_begin_and_the_closing_keyword(string path, string content, int start, int end)
     {
-        Assert.Equal(expected, new TiaPortalProjectFormat().CodeStartLine(path, content));
+        Assert.Equal((start, end), new TiaPortalProjectFormat().CodeBody(path, content));
+    }
+
+    [Theory]
+    [InlineData("Block.scl", "FUNCTION \"F\" : Void\n// BEGIN is mentioned, never alone\n")]
+    [InlineData("Block.xml", "BEGIN\n")]
+    public void No_body_without_a_begin_line_or_outside_scl(string path, string content)
+    {
+        Assert.Null(new TiaPortalProjectFormat().CodeBody(path, content));
     }
 
     [Fact]
