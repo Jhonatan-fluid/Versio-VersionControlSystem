@@ -4,7 +4,9 @@
     <!-- WPF needs the Windows-flavoured TFM, exactly as Versio.App does. This is the only
          test project that carries it: everything testable without a UI stays in
          Versio.Core.Tests, which runs in milliseconds and on any platform. -->
-    <TargetFramework>net9.0-windows</TargetFramework>
+    <!-- The same Windows SDK version as Versio.App (see its csproj): a project cannot
+         reference one that targets a newer Windows platform than itself. -->
+    <TargetFramework>net9.0-windows10.0.17763.0</TargetFramework>
     <UseWPF>true</UseWPF>
     <IsPackable>false</IsPackable>
     <RootNamespace>Versio.App.Tests</RootNamespace>

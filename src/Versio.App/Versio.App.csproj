@@ -3,7 +3,18 @@
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
     <!-- WPF needs the Windows-flavoured TFM; the rest of the solution stays net9.0. -->
-    <TargetFramework>net9.0-windows</TargetFramework>
+    <!-- Windows 10 1809's SDK projection, for WebView2CompositionControl: it renders through
+         Windows.Graphics.Capture, and without Microsoft.Windows.SDK.NET in the output it threw
+         FileNotFoundException from OnApplyTemplate - every rendered Markdown page and every
+         HTML Web page view was blank (2026-10-04). A TargetPlatformVersion property beside a
+         plain net9.0-windows is ignored (the TFM wins, measured), so the TFM carries it. -->
+    <TargetFramework>net9.0-windows10.0.17763.0</TargetFramework>
+
+    <!-- ...and the output folder keeps its old name. build.bat, CLAUDE.md's launch line and the
+         tia/twincat tools scripts all address bin\Debug\net9.0-windows; renaming it would break
+         each of them quietly, on the day someone next runs one. -->
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+    <OutputPath>bin\$(Configuration)\net9.0-windows\</OutputPath>
     <UseWPF>true</UseWPF>
     <RootNamespace>Versio.App</RootNamespace>
     <AssemblyName>Versio</AssemblyName>
