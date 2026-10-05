@@ -38,6 +38,13 @@ public sealed class MemberTableDiffTests
         var idle = result.Members[0];
         Assert.Equal(MemberChange.Modified, idle.Change);
         Assert.Contains("16#10", idle.Was, StringComparison.Ordinal);
+        Assert.Equal("M", idle.ChangeGlyph);
+
+        // Old → new in the cell that moved, and only there.
+        Assert.Equal("16#10", idle.StartValueBefore);
+        Assert.True(idle.StartValueChanged);
+        Assert.False(idle.DatatypeChanged);
+        Assert.Null(idle.CommentBefore);
         Assert.Equal(MemberChange.None, result.Members[1].Change);
         Assert.Equal("Since the last commit: 1 changed - marked below.", result.ChangeSummary);
     }
@@ -67,6 +74,22 @@ public sealed class MemberTableDiffTests
         Assert.True(gone.IsRemoved);
         Assert.Contains("Int", gone.Was, StringComparison.Ordinal);
         Assert.Equal("Since the last commit: 1 removed - marked below.", result.ChangeSummary);
+    }
+
+    [Fact]
+    public void A_value_that_appeared_shows_it_was_empty_and_markers_name_each_kind()
+    {
+        var result = MemberTableDiff.Compare(
+            Table(Row("A"), Row("Gone")),
+            Table(Row("A", value: "1"), Row("New")));
+
+        var a = Assert.Single(result.Members, r => r.Name == "A");
+        Assert.Equal("(empty)", a.StartValueBefore);
+
+        Assert.Equal("A", Assert.Single(result.Members, r => r.Name == "New").ChangeGlyph);
+        Assert.Equal("D", Assert.Single(result.Members, r => r.Name == "Gone").ChangeGlyph);
+        Assert.All(result.Members.Where(r => r.Change != MemberChange.None),
+            r => Assert.NotEmpty(r.ChangeLabel));
     }
 
     [Fact]

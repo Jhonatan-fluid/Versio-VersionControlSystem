@@ -1333,6 +1333,32 @@
                                                                                Converter={StaticResource BoolToVisibility}}" />
 
                                                                 <Border Style="{StaticResource MemberTableCell}">
+                                                                    <DockPanel>
+                                                                    <!-- The row's change as a letter, the tree's own A / M / D,
+                                                                         so the kind of change does not rest on colour alone. -->
+                                                                    <TextBlock DockPanel.Dock="Left" Width="16"
+                                                                               Text="{Binding ChangeGlyph}"
+                                                                               ToolTip="{Binding ChangeLabel}"
+                                                                               AutomationProperties.Name="Change since the last commit"
+                                                                               FontFamily="{DynamicResource Font.Mono}"
+                                                                               FontSize="{DynamicResource Font.Size.Caption}"
+                                                                               FontWeight="{DynamicResource Font.Weight.Semibold}">
+                                                                        <TextBlock.Style>
+                                                                            <Style TargetType="TextBlock">
+                                                                                <Style.Triggers>
+                                                                                    <DataTrigger Binding="{Binding IsAdded}" Value="True">
+                                                                                        <Setter Property="Foreground" Value="{DynamicResource Brush.Status.Added}" />
+                                                                                    </DataTrigger>
+                                                                                    <DataTrigger Binding="{Binding IsModified}" Value="True">
+                                                                                        <Setter Property="Foreground" Value="{DynamicResource Brush.Status.Modified}" />
+                                                                                    </DataTrigger>
+                                                                                    <DataTrigger Binding="{Binding IsRemoved}" Value="True">
+                                                                                        <Setter Property="Foreground" Value="{DynamicResource Brush.Status.Deleted}" />
+                                                                                    </DataTrigger>
+                                                                                </Style.Triggers>
+                                                                            </Style>
+                                                                        </TextBlock.Style>
+                                                                    </TextBlock>
                                                                     <TextBlock Text="{Binding DisplayName}"
                                                                                TextTrimming="CharacterEllipsis"
                                                                                FontFamily="{DynamicResource Font.Mono}"
@@ -1356,8 +1382,24 @@
                                                                             </Style>
                                                                         </TextBlock.Style>
                                                                     </TextBlock>
+                                                                    </DockPanel>
                                                                 </Border>
                                                                 <Border Grid.Column="1" Style="{StaticResource MemberTableCell}">
+                                                                    <DockPanel>
+                                                                    <!-- Old → new, in this cell only when this field moved.
+                                                                         The same three pieces repeat in each value cell below. -->
+                                                                    <TextBlock DockPanel.Dock="Left" Text="{Binding DatatypeBefore}"
+                                                                               TextDecorations="Strikethrough"
+                                                                               FontFamily="{DynamicResource Font.Mono}"
+                                                                               FontSize="{DynamicResource Font.Size.Caption}"
+                                                                               Foreground="{DynamicResource Brush.Text.Disabled}"
+                                                                               Visibility="{Binding DatatypeChanged,
+                                                                                   Converter={StaticResource BoolToVisibility}}" />
+                                                                    <TextBlock DockPanel.Dock="Left" Text=" → "
+                                                                               FontSize="{DynamicResource Font.Size.Caption}"
+                                                                               Foreground="{DynamicResource Brush.Status.Modified}"
+                                                                               Visibility="{Binding DatatypeChanged,
+                                                                                   Converter={StaticResource BoolToVisibility}}" />
                                                                     <Grid>
                                                                         <TextBlock Text="{Binding Datatype}"
                                                                                    TextTrimming="CharacterEllipsis"
@@ -1403,30 +1445,73 @@
                                                                             </Hyperlink>
                                                                         </TextBlock>
                                                                     </Grid>
+                                                                    </DockPanel>
                                                                 </Border>
                                                                 <Border Grid.Column="2" Style="{StaticResource MemberTableCell}">
+                                                                    <DockPanel>
+                                                                    <TextBlock DockPanel.Dock="Left" Text="{Binding StartValueBefore}"
+                                                                               TextDecorations="Strikethrough"
+                                                                               FontFamily="{DynamicResource Font.Mono}"
+                                                                               FontSize="{DynamicResource Font.Size.Caption}"
+                                                                               Foreground="{DynamicResource Brush.Text.Disabled}"
+                                                                               Visibility="{Binding StartValueChanged,
+                                                                                   Converter={StaticResource BoolToVisibility}}" />
+                                                                    <TextBlock DockPanel.Dock="Left" Text=" → "
+                                                                               FontSize="{DynamicResource Font.Size.Caption}"
+                                                                               Foreground="{DynamicResource Brush.Status.Modified}"
+                                                                               Visibility="{Binding StartValueChanged,
+                                                                                   Converter={StaticResource BoolToVisibility}}" />
                                                                     <TextBlock Text="{Binding StartValue}"
                                                                                TextTrimming="CharacterEllipsis"
                                                                                ToolTip="{Binding StartValue}"
                                                                                FontFamily="{DynamicResource Font.Mono}"
                                                                                FontSize="{DynamicResource Font.Size.Caption}"
                                                                                Foreground="{DynamicResource Brush.Text.Secondary}" />
+                                                                    </DockPanel>
                                                                 </Border>
                                                                 <Border Grid.Column="3" Style="{StaticResource MemberTableCell}">
+                                                                    <DockPanel>
+                                                                    <TextBlock DockPanel.Dock="Left" Text="{Binding ExternalAccessBefore}"
+                                                                               TextDecorations="Strikethrough"
+                                                                               FontFamily="{DynamicResource Font.Mono}"
+                                                                               FontSize="{DynamicResource Font.Size.Caption}"
+                                                                               Foreground="{DynamicResource Brush.Text.Disabled}"
+                                                                               Visibility="{Binding ExternalAccessChanged,
+                                                                                   Converter={StaticResource BoolToVisibility}}" />
+                                                                    <TextBlock DockPanel.Dock="Left" Text=" → "
+                                                                               FontSize="{DynamicResource Font.Size.Caption}"
+                                                                               Foreground="{DynamicResource Brush.Status.Modified}"
+                                                                               Visibility="{Binding ExternalAccessChanged,
+                                                                                   Converter={StaticResource BoolToVisibility}}" />
                                                                     <TextBlock Text="{Binding ExternalAccess}"
                                                                                TextTrimming="CharacterEllipsis"
                                                                                ToolTip="{Binding ExternalAccess}"
                                                                                FontFamily="{DynamicResource Font.Mono}"
                                                                                FontSize="{DynamicResource Font.Size.Caption}"
                                                                                Foreground="{DynamicResource Brush.Text.Secondary}" />
+                                                                    </DockPanel>
                                                                 </Border>
                                                                 <Border Grid.Column="4" Style="{StaticResource MemberTableCellLast}">
+                                                                    <DockPanel>
+                                                                    <TextBlock DockPanel.Dock="Left" Text="{Binding CommentBefore}"
+                                                                               TextDecorations="Strikethrough"
+                                                                               FontFamily="{DynamicResource Font.UI}"
+                                                                               FontSize="{DynamicResource Font.Size.Caption}"
+                                                                               Foreground="{DynamicResource Brush.Text.Disabled}"
+                                                                               Visibility="{Binding CommentChanged,
+                                                                                   Converter={StaticResource BoolToVisibility}}" />
+                                                                    <TextBlock DockPanel.Dock="Left" Text=" → "
+                                                                               FontSize="{DynamicResource Font.Size.Caption}"
+                                                                               Foreground="{DynamicResource Brush.Status.Modified}"
+                                                                               Visibility="{Binding CommentChanged,
+                                                                                   Converter={StaticResource BoolToVisibility}}" />
                                                                     <TextBlock Text="{Binding Comment}"
                                                                                TextTrimming="CharacterEllipsis"
                                                                                ToolTip="{Binding Comment}"
                                                                                FontFamily="{DynamicResource Font.UI}"
                                                                                FontSize="{DynamicResource Font.Size.Caption}"
                                                                                Foreground="{DynamicResource Brush.Text.Disabled}" />
+                                                                    </DockPanel>
                                                                 </Border>
 
                                                                 <!-- A section of a block interface (Input, Output,

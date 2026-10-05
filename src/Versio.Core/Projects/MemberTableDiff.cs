@@ -76,7 +76,15 @@ public static class MemberTableDiff
             }
             else if (!row.IsSectionHeading && Differs(old, row))
             {
-                rows.Add(row with { Change = MemberChange.Modified, Was = Describe(old) });
+                rows.Add(row with
+                {
+                    Change = MemberChange.Modified,
+                    Was = Describe(old),
+                    DatatypeBefore = Before(old.Datatype, row.Datatype),
+                    StartValueBefore = Before(old.StartValue, row.StartValue),
+                    ExternalAccessBefore = Before(old.ExternalAccess, row.ExternalAccess),
+                    CommentBefore = Before(old.Comment, row.Comment),
+                });
                 modified++;
             }
             else
@@ -98,6 +106,14 @@ public static class MemberTableDiff
             ChangeSummary = Summary(added, modified, removed),
         };
     }
+
+    /// <summary>
+    /// The old value when the field changed, else null. An empty old value comes back as
+    /// "(empty)": a value that appeared where there was none is still a change worth seeing,
+    /// and an empty struck-out cell would read as nothing.
+    /// </summary>
+    private static string? Before(string old, string now) =>
+        string.Equals(old, now, StringComparison.Ordinal) ? null : old.Length == 0 ? "(empty)" : old;
 
     private static string Key(MemberRow row) =>
         (row.IsSectionHeading ? "§" : row.Section + "\u0001") + row.Path;

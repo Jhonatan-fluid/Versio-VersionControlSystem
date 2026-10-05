@@ -84,6 +84,48 @@ public sealed record MemberRow
     /// </summary>
     public string Was { get; init; } = string.Empty;
 
+    /// <summary>
+    /// A modified row's committed value for each field that changed; null where the field did
+    /// not. The pane draws old → new in exactly the cells that moved, so a reader sees
+    /// <i>what</i> changed, not only that the row did (owner, 2026-10-05).
+    /// </summary>
+    public string? DatatypeBefore { get; init; }
+
+    /// <inheritdoc cref="DatatypeBefore"/>
+    public string? StartValueBefore { get; init; }
+
+    /// <inheritdoc cref="DatatypeBefore"/>
+    public string? ExternalAccessBefore { get; init; }
+
+    /// <inheritdoc cref="DatatypeBefore"/>
+    public string? CommentBefore { get; init; }
+
+    public bool DatatypeChanged => DatatypeBefore is not null;
+
+    public bool StartValueChanged => StartValueBefore is not null;
+
+    public bool ExternalAccessChanged => ExternalAccessBefore is not null;
+
+    public bool CommentChanged => CommentBefore is not null;
+
+    /// <summary>The marker column's letter: the tree's own A / M / D, blank when unchanged.</summary>
+    public string ChangeGlyph => Change switch
+    {
+        MemberChange.Added => "A",
+        MemberChange.Modified => "M",
+        MemberChange.Removed => "D",
+        _ => string.Empty,
+    };
+
+    /// <summary>The marker's tooltip, in words, so the letter is never the only explanation.</summary>
+    public string ChangeLabel => Change switch
+    {
+        MemberChange.Added => "Added since the last commit",
+        MemberChange.Modified => "Modified since the last commit: changed cells show old → new",
+        MemberChange.Removed => "Deleted since the last commit",
+        _ => string.Empty,
+    };
+
     public bool IsAdded => Change == MemberChange.Added;
 
     public bool IsModified => Change == MemberChange.Modified;
