@@ -328,6 +328,51 @@ public sealed class LadderPaneFlowTests
     }
 
     [Fact]
+    public async Task A_deleted_ladder_block_draws_its_committed_networks_as_removed()
+    {
+        // The owner, 2026-10-05: a deleted block opened on its raw XML, all red, the one changed
+        // block that never showed as a diagram.
+        using var repo = new TempRepo();
+        GivenAPortalProjectWithLadder(repo);
+        CommitEverything(repo);
+        File.Delete(BlockPath(repo, "Main"));
+
+        using var shell = Shell();
+        await shell.OpenAsync(repo.Path);
+        shell.Sync.SelectedNode = await Row(shell, "Main");
+
+        await Eventually.Until(
+            () => shell.RenderedContent is LadderRender,
+            "the committed copy was drawn");
+
+        var ladder = Assert.IsType<LadderRender>(shell.RenderedContent);
+        Assert.Equal(LadderChange.Removed, Assert.Single(ladder.Comparison.Rows).Change);
+        Assert.True(shell.ShowRenderedPane);
+    }
+
+    [Fact]
+    public async Task A_function_block_changed_only_in_its_networks_says_so_above_the_diagram()
+    {
+        // Not "the difference is on Raw": the networks under the table already show it.
+        using var repo = new TempRepo();
+        GivenAPortalProjectWithLadder(repo);
+        CommitEverything(repo);
+        File.WriteAllText(BlockPath(repo, "Conveyor"), FunctionBlock(Rung("Run", "Jam_Free", "Belt")));
+
+        using var shell = Shell();
+        await shell.OpenAsync(repo.Path);
+        shell.Sync.SelectedNode = await Row(shell, "Conveyor");
+
+        await Eventually.Until(
+            () => shell.RenderedContent is InterfaceRender { Table.HasChangeSummary: true, Ladder.Pending: false },
+            "the table and the networks were both compared");
+
+        var render = Assert.IsType<InterfaceRender>(shell.RenderedContent);
+        Assert.Contains("networks below", render.Table.ChangeSummary, StringComparison.Ordinal);
+        Assert.Equal(1, render.Ladder!.Comparison.ChangedCount);
+    }
+
+    [Fact]
     public async Task A_late_comparison_never_lands_on_another_block()
     {
         // Selection moves on while git reads the first block's committed copy: the second

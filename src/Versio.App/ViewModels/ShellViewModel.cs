@@ -7071,6 +7071,52 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         };
     }
 
+    /// <summary>
+    /// Draw a deleted file's committed copy as a diagram with every network removed, when the
+    /// file was a block some format can draw.
+    /// </summary>
+    /// <remarks>
+    /// Silent when it is not one: most deleted files are not diagrams, and the Raw diff is
+    /// already on screen for those. Dropped if the selection moved while git read.
+    /// </remarks>
+    private async Task DrawDeletedDiagramAsync(string file, int generation)
+    {
+        if (_git is null)
+        {
+            return;
+        }
+
+        string head;
+        try
+        {
+            head = await _git.ShowAtHeadAsync(file, CancellationToken.None).ConfigureAwait(true);
+        }
+        catch (Exception ex)
+        {
+            _logger.Warn(LogCategory.Git, $"could not read {file} at HEAD to draw it as deleted: {ex.Message}");
+            return;
+        }
+
+        if (head.Length == 0 || generation != _renderGeneration || RenderedContent is not null)
+        {
+            return;
+        }
+
+        foreach (var format in PlcFormats.All)
+        {
+            if (format.TryParseLadder(file, head) is not { } document)
+            {
+                continue;
+            }
+
+            var comparison = LadderDiff.Compare(document.Body, new LadderBody(document.Body.BlockName, []));
+            LogLadder(file, document.Body, comparison);
+            RenderedContent = new LadderRender { Path = file, Comparison = comparison, Style = document.Style };
+            ShowRendered = true;
+            return;
+        }
+    }
+
     /// <summary>One line per ladder drawn: what is on screen, and anything drawn less than faithfully.</summary>
     private void LogLadder(string file, LadderBody body, LadderComparison comparison)
     {
@@ -7155,9 +7201,14 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         var marked = MemberTableDiff.Compare(baseline, current);
         if (!marked.HasChangeSummary)
         {
+            // Where the difference is depends on what is under the table. Under a drawn diagram
+            // it is in the networks right there, already marked; sending the reader to Raw for
+            // it read as "the diagram below shows nothing" (the owner, on Service, 2026-10-05).
             marked = marked with
             {
-                ChangeSummary = "Changed since the last commit, but not in its members - the difference is on Raw.",
+                ChangeSummary = shown is InterfaceRender { Ladder: not null }
+                    ? "Changed since the last commit, but not in its members - the networks below show where."
+                    : "Changed since the last commit, but not in its members - the difference is on Raw.",
             };
         }
 
@@ -7711,6 +7762,15 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         if (tableSource is not null || ladderSource is not null)
         {
             _ = MarkChangesAsync(tableSource, ladderSource, _renderGeneration);
+        }
+
+        // A deleted block has no file left to draw, so its committed copy is drawn instead,
+        // every network marked removed. Without this a deleted ladder or FBD block opened on
+        // its raw XML, all red, the one changed block that never showed as a diagram (the
+        // owner, 2026-10-05).
+        if (RenderedContent is null && row.Node.Status == ChangeKind.Deleted && row.PrimaryFile is { } gone)
+        {
+            _ = DrawDeletedDiagramAsync(gone, _renderGeneration);
         }
 
         if (visualizeOnly)
