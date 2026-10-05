@@ -60,13 +60,13 @@ marking, duplicate-param keys, and the detail-pane lookup. All of them are in
 
 | Project | Tests | Time | Needs |
 |---|---|---|---|
-| `Versio.Core.Tests` | 1,577 | under a second | nothing |
+| `Versio.Core.Tests` | 1,614 | under a second | nothing |
 | `Versio.Integration.Tests` | 168 | ~10 s | real git |
-| `Versio.App.Tests` | 759 | ~3.6 min (measured 2026-09-22) | nothing |
+| `Versio.App.Tests` | 764 | 8 m 38 s on 2026-10-05; ~3.6 min on 2026-09-22 | nothing |
 | `Versio.Arch.Tests` | 27 | instant | nothing |
 | `Versio.Plc.Codesys.Pure.Tests` | 263 | under a second | nothing |
 | `Versio.Plc.Codesys.Parity.Tests` | 97 | ~15 s | `python` on PATH — skips cleanly without it, so check the count |
-| `Versio.Plc.TiaPortal.Pure.Tests` | 53 | instant | nothing |
+| `Versio.Plc.TiaPortal.Pure.Tests` | 84 | instant | nothing |
 | `Versio.Plc.TiaPortal.Tests` | 5 | seconds when skipped; minutes when Portal runs the import gate | **real TIA Portal** — skips without Openness membership or LFS content |
 | `Versio.Plc.TwinCat.Pure.Tests` | 21 | instant | nothing |
 | `Versio.Plc.TwinCat.Tests` | 6 | seconds when skipped; ~5 min when XAE runs the import gate | **real TwinCAT XAE** — skips without `TcXaeShell.DTE.17.0` or the fixture |
@@ -257,10 +257,36 @@ One list. Reorder it; do not copy it into another file.
    one). System information shows that product version. PortableGit is bundled (decision 3,
    closed). **Code signing** and the update feed remain. Sequenced last on 2026-08-17, on
    purpose; first artifacts 2026-08-23.
-6. **Wait for a specimen, not a build.** C5 (`DELETE_UNREADABLE`) and `native_partial` close when
+6. **Ladder (LAD) drawn in the Rendered tab — built 2026-10-05 on `LadderRendering`;
+   what is left.** The plan, and why the code is shaped as it is, are in
+   [`vendors/tia/DRIVING.md`](vendors/tia/DRIVING.md), "Graphical blocks". Core holds the
+   neutral model, layout, diff and SVG (`Versio.Core.Iec.Ladder`); TIA holds one parser; the
+   app holds one view. Left, in order:
+   - **Owner eyeball.** Open a changed LAD block, and check four things:
+     - the old version sits beside the new, and narrowing the pane stacks them;
+     - Ctrl+wheel zooms and F7 steps through the changes;
+     - a rung deleted with another written in its place reads as removed + added, not changed;
+     - both themes.
+
+     A dev build pointed at a scratch TIA binding starts a real Portal export of its pointer
+     file (FINDINGS 2026-10-05), so look on a real project's mirror.
+   - **A Portal-exported LAD specimen.** Put a few real networks into `Main_1` (contacts,
+     a TON, a branch, an FC call, an edge contact) and re-export. The nine hand-written
+     specimens were written against the schema, never checked against Portal's own output.
+     The approved drawings will say what differs. Check the edge-memory pin name (`bit`)
+     and whether LAD writes `O` parts first.
+   - **The commit view** stays Raw-only for a ladder block. Drawing parent against commit
+     is the same `LadderDiff`, fed from `git show <c>^:<p>`.
+   - **FBD** (127 networks in the fixture) shares the parser's schema, but it needs its own
+     layout (boxes wired left to right, no rail). It is not ladder, and it stays highlighted
+     XML until it has that layout.
+   - **Other vendors.** CODESYS `NetworkList` and TwinCAT PLCopen `<LD>` are each one parser
+     in their own pack behind `TryParseLadder`. PLCopen's reader belongs in `Versio.Core/Iec/`,
+     because it is a standard both use.
+7. **Wait for a specimen, not a build.** C5 (`DELETE_UNREADABLE`) and `native_partial` close when
    reality produces an object nobody has observed. They cannot be manufactured. See
    [`phase1/IMPORT-PLAN.md`](phase1/IMPORT-PLAN.md).
-7. **Not this queue.** TIA HMI / safety (`F_*`) / technology / know-how-protected
+8. **Not this queue.** TIA HMI / safety (`F_*`) / technology / know-how-protected
    import / compile-after-import / VCI / Project Server. TIA **hardware** Comment
    apply shipped 2026-08-20 ([`vendors/tia/DRIVING.md`](vendors/tia/DRIVING.md) §4.4);
    PlugNew and topology stay off this queue. TIA data-block SCL is export-only
@@ -305,6 +331,9 @@ Close Versio **and** Portal before a host rebuild. Click **Yes to all** on Openn
   named in the YAML but absent from the project is warned about, never created; a task deleted
   from the YAML is left alone.
 - **Graphical POUs export as native XML.** Their diffs will never read as well as ST.
+  ~~Nothing graphical is drawn~~ — since 2026-10-05 a **TIA LAD** block's Rendered tab draws
+  its networks, the committed copy beside the working one (item 6). Raw stays XML. FBD, CFC,
+  and other vendors' LD are still highlighted XML.
 - **Visualisation bindings after a rename: unmeasured, by decision (2026-08-17).** The owner
   does not use CODESYS visualisations. A project that does should measure whether bindings hold
   by name before trusting a rename.

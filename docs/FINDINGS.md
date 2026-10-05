@@ -19,6 +19,33 @@ produce a diff touching everything else.
 
 ---
 
+### A dev build pointed at a scratch TIA binding starts a real Portal export
+
+**2026-10-05, while running the app to look at the new ladder pane.** A scratch repository had
+a TIA binding, a one-line `plc/Station.ap21` pointer file, a hand-written `_manifest.json`, and
+the LAD specimens under `plc/Station/Blocks`. Launching the dev build on it logged:
+- `catch-up: 1 project(s) changed while Versio was not running; exporting`;
+- `Clean → ProjectAuthoritative`;
+- `Export of …\plc\Station.ap21 via …\Versio.Plc.TiaPortal.Host.exe`.
+
+One second later a `Siemens.Automation.Portal.exe` was running on the owner's desktop.
+
+The commit gate did what it should. A project with no export state has "changed since it was
+last exported", and with a Portal installed the host is real, so the export runs with its
+20-minute floor against a file that is not a project. Nothing was lost: the scratch mirror was
+the only thing in reach. The three processes this launch started were stopped by id after
+checking their start times against the launch. The ladder had already drawn by then:
+`ladder plc/Station/Blocks/Pair.xml: 3 networks against HEAD; 1 changed, 1 added, 1 removed`,
+with zero `ERR`.
+
+**What to do instead:** look at a rendering change on a real project's mirror, or at a
+scratch repository with **no binding** (the panes then have files, not objects). Never a fake
+`.ap21` on a machine that has Portal. Not changed in code, and one question left open: does the
+host refuse a file that is not a project, or wait out its 20 minutes? The processes were
+stopped before anyone found out.
+
+---
+
 ### Data types and function blocks as tables, with a type's changes shown on the block that uses it
 
 **2026-10-04, asked for by the owner** looking at `AnaVal.udt` and `Service_Interaction_FB.scl`

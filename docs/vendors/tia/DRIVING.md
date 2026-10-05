@@ -388,6 +388,61 @@ Textual hashes are UTF-8 **without BOM** so they match `ContentHash.Of`. Siemens
 Out / coverage skip: hardware, HMI, safety (`F_*`), technology objects, know-how-protected
 import, system blocks, VCI, Project Server, compile-after-import.
 
+### Graphical blocks (LAD drawn from 2026-10-05)
+
+LAD and FBD blocks get no `.scl`. `LooksLikeScl` refuses them, so their SimaticML is
+`NATIVE` and was shown as highlighted XML. From 2026-10-05 a **LAD** block's Rendered tab
+draws its networks:
+- the working copy beside the committed one, networks matched by content;
+- an OB alone, an FB or FC under its interface table.
+
+`TiaPortalLadderParser` (Pure pack) reads the XML into the neutral model in
+`Versio.Core.Iec.Ladder`. Everything after that (structure, layout, diff, SVG) is shared
+with every vendor.
+
+**What the fixture has.** `Main_1` is LAD, and its one network is empty
+(`<NetworkSource />`). `Cyclic interrupt`, `Startup` and 18 more blocks are **FBD**: 127
+`FlgNet` networks. None is LAD. FBD uses the same `FlgNet` v5 schema, and the parser
+returns null for it on purpose: drawing FBD as rungs would show something the IDE does not.
+FBD keeps highlighted XML until it gets its own layout.
+
+**How SimaticML says a ladder network**, as the parser reads it:
+
+| In the XML | In the model | Why |
+|---|---|---|
+| `Access` wired by `IdentCon` to a `NameCon` | the pin's operand text | Operands are labels in the IDE, not elements |
+| `<Powerrail/>` inside a `Wire` | the left rail's net | The rail is a wire end, not a part |
+| a `Wire` with three or more `NameCon` | one net | That is how branches open and close |
+| `Part Name="O"` | folded into one net | In ladder an OR junction is a joint, not an instruction |
+| `Contact` + `<Negated Name="operand"/>` | normally closed | |
+| `PContact` / `NContact`, pin `bit` | edge contact with its memory bit | |
+| `Coil`, `SCoil`, `RCoil`, `PCoil`, `NCoil` | coil kinds | |
+| `Eq` `Ne` `Gt` `Ge` `Lt` `Le`, power on `pre` | box drawn in line | The IDE draws comparators contact-sized |
+| `Call` + `CallInfo` `Parameter`s | box with every parameter | An unwired parameter is still drawn |
+| any other `Part` name | dashed "unrecognised" box | Drawn, never dropped |
+| a compile unit in SCL or STL | placeholder | Same reason |
+
+**The specimens are hand-written** (`tests/Versio.Plc.TiaPortal.Pure.Tests/Specimens/Ladder/`).
+No real LAD export has been seen, so the table above is the schema as read, not as
+measured. Two guesses to check first against a real export:
+- the edge-memory pin name (`bit`);
+- whether a LAD export writes `O` parts at all, or only multi-ended wires (both are handled).
+
+A Portal export of a few LAD networks replaces the specimens. The approved drawings then
+say what changed. It is on the STATUS queue.
+
+Each specimen's page is pinned as `Approved/*.approved.html`. A difference writes
+`*.received.html` and fails. Approving means looking at the received page in a browser, then
+copying it over the approved file. The test output also holds `tia-ladder-gallery.html`
+with every specimen on one page.
+
+**What the first looks found** (none of it was asked about by a test):
+- a comment-only change lit up the title as renamed;
+- the last coil ran a lead on to the edge, which reads as a rung continuing into nothing;
+- box pin names were halved, so "Running" was cut to "Runn…" beside "Cmd".
+
+All three are fixed and pinned.
+
 ---
 
 ## 8. Protocol
