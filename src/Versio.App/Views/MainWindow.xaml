@@ -1554,7 +1554,11 @@
                                     <GridSplitter Grid.Row="1" Height="5" HorizontalAlignment="Stretch"
                                                   ResizeDirection="Rows" Focusable="False"
                                                   Background="{DynamicResource Brush.Border.Subtle}" />
-                                    <views:DiffView Grid.Row="2" SourceRows="{Binding Source.Rows}"
+                                    <!-- Breathing room under the divider: with the BEGIN line gone
+                                         the body's first line sat right against it and read as
+                                         cluttered (owner, 2026-10-05). -->
+                                    <views:DiffView Grid.Row="2" Margin="0,14,0,0"
+                                                    SourceRows="{Binding Source.Rows}"
                                                     FilePath="{Binding Source.Path}" />
                                 </Grid>
                             </DataTemplate>
