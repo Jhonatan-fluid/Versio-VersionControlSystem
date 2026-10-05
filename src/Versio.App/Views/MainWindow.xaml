@@ -663,6 +663,15 @@
                                                   Content="Raw"
                                                   IsChecked="{Binding ShowRawTab}"
                                                   ToolTip="The diff, or the plain file when nothing changed" />
+                                    <!-- HTML only: the page as a browser draws it, with its
+                                         scripts and network requests switched off. See
+                                         WebPageView for why. -->
+                                    <ToggleButton Style="{StaticResource SegmentChip}"
+                                                  Content="Web page"
+                                                  IsChecked="{Binding ShowWebPage}"
+                                                  ToolTip="The page as a browser draws it. Scripts and network requests are off."
+                                                  Visibility="{Binding HasWebPage,
+                                                      Converter={StaticResource BoolToVisibility}}" />
                                 </StackPanel>
                             </Border>
 
@@ -1357,6 +1366,15 @@
                         </ContentControl.Resources>
                     </ContentControl>
 
+                    <views:WebPageView x:Name="WebPage"
+                                       Margin="6,0,6,8"
+                                       AutomationProperties.Name="Web page"
+                                       FilePath="{Binding WebPagePath}"
+                                       LinkCommand="{Binding OpenLinkCommand}"
+                                       ReportCommand="{Binding WebPageReportCommand}"
+                                       Visibility="{Binding ShowWebPagePane,
+                                           Converter={StaticResource BoolToVisibility}}" />
+
                     <views:DiffView DiffText="{Binding SelectedDiff}"
                                     FilePath="{Binding SelectedDiffPath}"
                                     SideBySide="{Binding DiffSideBySide}"
@@ -1367,7 +1385,7 @@
                         <ListBox.Style>
                             <Style TargetType="views:DiffView">
                                 <Style.Triggers>
-                                    <DataTrigger Binding="{Binding ShowRenderedPane}" Value="True">
+                                    <DataTrigger Binding="{Binding ShowRawPane}" Value="False">
                                         <Setter Property="Visibility" Value="Collapsed" />
                                     </DataTrigger>
                                 </Style.Triggers>

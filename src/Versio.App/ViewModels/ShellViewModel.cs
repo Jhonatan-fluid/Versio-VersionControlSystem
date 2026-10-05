@@ -3073,8 +3073,38 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         SelectedDiffPath = resolved;
         SelectedDiff = SourceRender.Load(absolute, resolved, noChanges: true)?.PseudoDiff ?? string.Empty;
         RenderedContent = MarkdownRender.From(resolved, text);
+        WebPagePath = null;
         ShowRendered = true;
     }
+
+    /// <summary>
+    /// The absolute path of an HTML file that exists, or null. Only <c>.html</c> and
+    /// <c>.htm</c>: an <c>.svg</c> or <c>.xml</c> would also load in a browser, but nobody
+    /// asked to "view an XML file as a web page", and every extension added here is another
+    /// kind of repository content the app will hand to a browser engine.
+    /// </summary>
+    private string? WebPageFor(string? relative)
+    {
+        if (relative is null || RepositoryPath is not { } root
+            || !(relative.EndsWith(".html", StringComparison.OrdinalIgnoreCase)
+                 || relative.EndsWith(".htm", StringComparison.OrdinalIgnoreCase)))
+        {
+            return null;
+        }
+
+        var absolute = Path.Combine(root, relative.Replace('/', Path.DirectorySeparatorChar));
+        return File.Exists(absolute) ? absolute : null;
+    }
+
+    /// <summary>What the web page view reports back - loaded, blocked, failed - for the log.</summary>
+    /// <remarks>
+    /// The view has no logger of its own, and a browser engine doing things nobody can see is
+    /// precisely the kind of silent activity the log exists to rule out.
+    /// </remarks>
+    public RelayCommand<string> WebPageReportCommand =>
+        _webPageReportCommand ??= new RelayCommand<string>(message => _logger.Info(LogCategory.Ui, message));
+
+    private RelayCommand<string>? _webPageReportCommand;
 
     /// <summary>
     /// Ask the remote whether a request already exists for this branch.
@@ -6497,10 +6527,9 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
                 .ToList()
             : [];
 
-    // ------------------------------------------------------ the rendered pane (Rendered | Raw)
+    // ------------------------------------------- the rendered pane (Rendered | Raw | Web page)
 
     private object? _renderedContent;
-    private bool _showRendered;
     private string _paneNote = string.Empty;
 
     /// <summary>
@@ -6530,41 +6559,121 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
             {
                 OnPropertyChanged(nameof(HasRenderedView));
                 OnPropertyChanged(nameof(ShowRenderedPane));
+                OnPropertyChanged(nameof(ShowRawPane));
             }
         }
     }
 
     public bool HasRenderedView => _renderedContent is not null;
 
+    /// <summary>
+    /// The file an HTML selection can also show as a web page, or null for anything else.
+    /// </summary>
+    /// <remarks>
+    /// HTML has three honest answers to "show me this", where every other file has two: what
+    /// git says (Raw), what the source is (Rendered, highlighted), and what a browser would
+    /// draw (Web page). Asked for by the owner on 2026-10-04 in exactly those three words.
+    /// An absolute path, because the page view loads it as a file URI so its relative
+    /// stylesheets and images resolve beside it.
+    /// </remarks>
+    public string? WebPagePath
+    {
+        get => _webPagePath;
+        private set
+        {
+            if (SetProperty(ref _webPagePath, value))
+            {
+                OnPropertyChanged(nameof(HasWebPage));
+                OnPropertyChanged(nameof(ShowWebPagePane));
+                OnPropertyChanged(nameof(ShowRawPane));
+            }
+        }
+    }
+
+    private string? _webPagePath;
+
+    public bool HasWebPage => _webPagePath is not null;
+
     /// <summary>Which tab is showing. Defaults per selection, not sticky.</summary>
     /// <remarks>
     /// A changed file opens on Raw, because the diff is what review is; anything clean opens
     /// on Rendered, because the diff of a clean file is nothing and the content is the
     /// answer. A sticky choice was considered and dropped: which view reads better is a fact
-    /// about the file in front of you, not about the person.
+    /// about the file in front of you, not about the person. The web page is never the
+    /// default: running somebody's HTML is something to choose, not something a click on a
+    /// row should do.
     /// </remarks>
     public bool ShowRendered
     {
-        get => _showRendered;
-        set
-        {
-            if (SetProperty(ref _showRendered, value))
-            {
-                OnPropertyChanged(nameof(ShowRenderedPane));
-                OnPropertyChanged(nameof(ShowRawTab));
-            }
-        }
+        get => _tab == PaneTab.Rendered;
+        // False is Raw from anywhere, not "leave the web page up": every selection resets
+        // the pane through this setter, and a web page carried onto the next row would be
+        // a page that row does not have.
+        set => Tab = value ? PaneTab.Rendered : PaneTab.Raw;
     }
 
     /// <summary>The Raw chip's own state — WPF has no inverse TwoWay binding.</summary>
+    /// <remarks>Unpressing Raw goes to Rendered, as it did when there were only two.</remarks>
     public bool ShowRawTab
     {
-        get => !_showRendered;
-        set => ShowRendered = !value;
+        get => _tab == PaneTab.Raw;
+        set => Tab = value ? PaneTab.Raw : (_tab == PaneTab.Raw ? PaneTab.Rendered : _tab);
+    }
+
+    /// <summary>The Web page chip. Unpressing it goes back to Raw.</summary>
+    public bool ShowWebPage
+    {
+        get => _tab == PaneTab.Web;
+        set => Tab = value ? PaneTab.Web : (_tab == PaneTab.Web ? PaneTab.Raw : _tab);
+    }
+
+    /// <summary>
+    /// One field for three chips, so no combination of them can show two views or none.
+    /// Two booleans would have needed every setter to clear the others, and the first one
+    /// forgotten would draw a web page over a diff.
+    /// </summary>
+    private PaneTab Tab
+    {
+        get => _tab;
+        set
+        {
+            if (_tab == value)
+            {
+                // A ToggleButton unpressed itself even though the tab did not move: say so,
+                // or the chip stays visually off while its view is still on screen.
+                OnPropertyChanged(nameof(ShowRendered));
+                OnPropertyChanged(nameof(ShowRawTab));
+                OnPropertyChanged(nameof(ShowWebPage));
+                return;
+            }
+
+            _tab = value;
+            OnPropertyChanged(nameof(ShowRendered));
+            OnPropertyChanged(nameof(ShowRawTab));
+            OnPropertyChanged(nameof(ShowWebPage));
+            OnPropertyChanged(nameof(ShowRenderedPane));
+            OnPropertyChanged(nameof(ShowWebPagePane));
+            OnPropertyChanged(nameof(ShowRawPane));
+        }
+    }
+
+    private PaneTab _tab = PaneTab.Raw;
+
+    private enum PaneTab
+    {
+        Raw,
+        Rendered,
+        Web,
     }
 
     /// <summary>What the fill actually draws: the rendered host, or the diff under it.</summary>
-    public bool ShowRenderedPane => HasRenderedView && ShowRendered;
+    public bool ShowRenderedPane => HasRenderedView && _tab == PaneTab.Rendered;
+
+    /// <summary>The web page host is drawn instead of both.</summary>
+    public bool ShowWebPagePane => HasWebPage && _tab == PaneTab.Web;
+
+    /// <summary>Neither host: the diff control fills the pane.</summary>
+    public bool ShowRawPane => !ShowRenderedPane && !ShowWebPagePane;
 
     /// <summary>One sentence above the pane when it needs one — "no changes right now".</summary>
     public string PaneNote
@@ -6576,6 +6685,7 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
     private void ClearRendered()
     {
         RenderedContent = null;
+        WebPagePath = null;
         ShowRendered = false;
         PaneNote = string.Empty;
     }
@@ -7077,6 +7187,7 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
             // of a binary compound document is the explanation below, which is worth
             // reading once, not on every click.
             RenderedContent = BuildProjectSummary(row.Node);
+            WebPagePath = null;
             ShowRendered = true;
             PaneNote = string.Empty;
 
@@ -7112,6 +7223,7 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         // selection: a changed file opens on its diff, a clean one on its content —
         // see ShowRendered's remark. The explorer always visualizes.
         RenderedContent = BuildRenderedContent(row);
+        WebPagePath = WebPageFor(row.PrimaryFile);
         ShowRendered = HasRenderedView && (visualizeOnly || row.Node.Status == ChangeKind.Unmodified);
 
         if (visualizeOnly)

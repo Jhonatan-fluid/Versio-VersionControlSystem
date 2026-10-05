@@ -19,6 +19,44 @@ produce a diff touching everything else.
 
 ---
 
+### A Markdown file's Rendered tab drew the raw text, and HTML had no page view at all
+
+**Found 2026-10-04** by the owner, on `docs/outpost/PLAN.md`: Rendered pressed, and the pane
+drew pipes, hashes and asterisks with line numbers - the same thing Raw draws. Nothing was
+broken in the usual sense. `BuildRenderedContent` had arms for catalogs, member tables and the
+project card, and everything else that was text fell through to `SourceRender`, whose layout
+is the ST one. For code that is the right answer (highlighted source is what an editor shows);
+for a document it is not an answer at all, and in a repository whose documentation *is* the
+engineering log that was most of the files anybody opens outside the PLC tree.
+
+**What it is now.**
+
+- **Markdown renders as a page.** `Versio.Core.Text.Markdown` parses (pure, no I/O, 23 tests,
+  and a test that parses every file under `docs/`); `MarkdownView` draws it as a FlowDocument -
+  headings with rules, lists, GFM tables, fenced code, quotes, links. Relative links to other
+  `.md` files in the repository open in the same pane; web links go to the browser through a
+  logged command; anything else - an anchor, a path out of the repository, a missing file - is
+  refused in the log. `MarkdownPaneFlowTests`; deleting the Markdown arm turns it red.
+  **Hand-written rather than Markdig**, to keep a package out of `Versio.Core` for one tab; the
+  parser's remarks list what it deliberately does not do.
+- **HTML gets three views**, the owner's words: Raw (git's diff), Rendered (highlighted
+  source, unchanged) and **Web page** (the page as a browser draws it). The page is a WebView2
+  created on first use, with **scripts off, every non-file request refused, and links handed
+  to the real browser** - opening somebody's branch must not run their JavaScript on this
+  machine because a row was clicked. Never the default tab, for the same reason. The three
+  chips are one enum, so no combination can show two views or none; `HtmlPaneFlowTests`
+  breaks if a selection carries the Web tab onto a row without a page.
+- **Rejected:** WPF's built-in `WebBrowser` (the retired IE engine draws modern HTML wrong,
+  which is worse than not drawing it). **Cost:** the app's second package,
+  `Microsoft.Web.WebView2`, BSD-licensed and in THIRD-PARTY-NOTICES.
+
+**Not covered by any test:** the browser itself (it cannot start in the suite) and the link
+binding from the Markdown template to the shell's command. Both are owner-eyeball items in
+STATUS. Also not done: the Git panel and History still show `.md`/`.html` as a diff only - the
+rendered views are Project panel and Explorer, where the rest of the rendered views live.
+
+---
+
 ### Twelve things the running window showed that no test could, and two defects under them
 
 **Found 2026-09-21**, by looking. Until then Versio's UI had only ever been checked through

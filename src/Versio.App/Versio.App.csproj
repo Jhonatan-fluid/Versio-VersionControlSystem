@@ -32,6 +32,13 @@
   <ItemGroup>
     <!-- Installer hooks. Must be the same version as the vpk tool Pack-Versio.ps1 installs. -->
     <PackageReference Include="Velopack" Version="1.2.0" />
+
+    <!-- The diff pane's "Web page" view of an HTML file (2026-10-04). The engine is the
+         Edge WebView2 runtime Windows 11 ships; this package is only the host control and
+         its loader. Rejected: WPF's own WebBrowser, which is the retired IE engine and draws
+         modern HTML wrong - a "view as web page" that renders a different page than any
+         browser would is worse than none. WebPageView says so when the runtime is absent. -->
+    <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.4258.31" />
   </ItemGroup>
 
   <ItemGroup>
