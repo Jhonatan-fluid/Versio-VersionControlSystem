@@ -22,7 +22,7 @@ namespace Versio.Core.Iec.Ladder;
 /// pixel, which is what lets approved drawings be compared as text.
 /// </para>
 /// </remarks>
-public static class LadderLayout
+public static partial class LadderLayout
 {
     /// <summary>The font size every label is drawn at, in pixels.</summary>
     public const double FontSize = 12;
@@ -78,6 +78,11 @@ public static class LadderLayout
                     new LdText(rect.X + 12, rect.Y + 20, message, message, LdAlign.Start, "placeholder"),
                 ])],
                 null);
+        }
+
+        if (network.Language == LdLanguage.FunctionBlock)
+        {
+            return LayFunctionBlock(network);
         }
 
         var shape = LadderStructure.Of(network);
@@ -619,16 +624,19 @@ public static class LadderLayout
     /// </summary>
     private static Drawn Box(
         LdNode node, string kind, string title, string? detail, string? instance,
-        IReadOnlyList<LdPin> allPins, bool dashed, double x, double top, ISet<LdPinRef> wired)
+        IReadOnlyList<LdPin> allPins, bool dashed, double x, double top, ISet<LdPinRef> wired,
+        bool keepOrder = false, IReadOnlyList<double>? leftRows = null)
     {
         var (powerIn, powerOut) = LadderStructure.PowerPins(node, wired);
 
         // Power flow enters on the first row and leaves on the first row, so the rung runs
         // straight through the box: OrderBy is stable, so the rest keep the vendor's order.
+        // Not in a function block diagram: there every input is wired or labelled, and in1
+        // drawn below in2 because in2 happened to be the wired one reads as a different box.
         var left = allPins.Where(p => p.Direction != LdPinDirection.Output)
-            .OrderBy(p => powerIn.Contains(p.Name) ? 0 : 1).ToList();
+            .OrderBy(p => keepOrder || powerIn.Contains(p.Name) ? 0 : 1).ToList();
         var right = allPins.Where(p => p.Direction == LdPinDirection.Output)
-            .OrderBy(p => powerOut.Contains(p.Name) ? 0 : 1).ToList();
+            .OrderBy(p => keepOrder || powerOut.Contains(p.Name) ? 0 : 1).ToList();
 
         double LabelWidth(IEnumerable<LdPin> pins) => Math.Clamp(
             pins.Where(p => p.Operand is not null).Select(p => TextWidth(p.Operand!) + 16).DefaultIfEmpty(0).Max(),
@@ -648,7 +656,16 @@ public static class LadderLayout
         var header = detail is { Length: > 0 } ? 34 : 22;
         var rows = Math.Max(1, Math.Max(left.Count, right.Count));
         var boxTop = top + 4 + instanceHeight;
-        var boxHeight = header + (rows * PinRow) + 4;
+
+        // Left rows at fixed spacing, unless the caller placed them: a function block diagram
+        // lines each input up with the output feeding it, and the box stretches to fit (see
+        // LayFunctionBlock). Rows given are centres relative to the element's top.
+        double LeftRow(int i) => leftRows is { } given && i < given.Count
+            ? top + given[i]
+            : boxTop + header + (i * PinRow) + (PinRow / 2);
+        var boxHeight = Math.Max(
+            header + (rows * PinRow) + 4,
+            left.Count == 0 ? 0 : LeftRow(left.Count - 1) + (PinRow / 2) + 4 - boxTop);
         var w = leftLabel + boxWidth + rightLabel;
         var h = 4 + instanceHeight + boxHeight + 6;
         var boxX = x + leftLabel;
@@ -680,7 +697,7 @@ public static class LadderLayout
         for (var i = 0; i < left.Count; i++)
         {
             var pin = left[i];
-            var y = boxTop + header + (i * PinRow) + (PinRow / 2);
+            var y = LeftRow(i);
             var edge = boxX - (pin.Negated ? 6 : 0);
             items.Add(new LdText(boxX + 4, y + 4, Fit(pin.Name, leftRoom), pin.Name, LdAlign.Start, "pin"));
             if (pin.Negated)

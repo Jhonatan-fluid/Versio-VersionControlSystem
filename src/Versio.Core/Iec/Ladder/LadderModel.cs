@@ -64,6 +64,26 @@ public sealed record LadderNetwork
     /// placeholder: dropping it would show a block with a network missing.
     /// </summary>
     public string? UnsupportedLanguage { get; init; }
+
+    /// <summary>Which graphical language the network is drawn in.</summary>
+    /// <remarks>
+    /// One model for both, because both are parts and wires: what differs is the drawing. Ladder
+    /// hangs elements on a rung from the power rail; a function block diagram has no rail and
+    /// flows boxes left to right into the outputs. TIA Portal writes both in the same network
+    /// schema and lets one block mix them network by network, which is why this is per network
+    /// and not per block.
+    /// </remarks>
+    public LdLanguage Language { get; init; } = LdLanguage.Ladder;
+}
+
+/// <summary>The IEC 61131-3 graphical languages this model draws.</summary>
+public enum LdLanguage
+{
+    /// <summary>LD: rungs from a power rail.</summary>
+    Ladder,
+
+    /// <summary>FBD: boxes wired left to right, no rail.</summary>
+    FunctionBlock,
 }
 
 /// <summary>An element of a network. <see cref="Id"/> is unique within its network only.</summary>

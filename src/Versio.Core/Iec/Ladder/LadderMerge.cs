@@ -51,7 +51,11 @@ public static class LadderMerge
 
         var a = LadderStructure.Of(old);
         var b = LadderStructure.Of(@new);
-        if (!a.IsSeriesParallel || !b.IsSeriesParallel)
+        // A function block diagram is not merged (yet): it has one wire per input pin, so a
+        // removed subtree has no wire to hang on beside the one that replaced it. Its changed
+        // networks are drawn as two stacked diagrams, each marked, which is honest if longer.
+        if (old.Language != LdLanguage.Ladder || @new.Language != LdLanguage.Ladder
+            || !a.IsSeriesParallel || !b.IsSeriesParallel)
         {
             return null;
         }

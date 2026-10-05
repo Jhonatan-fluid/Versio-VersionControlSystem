@@ -327,6 +327,7 @@ public static class LadderStructure
             .Append(network.Title).Append('\u001f')
             .Append(network.Comment).Append('\u001f')
             .Append(network.UnsupportedLanguage).Append('\u001f')
+            .Append(network.Language).Append('\u001f')
             .AppendJoin(',', shape.Labels.Select(l => l.Name)).Append('\u001f');
 
         if (shape.Root is not null)
