@@ -94,12 +94,25 @@ public static class LadderDiff
     /// </summary>
     /// <remarks>
     /// Similarity is the mean of three Jaccard indices over the networks' elements: exact
-    /// (kind, variant and operands), shape (kind and variant only) and operands only, plus 0.1
-    /// for an equal non-empty title. One operand renamed in a three-element rung scores
-    /// (0.5 + 1 + 0.5) / 3 ≈ 0.67, and so does one contact turned from NO to NC. An unrelated rung
-    /// of the same shape scores (0 + 1 + 0) / 3 ≈ 0.33. Both sides of 0.6 are pinned by tests.
+    /// (kind, variant and operands), shape (kind and variant only) and operands only, plus
+    /// <see cref="TitleBonus"/> for an equal non-empty title. One operand renamed in a
+    /// three-element rung scores (0.5 + 1 + 0.5) / 3 ≈ 0.67, and so does one contact turned from NO
+    /// to NC. An unrelated rung of the same shape scores (0 + 1 + 0) / 3 ≈ 0.33. Both sides of 0.6
+    /// are pinned by tests.
     /// </remarks>
     public const double SimilarityThreshold = 0.6;
+
+    /// <summary>What an equal, non-empty network title adds to <see cref="Similarity"/>.</summary>
+    /// <remarks>
+    /// A title is the one identity a person gave the network, so it counts for a lot. It was 0.1
+    /// until the owner's scenarios (2026-10-05): "Motor run" kept its title, its first contact and
+    /// its coil, swapped a permit contact for an edge contact and gained a set coil. That scored
+    /// 0.38 + 0.1 and was drawn as a whole rung replaced, where anyone reading it sees one rung
+    /// edited. At 0.25 it is 0.63. An unrelated rung of the same shape under the same title
+    /// (0.33 + 0.25 = 0.58) still reads as replaced, and the owner's deleted-and-rewritten case
+    /// changes its title, so it gets no bonus at all.
+    /// </remarks>
+    public const double TitleBonus = 0.25;
 
     public static LadderComparison Compare(LadderBody? old, LadderBody @new)
     {
@@ -329,7 +342,7 @@ public static class LadderDiff
                      + Jaccard(x.SelectMany(LadderStructure.Operands), y.SelectMany(LadderStructure.Operands))) / 3;
         if (a.Title.Length > 0 && a.Title == b.Title)
         {
-            score += 0.1;
+            score += TitleBonus;
         }
 
         return Math.Min(1, score);

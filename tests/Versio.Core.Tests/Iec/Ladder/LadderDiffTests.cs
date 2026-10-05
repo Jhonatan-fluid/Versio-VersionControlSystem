@@ -158,6 +158,29 @@ public sealed class LadderDiffTests
     }
 
     [Fact]
+    public void A_rung_edited_heavily_but_keeping_its_title_is_that_rung_changed()
+    {
+        // The owner's scenario 24: same title, same first contact and coil; a permit contact
+        // became an edge contact and a set coil was added. Without the title it scores 0.38.
+        var old = Block(FromTree(S(L(No("o1", "Start")), L(No("o2", "Old_Permit")), L(Coil("o3", "Motor"))), 1, "Motor run"));
+        var @new = Block(FromTree(S(
+            L(No("n1", "Start")),
+            L(new LdContact("n2", "New_Permit", LdContactKind.PositiveEdge, "Edge_Mem")),
+            P(L(Coil("n3", "Motor")), L(Coil("n4", "Ran_Once", LdCoilKind.Set)))), 1, "Motor run"));
+
+        Assert.Equal(LadderChange.Changed, Assert.Single(LadderDiff.Compare(old, @new).Rows).Change);
+    }
+
+    [Fact]
+    public void An_unrelated_rung_under_the_same_title_is_still_replaced()
+    {
+        var old = Block(Rung(0, "o", "Start", "Stop", "Motor", title: "Motor run"));
+        var @new = Block(Rung(0, "n", "Heat_Req", "Temp_Ok", "Heater", title: "Motor run"));
+
+        Assert.Equal(LadderChange.Replaced, Assert.Single(LadderDiff.Compare(old, @new).Rows).Change);
+    }
+
+    [Fact]
     public void A_block_with_nothing_to_compare_with_is_all_added()
     {
         var result = LadderDiff.Compare(null, Block(A(), B()));
