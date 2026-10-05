@@ -59,7 +59,12 @@ public static partial class LadderLayout
         return max <= 1 ? "…" : string.Concat(text.AsSpan(0, max - 1), "…");
     }
 
-    public static LadderDrawing Lay(LadderNetwork network, LadderStyle style)
+    /// <param name="was">
+    /// For a function block diagram drawn as its merged view: what each modified element was,
+    /// written under it (<see cref="LadderMerge.FunctionBlockWas"/>). Ladder's merged view goes
+    /// through <see cref="LayMerged"/> instead, because its old elements stay on the rung.
+    /// </param>
+    public static LadderDrawing Lay(LadderNetwork network, LadderStyle style, IReadOnlyDictionary<string, string>? was = null)
     {
         ArgumentNullException.ThrowIfNull(network);
         ArgumentNullException.ThrowIfNull(style);
@@ -82,7 +87,7 @@ public static partial class LadderLayout
 
         if (network.Language == LdLanguage.FunctionBlock)
         {
-            return LayFunctionBlock(network);
+            return LayFunctionBlock(network, was);
         }
 
         var shape = LadderStructure.Of(network);

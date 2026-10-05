@@ -290,12 +290,40 @@ public static class LadderDiff
         var oldMarks = a.ToDictionary(e => e.Id, _ => LdMark.Removed, StringComparer.Ordinal);
         var newMarks = b.ToDictionary(e => e.Id, _ => LdMark.Added, StringComparer.Ordinal);
 
-        var same = Lcs(a.Select(LadderStructure.Describe).ToList(), b.Select(LadderStructure.Describe).ToList(), string.Equals);
-        foreach (var (i, j) in same)
+        var (same, modified) = PairElements(old, @new);
+        foreach (var (o, n) in same)
         {
-            oldMarks[a[i].Id] = LdMark.Same;
-            newMarks[b[j].Id] = LdMark.Same;
+            oldMarks[o.Id] = LdMark.Same;
+            newMarks[n.Id] = LdMark.Same;
         }
+
+        foreach (var (o, n) in modified)
+        {
+            oldMarks[o.Id] = LdMark.Modified;
+            newMarks[n.Id] = LdMark.Modified;
+        }
+
+        return new LadderRow(change, new LadderSide(old, oldMarks), new LadderSide(@new, newMarks))
+        {
+            HeaderChanged = old.Title != @new.Title || old.Comment != @new.Comment,
+        };
+    }
+
+    /// <summary>
+    /// The elements of two versions of a network that are the same element: unchanged, or
+    /// modified in place. Whatever is in neither list was removed (old) or added (new).
+    /// </summary>
+    /// <remarks>
+    /// One answer for every caller: the marks on a row and the "was" lines of a merged drawing
+    /// come from this, so the two can never disagree about which element became which.
+    /// </remarks>
+    internal static (List<(LdNode Old, LdNode New)> Same, List<(LdNode Old, LdNode New)> Modified) PairElements(
+        LadderNetwork old, LadderNetwork @new)
+    {
+        var a = LadderStructure.Of(old).Elements;
+        var b = LadderStructure.Of(@new).Elements;
+        var same = Lcs(a.Select(LadderStructure.Describe).ToList(), b.Select(LadderStructure.Describe).ToList(), string.Equals);
+        var modified = new List<(LdNode, LdNode)>();
 
         var previous = (Old: -1, New: -1);
         foreach (var anchor in same.Append((a.Count, b.Count)))
@@ -308,8 +336,7 @@ public static class LadderDiff
                 var match = news.FirstOrDefault(j => Kind(b[j]) == kind, -1);
                 if (match >= 0)
                 {
-                    oldMarks[a[i].Id] = LdMark.Modified;
-                    newMarks[b[match].Id] = LdMark.Modified;
+                    modified.Add((a[i], b[match]));
                     news.Remove(match);
                 }
             }
@@ -317,10 +344,7 @@ public static class LadderDiff
             previous = anchor;
         }
 
-        return new LadderRow(change, new LadderSide(old, oldMarks), new LadderSide(@new, newMarks))
-        {
-            HeaderChanged = old.Title != @new.Title || old.Comment != @new.Comment,
-        };
+        return (same.Select(p => (a[p.Old], b[p.New])).ToList(), modified);
 
         static string Kind(LdNode node) => node switch
         {

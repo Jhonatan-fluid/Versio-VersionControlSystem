@@ -268,7 +268,7 @@ public sealed class TiaPortalLadderTests
     }
 
     [Fact]
-    public void An_fbd_operand_renamed_in_a_copy_of_p100_is_that_network_changed_and_drawn_stacked()
+    public void An_fbd_operand_renamed_in_a_copy_of_p100_is_that_network_drawn_once_saying_what_it_was()
     {
         var original = File.ReadAllText(FixtureBlock("02_ControlModules/P100"));
         const string Tag = "<Component Name=\"StopAut\" />";
@@ -287,12 +287,14 @@ public sealed class TiaPortalLadderTests
         Assert.Equal(LadderChange.Changed, row.Change);
         Assert.Contains(row.New!.Marks.Values, m => m == LdMark.Modified);
 
-        // Not merged: a function block diagram's changed network is the two versions stacked,
-        // each marked, until FBD has a merge of its own.
+        // Nothing was removed, so the merged view draws the network once, the box that reads the
+        // renamed tag saying what it read. The first FBD cut drew it twice (the owner, 2026-10-05).
         var html = LadderHtml.Fragment(comparison, TiaPortalLadderParser.Style);
         var start = html.IndexOf("data-change=\"changed\"", StringComparison.Ordinal);
         var section = html[start..html.IndexOf("</section>", start, StringComparison.Ordinal)];
-        Assert.Equal(2, section.Split("<svg ").Length - 1);
+        Assert.Equal(1, section.Split("<svg ").Length - 1);
+        Assert.Contains("#StopAut", System.Net.WebUtility.HtmlDecode(section), StringComparison.Ordinal);
+        Assert.Contains("class=\"ld-t-was\"", section, StringComparison.Ordinal);
     }
 
     [Fact]

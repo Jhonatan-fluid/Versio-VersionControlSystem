@@ -86,6 +86,45 @@ public static class LadderMerge
         return new LadderMergedNetwork(root, wired, state.Marks, state.Was);
     }
 
+    /// <summary>
+    /// The merged view of a changed function block diagram: the new network drawn once, its
+    /// modified elements saying what they were. Null when the old version had an element the
+    /// new one does not, which is then drawn as the two versions stacked.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Why "nothing removed" is the line.</b> In FBD each input pin takes one wire, so a
+    /// removed box has no place to stand beside the one that replaced it: drawing it would mean
+    /// inventing a wire. Everything else fits on the new diagram exactly as it is: an unchanged
+    /// box is unmarked, an added one green, a modified one amber with "was ..." under it.
+    /// </para>
+    /// <para>
+    /// <b>Found by the owner, 2026-10-05.</b> The first FBD cut stacked every changed network,
+    /// so a renamed title in <c>Cyclic interrupt</c> and one operand in <c>Service</c> each drew
+    /// the whole network twice, identical but for one word.
+    /// </para>
+    /// </remarks>
+    /// <returns>What each modified element of the new network was, by its id; empty when only the
+    /// title, the comment or added elements changed.</returns>
+    public static IReadOnlyDictionary<string, string>? FunctionBlockWas(LadderNetwork old, LadderNetwork @new)
+    {
+        ArgumentNullException.ThrowIfNull(old);
+        ArgumentNullException.ThrowIfNull(@new);
+
+        if (old.Language != LdLanguage.FunctionBlock || @new.Language != LdLanguage.FunctionBlock)
+        {
+            return null;
+        }
+
+        var (same, modified) = LadderDiff.PairElements(old, @new);
+        if (same.Count + modified.Count < LadderStructure.Of(old).Elements.Count)
+        {
+            return null;
+        }
+
+        return modified.ToDictionary(p => p.New.Id, p => State.WasText(p.Old, p.New), StringComparer.Ordinal);
+    }
+
     private static bool RepeatsItself(
         LadderNetwork old, LadderNetwork @new, LdBlock root, IReadOnlyDictionary<string, LdMark> marks)
     {
@@ -260,12 +299,12 @@ public static class LadderMerge
             }
 
             var leaf = Leaf(@new, NewPrefix, LdMark.Modified);
-            Was[leaf.Node.Id] = Describe(old, @new);
+            Was[leaf.Node.Id] = WasText(old, @new);
             return leaf;
         }
 
         /// <summary>What a modified element was, in the fewest words that say what changed.</summary>
-        private string Describe(LdNode old, LdNode @new)
+        internal static string WasText(LdNode old, LdNode @new)
         {
             switch (old, @new)
             {

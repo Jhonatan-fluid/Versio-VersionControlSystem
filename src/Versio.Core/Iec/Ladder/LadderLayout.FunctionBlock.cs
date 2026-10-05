@@ -33,8 +33,16 @@ public static partial class LadderLayout
     private const double FbdRowGap = 14;
     private const double FbdLeft = 8;
 
-    private static LadderDrawing LayFunctionBlock(LadderNetwork network)
+    private static LadderDrawing LayFunctionBlock(LadderNetwork network, IReadOnlyDictionary<string, string>? was)
     {
+        // A modified element of a merged view carries its "was" line, inside its own bounds,
+        // so every measurement below already includes it.
+        Drawn Element(LdNode node, double x, double top, ISet<LdPinRef> pinsWired, IReadOnlyList<double>? leftRows = null)
+        {
+            var drawn = DrawFunctionBlock(node, x, top, pinsWired, leftRows);
+            return was is not null && was.TryGetValue(node.Id, out var text) ? WithWas(drawn, text) : drawn;
+        }
+
         var wired = new HashSet<LdPinRef>(network.Nets.SelectMany(n => n.Ends));
         var nodes = network.Nodes.Where(n => n is not (LdLeftRail or LdLabel)).ToList();
         if (nodes.Count == 0)
@@ -94,7 +102,7 @@ public static partial class LadderLayout
         var deepest = level.Values.Max();
         int Column(string id) => level[id];
 
-        var measured = nodes.ToDictionary(n => n.Id, n => DrawFunctionBlock(n, 0, 0, wired), StringComparer.Ordinal);
+        var measured = nodes.ToDictionary(n => n.Id, n => Element(n, 0, 0, wired), StringComparer.Ordinal);
         var widths = new double[deepest + 1];
         foreach (var node in nodes)
         {
@@ -168,7 +176,7 @@ public static partial class LadderLayout
             }
 
             placed[node.Id] = y;
-            drawnAt[node.Id] = DrawFunctionBlock(node, 0, 0, wired, rows.GetValueOrDefault(node.Id));
+            drawnAt[node.Id] = Element(node, 0, 0, wired, rows.GetValueOrDefault(node.Id));
             cursor = Math.Max(cursor, y + drawnAt[node.Id].Group.Bounds.H + FbdRowGap);
         }
 
@@ -186,7 +194,7 @@ public static partial class LadderLayout
         var pins = new Dictionary<LdPinRef, (double X, double Y)>();
         foreach (var node in nodes)
         {
-            var drawn = DrawFunctionBlock(node, columnX[Column(node.Id)], placed[node.Id], wired, rows.GetValueOrDefault(node.Id));
+            var drawn = Element(node, columnX[Column(node.Id)], placed[node.Id], wired, rows.GetValueOrDefault(node.Id));
             groups.Add(drawn.Group);
             foreach (var (pin, point) in drawn.Pins)
             {

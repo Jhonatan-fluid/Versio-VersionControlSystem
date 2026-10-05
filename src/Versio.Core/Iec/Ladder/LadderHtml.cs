@@ -170,6 +170,33 @@ public static class LadderHtml
         html.Append("</section>\n");
     }
 
+    /// <summary>A changed network's merged drawing, and the marks that go on it.</summary>
+    private sealed record MergedView(LadderDrawing Drawing, IReadOnlyDictionary<string, LdMark> Marks);
+
+    /// <summary>
+    /// The merged drawing of an edited network, or null when it is drawn as two stacked versions.
+    /// </summary>
+    /// <remarks>
+    /// Ladder merges both versions onto one rung (<see cref="LadderMerge.Merge"/>), its removed
+    /// elements left in place. A function block diagram draws the new network once, its
+    /// modified boxes saying what they were, and only when nothing was removed
+    /// (<see cref="LadderMerge.FunctionBlockWas"/>).
+    /// </remarks>
+    private static MergedView? Merged(
+        LadderNetwork old, LadderNetwork @new, IReadOnlyDictionary<string, LdMark> newMarks, LadderStyle style)
+    {
+        if (@new.Language == LdLanguage.FunctionBlock)
+        {
+            return LadderMerge.FunctionBlockWas(old, @new) is { } was
+                ? new MergedView(LadderLayout.Lay(@new, style, was), newMarks)
+                : null;
+        }
+
+        return LadderMerge.Merge(old, @new) is { } rung
+            ? new MergedView(LadderLayout.LayMerged(rung, style), rung.Marks)
+            : null;
+    }
+
     /// <summary>
     /// One row of the merged view: a changed network drawn once with both versions on its rung,
     /// anything else as the one version it has.
@@ -177,13 +204,14 @@ public static class LadderHtml
     /// <remarks>
     /// A replaced network (removed, and an unrelated one written in its place) is two rungs in
     /// one row, the removed one above the added one: merging two unrelated rungs into one would
-    /// draw a rung that never existed. The same holds for a changed network with no
-    /// series/parallel shape on either side, which <see cref="LadderMerge"/> refuses to merge.
+    /// draw a rung that never existed. The same holds for a changed ladder network with no
+    /// series/parallel shape on either side, which <see cref="LadderMerge"/> refuses to merge, and
+    /// for a function block diagram that lost an element.
     /// </remarks>
     private static void MergedRow(StringBuilder html, LadderRow row, LadderStyle style)
     {
         var edited = row.Change is LadderChange.Changed or LadderChange.MovedAndChanged;
-        var merged = edited && row is { Old: { } o, New: { } n } ? LadderMerge.Merge(o.Network, n.Network) : null;
+        var merged = edited && row is { Old: { } o, New: { } n } ? Merged(o.Network, n.Network, row.New.Marks, style) : null;
         var stacked = row.Change == LadderChange.Replaced || (edited && merged is null);
         if (merged is null && !stacked)
         {
@@ -208,7 +236,7 @@ public static class LadderHtml
     }
 
     private static void Side(
-        StringBuilder html, LadderRow row, LadderSide? side, bool isOld, LadderStyle style, LadderMergedNetwork? merged = null)
+        StringBuilder html, LadderRow row, LadderSide? side, bool isOld, LadderStyle style, MergedView? merged = null)
     {
         var which = isOld ? "ld-old" : "ld-new";
         if (side is null)
@@ -282,7 +310,7 @@ public static class LadderHtml
             html.Append("<p class=\"ld-comment ld-was-text\">").Append(E(other.Network.Comment)).Append("</p>\n");
         }
 
-        var drawing = merged is null ? LadderLayout.Lay(network, style) : LadderLayout.LayMerged(merged, style);
+        var drawing = merged?.Drawing ?? LadderLayout.Lay(network, style);
         if (drawing.FallbackReason is { } reason)
         {
             html.Append("<p class=\"ld-fallback\">Placed by power-flow order rather than as rungs: ")
