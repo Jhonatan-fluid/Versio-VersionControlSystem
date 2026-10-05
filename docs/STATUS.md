@@ -60,9 +60,9 @@ marking, duplicate-param keys, and the detail-pane lookup. All of them are in
 
 | Project | Tests | Time | Needs |
 |---|---|---|---|
-| `Versio.Core.Tests` | 1,637 | under a second | nothing |
+| `Versio.Core.Tests` | 1,643 | under a second | nothing |
 | `Versio.Integration.Tests` | 168 | ~10 s | real git |
-| `Versio.App.Tests` | 767 | 8 m 38 s on 2026-10-05; ~3.6 min on 2026-09-22 | nothing |
+| `Versio.App.Tests` | 769 | 8 m 38 s on 2026-10-05; ~3.6 min on 2026-09-22 | nothing |
 | `Versio.Arch.Tests` | 27 | instant | nothing |
 | `Versio.Plc.Codesys.Pure.Tests` | 263 | under a second | nothing |
 | `Versio.Plc.Codesys.Parity.Tests` | 97 | ~15 s | `python` on PATH — skips cleanly without it, so check the count |
@@ -291,7 +291,9 @@ One list. Reorder it; do not copy it into another file.
      layout (boxes wired left to right, no rail).~~ — **drawn 2026-10-05 on `FbdRendering`.**
      All 127 fixture networks parse and draw within the invariants, and three blocks are
      approved drawings. See `vendors/tia/DRIVING.md`, "Graphical blocks". Left:
-     - **an FBD merged view.** A changed FBD network is old above new today;
+     - ~~**an FBD merged view.** A changed FBD network is old above new today~~ — **drawn
+       once since 2026-10-05**, with modified boxes saying what they were. A network that lost
+       a box is still old above new: a removed box needs a design of its own;
      - **owner eyeball** of the FBD scenarios (`40_` to `44_` in the scratch repository).
    - **Other vendors.** CODESYS `NetworkList` and TwinCAT PLCopen `<LD>` are each one parser
      in their own pack behind `TryParseLadder`. PLCopen's reader belongs in `Versio.Core/Iec/`,

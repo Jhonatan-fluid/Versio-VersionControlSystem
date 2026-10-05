@@ -426,9 +426,16 @@ trees. All 127 draw within the shared invariants. `Cyclic interrupt`, `P100` and
 are pinned as approved drawings (`Fixture_*.approved.html`), from Portal's own output rather
 than hand-written XML.
 
-A changed FBD network is drawn old above new, each marked, not merged into one diagram. One
-wire per input pin leaves a removed subtree nowhere to hang beside the one that replaced it.
-That is a design question of its own, and it is on the STATUS queue.
+**A changed FBD network is drawn once** when nothing was removed (owner feedback,
+2026-10-05; the first cut stacked every changed network, so one renamed title drew a whole
+network twice):
+- modified boxes are amber, with "was ..." under them;
+- added boxes are green;
+- a changed title or comment says what it was.
+
+When a box was removed, the network is drawn old above new. One wire per input pin leaves a
+removed box nowhere to hang beside the one that replaced it. A **deleted** block draws its
+committed networks, every one removed, rather than opening on red XML.
 
 **How SimaticML says a ladder network**, as the parser reads it:
 
