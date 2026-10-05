@@ -75,8 +75,32 @@ public sealed record MemberRow
 
     public bool HasLink => LinkGuid is not null;
 
+    /// <summary>How this row differs from the last commit; <see cref="MemberChange.None"/> when unknown.</summary>
+    public MemberChange Change { get; init; }
+
+    /// <summary>
+    /// What the row said at the last commit, for a modified or removed row; empty otherwise.
+    /// Shown on hover, so the table answers "changed from what" without a trip to Raw.
+    /// </summary>
+    public string Was { get; init; } = string.Empty;
+
+    public bool IsAdded => Change == MemberChange.Added;
+
+    public bool IsModified => Change == MemberChange.Modified;
+
+    public bool IsRemoved => Change == MemberChange.Removed;
+
     /// <summary>What the NAME column draws: the leaf, padded by depth.</summary>
     public string DisplayName => new string('\u00A0', Math.Max(0, Depth) * 2) + Name;
+}
+
+/// <summary>How a member row differs from the same object at the last commit.</summary>
+public enum MemberChange
+{
+    None,
+    Added,
+    Modified,
+    Removed,
 }
 
 /// <summary>
@@ -120,6 +144,14 @@ public sealed record MemberTable
         Number.Length == 0 ? string.Empty : "Number " + Number;
 
     public bool HasMemoryLayout => MemoryLayout.Length > 0;
+
+    /// <summary>
+    /// One sentence on what changed since the last commit, or empty when nothing did or
+    /// nobody compared. Set by <see cref="MemberTableDiff.Compare"/>.
+    /// </summary>
+    public string ChangeSummary { get; init; } = string.Empty;
+
+    public bool HasChangeSummary => ChangeSummary.Length > 0;
 
     /// <summary>The layout with its name: a bare "Optimized" under a title read as a status.</summary>
     public string MemoryLayoutCaption =>

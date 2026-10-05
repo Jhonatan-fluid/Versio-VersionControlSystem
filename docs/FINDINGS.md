@@ -66,6 +66,23 @@ found two more things.**
   `BEGIN`), keeping file line numbers so it matches Raw. The bare "Optimized" under the title
   reads "Memory layout: Optimized".
 
+**Then the point of it (same day).** A link took the owner to the changed UDT - on its raw
+diff, 23 lines of SCL attribute blocks around one change. "That's the whole point, it needs
+to show on the table ... rendered first always, raw view optional."
+
+- **Rendered first, always.** `ShowRendered` used to default to Raw for a changed file
+  ("the diff is what review is"). That held while Rendered could not show a change; it now
+  can, so every selection with a rendered view opens on it. `RenderedPaneFlowTests` pinned
+  the old rule and now pins the new one.
+- **The table marks what changed since the last commit.** After a changed object's table is
+  drawn, the same file at HEAD is parsed by the same format and compared
+  (`MemberTableDiff`, Core, 6 tests): matched by section and path, never position, so an
+  insertion marks one row rather than every row under it. Added rows green, changed amber
+  with the committed value on hover, removed rows struck through where they used to be, and
+  one summary line under the title. An object that changed outside its members (a comment
+  in the SCL) says that, rather than a "modified" row over an unmarked table. Late results
+  are dropped if the selection moved. Disabling the swap turns two flow tests red (checked).
+
 **And one older defect found by looking at it.** "Select a file to see what changed" sits
 behind the diff and assumed whatever covers it is opaque. The interface split is not, so the
 sentence showed through the code pane while the diff loaded. It now hides whenever a rendered

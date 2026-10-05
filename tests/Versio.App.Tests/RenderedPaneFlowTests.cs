@@ -242,7 +242,7 @@ public sealed class RenderedPaneFlowTests
     }
 
     [Fact]
-    public async Task A_changed_file_defaults_to_the_raw_diff()
+    public async Task A_changed_file_opens_rendered_first()
     {
         using var repo = new TempRepo();
         GivenATrackedProject(repo);
@@ -257,10 +257,11 @@ public sealed class RenderedPaneFlowTests
 
         shell.Sync.SelectedNode = await Row(shell, "FB_Motor");
 
-        // The rendered view exists — the user can flip to it — but the diff is what
-        // review is, so it opens underneath.
+        // Rendered first, always (owner, 2026-10-05). This used to open on the diff "because
+        // the diff is what review is"; once a table can mark its own changes that hid the
+        // answer behind the question. Raw is one click away.
         Assert.True(shell.HasRenderedView);
-        Assert.False(shell.ShowRendered);
+        Assert.True(shell.ShowRendered);
     }
 
     [Fact]

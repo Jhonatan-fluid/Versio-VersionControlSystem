@@ -1253,6 +1253,16 @@
                                                    FontFamily="{DynamicResource Font.UI}"
                                                    FontSize="{DynamicResource Font.Size.Caption}"
                                                    Foreground="{DynamicResource Brush.Text.Disabled}" />
+                                        <!-- What changed since the last commit, in one line, over
+                                             the rows that are marked. Absent on a clean object. -->
+                                        <TextBlock Text="{Binding ChangeSummary}"
+                                                   AutomationProperties.Name="Changes since the last commit"
+                                                   TextWrapping="Wrap" Margin="0,-4,0,8"
+                                                   FontFamily="{DynamicResource Font.UI}"
+                                                   FontSize="{DynamicResource Font.Size.Caption}"
+                                                   Foreground="{DynamicResource Brush.Status.Modified}"
+                                                   Visibility="{Binding HasChangeSummary,
+                                                       Converter={StaticResource BoolToVisibility}}" />
                                         <Border BorderBrush="{DynamicResource Brush.Border.Subtle}"
                                                 BorderThickness="1"
                                                 SnapsToDevicePixels="True"
@@ -1304,13 +1314,48 @@
                                                                            Visibility="{Binding ReferenceChanged,
                                                                                Converter={StaticResource BoolToVisibility}}" />
 
+                                                                <!-- The row's own change since the last commit, in
+                                                                     the diff's colours: added green, changed amber,
+                                                                     removed red and struck through below. What it
+                                                                     was rides on the row's tooltip. -->
+                                                                <Rectangle Grid.ColumnSpan="5" IsHitTestVisible="False"
+                                                                           Fill="{DynamicResource Brush.Diff.AddedBg}"
+                                                                           Visibility="{Binding IsAdded,
+                                                                               Converter={StaticResource BoolToVisibility}}" />
+                                                                <Rectangle Grid.ColumnSpan="5" IsHitTestVisible="False"
+                                                                           Fill="{DynamicResource Brush.Status.Modified}"
+                                                                           Opacity="0.22"
+                                                                           Visibility="{Binding IsModified,
+                                                                               Converter={StaticResource BoolToVisibility}}" />
+                                                                <Rectangle Grid.ColumnSpan="5" IsHitTestVisible="False"
+                                                                           Fill="{DynamicResource Brush.Diff.DeletedBg}"
+                                                                           Visibility="{Binding IsRemoved,
+                                                                               Converter={StaticResource BoolToVisibility}}" />
+
                                                                 <Border Style="{StaticResource MemberTableCell}">
                                                                     <TextBlock Text="{Binding DisplayName}"
                                                                                TextTrimming="CharacterEllipsis"
-                                                                               ToolTip="{Binding Path=Path}"
                                                                                FontFamily="{DynamicResource Font.Mono}"
                                                                                FontSize="{DynamicResource Font.Size.Caption}"
-                                                                               Foreground="{DynamicResource Brush.Text.Primary}" />
+                                                                               Foreground="{DynamicResource Brush.Text.Primary}">
+                                                                        <TextBlock.Style>
+                                                                            <Style TargetType="TextBlock">
+                                                                                <Setter Property="ToolTip" Value="{Binding Path=Path}" />
+                                                                                <Style.Triggers>
+                                                                                    <!-- Changed or removed: the hover answers
+                                                                                         "from what", the reason a reader would
+                                                                                         otherwise go to Raw. -->
+                                                                                    <DataTrigger Binding="{Binding IsModified}" Value="True">
+                                                                                        <Setter Property="ToolTip" Value="{Binding Was}" />
+                                                                                    </DataTrigger>
+                                                                                    <DataTrigger Binding="{Binding IsRemoved}" Value="True">
+                                                                                        <Setter Property="ToolTip" Value="{Binding Was}" />
+                                                                                        <Setter Property="TextDecorations" Value="Strikethrough" />
+                                                                                    </DataTrigger>
+                                                                                </Style.Triggers>
+                                                                            </Style>
+                                                                        </TextBlock.Style>
+                                                                    </TextBlock>
                                                                 </Border>
                                                                 <Border Grid.Column="1" Style="{StaticResource MemberTableCell}">
                                                                     <Grid>

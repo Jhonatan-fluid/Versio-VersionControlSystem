@@ -393,12 +393,53 @@ public sealed class MemberTablePaneFlowTests
         Assert.All(Ancestors(shell.Sync.Tree, selected), a => Assert.True(a.IsExpanded, a.Name + " stayed shut"));
         Assert.False((await Row(shell, "Motor")).IsSelected);
 
-        // Changed, so it opens where a changed object opens: on its diff.
-        Assert.True(shell.ShowRawPane);
+        // Rendered first, always - and the table says what changed. Here only the SCL got a
+        // comment, so the members are the same and the table says so rather than marking
+        // nothing under a row that reads "modified". The line-level diff waits on Raw.
+        Assert.True(shell.ShowRenderedPane);
+        await Eventually.Until(
+            () => shell.RenderedContent is MemberTable { ChangeSummary: var s }
+                  && s.Contains("not in its members", StringComparison.Ordinal),
+            "the table says the change is outside its members");
         await Eventually.Until(
             () => shell.SelectedDiffPath?.EndsWith("AnaVal.udt", StringComparison.OrdinalIgnoreCase) == true
                   && shell.SelectedDiff.Contains("// edited", StringComparison.Ordinal),
-            "the type's diff is on screen");
+            "the type's diff is ready on Raw");
+    }
+
+    [Fact]
+    public async Task A_changed_member_is_marked_on_the_table_with_what_it_was()
+    {
+        // The owner's point, 2026-10-05: "it needs to show on the table". A default value
+        // changed in the type's native file; the table marks that row and keeps the old value.
+        using var repo = new TempRepo(identity: true);
+        GivenATrackedPortalProject(repo);
+        CommitTheDataType(repo);
+
+        var xml = Path.Combine(repo.Path, "plc", "Station", "Types", "AnaVal.xml");
+        File.WriteAllText(xml, File.ReadAllText(xml)
+            .Replace("BYTE#16#80", "BYTE#16#00", StringComparison.Ordinal)
+            .Replace("<Member Name=\"Value\" Datatype=\"Real\" />",
+                     "<Member Name=\"Value\" Datatype=\"Real\" /><Member Name=\"Quality\" Datatype=\"Int\" />",
+                     StringComparison.Ordinal));
+
+        using var shell = Shell();
+        await shell.OpenAsync(repo.Path);
+        shell.Sync.SelectedNode = await Row(shell, "AnaVal");
+
+        Assert.True(shell.ShowRenderedPane);
+        await Eventually.Until(
+            () => shell.RenderedContent is MemberTable { HasChangeSummary: true },
+            "the table was marked");
+
+        var table = Assert.IsType<MemberTable>(shell.RenderedContent);
+        Assert.Equal("Since the last commit: 1 changed, 1 added - marked below.", table.ChangeSummary);
+
+        var st = Assert.Single(table.Members, m => m.Name == "ST");
+        Assert.True(st.IsModified);
+        Assert.Contains("BYTE#16#80", st.Was, StringComparison.Ordinal);
+        Assert.True(Assert.Single(table.Members, m => m.Name == "Quality").IsAdded);
+        Assert.Equal(MemberChange.None, Assert.Single(table.Members, m => m.Name == "Value").Change);
     }
 
     private static IEnumerable<TreeRow> Ancestors(IEnumerable<TreeRow> roots, TreeRow target)
@@ -453,11 +494,11 @@ public sealed class MemberTablePaneFlowTests
         using var shell = Shell();
         await shell.OpenAsync(repo.Path);
         shell.Sync.SelectedNode = await Row(shell, "Motor");
-        var before = shell.RenderedContent;
-
         await shell.OpenObjectAsync("no-such-guid");
 
-        Assert.Same(before, shell.RenderedContent);
+        // Compared by name, not by instance: the table may be swapped for its change-marked
+        // copy while this runs, which is the same view of the same block.
+        Assert.Equal("Motor", Assert.IsType<InterfaceRender>(shell.RenderedContent).Table.Name);
 
         // And the rail stayed put: a link to nothing does not move anybody to another panel.
         Assert.Equal(ShellPanel.Project, shell.ActivePanel);

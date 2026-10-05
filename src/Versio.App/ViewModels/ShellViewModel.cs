@@ -6594,14 +6594,21 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
 
     public bool HasWebPage => _webPagePath is not null;
 
-    /// <summary>Which tab is showing. Defaults per selection, not sticky.</summary>
+    /// <summary>Which tab is showing. Set per selection, not sticky.</summary>
     /// <remarks>
-    /// A changed file opens on Raw, because the diff is what review is; anything clean opens
-    /// on Rendered, because the diff of a clean file is nothing and the content is the
-    /// answer. A sticky choice was considered and dropped: which view reads better is a fact
-    /// about the file in front of you, not about the person. The web page is never the
-    /// default: running somebody's HTML is something to choose, not something a click on a
-    /// row should do.
+    /// <para>
+    /// <b>Rendered first, always, whenever there is a rendered view.</b> It used to be "a
+    /// changed file opens on Raw, because the diff is what review is". That held while Rendered
+    /// could not show a change; once a member table marks what changed since the last commit,
+    /// opening a changed UDT on twenty-three lines of SCL diff hid the answer behind the
+    /// question. The owner, 2026-10-05: "rendered first always, raw view optional." Raw stays
+    /// one click away for the line-level diff.
+    /// </para>
+    /// <para>
+    /// A sticky choice was considered and dropped: which view reads better is a fact about the
+    /// file in front of you, not about the person. The web page is never the default: running
+    /// somebody's HTML is something to choose, not something a click on a row should do.
+    /// </para>
     /// </remarks>
     public bool ShowRendered
     {
@@ -6972,8 +6979,94 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         return null;
     }
 
+    /// <summary>
+    /// The format and file the last member table was parsed from, so its committed copy can be
+    /// parsed the same way. Reset on every build: a selection with no table must not inherit
+    /// the previous one's source.
+    /// </summary>
+    private (IPlcProjectFormat Format, string File)? _tableSource;
+
+    /// <summary>
+    /// Mark the shown table with what changed since the last commit.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The owner, 2026-10-05, after a type link landed on a changed UDT's raw diff: "that's
+    /// the whole point, it needs to show on the table." The committed copy of the file the
+    /// table came from is parsed by the same format and compared by
+    /// <see cref="MemberTableDiff"/>; the marked table replaces the plain one in place.
+    /// </para>
+    /// <para>
+    /// After the pane is drawn, not before it: reading HEAD is a git call, and the table is
+    /// worth seeing at once. Dropped if the selection moved while git worked - landing late
+    /// would mark a table nobody is looking at, or replace the one they are. A file with no
+    /// committed copy is new, so every member is added. An object that changed outside its
+    /// members (a comment, an attribute) says so, rather than showing a table with nothing
+    /// marked under a row that says "modified".
+    /// </para>
+    /// </remarks>
+    private async Task MarkTableChangesAsync(IPlcProjectFormat format, string file, object? shown)
+    {
+        if (_git is null || shown is null)
+        {
+            return;
+        }
+
+        string head;
+        try
+        {
+            head = await _git.ShowAtHeadAsync(file, CancellationToken.None).ConfigureAwait(true);
+        }
+        catch (Exception ex)
+        {
+            _logger.Warn(LogCategory.Git, $"could not read {file} at HEAD to mark its table: {ex.Message}");
+            return;
+        }
+
+        if (!ReferenceEquals(RenderedContent, shown))
+        {
+            return;
+        }
+
+        var current = shown switch
+        {
+            InterfaceRender i => i.Table,
+            MemberTable t => t,
+            _ => null,
+        };
+
+        if (current is null)
+        {
+            return;
+        }
+
+        var baseline = head.Length == 0
+            ? new MemberTable { Name = current.Name }
+            : format.TryParseMemberTable(file, head);
+
+        if (baseline is null)
+        {
+            _logger.Debug(LogCategory.Ui, $"{file} at HEAD is not a member table; nothing to mark");
+            return;
+        }
+
+        var marked = MemberTableDiff.Compare(baseline, current);
+        if (!marked.HasChangeSummary)
+        {
+            marked = marked with
+            {
+                ChangeSummary = "Changed since the last commit, but not in its members - the difference is on Raw.",
+            };
+        }
+
+        _logger.Debug(LogCategory.Ui, $"member table {current.Name}: {marked.ChangeSummary}");
+        RenderedContent = shown is InterfaceRender render ? render with { Table = marked } : marked;
+    }
+
     private object? BuildRenderedContent(TreeRow row)
     {
+        _tableSource = null;
+
         if (RepositoryPath is not { } root)
         {
             return null;
@@ -7065,6 +7158,7 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
                             && format.TryParseMemberTable(file, text) is { IsValid: true } parsed)
                         {
                             var table = LinkTypes(parsed, file);
+                            _tableSource = (format, file);
 
                             // A code block is its interface AND its code. The table alone
                             // would take the code out of the Rendered tab it was always in,
@@ -7458,12 +7552,17 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
             return;
         }
 
-        // The rendered half, beside whatever the raw half loads below. Defaulted per
-        // selection: a changed file opens on its diff, a clean one on its content —
-        // see ShowRendered's remark. The explorer always visualizes.
+        // The rendered half, beside whatever the raw half loads below. Rendered first,
+        // always, whenever there is one - see ShowRendered's remark for why that changed.
         RenderedContent = BuildRenderedContent(row);
         WebPagePath = WebPageFor(row.PrimaryFile);
-        ShowRendered = HasRenderedView && (visualizeOnly || row.Node.Status == ChangeKind.Unmodified);
+        ShowRendered = HasRenderedView;
+
+        // A changed object's table learns what changed once the committed copy is read.
+        if (_tableSource is { } tableSource && row.Node.Status != ChangeKind.Unmodified)
+        {
+            _ = MarkTableChangesAsync(tableSource.Format, tableSource.File, RenderedContent);
+        }
 
         if (visualizeOnly)
         {
