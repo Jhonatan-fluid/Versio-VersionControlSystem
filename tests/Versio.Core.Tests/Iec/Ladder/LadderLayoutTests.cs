@@ -179,6 +179,70 @@ public sealed class LadderLayoutTests
     }
 
     [Fact]
+    public void A_wide_rung_and_a_wide_box_keep_every_invariant()
+    {
+        // Twenty contacts in series, then a box with twelve pins: the drawing grows sideways
+        // and the page scrolls it, rather than squeezing labels together.
+        var box = new LdBox("box", "WIDE", Enumerable.Range(0, 12)
+            .Select(i => new LdPin(i == 0 ? "en" : $"in{i}", LdPinDirection.Input, i == 0 ? null : $"#value_{i}"))
+            .Append(new LdPin("eno", LdPinDirection.Output))
+            .ToList());
+        var items = Enumerable.Range(0, 20).Select(i => L(No($"c{i}", $"Contact_{i}"))).ToList();
+        var network = FromTree(new LdSeries([.. items, L(box), L(Coil("q", "Out"))]));
+        var fixedBox = network with
+        {
+            Nets = network.Nets
+                .Select(n => new LdNet(n.Ends.Select(e => e.NodeId == "box"
+                    ? new LdPinRef("box", e.Pin == "IN" ? "en" : "eno")
+                    : e).ToList()))
+                .ToList(),
+        };
+
+        var drawing = Lay(fixedBox);
+
+        AssertInvariants(drawing, "wide");
+        Assert.True(drawing.Width > 20 * 88, "twenty contacts are not squeezed into less than their cells");
+    }
+
+    [Fact]
+    public void Ten_nested_branches_keep_every_invariant()
+    {
+        LdBlock Nest(int depth) => depth == 0
+            ? L(No("leaf", "Deepest"))
+            : P(S(L(No($"a{depth}", $"A_{depth}")), Nest(depth - 1)), L(No($"b{depth}", $"B_{depth}")));
+
+        var drawing = Lay(FromTree(S(Nest(10), L(Coil("q", "Out")))));
+
+        AssertInvariants(drawing, "tall");
+    }
+
+    [Fact]
+    public void A_block_of_120_networks_compares_and_draws_quickly()
+    {
+        // The plan's bound for the pane is 300 ms. The test allows ten times that, because a
+        // test runner on a loaded machine is not the measurement; the log line is. A regression
+        // to quadratic-in-networks would still blow through it.
+        var networks = Enumerable.Range(1, 120)
+            .Select(i => FromTree(S(L(No($"a{i}", $"Start_{i}")), P(L(No($"b{i}", $"Seal_{i}")), L(Nc($"c{i}", $"Stop_{i}"))),
+                L(Timer($"t{i}", $"\"Delay_{i}\"")), L(Coil($"q{i}", $"Out_{i}"))), i))
+            .ToList();
+        var old = new LadderBody("Long", networks);
+        var @new = new LadderBody("Long", networks.Select((n, i) => i % 10 == 0 ? Renamed(n) : n).ToList());
+
+        var clock = System.Diagnostics.Stopwatch.StartNew();
+        var html = LadderHtml.Fragment(LadderDiff.Compare(old, @new), LadderStyle.Default);
+        clock.Stop();
+
+        Assert.Contains("12 changed", html, StringComparison.Ordinal);
+        Assert.True(clock.ElapsedMilliseconds < 3000, $"120 networks took {clock.ElapsedMilliseconds} ms");
+
+        static LadderNetwork Renamed(LadderNetwork n) => n with
+        {
+            Nodes = n.Nodes.Select(x => x is LdCoil c ? c with { Operand = c.Operand + "_v2" } : x).ToList(),
+        };
+    }
+
+    [Fact]
     public void The_invariants_catch_an_overlap()
     {
         // The check checks something: two elements drawn on top of each other must fail it.
