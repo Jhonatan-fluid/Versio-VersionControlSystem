@@ -393,8 +393,11 @@ import, system blocks, VCI, Project Server, compile-after-import.
 LAD and FBD blocks get no `.scl`. `LooksLikeScl` refuses them, so their SimaticML is
 `NATIVE` and was shown as highlighted XML. From 2026-10-05 a **LAD** block's Rendered tab
 draws its networks:
-- the working copy beside the committed one, networks matched by content;
-- an OB alone, an FB or FC under its interface table.
+- networks are matched by content;
+- by default a changed network is one merged rung, with deleted elements left in place and
+  marked;
+- the pane's Side by side box puts the committed copy beside the working one;
+- an OB is drawn alone, an FB or FC under its interface table.
 
 `TiaPortalLadderParser` (Pure pack) reads the XML into the neutral model in
 `Versio.Core.Iec.Ladder`. Everything after that (structure, layout, diff, SVG) is shared

@@ -60,13 +60,13 @@ marking, duplicate-param keys, and the detail-pane lookup. All of them are in
 
 | Project | Tests | Time | Needs |
 |---|---|---|---|
-| `Versio.Core.Tests` | 1,614 | under a second | nothing |
+| `Versio.Core.Tests` | 1,632 | under a second | nothing |
 | `Versio.Integration.Tests` | 168 | ~10 s | real git |
-| `Versio.App.Tests` | 766 | 8 m 38 s on 2026-10-05; ~3.6 min on 2026-09-22 | nothing |
+| `Versio.App.Tests` | 767 | 8 m 38 s on 2026-10-05; ~3.6 min on 2026-09-22 | nothing |
 | `Versio.Arch.Tests` | 27 | instant | nothing |
 | `Versio.Plc.Codesys.Pure.Tests` | 263 | under a second | nothing |
 | `Versio.Plc.Codesys.Parity.Tests` | 97 | ~15 s | `python` on PATH — skips cleanly without it, so check the count |
-| `Versio.Plc.TiaPortal.Pure.Tests` | 84 | instant | nothing |
+| `Versio.Plc.TiaPortal.Pure.Tests` | 85 | instant | nothing |
 | `Versio.Plc.TiaPortal.Tests` | 5 | seconds when skipped; minutes when Portal runs the import gate | **real TIA Portal** — skips without Openness membership or LFS content |
 | `Versio.Plc.TwinCat.Pure.Tests` | 21 | instant | nothing |
 | `Versio.Plc.TwinCat.Tests` | 6 | seconds when skipped; ~5 min when XAE runs the import gate | **real TwinCAT XAE** — skips without `TcXaeShell.DTE.17.0` or the fixture |
@@ -262,8 +262,18 @@ One list. Reorder it; do not copy it into another file.
    [`vendors/tia/DRIVING.md`](vendors/tia/DRIVING.md), "Graphical blocks". Core holds the
    neutral model, layout, diff and SVG (`Versio.Core.Iec.Ladder`); TIA holds one parser; the
    app holds one view. Left, in order:
+   - **Merged by default (owner feedback, 2026-10-05).** A changed network is one rung with
+     both versions on it:
+     - deleted elements stay where they stood, red, dashed and struck;
+     - added elements are green;
+     - modified elements are amber, with "was …" underneath.
+
+     The pane's **Side by side** box, which did nothing to a ladder, now switches to two
+     columns. A merge that would draw an unchanged element twice (the rung's shape changed
+     under the edit) is refused and drawn as two stacked rungs. An equal title now counts
+     0.25 towards "same network", up from 0.1. See `LadderMerge` and `LadderDiff.TitleBonus`.
    - **Owner eyeball.** Open a changed LAD block, and check four things:
-     - the old version sits beside the new, and narrowing the pane stacks them;
+     - merged by default; ticking Side by side puts old beside new, and narrowing the pane stacks them;
      - Ctrl+wheel zooms and F7 steps through the changes;
      - a rung deleted with another written in its place reads as removed + added, not changed;
      - both themes.
