@@ -10,7 +10,33 @@ namespace Versio.App.Views.Panels;
 /// </summary>
 public partial class ExplorerPanelView : UserControl
 {
-    public ExplorerPanelView() => InitializeComponent();
+    public ExplorerPanelView()
+    {
+        InitializeComponent();
+
+        // The same as the project panel: a type link selects in this tree from code, and
+        // only the view can scroll a virtualized row into existence. See TreeReveal.
+        DataContextChanged += (_, e) =>
+        {
+            if (e.OldValue is ShellViewModel old)
+            {
+                old.RevealInTree -= OnRevealInTree;
+            }
+
+            if (e.NewValue is ShellViewModel shell)
+            {
+                shell.RevealInTree += OnRevealInTree;
+            }
+        };
+    }
+
+    private void OnRevealInTree(ShellPanel panel, IReadOnlyList<TreeRow> chain)
+    {
+        if (panel == ShellPanel.Explorer)
+        {
+            TreeReveal.Bring(ExplorerTree, chain);
+        }
+    }
 
     /// <summary>Put the caret in this panel's find box (Ctrl+F).</summary>
     /// <remarks>

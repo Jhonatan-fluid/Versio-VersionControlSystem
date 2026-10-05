@@ -14,7 +14,34 @@ namespace Versio.App.Views.Panels;
 /// </remarks>
 public partial class ProjectPanelView : UserControl
 {
-    public ProjectPanelView() => InitializeComponent();
+    public ProjectPanelView()
+    {
+        InitializeComponent();
+
+        // A type link selects its target in this tree from code; scrolling it into view is
+        // the view's half (see TreeReveal). Moved off the old shell when the context changes,
+        // so a replaced shell is not kept alive by this panel.
+        DataContextChanged += (_, e) =>
+        {
+            if (e.OldValue is ShellViewModel old)
+            {
+                old.RevealInTree -= OnRevealInTree;
+            }
+
+            if (e.NewValue is ShellViewModel shell)
+            {
+                shell.RevealInTree += OnRevealInTree;
+            }
+        };
+    }
+
+    private void OnRevealInTree(ShellPanel panel, IReadOnlyList<TreeRow> chain)
+    {
+        if (panel == ShellPanel.Project)
+        {
+            TreeReveal.Bring(ProjectTree, chain);
+        }
+    }
 
     /// <summary>Put the caret in this panel's find box (Ctrl+F).</summary>
     /// <remarks>

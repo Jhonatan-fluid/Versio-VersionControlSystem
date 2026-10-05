@@ -46,7 +46,7 @@
                         </Style>
                     </TextBlock.Style>
                 </TextBlock>
-                <TreeView ItemsSource="{Binding Explorer.Tree}"
+                <TreeView x:Name="ExplorerTree" ItemsSource="{Binding Explorer.Tree}"
                           AutomationProperties.Name="Repository contents"
                           Background="Transparent" BorderThickness="0"
                           VirtualizingStackPanel.IsVirtualizing="True"

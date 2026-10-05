@@ -1241,7 +1241,7 @@
                                                    Foreground="{DynamicResource Brush.Text.Disabled}"
                                                    Visibility="{Binding HasNumber,
                                                        Converter={StaticResource BoolToVisibility}}" />
-                                        <TextBlock Text="{Binding MemoryLayout}"
+                                        <TextBlock Text="{Binding MemoryLayoutCaption}"
                                                    Margin="0,2,0,0"
                                                    FontFamily="{DynamicResource Font.UI}"
                                                    FontSize="{DynamicResource Font.Size.Caption}"

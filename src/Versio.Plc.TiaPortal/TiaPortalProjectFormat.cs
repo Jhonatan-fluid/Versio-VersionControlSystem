@@ -223,4 +223,28 @@ public sealed class TiaPortalProjectFormat : IPlcProjectFormat
 
     public MemberTable? TryParseMemberTable(string relativePath, string content) =>
         TiaPortalMemberTableParser.TryParse(relativePath, content);
+
+    /// <summary>
+    /// An SCL block's code starts on its <c>BEGIN</c> line: everything above is the header and
+    /// the VAR sections the interface table already shows. Only for <c>.scl</c>, and only a
+    /// line that is <c>BEGIN</c> alone - the keyword inside a comment or a string is not it.
+    /// </summary>
+    public int? CodeStartLine(string relativePath, string content)
+    {
+        if (!relativePath.EndsWith(".scl", StringComparison.OrdinalIgnoreCase))
+        {
+            return null;
+        }
+
+        var lines = content.Replace("\r\n", "\n", StringComparison.Ordinal).Split('\n');
+        for (var i = 0; i < lines.Length; i++)
+        {
+            if (string.Equals(lines[i].Trim(), "BEGIN", StringComparison.OrdinalIgnoreCase))
+            {
+                return i;
+            }
+        }
+
+        return null;
+    }
 }

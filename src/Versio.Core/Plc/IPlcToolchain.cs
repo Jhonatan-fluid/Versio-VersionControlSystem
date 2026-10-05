@@ -250,6 +250,19 @@ public interface IPlcProjectFormat
     /// </para>
     /// </remarks>
     Projects.MemberTable? TryParseMemberTable(string relativePath, string content) => null;
+
+    /// <summary>
+    /// The zero-based line where a block's code begins in its readable source, after the
+    /// declaration a member table already shows; null when the format cannot say.
+    /// </summary>
+    /// <remarks>
+    /// Asked only once a member table drew the block's interface. Without it the code pane
+    /// under the table repeats the whole declaration - the owner's FC on 2026-10-05 showed
+    /// its thirteen header lines twice, once as a table and once as text. Where code begins
+    /// is the language's business (an SCL <c>BEGIN</c>, say), so the format answers; null
+    /// keeps the whole file, which is the honest fallback.
+    /// </remarks>
+    int? CodeStartLine(string relativePath, string content) => null;
 }
 
 /// <summary>

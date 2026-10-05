@@ -283,7 +283,7 @@
                                 ToolTip="Copy a repository from a server" />
                     </StackPanel>
                 </StackPanel>
-                <TreeView ItemsSource="{Binding Sync.Tree}"
+                <TreeView x:Name="ProjectTree" ItemsSource="{Binding Sync.Tree}"
                           AutomationProperties.Name="Project contents"
                           Background="Transparent" BorderThickness="0"
                           VirtualizingStackPanel.IsVirtualizing="True"

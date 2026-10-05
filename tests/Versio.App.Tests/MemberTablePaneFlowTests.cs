@@ -145,7 +145,7 @@ public sealed class MemberTablePaneFlowTests
           "vendor": "TiaPortal",
           "bindingId": "b1",
           "project": "Station.ap21",
-          "objectCount": 4,
+          "objectCount": 5,
           "objects": [
             { "guid": "db1", "name": "Limits", "type": "DB", "form": "NATIVE",
               "path": "Blocks/Limits.xml", "hash": "sha256:0", "bytes": 1 },
@@ -153,6 +153,8 @@ public sealed class MemberTablePaneFlowTests
               "path": "Blocks/Pid.scl", "hash": "sha256:0", "bytes": 1 },
             { "guid": "db2", "name": "Pid", "type": "DB", "form": "NATIVE",
               "path": "Blocks/Pid.xml", "hash": "sha256:0", "bytes": 1 },
+            { "guid": "fb1", "name": "Motor", "type": "FB", "form": "SCL",
+              "path": "Blocks/Motor.scl", "hash": "sha256:0", "bytes": 1 },
             { "guid": "fb1", "name": "Motor", "type": "FB", "form": "NATIVE",
               "path": "Blocks/Motor.xml", "hash": "sha256:0", "bytes": 1 },
             { "guid": "udt1", "name": "AnaVal", "type": "UDT", "form": "SCL",
@@ -170,6 +172,18 @@ public sealed class MemberTablePaneFlowTests
         File.WriteAllText(Path.Combine(blocks, "Pid.scl"),
             "DATA_BLOCK \"Pid\"\nVAR\nEND_VAR\n");
         File.WriteAllText(Path.Combine(blocks, "Motor.xml"), FunctionBlock);
+        File.WriteAllLines(Path.Combine(blocks, "Motor.scl"),
+        [
+            "FUNCTION_BLOCK \"Motor\"",
+            "VERSION : 0.1",
+            "   VAR_INPUT",
+            "      Enable : Bool;",
+            "   END_VAR",
+            "",
+            "BEGIN",
+            "   #Enable := TRUE;",
+            "END_FUNCTION_BLOCK",
+        ]);
 
         var types = Path.Combine(repo.Path, "plc", "Station", "Types");
         Directory.CreateDirectory(types);
@@ -306,7 +320,13 @@ public sealed class MemberTablePaneFlowTests
         Assert.True(render.Table.IsInterface);
         Assert.Equal(["Input", "Enable", "InOut", "Drive", "Temp", "Level"],
             render.Table.Members.Select(m => m.Name));
-        Assert.Contains("SW.Blocks.FB", render.Source.PseudoDiff);
+        // Only the code: the declaration is the table above it, and showing it twice was the
+        // owner's complaint on 2026-10-05. Line numbers stay the file's, so BEGIN is still 7.
+        var lines = render.Source.Rows.OfType<Versio.Core.Iec.SourceCodeLine>().ToList();
+        Assert.Equal("BEGIN", lines[0].Text);
+        Assert.Equal(7, lines[0].FileLine);
+        Assert.DoesNotContain(lines, l => l.Text.Contains("VAR_INPUT", StringComparison.Ordinal));
+        Assert.Contains("#Enable := TRUE;", render.Source.PseudoDiff, StringComparison.Ordinal);
     }
 
     /// <summary>Commit the data type only, so the block stays in the tree and the type is clean.</summary>
@@ -359,10 +379,19 @@ public sealed class MemberTablePaneFlowTests
         Assert.True(level.ReferenceChanged);
         Assert.False(Member(shell, "Enable").ReferenceChanged);
 
-        shell.OpenObjectCommand.Execute(level.LinkGuid);
+        await shell.OpenObjectAsync(level.LinkGuid!);
 
         var type = Assert.IsType<MemberTable>(shell.RenderedContent);
         Assert.Equal("AnaVal", type.Name);
+
+        // The tree went there too (owner, 2026-10-05): the type's row is the selected one,
+        // its folders are open, and the block's row let go - so the tree and the pane agree
+        // about what is being looked at.
+        var selected = Assert.IsType<TreeRow>(shell.Sync.SelectedNode);
+        Assert.Equal("AnaVal", selected.Name);
+        Assert.True(selected.IsSelected);
+        Assert.All(Ancestors(shell.Sync.Tree, selected), a => Assert.True(a.IsExpanded, a.Name + " stayed shut"));
+        Assert.False((await Row(shell, "Motor")).IsSelected);
 
         // Changed, so it opens where a changed object opens: on its diff.
         Assert.True(shell.ShowRawPane);
@@ -370,6 +399,49 @@ public sealed class MemberTablePaneFlowTests
             () => shell.SelectedDiffPath?.EndsWith("AnaVal.udt", StringComparison.OrdinalIgnoreCase) == true
                   && shell.SelectedDiff.Contains("// edited", StringComparison.Ordinal),
             "the type's diff is on screen");
+    }
+
+    private static IEnumerable<TreeRow> Ancestors(IEnumerable<TreeRow> roots, TreeRow target)
+    {
+        foreach (var root in roots)
+        {
+            if (ReferenceEquals(root, target))
+            {
+                return [];
+            }
+
+            if (root.Node.Children.Count > 0 && root.IsExpanded
+                && Ancestors(root.Children, target) is var below
+                && (below.Any() || root.Children.Contains(target)))
+            {
+                return below.Prepend(root);
+            }
+        }
+
+        return [];
+    }
+
+    [Fact]
+    public async Task From_the_explorer_a_link_selects_in_the_explorer_and_stays_there()
+    {
+        // The panel on screen is tried first: a link followed while browsing the Explorer
+        // must not throw the user over to the Project panel just because it lists the object
+        // too.
+        using var repo = new TempRepo();
+        GivenATrackedPortalProject(repo);
+
+        using var shell = Shell();
+        await shell.OpenAsync(repo.Path);
+        shell.ActivePanel = ShellPanel.Explorer;
+        await shell.Explorer.RefreshAsync();
+
+        await shell.OpenObjectAsync("udt1");
+
+        Assert.Equal(ShellPanel.Explorer, shell.ActivePanel);
+        var selected = Assert.IsType<TreeRow>(shell.Explorer.SelectedNode);
+        Assert.Equal("AnaVal", selected.Name);
+        Assert.True(selected.IsSelected);
+        Assert.Equal("AnaVal", Assert.IsType<MemberTable>(shell.RenderedContent).Name);
     }
 
     [Fact]
@@ -383,8 +455,11 @@ public sealed class MemberTablePaneFlowTests
         shell.Sync.SelectedNode = await Row(shell, "Motor");
         var before = shell.RenderedContent;
 
-        shell.OpenObjectCommand.Execute("no-such-guid");
+        await shell.OpenObjectAsync("no-such-guid");
 
         Assert.Same(before, shell.RenderedContent);
+
+        // And the rail stayed put: a link to nothing does not move anybody to another panel.
+        Assert.Equal(ShellPanel.Project, shell.ActivePanel);
     }
 }

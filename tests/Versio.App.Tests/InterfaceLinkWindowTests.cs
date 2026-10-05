@@ -101,6 +101,18 @@ public sealed class InterfaceLinkWindowTests
             Assert.Same(shell.OpenObjectCommand, link.Command);
             Assert.Equal("udt1", link.CommandParameter);
 
+            // Followed: the tree's own item for the type is the selected one, not only the view
+            // model's flag. The view's reveal runs at Loaded priority, so let it.
+            await shell.OpenObjectAsync("udt1");
+            await System.Windows.Threading.Dispatcher.Yield(System.Windows.Threading.DispatcherPriority.Background);
+            content.UpdateLayout();
+
+            var item = Assert.Single(Descendants(content).OfType<TreeViewItem>(),
+                i => i.DataContext is TreeRow { Name: "AnaVal" });
+            Assert.True(item.IsSelected, "the tree did not go to the linked type");
+            Assert.DoesNotContain(Descendants(content).OfType<TreeViewItem>(),
+                i => i.DataContext is TreeRow { Name: "Motor" } && i.IsSelected);
+
             if (Environment.GetEnvironmentVariable("SNAP_OUT") is { Length: > 0 } snap)
             {
                 var bmp = new RenderTargetBitmap(1500, 900, 96, 96, PixelFormats.Pbgra32);

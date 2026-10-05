@@ -6822,30 +6822,135 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
     private RelayCommand<string>? _openObjectCommand;
 
     /// <summary>
-    /// Open the object a type link points at, the way selecting its row would.
+    /// Open the object a type link points at by selecting its row in the tree.
     /// </summary>
     /// <remarks>
-    /// Looked for in the Project panel's tree first, where a changed object lives, then the
-    /// Explorer's, which lists every object. Opened with the same <see cref="ShowNode"/> a
-    /// click runs, so the defaults are the tree's: a changed type opens on its diff - which
-    /// is "show me what changed" - and a clean one on its table. Not found is said in the
-    /// log rather than guessed at.
+    /// <para>
+    /// <b>Selected in the tree, not only shown in the pane.</b> The first version showed the
+    /// type in the pane and left the tree where it was, so the tree highlighted one object
+    /// while the pane showed another; the owner, following links through the MTP types on
+    /// 2026-10-05, asked for the tree to go there too "so it's clear what we are watching".
+    /// Selecting the row is also what opens it - the panel's own selection handler runs
+    /// <see cref="ShowNode"/> - so the pane and the tree cannot disagree.
+    /// </para>
+    /// <para>
+    /// The tree of the panel on screen is tried first, and its ancestors are expanded down to
+    /// the row. If that tree does not have it - the Project panel hides projects that are in
+    /// sync - the other panel's tree is tried and the rail switches to it. The view scrolls
+    /// the row into view on <see cref="RevealInTree"/>, because a virtualized tree has no
+    /// container for a row nobody has scrolled to. Not found anywhere is said in the log.
+    /// </para>
     /// </remarks>
-    private void OpenObject(string guid)
+    private void OpenObject(string guid) => _ = OpenObjectAsync(guid);
+
+    /// <summary>The awaitable half of a type link, for tests and for the late Explorer load.</summary>
+    internal async Task OpenObjectAsync(string guid)
     {
         _logger.Click("Pane.TypeLink");
 
-        var node = FindObjectNode(Sync.Tree.Select(r => r.Node), guid)
-                   ?? FindObjectNode(Explorer.Tree.Select(r => r.Node), guid);
-
-        if (node is null)
+        if (TryOpenObject(guid))
         {
-            _logger.Info(LogCategory.Ui, $"type link not followed, no object {guid} in either tree");
             return;
         }
 
-        _logger.Info(LogCategory.Ui, $"following type link to {node.Name} ({node.Path})");
-        ShowNode(new TreeRow(node, depth: 0), visualizeOnly: node.Status == ChangeKind.Unmodified);
+        // The Explorer reads nothing until it is first looked at, so an object only it would
+        // list - in a project the Project panel hides as in sync - is not in its tree yet.
+        // Load it where it stands and try once more; TryOpenObject switches the rail only on
+        // a hit, so a link to nothing never moves the user to a panel with nothing selected.
+        if (Explorer.Tree.Count == 0)
+        {
+            await Explorer.RefreshAsync().ConfigureAwait(true);
+
+            if (TryOpenObject(guid))
+            {
+                return;
+            }
+        }
+
+        _logger.Info(LogCategory.Ui, $"type link not followed, no object {guid} in either tree");
+    }
+
+    private bool TryOpenObject(string guid)
+    {
+        var onExplorer = ActivePanel == ShellPanel.Explorer;
+        (ShellPanel Panel, IList<TreeRow> Tree)[] order = onExplorer
+            ? [(ShellPanel.Explorer, Explorer.Tree), (ShellPanel.Project, Sync.Tree)]
+            : [(ShellPanel.Project, Sync.Tree), (ShellPanel.Explorer, Explorer.Tree)];
+
+        foreach (var (panel, tree) in order)
+        {
+            if (Chain(tree, guid) is not { } chain)
+            {
+                continue;
+            }
+
+            var target = chain[^1];
+            _logger.Info(LogCategory.Ui,
+                $"following type link to {target.Node.Name} ({target.Node.Path}) in the {panel} tree");
+
+            if (ActivePanel != panel)
+            {
+                ActivePanel = panel;
+            }
+
+            foreach (var ancestor in chain.Take(chain.Count - 1))
+            {
+                ancestor.IsExpanded = true;
+            }
+
+            // The old row lets go explicitly: when the new row's container does not exist
+            // yet, the TreeView cannot deselect the old one for us.
+            var current = panel == ShellPanel.Explorer ? Explorer.SelectedNode : Sync.SelectedNode;
+            if (current is not null && !ReferenceEquals(current, target))
+            {
+                current.IsSelected = false;
+            }
+
+            target.IsSelected = true;
+            if (panel == ShellPanel.Explorer)
+            {
+                Explorer.SelectedNode = target;
+            }
+            else
+            {
+                Sync.SelectedNode = target;
+            }
+
+            RevealInTree?.Invoke(panel, chain);
+            return true;
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// A row was selected from code and should be scrolled into view, with the rows from
+    /// the root down to it. The panel showing <c>Panel</c>'s tree handles it.
+    /// </summary>
+    public event Action<ShellPanel, IReadOnlyList<TreeRow>>? RevealInTree;
+
+    /// <summary>The rows from a root down to the object's row, realising only that path.</summary>
+    private static List<TreeRow>? Chain(IEnumerable<TreeRow> rows, string guid)
+    {
+        foreach (var row in rows)
+        {
+            if (row.Node.Kind is ProjectNodeKind.Object
+                && string.Equals(row.Node.Guid, guid, StringComparison.OrdinalIgnoreCase))
+            {
+                return [row];
+            }
+
+            // Ask the nodes before touching Children: realising a branch builds a row per
+            // object in it, and only the one branch that holds the target should pay that.
+            if (FindObjectNode(row.Node.Children, guid) is not null
+                && Chain(row.Children, guid) is { } below)
+            {
+                below.Insert(0, row);
+                return below;
+            }
+        }
+
+        return null;
     }
 
     private static ProjectTreeNode? FindObjectNode(IEnumerable<ProjectTreeNode> nodes, string guid)
@@ -6970,6 +7075,21 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
                                        noChanges: node.Status == ChangeKind.Unmodified) is { } codeView
                                 && !codeView.PseudoDiff.Contains('\0'))
                             {
+                                // Only the code: the declaration above it is the table. The
+                                // format says where code begins; the rows keep their file line
+                                // numbers, so BEGIN still reads as line 14 and matches Raw.
+                                if (ReadOrNull(code) is { } codeText
+                                    && format.CodeStartLine(code, codeText) is { } start)
+                                {
+                                    codeView = codeView with
+                                    {
+                                        Rows = codeView.Rows
+                                            .Where(r => r is not Versio.Core.Iec.SourceCodeLine line
+                                                        || line.FileLine > start)
+                                            .ToList(),
+                                    };
+                                }
+
                                 return new InterfaceRender { Table = table, Source = codeView };
                             }
 

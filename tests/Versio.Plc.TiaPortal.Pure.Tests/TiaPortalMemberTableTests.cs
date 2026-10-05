@@ -382,6 +382,84 @@ public sealed class TiaPortalMemberTableTests
     }
 
     [Fact]
+    public void A_function_has_no_external_access_and_no_void_return()
+    {
+        // The owner's RealToAnaVal_1: every parameter showed "Read/Write" and a Return section
+        // held Ret_Val : Void. A function has no storage outside the call, and Void is not a
+        // value.
+        var table = MustParse("""
+            <Document>
+              <SW.Blocks.FC ID="0">
+                <AttributeList>
+                  <Interface>
+                    <Sections>
+                      <Section Name="Input">
+                        <Member Name="In" Datatype="Real" />
+                        <Member Name="ST" Datatype="Byte" />
+                      </Section>
+                      <Section Name="Output">
+                        <Member Name="Out" Datatype="&quot;AnaVal&quot;" />
+                      </Section>
+                      <Section Name="Return">
+                        <Member Name="Ret_Val" Datatype="Void" />
+                      </Section>
+                    </Sections>
+                  </Interface>
+                  <Name>RealToAnaVal_1</Name>
+                  <Number>16</Number>
+                </AttributeList>
+              </SW.Blocks.FC>
+            </Document>
+            """);
+
+        Assert.True(table.IsInterface);
+        Assert.Equal(["Input", "In", "ST", "Output", "Out"], table.Members.Select(m => m.Name));
+        Assert.All(table.Members, m => Assert.Equal(string.Empty, m.ExternalAccess));
+    }
+
+    [Fact]
+    public void A_function_block_keeps_access_on_its_instance_data_only()
+    {
+        // Inputs, outputs, in-outs and statics live in the instance DB and carry the HMI
+        // flags. A temporary does not exist outside the call.
+        var table = MustParse("""
+            <Document>
+              <SW.Blocks.FB ID="0">
+                <AttributeList>
+                  <Interface>
+                    <Sections>
+                      <Section Name="Input"><Member Name="Start" Datatype="Bool" /></Section>
+                      <Section Name="Static"><Member Name="Count" Datatype="Int" /></Section>
+                      <Section Name="Temp"><Member Name="Scratch" Datatype="Int" /></Section>
+                      <Section Name="Return"><Member Name="Ret_Val" Datatype="Int" /></Section>
+                    </Sections>
+                  </Interface>
+                  <Name>Counter</Name>
+                </AttributeList>
+              </SW.Blocks.FB>
+            </Document>
+            """);
+
+        var access = table.Members.Where(m => !m.IsSectionHeading).ToDictionary(m => m.Name, m => m.ExternalAccess);
+        Assert.Equal("Read/Write", access["Start"]);
+        Assert.Equal("Read/Write", access["Count"]);
+        Assert.Equal(string.Empty, access["Scratch"]);
+
+        // A return that IS a value stays.
+        Assert.Equal(string.Empty, access["Ret_Val"]);
+    }
+
+    [Theory]
+    [InlineData("Block.scl", "FUNCTION \"F\" : Void\nVAR_INPUT\n  In : Real;\nEND_VAR\n\nBEGIN\n  #x := 1;\nEND_FUNCTION\n", 5)]
+    [InlineData("Block.scl", "FUNCTION \"F\" : Void\n// BEGIN is not here\nbegin\n", 2)]
+    [InlineData("Block.scl", "FUNCTION \"F\" : Void\n// BEGIN is mentioned, never alone\n", null)]
+    [InlineData("Block.xml", "BEGIN\n", null)]
+    public void Code_starts_on_the_line_that_is_begin_alone(string path, string content, int? expected)
+    {
+        Assert.Equal(expected, new TiaPortalProjectFormat().CodeStartLine(path, content));
+    }
+
+    [Fact]
     public void An_organization_block_is_not_a_table()
     {
         // Same Interface schema as every block. The local-name gate is the whole of "the

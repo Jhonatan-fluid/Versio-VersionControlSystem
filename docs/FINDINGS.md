@@ -45,6 +45,27 @@ in the Rendered tab: SCL text, every member's attribute block running off the ri
   off (checked); `InterfaceLinkWindowTests` realises the window and finds the drawn link bound
   to the shell's command, the part no view-model test sees.
 
+**The owner's first session with it (2026-10-05), on a scratch copy of CleaningStation,
+found two more things.**
+
+- **Following a link left the tree behind.** The pane showed the type while the tree still
+  highlighted the block, so it was not clear what was on screen. A link now selects the
+  object's row - in the panel on screen, else the other one, switching the rail only on a hit -
+  expands its folders, and the panel scrolls it into view (`TreeReveal`: a virtualized tree
+  has no container for a row nobody scrolled to, so the walk brings each level's index into
+  view on the way down). Selecting the row is what opens it, so pane and tree cannot
+  disagree. An object only the Explorer lists, before the Explorer was ever opened, is found by
+  loading that tree quietly first.
+- **A function's interface said things that are not true.** `RealToAnaVal_1` showed
+  "Read/Write" on every parameter and a Return section holding `Ret_Val : Void`, and its code
+  pane repeated the thirteen declaration lines the table had just shown. The access walk
+  defaults a missing flag to the IDE default, right for DB members and wrong where there is no
+  storage to reach: access is now kept only on an FB's Input/Output/InOut/Static; a Void return
+  is dropped with its heading; and the code pane starts at the line the format says code
+  begins (`IPlcProjectFormat.CodeStartLine`, default null; TIA answers with the `.scl`'s
+  `BEGIN`), keeping file line numbers so it matches Raw. The bare "Optimized" under the title
+  reads "Memory layout: Optimized".
+
 **And one older defect found by looking at it.** "Select a file to see what changed" sits
 behind the diff and assumed whatever covers it is opaque. The interface split is not, so the
 sentence showed through the code pane while the diff loaded. It now hides whenever a rendered

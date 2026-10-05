@@ -84,6 +84,11 @@ public static class TiaPortalMemberTableParser
                 headings: isInterface);
         }
 
+        if (isInterface)
+        {
+            members = ForInterface(members, isFunction: block.Name.LocalName == Function);
+        }
+
         return new MemberTable
         {
             Name = name,
@@ -182,6 +187,42 @@ public static class TiaPortalMemberTableParser
         {
             WalkSections(nested, path, depth + 1, section, members);
         }
+    }
+
+    /// <summary>
+    /// What an interface's rows can truthfully say, which is less than a data block's.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>External access exists only where there is storage to reach.</b> A function block's
+    /// inputs, outputs, in-outs and statics live in its instance DB, and those carry the HMI
+    /// flags. A function's parameters, any temporary, a constant and a return value have no
+    /// storage outside the call, so "Read/Write" there was invented: the access walk defaults
+    /// a missing flag to the IDE default, which is right for DB members and wrong for these.
+    /// Seen on the owner's FC RealToAnaVal_1 on 2026-10-05, every parameter "Read/Write".
+    /// </para>
+    /// <para>
+    /// <b>A Void return is not a value.</b> The IDE lists <c>Ret_Val : Void</c> for a function
+    /// that returns nothing; as a row it is a section heading over nothing worth reading.
+    /// Dropped, with its heading if that leaves the section empty.
+    /// </para>
+    /// </remarks>
+    private static List<MemberRow> ForInterface(List<MemberRow> rows, bool isFunction)
+    {
+        var kept = rows
+            .Where(r => r.IsSectionHeading
+                        || !(r.Section == "Return"
+                             && string.Equals(r.Datatype, "Void", StringComparison.OrdinalIgnoreCase)))
+            .Select(r => r.IsSectionHeading || (!isFunction && r.Section is "Input" or "Output" or "InOut" or "Static")
+                ? r
+                : r with { ExternalAccess = string.Empty })
+            .ToList();
+
+        // A heading followed by another heading (or by nothing) has lost its rows.
+        return kept
+            .Where((r, i) => !r.IsSectionHeading
+                             || (i + 1 < kept.Count && !kept[i + 1].IsSectionHeading))
+            .ToList();
     }
 
     /// <summary>

@@ -121,6 +121,10 @@ public sealed record MemberTable
 
     public bool HasMemoryLayout => MemoryLayout.Length > 0;
 
+    /// <summary>The layout with its name: a bare "Optimized" under a title read as a status.</summary>
+    public string MemoryLayoutCaption =>
+        MemoryLayout.Length == 0 ? string.Empty : "Memory layout: " + MemoryLayout;
+
     /// <summary>
     /// A user-defined data type rather than a data block: a declaration with no storage of
     /// its own.
