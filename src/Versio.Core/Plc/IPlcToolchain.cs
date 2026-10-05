@@ -252,8 +252,9 @@ public interface IPlcProjectFormat
     Projects.MemberTable? TryParseMemberTable(string relativePath, string content) => null;
 
     /// <summary>
-    /// This file's ladder networks in the neutral model, or null when the file is not a
-    /// ladder block this format can read.
+    /// This file's graphical networks in the neutral model (ladder or function block diagram,
+    /// per <see cref="Iec.Ladder.LadderNetwork.Language"/>), or null when the file is not a
+    /// block this format can draw.
     /// </summary>
     /// <remarks>
     /// <para>
@@ -264,8 +265,10 @@ public interface IPlcProjectFormat
     /// vendor's pack and this override, never an App or Core edit.
     /// </para>
     /// <para>
-    /// Null for anything that is not ladder, including other graphical languages: those
-    /// keep their current view rather than being drawn as something they are not.
+    /// Null for anything else, including graphical languages the model does not draw yet (CFC,
+    /// SFC): those keep their current view rather than being drawn as something they are not.
+    /// The name says ladder because ladder came first; FBD rides the same seam because a
+    /// vendor that writes both, as TIA Portal does, writes them in one schema and one block.
     /// </para>
     /// </remarks>
     Iec.Ladder.LadderDocument? TryParseLadder(string relativePath, string content) => null;

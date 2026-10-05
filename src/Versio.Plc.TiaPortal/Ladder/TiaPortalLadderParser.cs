@@ -5,10 +5,17 @@ using Versio.Core.Iec.Ladder;
 namespace Versio.Plc.TiaPortal.Ladder;
 
 /// <summary>
-/// A LAD block's networks, read from this vendor's SimaticML export into the neutral ladder
-/// model.
+/// A LAD or FBD block's networks, read from this vendor's SimaticML export into the neutral
+/// ladder model.
 /// </summary>
 /// <remarks>
+/// <para>
+/// <b>Both languages, one reader.</b> Portal writes LAD and FBD in the same <c>FlgNet</c>
+/// schema, and one block can mix them network by network, so the language is read per compile
+/// unit and set on each network. What differs is small and stays here: an <c>O</c> is a junction
+/// in ladder and an OR box in FBD, and comparators are in line in ladder and boxes in FBD. The
+/// drawing differs much more, and that is Core's (<c>LadderLayout.FunctionBlock.cs</c>).
+/// </para>
 /// <para>
 /// <b>Everything TIA-shaped stops here.</b> Part names (<c>Contact</c>, <c>SCoil</c>,
 /// <c>PContact</c>), the <c>FlgNet</c> network schema, the power rail as a wire end and access
@@ -25,12 +32,12 @@ namespace Versio.Plc.TiaPortal.Ladder;
 /// wires become <see cref="LdNet"/>s one to one.
 /// </para>
 /// <para>
-/// <b>An <c>O</c> part folds into the net.</b> Where branches rejoin, an export may write an OR
+/// <b>In ladder, an <c>O</c> part folds into the net.</b> Where branches rejoin, an export may write an OR
 /// box whose inputs are the branch ends. In ladder that is a junction, not an instruction: its
 /// pins are one electrical node, and drawing it as a box would show an element nobody placed.
 /// </para>
 /// <para>
-/// <b>Comparators are drawn in line.</b> <c>Eq</c>, <c>Gt</c> and the rest take power on
+/// <b>In ladder, comparators are drawn in line.</b> <c>Eq</c>, <c>Gt</c> and the rest take power on
 /// <c>pre</c> and pass it on <c>out</c>, and the IDE draws them contact-sized on the rung with
 /// one operand above and one below. They become <see cref="LdBox"/> with
 /// <see cref="LdBox.InlineCompare"/>.
@@ -40,9 +47,10 @@ namespace Versio.Plc.TiaPortal.Ladder;
 /// under its own name, and a network in another language (SCL, STL) is kept as a placeholder.
 /// </para>
 /// <para>
-/// <b>Hand-written specimens.</b> No fixture has real ladder logic yet: <c>Main_1</c>'s only
-/// network is empty, and every other graphical block in the fixture is FBD. The pinned
-/// specimens were written by hand against the schema, which is a known gap. See
+/// <b>Hand-written ladder specimens, real FBD.</b> No fixture has real ladder logic yet:
+/// <c>Main_1</c>'s only network is empty. The ladder specimens were written by hand against the
+/// schema, which is a known gap. FBD has no such gap: the fixture's 21 FBD blocks are Portal's own
+/// output, and three of them are pinned as approved drawings. See
 /// <c>docs/vendors/tia/DRIVING.md</c>, "Graphical blocks".
 /// </para>
 /// </remarks>
@@ -102,32 +110,46 @@ public static class TiaPortalLadderParser
 
         var block = doc.Root?.Elements().FirstOrDefault(e => CodeBlocks.Contains(e.Name.LocalName));
         var attributes = block is null ? null : Child(block, "AttributeList");
-        if (attributes is null || Text(attributes, "ProgrammingLanguage") != "LAD")
+        var blockLanguage = attributes is null ? "" : Text(attributes, "ProgrammingLanguage");
+        if (blockLanguage is not ("LAD" or "FBD"))
         {
             return null;
         }
 
         var units = Children(Child(block!, "ObjectList"), "SW.Blocks.CompileUnit").ToList();
-        var networks = units.Select((unit, i) => Network(unit, i + 1)).ToList();
-        return new LadderDocument(new LadderBody(Text(attributes, "Name"), networks), Style);
+        var networks = units.Select((unit, i) => Network(unit, i + 1, blockLanguage)).ToList();
+        return new LadderDocument(new LadderBody(Text(attributes!, "Name"), networks), Style);
     }
 
-    private static LadderNetwork Network(XElement unit, int number)
+    /// <summary>
+    /// One compile unit. Its own language decides how it is drawn: TIA Portal lets a LAD block
+    /// hold FBD networks and the other way round, and a unit that names no language is the
+    /// block's.
+    /// </summary>
+    private static LadderNetwork Network(XElement unit, int number, string blockLanguage)
     {
         var attributes = Child(unit, "AttributeList");
         var language = attributes is null ? "" : Text(attributes, "ProgrammingLanguage");
+        if (language.Length == 0)
+        {
+            language = blockLanguage;
+        }
+
         var title = Multilingual(unit, "Title");
         var comment = Multilingual(unit, "Comment");
 
-        if (language.Length > 0 && language != "LAD")
+        if (language is not ("LAD" or "FBD"))
         {
             return new LadderNetwork { Number = number, Title = title, Comment = comment, UnsupportedLanguage = language };
         }
 
+        var fbd = language == "FBD";
+        var drawnAs = fbd ? LdLanguage.FunctionBlock : LdLanguage.Ladder;
+
         var flg = attributes?.Descendants().FirstOrDefault(e => e.Name.LocalName == "FlgNet");
         if (flg is null)
         {
-            return new LadderNetwork { Number = number, Title = title, Comment = comment };
+            return new LadderNetwork { Number = number, Title = title, Comment = comment, Language = drawnAs };
         }
 
         var accesses = new Dictionary<string, string>(StringComparer.Ordinal);
@@ -196,8 +218,10 @@ public static class TiaPortalLadderParser
             }
         }
 
-        // OR junctions: every net touching an O part becomes one net without it.
-        foreach (var or in parts.Where(p => p.Name.LocalName == "Part" && Attr(p, "Name") == "O").Select(Uid).ToList())
+        // OR junctions: every net touching an O part becomes one net without it. Ladder only: in
+        // a function block diagram O is the OR box itself, a real element with its own inputs.
+        var junctions = fbd ? [] : parts.Where(p => p.Name.LocalName == "Part" && Attr(p, "Name") == "O").Select(Uid).ToList();
+        foreach (var or in junctions)
         {
             var touching = nets.Where(n => n.Any(e => e.NodeId == or)).ToList();
             if (touching.Count == 0)
@@ -218,16 +242,16 @@ public static class TiaPortalLadderParser
 
         foreach (var part in parts)
         {
-            if (part.Name.LocalName == "Part" && Attr(part, "Name") == "O")
+            var uid = Uid(part);
+            if (junctions.Contains(uid))
             {
                 continue;
             }
 
-            var uid = Uid(part);
             var order = pinOrder.GetValueOrDefault(uid) ?? [];
             nodes.Add(part.Name.LocalName == "Call"
                 ? CallBox(part, uid, order, operands)
-                : PartNode(part, uid, order, operands));
+                : fbd ? FunctionBlockNode(part, uid, order, operands) : PartNode(part, uid, order, operands));
         }
 
         // The two-terminal elements take the neutral pin names, so the rest of the pipeline
@@ -239,6 +263,7 @@ public static class TiaPortalLadderParser
             Number = number,
             Title = title,
             Comment = comment,
+            Language = drawnAs,
             Nodes = nodes,
             Nets = nets
                 .Select(n => n.Where(e => ids.Contains(e.NodeId)).ToList())
@@ -303,6 +328,66 @@ public static class TiaPortalLadderParser
         }
 
         return new LdUnsupported(uid, name, pins);
+    }
+
+    /// <summary>
+    /// A part of a function block diagram: the logic gates as the IEC boxes (<c>&amp;</c>,
+    /// <c>&gt;=1</c>, <c>X</c>), comparators as boxes with their pins, and everything else as
+    /// ladder reads it.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The fixture's 127 FBD networks use A (48), Eq (47), O (27), Le, Move, Gt, Ne and Coil
+    /// (66), plus 115 calls. A coil stays an <see cref="LdCoil"/>: the FBD layout draws it as the
+    /// "=" assignment box, and the diff compares it with a ladder coil as the same element.
+    /// </para>
+    /// <para>
+    /// Inputs are ordered in1, in2, in3 by number, not by which wire named them first: a gate
+    /// drawn with in2 above in1 is a different drawing from the IDE's, even if the logic is
+    /// the same. TIA writes no pin list for a part; the wires are all there is.
+    /// </para>
+    /// </remarks>
+    private static LdNode FunctionBlockNode(XElement part, string uid, List<string> order, Dictionary<LdPinRef, string> operands)
+    {
+        var name = Attr(part, "Name");
+        var gate = name switch
+        {
+            "A" => "&",
+            "O" => ">=1",
+            "X" => "X",
+            _ => null,
+        };
+
+        if (gate is null && !Comparators.ContainsKey(name))
+        {
+            return PartNode(part, uid, order, operands);
+        }
+
+        static int Rank(string pin)
+        {
+            if (pin.Equals("en", StringComparison.OrdinalIgnoreCase))
+            {
+                return -1;
+            }
+
+            return pin.StartsWith("in", StringComparison.OrdinalIgnoreCase)
+                   && int.TryParse(pin.AsSpan(2), System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out var n)
+                ? n
+                : int.MaxValue;
+        }
+
+        var pins = order
+            .OrderBy(Rank)
+            .Select(p => new LdPin(
+                p,
+                IsOutput(p) ? LdPinDirection.Output : LdPinDirection.Input,
+                operands.GetValueOrDefault(new LdPinRef(uid, p)),
+                Negated(part, p)))
+            .ToList();
+
+        return gate is not null
+            ? new LdBox(uid, gate, pins)
+            : new LdBox(uid, "CMP " + Comparators[name], pins, Detail: TypeTemplate(part));
     }
 
     /// <summary>

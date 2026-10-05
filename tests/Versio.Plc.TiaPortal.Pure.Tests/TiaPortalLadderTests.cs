@@ -168,12 +168,146 @@ public sealed class TiaPortalLadderTests
     }
 
     [Fact]
-    public void The_fixtures_fbd_blocks_are_not_ladder_and_keep_their_view()
+    public void The_fixtures_cyclic_interrupt_reads_as_a_function_block_diagram()
     {
-        // Cyclic interrupt is FBD. Same network schema, different language: drawing it as
-        // ladder would draw something the IDE does not show.
+        // Until 2026-10-05 this returned null: same schema, different language, and drawing it
+        // as ladder would have drawn something the IDE does not show. It is FBD, drawn as FBD.
         var path = Path.Combine(CyclicBlocks, "Cyclic interrupt.xml");
-        Assert.Null(TiaPortalProjectFormat.Instance.TryParseLadder("x/Cyclic interrupt.xml", File.ReadAllText(path)));
+
+        var document = TiaPortalProjectFormat.Instance.TryParseLadder("x/Cyclic interrupt.xml", File.ReadAllText(path));
+
+        Assert.NotNull(document);
+        Assert.Equal(7, document.Body.Networks.Count);
+        Assert.All(document.Body.Networks, n => Assert.Equal(LdLanguage.FunctionBlock, n.Language));
+        var call = Assert.IsType<LdBox>(Assert.Single(document.Body.Networks[0].Nodes));
+        Assert.Equal("Service", call.TypeName);
+        Assert.Equal("FC", call.Detail);
+    }
+
+    [Fact]
+    public void Fbd_gates_and_comparators_are_iec_boxes_with_their_inputs_in_number_order()
+    {
+        var path = Path.Combine(TestPaths.Fixtures, "projects", "CleaningStation_V20_V21", "CleaningStation_V20_V21",
+            "ET 200SP station_2", "CleaningStation", "Program blocks", "02_ControlModules", "P100.xml");
+        var nodes = TiaPortalProjectFormat.Instance.TryParseLadder("x/P100.xml", File.ReadAllText(path))!
+            .Body.Networks.SelectMany(n => n.Nodes).ToList();
+
+        var and = nodes.OfType<LdBox>().First(b => b.TypeName == "&");
+        Assert.Equal(["in1", "in2"], and.Pins.Where(p => p.Direction == LdPinDirection.Input).Select(p => p.Name).Take(2));
+        Assert.Contains(nodes.OfType<LdBox>(), b => b.TypeName == ">=1");
+        Assert.Contains(nodes.OfType<LdBox>(), b => b.TypeName == "CMP <=" && b.Detail == "Real");
+        Assert.Contains(nodes, n => n is LdCoil);
+        Assert.DoesNotContain(nodes, n => n is LdUnsupported);
+    }
+
+    /// <summary>Every FBD block of the fixture: 21 blocks, 127 networks of Portal's own output.</summary>
+    private static IEnumerable<(string Name, LadderDocument Document)> FixtureFbd()
+    {
+        var blocks = Path.Combine(TestPaths.Fixtures, "projects", "CleaningStation_V20_V21", "CleaningStation_V20_V21",
+            "ET 200SP station_2", "CleaningStation", "Program blocks");
+        foreach (var file in Directory.GetFiles(blocks, "*.xml", SearchOption.AllDirectories).Order())
+        {
+            var text = File.ReadAllText(file);
+            if (text.Contains("<ProgrammingLanguage>FBD</ProgrammingLanguage>", StringComparison.Ordinal)
+                && TiaPortalProjectFormat.Instance.TryParseLadder("x/" + Path.GetFileName(file), text) is { } document)
+            {
+                yield return (Path.GetFileNameWithoutExtension(file), document);
+            }
+        }
+    }
+
+    [Fact]
+    public void Every_fbd_network_in_the_fixture_draws_within_the_shared_invariants()
+    {
+        var blocks = FixtureFbd().ToList();
+        Assert.Equal(21, blocks.Count);
+
+        var networks = 0;
+        foreach (var (name, document) in blocks)
+        {
+            foreach (var network in document.Body.Networks)
+            {
+                networks++;
+                Assert.DoesNotContain(network.Nodes, n => n is LdUnsupported);
+                var drawing = LadderLayout.Lay(network, document.Style);
+                Assert.Null(drawing.FallbackReason);
+                var problems = LadderInvariants.Violations(drawing);
+                Assert.True(problems.Count == 0, $"{name} network {network.Number}: {string.Join("; ", problems)}");
+            }
+        }
+
+        Assert.True(networks >= 127, $"{networks} networks");
+    }
+
+    private static string FixtureBlock(string relative) => Path.Combine(TestPaths.Fixtures, "projects",
+        "CleaningStation_V20_V21", "CleaningStation_V20_V21", "ET 200SP station_2", "CleaningStation",
+        "Program blocks", relative.Replace('/', Path.DirectorySeparatorChar) + ".xml");
+
+    [Theory]
+    [InlineData("01_CyclicBlocks/Cyclic interrupt", "Fixture_CyclicInterrupt")]
+    [InlineData("02_ControlModules/P100", "Fixture_P100")]
+    [InlineData("05_Services/Service", "Fixture_Service")]
+    public void Fixture_fbd_blocks_draw_as_approved(string block, string approvedAs)
+    {
+        // Portal's own output, so unlike the ladder specimens these are not guesses about the
+        // schema. Looked at in the gallery before approving (2026-10-05).
+        var document = TiaPortalProjectFormat.Instance.TryParseLadder("x/b.xml", File.ReadAllText(FixtureBlock(block)))!;
+        var html = LadderHtml.Fragment(LadderDiff.Compare(document.Body, document.Body), document.Style);
+
+        var folder = Path.Combine(Specimens, "Approved");
+        var approved = Path.Combine(folder, approvedAs + ".approved.html");
+        var received = Path.Combine(folder, approvedAs + ".received.html");
+        if (File.Exists(approved) && File.ReadAllText(approved) == html)
+        {
+            File.Delete(received);
+            return;
+        }
+
+        File.WriteAllText(received, html);
+        Assert.Fail($"{approvedAs}: the drawing differs from {approved}. Look at {received}; if it is right, copy it over the approved file.");
+    }
+
+    [Fact]
+    public void An_fbd_operand_renamed_in_a_copy_of_p100_is_that_network_changed_and_drawn_stacked()
+    {
+        var original = File.ReadAllText(FixtureBlock("02_ControlModules/P100"));
+        const string Tag = "<Component Name=\"StopAut\" />";
+        var at = original.IndexOf(Tag, StringComparison.Ordinal);
+        Assert.True(at >= 0);
+
+        // The first use only: the tag is read in more than one network, and this test is about
+        // one network changing while the rest stay as they were.
+        var edited = string.Concat(original.AsSpan(0, at), "<Component Name=\"StopAuto\" />", original.AsSpan(at + Tag.Length));
+
+        var old = TiaPortalProjectFormat.Instance.TryParseLadder("x/P100.xml", original)!.Body;
+        var @new = TiaPortalProjectFormat.Instance.TryParseLadder("x/P100.xml", edited)!.Body;
+        var comparison = LadderDiff.Compare(old, @new);
+
+        var row = Assert.Single(comparison.Rows, r => r.Change != LadderChange.Same);
+        Assert.Equal(LadderChange.Changed, row.Change);
+        Assert.Contains(row.New!.Marks.Values, m => m == LdMark.Modified);
+
+        // Not merged: a function block diagram's changed network is the two versions stacked,
+        // each marked, until FBD has a merge of its own.
+        var html = LadderHtml.Fragment(comparison, TiaPortalLadderParser.Style);
+        var start = html.IndexOf("data-change=\"changed\"", StringComparison.Ordinal);
+        var section = html[start..html.IndexOf("</section>", start, StringComparison.Ordinal)];
+        Assert.Equal(2, section.Split("<svg ").Length - 1);
+    }
+
+    [Fact]
+    public void A_gallery_of_the_fixtures_fbd_is_written_for_a_human_to_look_at()
+    {
+        var page = new System.Text.StringBuilder($"<!doctype html><meta charset=utf-8><style>{LadderPageAssets.Css} body{{background:var(--ld-bg)}}</style>");
+        foreach (var (name, document) in FixtureFbd())
+        {
+            page.Append("<h2 style=\"font:600 15px sans-serif\">").Append(name).Append("</h2>")
+                .Append(LadderHtml.Fragment(LadderDiff.Compare(document.Body, document.Body), document.Style));
+        }
+
+        var path = Path.Combine(AppContext.BaseDirectory, "tia-fbd-gallery.html");
+        File.WriteAllText(path, page.ToString());
+        Assert.True(new FileInfo(path).Length > 1000);
     }
 
     [Fact]
