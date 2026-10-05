@@ -209,3 +209,24 @@ public sealed class RelayCommand(Action execute, Func<bool>? canExecute = null) 
 
     public void RaiseCanExecuteChanged() => CanExecuteChanged?.Invoke(this, EventArgs.Empty);
 }
+
+/// <summary>
+/// Synchronous command that takes its parameter - a link's target, where one command serves
+/// every link on a page and the parameter is which one was pressed.
+/// </summary>
+public sealed class RelayCommand<T>(Action<T> execute) : ICommand
+{
+#pragma warning disable CS0067 // Always executable; the event exists because ICommand requires it.
+    public event EventHandler? CanExecuteChanged;
+#pragma warning restore CS0067
+
+    public bool CanExecute(object? parameter) => parameter is T;
+
+    public void Execute(object? parameter)
+    {
+        if (parameter is T value)
+        {
+            execute(value);
+        }
+    }
+}

@@ -2,6 +2,7 @@ using System.IO;
 using Versio.Core.Diff;
 using Versio.Core.Iec;
 using Versio.Core.Projects;
+using Versio.Core.Text;
 
 namespace Versio.App.ViewModels;
 
@@ -73,6 +74,28 @@ public sealed record SourceRender
             NoChanges = noChanges,
         };
     }
+}
+
+/// <summary>
+/// A Markdown file as a page: headings, lists, tables and links, not the text that spells them.
+/// </summary>
+/// <remarks>
+/// Before this a <c>.md</c> fell through to <see cref="SourceRender"/>, so its Rendered tab drew
+/// the same pipes and asterisks as Raw (seen 2026-10-04 on <c>docs/outpost/PLAN.md</c>). The
+/// parse is <see cref="Markdown"/> in Core; drawing it is <c>MarkdownView</c>.
+/// </remarks>
+public sealed record MarkdownRender
+{
+    public required string Path { get; init; }
+    public required IReadOnlyList<MdBlock> Blocks { get; init; }
+
+    /// <summary>The extensions read as Markdown. Anything else keeps its own renderer.</summary>
+    public static bool Handles(string path) =>
+        path.EndsWith(".md", StringComparison.OrdinalIgnoreCase)
+        || path.EndsWith(".markdown", StringComparison.OrdinalIgnoreCase);
+
+    public static MarkdownRender From(string repoRelativePath, string text) =>
+        new() { Path = repoRelativePath, Blocks = Markdown.Parse(text) };
 }
 
 /// <summary>The project row's rendered view: the facts a glance should answer.</summary>

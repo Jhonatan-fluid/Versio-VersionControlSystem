@@ -2967,6 +2967,115 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         }
     }
 
+    /// <summary>A link pressed on a rendered Markdown page; the parameter is its target.</summary>
+    public RelayCommand<string> OpenLinkCommand => _openLinkCommand ??= new RelayCommand<string>(OpenLink);
+
+    private RelayCommand<string>? _openLinkCommand;
+
+    /// <summary>
+    /// Follow a link from a rendered Markdown page.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Two kinds, and only two. A web or mail address goes to the browser, logged as the
+    /// merge-request button logs it. A relative path to another Markdown file in this
+    /// repository opens that file in the same pane, rendered - this repository's documents are
+    /// a web of <c>../STATUS.md</c> links, and a link that did nothing would make the page look
+    /// broken.
+    /// </para>
+    /// <para>
+    /// Everything else is refused out loud in the log rather than guessed at: an in-page
+    /// anchor, a link to a source file (which has its own row to click), a path that climbs
+    /// out of the repository, a file that is not there. The link is resolved against the
+    /// file on screen, never against the working directory, and the result must stay inside
+    /// the repository root - a document can say anything, and <c>../../..</c> is not an
+    /// invitation to read the disk.
+    /// </para>
+    /// </remarks>
+    private void OpenLink(string target)
+    {
+        _logger.Click("Pane.MarkdownLink");
+
+        if (target.StartsWith("http://", StringComparison.OrdinalIgnoreCase)
+            || target.StartsWith("https://", StringComparison.OrdinalIgnoreCase)
+            || target.StartsWith("mailto:", StringComparison.OrdinalIgnoreCase))
+        {
+            _logger.Info(LogCategory.Ui, $"opening {target}");
+            try
+            {
+                Process.Start(new ProcessStartInfo(target) { UseShellExecute = true });
+            }
+            catch (Exception ex)
+            {
+                _logger.Error(LogCategory.Ui, "could not open the browser", ex);
+                Notifications.Failure("Could not open the browser.", target);
+            }
+
+            return;
+        }
+
+        var pathPart = target.Split('#', 2)[0];
+        if (pathPart.Length == 0 || RepositoryPath is not { } root || SelectedDiffPath is not { } from)
+        {
+            _logger.Debug(LogCategory.Ui, $"link not followed (in-page or no file open): {target}");
+            return;
+        }
+
+        string resolved;
+        try
+        {
+            var baseDir = Path.GetDirectoryName(Path.Combine(root, from.Replace('/', Path.DirectorySeparatorChar)))!;
+            var full = Path.GetFullPath(Path.Combine(baseDir,
+                Uri.UnescapeDataString(pathPart).Replace('/', Path.DirectorySeparatorChar)));
+            var rootFull = Path.GetFullPath(root).TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar;
+
+            if (!full.StartsWith(rootFull, StringComparison.OrdinalIgnoreCase))
+            {
+                _logger.Warn(LogCategory.Ui, $"link not followed, it leaves the repository: {target}");
+                return;
+            }
+
+            resolved = Path.GetRelativePath(root, full).Replace(Path.DirectorySeparatorChar, '/');
+        }
+        catch (Exception ex) when (ex is ArgumentException or NotSupportedException or PathTooLongException)
+        {
+            _logger.Warn(LogCategory.Ui, $"link not followed, not a path: {target}");
+            return;
+        }
+
+        var absolute = Path.Combine(root, resolved.Replace('/', Path.DirectorySeparatorChar));
+        if (!MarkdownRender.Handles(resolved) || !File.Exists(absolute))
+        {
+            _logger.Info(LogCategory.Ui, $"link not followed, not a Markdown file here: {resolved}");
+            return;
+        }
+
+        string text;
+        try
+        {
+            text = File.ReadAllText(absolute);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            _logger.Warn(LogCategory.Ui, $"link not followed, could not read {resolved}: {ex.Message}");
+            return;
+        }
+
+        _logger.Info(LogCategory.Ui, $"following link to {resolved}");
+
+        // The explorer's visualize path, by hand: a page to read, never a git diff.
+        CanStageHunks = false;
+        DiffLayers = [];
+        _shownCommit = null;
+        _selectedDiffStaged = false;
+        PaneNote = string.Empty;
+        PaneMode = PaneMode.File;
+        SelectedDiffPath = resolved;
+        SelectedDiff = SourceRender.Load(absolute, resolved, noChanges: true)?.PseudoDiff ?? string.Empty;
+        RenderedContent = MarkdownRender.From(resolved, text);
+        ShowRendered = true;
+    }
+
     /// <summary>
     /// Ask the remote whether a request already exists for this branch.
     /// </summary>
@@ -6638,6 +6747,17 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
                             return table;
                         }
                     }
+                }
+
+                // Markdown before the source layout, which would otherwise take it: an ST
+                // layout of a document is the raw text with line numbers, which is what Raw
+                // already shows. Deleting this arm turns MarkdownPaneFlowTests red.
+                if (row.PrimaryFile is { } markdownPath
+                    && MarkdownRender.Handles(markdownPath)
+                    && ReadOrNull(markdownPath) is { } markdownText
+                    && !markdownText.Contains('\0'))
+                {
+                    return MarkdownRender.From(markdownPath, markdownText);
                 }
 
                 if (row.PrimaryFile is { } primary

@@ -1340,6 +1340,16 @@
                                 </ScrollViewer>
                             </DataTemplate>
 
+                            <!-- A document is a page, not a line list: see MarkdownView.
+                                 The link command is the shell's, reached past this template's
+                                 own DataContext (the MarkdownRender) by the window. -->
+                            <DataTemplate DataType="{x:Type vm:MarkdownRender}">
+                                <views:MarkdownView Blocks="{Binding Blocks}"
+                                                    AutomationProperties.Name="Rendered document"
+                                                    LinkCommand="{Binding DataContext.OpenLinkCommand,
+                                                        RelativeSource={RelativeSource AncestorType=Window}}" />
+                            </DataTemplate>
+
                             <DataTemplate DataType="{x:Type vm:SourceRender}">
                                 <views:DiffView SourceRows="{Binding Rows}"
                                                 FilePath="{Binding Path}" />
