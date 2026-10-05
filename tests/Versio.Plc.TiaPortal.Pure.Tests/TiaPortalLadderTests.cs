@@ -211,17 +211,23 @@ public sealed class TiaPortalLadderTests
 
     [Theory]
     [MemberData(nameof(AllSpecimens))]
-    public void Every_specimen_draws_as_approved(string name)
+    public void Every_specimen_draws_as_approved(string name) => Approve(name, LadderView.Merged, "");
+
+    [Fact]
+    public void The_diff_pair_draws_side_by_side_as_approved() =>
+        Approve("Pair_new", LadderView.SideBySide, ".side-by-side");
+
+    private static void Approve(string name, LadderView view, string suffix)
     {
         var body = Parse(name).Body;
         var other = name.EndsWith("_new", StringComparison.Ordinal)
             ? Parse(name.Replace("_new", "_old", StringComparison.Ordinal)).Body
             : body;
-        var html = LadderHtml.Fragment(LadderDiff.Compare(other, body), TiaPortalLadderParser.Style);
+        var html = LadderHtml.Fragment(LadderDiff.Compare(other, body), TiaPortalLadderParser.Style, view);
 
         var folder = Path.Combine(Specimens, "Approved");
-        var approved = Path.Combine(folder, name + ".approved.html");
-        var received = Path.Combine(folder, name + ".received.html");
+        var approved = Path.Combine(folder, name + suffix + ".approved.html");
+        var received = Path.Combine(folder, name + suffix + ".received.html");
         if (File.Exists(approved) && File.ReadAllText(approved) == html)
         {
             File.Delete(received);

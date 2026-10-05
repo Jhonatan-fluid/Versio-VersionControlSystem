@@ -101,9 +101,33 @@ public static class LadderLayout
         return Fallback(network, shape, context, style);
     }
 
-    private sealed class Context(ISet<LdPinRef> wired, bool rightRail)
+    /// <summary>
+    /// A merged network (<see cref="LadderMerge"/>): both versions on one rung, each element's
+    /// "was" line under it where it was modified.
+    /// </summary>
+    public static LadderDrawing LayMerged(LadderMergedNetwork merged, LadderStyle style)
+    {
+        ArgumentNullException.ThrowIfNull(merged);
+        ArgumentNullException.ThrowIfNull(style);
+
+        var context = new Context(merged.Wired, style.RightRailDrawn, merged.Was);
+        if (!LadderStructure.Walk(merged.Root).Any())
+        {
+            return Finish(context, MinRungWidth, 32, style, null);
+        }
+
+        var piece = Measure(merged.Root, context);
+        var width = Math.Max(piece.W, MinRungWidth);
+        Place(piece, RailX, Margin, width, terminal: true, context);
+        return Finish(context, width, piece.H, style, null);
+    }
+
+    private sealed class Context(ISet<LdPinRef> wired, bool rightRail, IReadOnlyDictionary<string, string>? was = null)
     {
         public ISet<LdPinRef> Wired { get; } = wired;
+
+        /// <summary>What a modified element was, by id. Empty outside a merged drawing.</summary>
+        public IReadOnlyDictionary<string, string> Was { get; } = was ?? new Dictionary<string, string>();
 
         public bool RightRail { get; } = rightRail;
 
@@ -170,7 +194,7 @@ public static class LadderLayout
         switch (block)
         {
             case LdLeaf leaf:
-                var drawn = Draw(leaf.Node, 0, 0, context.Wired);
+                var drawn = Draw(leaf.Node, 0, 0, context);
                 return new LeafPiece(leaf.Node, drawn.Group.Bounds.W, drawn.Group.Bounds.H, drawn.Anchor);
 
             case LdSeries series:
@@ -200,7 +224,7 @@ public static class LadderLayout
         switch (piece)
         {
             case LeafPiece leaf when width <= leaf.W + 0.01:
-                var group = Draw(leaf.Node, x, top, context.Wired).Group;
+                var group = Draw(leaf.Node, x, top, context).Group;
 
                 // The last coil of a rung with no right rail ends at its bracket: a lead running
                 // on to the edge reads as a rung that continues into nothing.
@@ -358,7 +382,7 @@ public static class LadderLayout
             var columnWidth = 0.0;
             foreach (var node in column)
             {
-                var drawn = Draw(node, x, y, context.Wired);
+                var drawn = Draw(node, x, y, context);
                 context.Groups.Add(drawn.Group);
                 foreach (var (pin, point) in drawn.Pins)
                 {
@@ -414,6 +438,12 @@ public static class LadderLayout
 
     private sealed record Drawn(LdGroup Group, double Anchor, IReadOnlyDictionary<string, (double X, double Y)> Pins);
 
+    private static Drawn Draw(LdNode node, double x, double top, Context context)
+    {
+        var drawn = Draw(node, x, top, context.Wired);
+        return context.Was.TryGetValue(node.Id, out var was) ? WithWas(drawn, was) : drawn;
+    }
+
     private static Drawn Draw(LdNode node, double x, double top, ISet<LdPinRef> wired) => node switch
     {
         LdContact c => TwoTerminal(c, "contact", c.Operand, c.EdgeMemory, x, top, ContactSymbol(c.Kind)),
@@ -425,6 +455,23 @@ public static class LadderLayout
         LdUnsupported u => Box(u, "unsupported", u.VendorName, "unrecognised", null, u.Pins, dashed: true, x, top, wired),
         _ => TwoTerminal(node, "unsupported", node.GetType().Name, null, x, top, Tag("?")),
     };
+
+    /// <summary>
+    /// A modified element with what it was written underneath: one more line, inside the
+    /// element, so the invariants still hold and nothing below it moves into it.
+    /// </summary>
+    /// <remarks>
+    /// Under rather than instead: the merged view shows the element as it is now (that is what
+    /// runs), and the old value is a note on it. Cut to the element's width like any label; the
+    /// full text stays on the hover.
+    /// </remarks>
+    private static Drawn WithWas(Drawn drawn, string was)
+    {
+        var b = drawn.Group.Bounds;
+        var bounds = b with { H = b.H + 16 };
+        var text = new LdText(b.X + (b.W / 2), b.Bottom + 10, Fit(was, b.W - 8), was, LdAlign.Middle, "was");
+        return drawn with { Group = drawn.Group with { Bounds = bounds, Items = [.. drawn.Group.Items, text] } };
+    }
 
     /// <summary>Draws a symbol centred on (cx, cy) and returns its primitives and half-width.</summary>
     private delegate (IReadOnlyList<LdPrimitive> Items, double Half) Symbol(double cx, double cy);

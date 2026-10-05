@@ -1569,6 +1569,8 @@
                                  the working one. See LadderPageView. -->
                             <DataTemplate DataType="{x:Type vm:LadderRender}">
                                 <views:LadderPageView Ladder="{Binding}"
+                                                      SideBySide="{Binding DataContext.DiffSideBySide,
+                                                          RelativeSource={RelativeSource AncestorType=Window}}"
                                                       AutomationProperties.Name="Ladder diagram"
                                                       ReportCommand="{Binding DataContext.WebPageReportCommand,
                                                           RelativeSource={RelativeSource AncestorType=Window}}" />

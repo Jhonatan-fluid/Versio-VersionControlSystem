@@ -96,6 +96,8 @@ public static class LadderPageAssets
         .ld-m-removed .ld-t-operand { text-decoration: line-through; }
         .ld-m-modified .ld-mark { fill: var(--ld-changed-bg); stroke: var(--ld-changed); }
         .ld-m-modified .ld-t-operand { fill: var(--ld-changed); font-weight: 700; }
+        .ld-net .ld-t-was { fill: var(--ld-muted); font-style: italic; }
+        .ld-was-text { text-decoration: line-through; opacity: 0.8; }
         .ld-stub { color: var(--ld-moved); font-size: 12px; padding: 2px 12px;
           border-left: 4px solid var(--ld-moved); }
         .ld-stub-text { cursor: pointer; }

@@ -130,7 +130,10 @@ internal static class LadderTestNetworks
                 1 or 2 => 24,
                 _ => random.Next(2, 12),
             };
-            return "\"" + new string('a', length) + "\"";
+            // Numbered, so two contacts are never identical by accident: the merge treats identical
+            // elements as interchangeable, and a test that means "this one" needs them distinct.
+            var name = new string('a', length) + id.ToString(System.Globalization.CultureInfo.InvariantCulture);
+            return "\"" + name + "\"";
         }
 
         LdBlock Element(int depth)

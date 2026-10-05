@@ -17,8 +17,55 @@ public sealed partial class LadderHtmlTests
     private static LadderBody Block(params LadderNetwork[] networks) =>
         new("Main", networks.Select((n, i) => n with { Number = i + 1 }).ToList());
 
-    private static string Html(LadderBody? old, LadderBody @new) =>
-        LadderHtml.Fragment(LadderDiff.Compare(old, @new), LadderStyle.Default);
+    private static string Html(LadderBody? old, LadderBody @new, LadderView view = LadderView.Merged) =>
+        LadderHtml.Fragment(LadderDiff.Compare(old, @new), LadderStyle.Default, view);
+
+    private static int Count(string html, string what) =>
+        (html.Length - html.Replace(what, "", StringComparison.Ordinal).Length) / what.Length;
+
+    [Fact]
+    public void Merged_is_the_default_and_a_changed_network_is_one_rung()
+    {
+        var html = Html(Block(Rung("o", "A", "B", "C")), Block(Rung("n", "A", "X", "C")));
+
+        Assert.Contains("data-view=\"merged\"", html, StringComparison.Ordinal);
+        Assert.Contains("ld-one", html, StringComparison.Ordinal);
+        Assert.Equal(1, Count(html, "<svg "));
+        Assert.Contains("data-key=\"n:nb\" data-change=\"modified\"", html, StringComparison.Ordinal);
+        Assert.Contains(">was B<", html, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Merged_a_replaced_network_is_two_rungs_in_one_row_never_one_invented_rung()
+    {
+        var html = Html(Block(Rung("o", "A", "B", "C")), Block(Rung("n", "P", "Q", "R")));
+
+        var row = Section(html, "replaced");
+        Assert.Equal(2, Count(row, "<svg "));
+        Assert.Contains("ld-old ld-c-removed", row, StringComparison.Ordinal);
+        Assert.Contains("ld-new ld-c-added", row, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Side_by_side_is_two_columns_when_asked()
+    {
+        var html = Html(Block(Rung("o", "A", "B", "C")), Block(Rung("n", "A", "X", "C")), LadderView.SideBySide);
+
+        Assert.Contains("data-view=\"side-by-side\"", html, StringComparison.Ordinal);
+        Assert.Contains("ld-two", html, StringComparison.Ordinal);
+        Assert.Equal(2, Count(html, "<svg "));
+    }
+
+    [Fact]
+    public void Merged_a_retitled_network_says_what_the_title_was()
+    {
+        var html = Html(
+            Block(Rung("o", "A", "B", "C", "Motor", "old note")),
+            Block(Rung("n", "A", "B", "C", "Main motor", "new note")));
+
+        Assert.Contains("<span class=\"ld-was\">was Motor</span>", html, StringComparison.Ordinal);
+        Assert.Contains("<p class=\"ld-comment ld-was-text\">old note</p>", html, StringComparison.Ordinal);
+    }
 
     [Fact]
     public void Titles_comments_and_tag_names_stay_text()
@@ -35,7 +82,7 @@ public sealed partial class LadderHtmlTests
     [Fact]
     public void Every_element_carries_its_key_and_its_change()
     {
-        var html = Html(Block(Rung("o", "A", "B", "C")), Block(Rung("n", "A", "X", "C")));
+        var html = Html(Block(Rung("o", "A", "B", "C")), Block(Rung("n", "A", "X", "C")), LadderView.SideBySide);
 
         var groups = ElementGroup().Matches(html).Select(m => m.Value).ToList();
         Assert.Equal(6, groups.Count);
@@ -46,7 +93,7 @@ public sealed partial class LadderHtmlTests
     [Fact]
     public void An_added_network_has_a_hatched_gap_on_the_old_side()
     {
-        var html = Html(Block(Rung("a", "A", "B", "C")), Block(Rung("a", "A", "B", "C"), Rung("b", "D", "E", "F")));
+        var html = Html(Block(Rung("a", "A", "B", "C")), Block(Rung("a", "A", "B", "C"), Rung("b", "D", "E", "F")), LadderView.SideBySide);
 
         var row = Section(html, "added");
         Assert.Contains("ld-old ld-gap", row, StringComparison.Ordinal);

@@ -282,6 +282,31 @@ public sealed class LadderPaneFlowTests
     }
 
     [Fact]
+    public void The_side_by_side_box_switches_the_ladder_between_merged_and_two_columns()
+    {
+        // The pane's "Side by side" box did nothing to a ladder (the owner, 2026-10-05). Merged
+        // is the default; ticking the box redraws the same comparison in two columns.
+        StaHarness.Run(() =>
+        {
+            var old = new LadderBody("Main", [Render("Main", "a").Comparison.Rows[0].New!.Network]);
+            var edited = new LadderBody("Main", [old.Networks[0] with { Title = "b" }]);
+            var view = new Versio.App.Views.LadderPageView
+            {
+                Visibility = System.Windows.Visibility.Collapsed,
+                Ladder = new LadderRender
+                {
+                    Path = "plc/Main.xml", Comparison = LadderDiff.Compare(old, edited), Style = LadderStyle.Default,
+                },
+            };
+            Assert.Contains("data-view=\"merged\"", view.PageHtml, StringComparison.Ordinal);
+
+            view.SideBySide = true;
+
+            Assert.Contains("data-view=\"side-by-side\"", view.PageHtml, StringComparison.Ordinal);
+        });
+    }
+
+    [Fact]
     public void A_reused_view_drops_the_last_blocks_diagram_while_the_next_is_pending()
     {
         // WPF reuses a template's view when the next selection is also a ladder. Pending must

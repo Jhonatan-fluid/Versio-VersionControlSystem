@@ -39,6 +39,18 @@ public sealed class LadderPageView : Border
         DependencyProperty.Register(nameof(Ladder), typeof(LadderRender), typeof(LadderPageView),
             new PropertyMetadata(null, (d, _) => ((LadderPageView)d).Render()));
 
+    /// <summary>
+    /// The pane's own "Side by side" box. Off (the default) is the merged view: one rung per
+    /// network with both versions on it. On is the committed version beside the working one.
+    /// </summary>
+    /// <remarks>
+    /// The box was there already for text diffs, and it did nothing to a ladder (the owner,
+    /// 2026-10-05). One box meaning one thing in every view beats a second toggle inside the page.
+    /// </remarks>
+    public static readonly DependencyProperty SideBySideProperty =
+        DependencyProperty.Register(nameof(SideBySide), typeof(bool), typeof(LadderPageView),
+            new PropertyMetadata(false, (d, _) => ((LadderPageView)d).Render()));
+
     public static readonly DependencyProperty ReportCommandProperty =
         DependencyProperty.Register(nameof(ReportCommand), typeof(ICommand), typeof(LadderPageView));
 
@@ -73,6 +85,12 @@ public sealed class LadderPageView : Border
         set => SetValue(LadderProperty, value);
     }
 
+    public bool SideBySide
+    {
+        get => (bool)GetValue(SideBySideProperty);
+        set => SetValue(SideBySideProperty, value);
+    }
+
     /// <summary>Where the view reports what it did, for the log.</summary>
     public ICommand? ReportCommand
     {
@@ -102,7 +120,8 @@ public sealed class LadderPageView : Border
         // a page that says "no changes" about a block that has some. And empty, not skipped:
         // WPF reuses this view when the next selection is also a ladder, so skipping would
         // leave the previous block's diagram on screen under the new block's name.
-        var fragment = ladder.Pending ? string.Empty : LadderHtml.Fragment(ladder.Comparison, ladder.Style);
+        var view = SideBySide ? LadderView.SideBySide : LadderView.Merged;
+        var fragment = ladder.Pending ? string.Empty : LadderHtml.Fragment(ladder.Comparison, ladder.Style, view);
         var html = LadderPage.Build(fragment, this);
 
         // Raw then back to Rendered changes visibility and nothing else; reloading the same page

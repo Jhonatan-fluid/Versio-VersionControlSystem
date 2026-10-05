@@ -29,27 +29,49 @@ namespace Versio.Core.Iec.Ladder;
 /// buttons that do nothing.
 /// </para>
 /// </remarks>
+public enum LadderView
+{
+    /// <summary>
+    /// One rung per network, both versions on it: added and removed elements where they stand,
+    /// modified ones with what they were. The default (the owner, 2026-10-05).
+    /// </summary>
+    Merged,
+
+    /// <summary>The committed version on the left, the working one on the right.</summary>
+    SideBySide,
+}
+
 public static class LadderHtml
 {
     /// <summary>The fragment for a compared block.</summary>
-    public static string Fragment(LadderComparison comparison, LadderStyle style)
+    public static string Fragment(LadderComparison comparison, LadderStyle style, LadderView view = LadderView.Merged)
     {
         ArgumentNullException.ThrowIfNull(comparison);
         ArgumentNullException.ThrowIfNull(style);
 
-        // Side by side only when there is something to put beside: an unchanged block, or one
-        // never committed, is one column, and two identical columns would only halve its width.
-        var twoColumns = comparison.HasOldSide && comparison.HasChanges;
+        // Side by side only when asked and when there is something to put beside: an unchanged
+        // block, or one never committed, is one column, and two identical columns would only
+        // halve its width.
+        var twoColumns = view == LadderView.SideBySide && comparison.HasOldSide && comparison.HasChanges;
         var html = new StringBuilder();
         html.Append("<div class=\"ld-page\" data-block=\"").Append(E(comparison.BlockName))
-            .Append("\" data-changes-only=\"").Append(twoColumns ? "true" : "false").Append("\">\n");
+            .Append("\" data-view=\"").Append(twoColumns ? "side-by-side" : "merged")
+            .Append("\" data-changes-only=\"").Append(comparison.HasOldSide && comparison.HasChanges ? "true" : "false")
+            .Append("\">\n");
 
         Summary(html, comparison, style);
 
         html.Append("<div class=\"ld-rows ").Append(twoColumns ? "ld-two" : "ld-one").Append("\">\n");
         foreach (var row in comparison.Rows)
         {
-            Row(html, row, style, twoColumns);
+            if (twoColumns)
+            {
+                Row(html, row, style, twoColumns: true);
+            }
+            else
+            {
+                MergedRow(html, row, style);
+            }
         }
 
         html.Append("</div>\n</div>\n");
@@ -148,7 +170,45 @@ public static class LadderHtml
         html.Append("</section>\n");
     }
 
-    private static void Side(StringBuilder html, LadderRow row, LadderSide? side, bool isOld, LadderStyle style)
+    /// <summary>
+    /// One row of the merged view: a changed network drawn once with both versions on its rung,
+    /// anything else as the one version it has.
+    /// </summary>
+    /// <remarks>
+    /// A replaced network (removed, and an unrelated one written in its place) is two rungs in
+    /// one row, the removed one above the added one: merging two unrelated rungs into one would
+    /// draw a rung that never existed. The same holds for a changed network with no
+    /// series/parallel shape on either side, which <see cref="LadderMerge"/> refuses to merge.
+    /// </remarks>
+    private static void MergedRow(StringBuilder html, LadderRow row, LadderStyle style)
+    {
+        var edited = row.Change is LadderChange.Changed or LadderChange.MovedAndChanged;
+        var merged = edited && row is { Old: { } o, New: { } n } ? LadderMerge.Merge(o.Network, n.Network) : null;
+        var stacked = row.Change == LadderChange.Replaced || (edited && merged is null);
+        if (merged is null && !stacked)
+        {
+            Row(html, row, style, twoColumns: false);
+            return;
+        }
+
+        var change = ChangeName(row.Change);
+        html.Append("<section class=\"ld-row ld-c-").Append(change).Append("\" id=\"").Append(RowId(row))
+            .Append("\" data-change=\"").Append(change).Append("\">\n");
+        if (merged is not null)
+        {
+            Side(html, row, row.New, isOld: false, style, merged);
+        }
+        else
+        {
+            Side(html, row, row.Old, isOld: true, style);
+            Side(html, row, row.New, isOld: false, style);
+        }
+
+        html.Append("</section>\n");
+    }
+
+    private static void Side(
+        StringBuilder html, LadderRow row, LadderSide? side, bool isOld, LadderStyle style, LadderMergedNetwork? merged = null)
     {
         var which = isOld ? "ld-old" : "ld-new";
         if (side is null)
@@ -189,6 +249,13 @@ public static class LadderHtml
                 .Append(E(network.Title)).Append("</span>");
         }
 
+        // Merged, there is no other side to read the old title from, so it is said here.
+        if (merged is not null && titleChanged)
+        {
+            html.Append("<span class=\"ld-was\">was ")
+                .Append(E(other!.Network.Title.Length > 0 ? other.Network.Title : "untitled")).Append("</span>");
+        }
+
         if (badge is not null)
         {
             html.Append("<span class=\"ld-badge\">").Append(E(badge)).Append("</span>");
@@ -210,14 +277,19 @@ public static class LadderHtml
                 .Append(E(network.Comment)).Append("</p>\n");
         }
 
-        var drawing = LadderLayout.Lay(network, style);
+        if (merged is not null && commentChanged && other!.Network.Comment.Length > 0)
+        {
+            html.Append("<p class=\"ld-comment ld-was-text\">").Append(E(other.Network.Comment)).Append("</p>\n");
+        }
+
+        var drawing = merged is null ? LadderLayout.Lay(network, style) : LadderLayout.LayMerged(merged, style);
         if (drawing.FallbackReason is { } reason)
         {
             html.Append("<p class=\"ld-fallback\">Placed by power-flow order rather than as rungs: ")
                 .Append(E(reason)).Append(".</p>\n");
         }
 
-        Svg(html, drawing, side, network.Number, style);
+        Svg(html, drawing, merged?.Marks ?? side.Marks, network.Number, style);
         html.Append("</div>\n");
     }
 
@@ -240,7 +312,8 @@ public static class LadderHtml
         };
     }
 
-    private static void Svg(StringBuilder html, LadderDrawing drawing, LadderSide side, int number, LadderStyle style)
+    private static void Svg(
+        StringBuilder html, LadderDrawing drawing, IReadOnlyDictionary<string, LdMark> marks, int number, LadderStyle style)
     {
         html.Append("<div class=\"ld-scroll\"><svg class=\"ld-net\" xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 ")
             .Append(F(drawing.Width)).Append(' ').Append(F(drawing.Height))
@@ -251,7 +324,7 @@ public static class LadderHtml
 
         foreach (var group in drawing.Groups)
         {
-            var mark = group.Key.Length > 0 && side.Marks.TryGetValue(group.Key, out var m) ? m : LdMark.Same;
+            var mark = group.Key.Length > 0 && marks.TryGetValue(group.Key, out var m) ? m : LdMark.Same;
             html.Append("<g class=\"ld-el ld-k-").Append(group.Kind);
             if (mark != LdMark.Same)
             {
