@@ -60,13 +60,13 @@ marking, duplicate-param keys, and the detail-pane lookup. All of them are in
 
 | Project | Tests | Time | Needs |
 |---|---|---|---|
-| `Versio.Core.Tests` | 1,632 | under a second | nothing |
+| `Versio.Core.Tests` | 1,637 | under a second | nothing |
 | `Versio.Integration.Tests` | 168 | ~10 s | real git |
 | `Versio.App.Tests` | 767 | 8 m 38 s on 2026-10-05; ~3.6 min on 2026-09-22 | nothing |
 | `Versio.Arch.Tests` | 27 | instant | nothing |
 | `Versio.Plc.Codesys.Pure.Tests` | 263 | under a second | nothing |
 | `Versio.Plc.Codesys.Parity.Tests` | 97 | ~15 s | `python` on PATH — skips cleanly without it, so check the count |
-| `Versio.Plc.TiaPortal.Pure.Tests` | 85 | instant | nothing |
+| `Versio.Plc.TiaPortal.Pure.Tests` | 92 | instant | nothing |
 | `Versio.Plc.TiaPortal.Tests` | 5 | seconds when skipped; minutes when Portal runs the import gate | **real TIA Portal** — skips without Openness membership or LFS content |
 | `Versio.Plc.TwinCat.Pure.Tests` | 21 | instant | nothing |
 | `Versio.Plc.TwinCat.Tests` | 6 | seconds when skipped; ~5 min when XAE runs the import gate | **real TwinCAT XAE** — skips without `TcXaeShell.DTE.17.0` or the fixture |
@@ -287,9 +287,12 @@ One list. Reorder it; do not copy it into another file.
      and whether LAD writes `O` parts first.
    - **The commit view** stays Raw-only for a ladder block. Drawing parent against commit
      is the same `LadderDiff`, fed from `git show <c>^:<p>`.
-   - **FBD** (127 networks in the fixture) shares the parser's schema, but it needs its own
-     layout (boxes wired left to right, no rail). It is not ladder, and it stays highlighted
-     XML until it has that layout.
+   - ~~**FBD** (127 networks in the fixture) shares the parser's schema, but it needs its own
+     layout (boxes wired left to right, no rail).~~ — **drawn 2026-10-05 on `FbdRendering`.**
+     All 127 fixture networks parse and draw within the invariants, and three blocks are
+     approved drawings. See `vendors/tia/DRIVING.md`, "Graphical blocks". Left:
+     - **an FBD merged view.** A changed FBD network is old above new today;
+     - **owner eyeball** of the FBD scenarios (`40_` to `44_` in the scratch repository).
    - **Other vendors.** CODESYS `NetworkList` and TwinCAT PLCopen `<LD>` are each one parser
      in their own pack behind `TryParseLadder`. PLCopen's reader belongs in `Versio.Core/Iec/`,
      because it is a standard both use.
@@ -342,8 +345,9 @@ Close Versio **and** Portal before a host rebuild. Click **Yes to all** on Openn
   from the YAML is left alone.
 - **Graphical POUs export as native XML.** Their diffs will never read as well as ST.
   ~~Nothing graphical is drawn~~ — since 2026-10-05 a **TIA LAD** block's Rendered tab draws
-  its networks, the committed copy beside the working one (item 6). Raw stays XML. FBD, CFC,
-  and other vendors' LD are still highlighted XML.
+  its networks, the committed copy beside the working one (item 6). Raw stays XML.
+  **TIA FBD** joined it the same day. CFC, SFC, and other vendors' LD and FBD are still
+  highlighted XML.
 - **Visualisation bindings after a rename: unmeasured, by decision (2026-08-17).** The owner
   does not use CODESYS visualisations. A project that does should measure whether bindings hold
   by name before trusting a rename.

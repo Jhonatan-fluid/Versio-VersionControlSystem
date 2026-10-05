@@ -404,10 +404,31 @@ draws its networks:
 with every vendor.
 
 **What the fixture has.** `Main_1` is LAD, and its one network is empty
-(`<NetworkSource />`). `Cyclic interrupt`, `Startup` and 18 more blocks are **FBD**: 127
-`FlgNet` networks. None is LAD. FBD uses the same `FlgNet` v5 schema, and the parser
-returns null for it on purpose: drawing FBD as rungs would show something the IDE does not.
-FBD keeps highlighted XML until it gets its own layout.
+(`<NetworkSource />`). `Cyclic interrupt`, `Startup` and 19 more blocks (21 in all) are
+**FBD**: 127 `FlgNet` networks. None is LAD. FBD uses the same `FlgNet` v5 schema.
+
+**FBD is drawn too, from 2026-10-05.** The block's and each compile unit's
+`ProgrammingLanguage` decide, network by network, so one block can mix LAD and FBD as Portal
+allows. FBD is laid out by its own code in Core, `LadderLayout.FunctionBlock.cs`:
+- no rail;
+- boxes in columns by their distance from the inputs, so every chain starts at the left;
+- each box's input rows level with the outputs feeding them, so every wire into a gate is
+  one straight line (`>=1` stretches to fit seven comparators);
+- `Coil` drawn as the `=` assignment box with its operand above.
+
+In FBD, `A`, `O` and `X` are the gates `&`, `>=1` and `X`. `O` is **not** folded as it is in
+ladder: here it is the OR box. Comparators are `CMP ==` boxes with their pins, not drawn in
+line.
+
+Measured on the fixture: every one of the 127 networks parses, with no unrecognised part.
+Wires are one to one: no output feeds two boxes, so every network is a forest of expression
+trees. All 127 draw within the shared invariants. `Cyclic interrupt`, `P100` and `Service`
+are pinned as approved drawings (`Fixture_*.approved.html`), from Portal's own output rather
+than hand-written XML.
+
+A changed FBD network is drawn old above new, each marked, not merged into one diagram. One
+wire per input pin leaves a removed subtree nowhere to hang beside the one that replaced it.
+That is a design question of its own, and it is on the STATUS queue.
 
 **How SimaticML says a ladder network**, as the parser reads it:
 
