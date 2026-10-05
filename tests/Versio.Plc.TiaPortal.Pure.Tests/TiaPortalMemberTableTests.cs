@@ -363,17 +363,34 @@ public sealed class TiaPortalMemberTableTests
     }
 
     [Fact]
-    public void A_plc_data_type_is_not_a_table()
+    public void A_plc_data_type_tables_its_members_as_a_data_type()
     {
-        const string udt = """
+        // Shaped on the fixture's AnaVal: a comment in two languages, a default value, and
+        // a reserved bit locked from outside. It used to be refused here and shown as SCL
+        // text; the owner asked for UDTs as tables on 2026-10-04.
+        var table = MustParse("""
             <?xml version="1.0" encoding="utf-8"?>
             <Document>
               <SW.Types.PlcStruct ID="0">
                 <AttributeList>
                   <Interface>
-                    <Sections>
+                    <Sections xmlns="http://www.siemens.com/automation/Openness/SW/Interface/v5">
                       <Section Name="None">
-                        <Member Name="Value" Datatype="Real" />
+                        <Member Name="Value" Datatype="Real">
+                          <Comment>
+                            <MultiLanguageText Lang="de-DE">Wert</MultiLanguageText>
+                            <MultiLanguageText Lang="en-US">Value</MultiLanguageText>
+                          </Comment>
+                        </Member>
+                        <Member Name="ST" Datatype="Byte">
+                          <StartValue>BYTE#16#80</StartValue>
+                        </Member>
+                        <Member Name="InternalUseBit0" Datatype="Bool">
+                          <AttributeList>
+                            <BooleanAttribute Name="ExternalAccessible" SystemDefined="true">false</BooleanAttribute>
+                            <BooleanAttribute Name="ExternalWritable" SystemDefined="true">false</BooleanAttribute>
+                          </AttributeList>
+                        </Member>
                       </Section>
                     </Sections>
                   </Interface>
@@ -381,9 +398,35 @@ public sealed class TiaPortalMemberTableTests
                 </AttributeList>
               </SW.Types.PlcStruct>
             </Document>
-            """;
+            """);
 
-        Assert.Null(Parse("AnaVal.xml", udt));
+        Assert.Equal("AnaVal", table.Name);
+        Assert.True(table.IsDataType);
+        Assert.Equal("DEFAULT VALUE", table.ValueHeader);
+        Assert.False(table.HasNumber);
+
+        Assert.Collection(table.Members,
+            r => Assert.Equal(("Value", "Real", "", "Read/Write", "Wert"),
+                              (r.Name, r.Datatype, r.StartValue, r.ExternalAccess, r.Comment)),
+            r => Assert.Equal(("ST", "Byte", "BYTE#16#80"), (r.Name, r.Datatype, r.StartValue)),
+            r => Assert.Equal(("InternalUseBit0", "None"), (r.Name, r.ExternalAccess)));
+    }
+
+    [Fact]
+    public void A_data_block_is_not_marked_a_data_type()
+    {
+        // The flag is what changes the pane's words; a block that set it would be captioned
+        // with "default value" over its start values.
+        var table = MustParse("""
+            <Document>
+              <SW.Blocks.GlobalDB ID="0">
+                <AttributeList><Name>Limits</Name></AttributeList>
+              </SW.Blocks.GlobalDB>
+            </Document>
+            """);
+
+        Assert.False(table.IsDataType);
+        Assert.Equal("START VALUE", table.ValueHeader);
     }
 
     [Fact]

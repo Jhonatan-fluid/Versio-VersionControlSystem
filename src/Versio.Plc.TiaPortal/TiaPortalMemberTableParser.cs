@@ -11,9 +11,12 @@ namespace Versio.Plc.TiaPortal;
 /// The pane is vendor-neutral; this file is not. Instance and global data blocks
 /// carry an Interface tree the IDE already draws as a start-value table, and the
 /// rendered view asks the format for that table rather than highlighting a thousand
-/// lines of XML. Function blocks, functions and PLC data types use the same Interface
-/// schema and are refused here — that is a later pane, and widening the local-name
-/// gate would silently table the wrong objects.
+/// lines of XML. PLC data types (<c>SW.Types.PlcStruct</c>) carry the same tree and
+/// are tabled too since 2026-10-04 - the owner asked for UDTs as tables rather than
+/// SCL text - marked <see cref="MemberTable.IsDataType"/> so the pane says "default
+/// value" as the IDE does. Function blocks and functions use the same Interface schema
+/// and are still refused: their sections are parameters and temporaries, a different
+/// pane, and widening the gate further would silently table the wrong objects.
 /// </para>
 /// <para>
 /// Nested members flatten to a dotted path. Array start values live on
@@ -27,6 +30,7 @@ public static class TiaPortalMemberTableParser
 {
     private const string InstanceDb = "SW.Blocks.InstanceDB";
     private const string GlobalDb = "SW.Blocks.GlobalDB";
+    private const string PlcStruct = "SW.Types.PlcStruct";
 
     public static MemberTable? TryParse(string relativePath, string content)
     {
@@ -74,16 +78,17 @@ public static class TiaPortalMemberTableParser
             InstanceOf = Text(attrs, "InstanceOfName"),
             MemoryLayout = Text(attrs, "MemoryLayout"),
             Members = members,
+            IsDataType = block.Name.LocalName == PlcStruct,
         };
     }
 
     /// <summary>
-    /// Only the two data-block kinds. <c>SW.Blocks.FB</c> has an Interface too;
-    /// treating any <c>SW.Blocks.*</c> as a table is the mutation the FB fixture
-    /// exists to catch.
+    /// The two data-block kinds and the PLC data type. <c>SW.Blocks.FB</c> has an
+    /// Interface too; treating any <c>SW.Blocks.*</c> as a table is the mutation the FB
+    /// fixture exists to catch.
     /// </summary>
     private static bool IsDataBlock(XElement element) =>
-        element.Name.LocalName is InstanceDb or GlobalDb;
+        element.Name.LocalName is InstanceDb or GlobalDb or PlcStruct;
 
     private static void WalkSections(
         XElement sections,

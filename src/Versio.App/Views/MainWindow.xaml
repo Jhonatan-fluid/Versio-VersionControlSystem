@@ -1239,7 +1239,7 @@
                                                    Foreground="{DynamicResource Brush.Text.Disabled}"
                                                    Visibility="{Binding HasMemoryLayout,
                                                        Converter={StaticResource BoolToVisibility}}" />
-                                        <TextBlock Text="Read-only view of the data block interface. This table does not write back."
+                                        <TextBlock Text="{Binding ReadOnlyNote}"
                                                    TextWrapping="Wrap" Margin="0,2,0,8"
                                                    FontFamily="{DynamicResource Font.UI}"
                                                    FontSize="{DynamicResource Font.Size.Caption}"
@@ -1264,7 +1264,7 @@
                                                         <TextBlock Text="TYPE" Style="{StaticResource SectionLabel}" />
                                                     </Border>
                                                     <Border Grid.Column="2" Style="{StaticResource MemberTableCell}">
-                                                        <TextBlock Text="START VALUE" Style="{StaticResource SectionLabel}" />
+                                                        <TextBlock Text="{Binding ValueHeader}" Style="{StaticResource SectionLabel}" />
                                                     </Border>
                                                     <Border Grid.Column="3" Style="{StaticResource MemberTableCell}">
                                                         <TextBlock Text="EXTERNAL ACCESS" Style="{StaticResource SectionLabel}" />

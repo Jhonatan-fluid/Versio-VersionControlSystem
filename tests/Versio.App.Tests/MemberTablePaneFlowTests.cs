@@ -87,6 +87,27 @@ public sealed class MemberTablePaneFlowTests
         </Document>
         """;
 
+    private const string DataType = """
+        <?xml version="1.0" encoding="utf-8"?>
+        <Document>
+          <SW.Types.PlcStruct ID="0">
+            <AttributeList>
+              <Interface>
+                <Sections>
+                  <Section Name="None">
+                    <Member Name="Value" Datatype="Real" />
+                    <Member Name="ST" Datatype="Byte">
+                      <StartValue>BYTE#16#80</StartValue>
+                    </Member>
+                  </Section>
+                </Sections>
+              </Interface>
+              <Name>AnaVal</Name>
+            </AttributeList>
+          </SW.Types.PlcStruct>
+        </Document>
+        """;
+
     private static void GivenATrackedPortalProject(TempRepo repo)
     {
         var versio = Path.Combine(repo.Path, ".versio");
@@ -118,7 +139,7 @@ public sealed class MemberTablePaneFlowTests
           "vendor": "TiaPortal",
           "bindingId": "b1",
           "project": "Station.ap21",
-          "objectCount": 3,
+          "objectCount": 4,
           "objects": [
             { "guid": "db1", "name": "Limits", "type": "DB", "form": "NATIVE",
               "path": "Blocks/Limits.xml", "hash": "sha256:0", "bytes": 1 },
@@ -127,7 +148,11 @@ public sealed class MemberTablePaneFlowTests
             { "guid": "db2", "name": "Pid", "type": "DB", "form": "NATIVE",
               "path": "Blocks/Pid.xml", "hash": "sha256:0", "bytes": 1 },
             { "guid": "fb1", "name": "Motor", "type": "FB", "form": "NATIVE",
-              "path": "Blocks/Motor.xml", "hash": "sha256:0", "bytes": 1 }
+              "path": "Blocks/Motor.xml", "hash": "sha256:0", "bytes": 1 },
+            { "guid": "udt1", "name": "AnaVal", "type": "UDT", "form": "SCL",
+              "path": "Types/AnaVal.udt", "hash": "sha256:0", "bytes": 1 },
+            { "guid": "udt1", "name": "AnaVal", "type": "UDT", "form": "XML_REVIEW",
+              "path": "Types/AnaVal.xml", "hash": "sha256:0", "bytes": 1 }
           ],
           "warnings": [],
           "skipped": []
@@ -139,6 +164,12 @@ public sealed class MemberTablePaneFlowTests
         File.WriteAllText(Path.Combine(blocks, "Pid.scl"),
             "DATA_BLOCK \"Pid\"\nVAR\nEND_VAR\n");
         File.WriteAllText(Path.Combine(blocks, "Motor.xml"), FunctionBlock);
+
+        var types = Path.Combine(repo.Path, "plc", "Station", "Types");
+        Directory.CreateDirectory(types);
+        File.WriteAllText(Path.Combine(types, "AnaVal.udt"),
+            "TYPE \"AnaVal\"\nVERSION : 0.1\n   STRUCT\n      Value : Real;\n   END_STRUCT;\nEND_TYPE\n");
+        File.WriteAllText(Path.Combine(types, "AnaVal.xml"), DataType);
     }
 
     private static async Task<TreeRow> Row(ShellViewModel shell, string name)
@@ -227,6 +258,29 @@ public sealed class MemberTablePaneFlowTests
         Assert.Equal("Pid", table.Name);
         Assert.Equal("PidCtrl", table.InstanceOf);
         Assert.Equal("1.5", Assert.Single(table.Members).StartValue);
+    }
+
+    [Fact]
+    public async Task A_data_type_renders_as_its_member_table_not_its_scl()
+    {
+        // The .udt is the primary file and reads as SCL; the table comes from the native XML
+        // beside it, the same route a data block's .scl takes. Shown as plain text until
+        // 2026-10-04.
+        using var repo = new TempRepo();
+        GivenATrackedPortalProject(repo);
+
+        using var shell = Shell();
+        await shell.OpenAsync(repo.Path);
+
+        var node = await Row(shell, "AnaVal");
+        Assert.EndsWith(".udt", node.PrimaryFile, StringComparison.OrdinalIgnoreCase);
+
+        shell.Sync.SelectedNode = node;
+
+        var table = Assert.IsType<MemberTable>(shell.RenderedContent);
+        Assert.Equal("AnaVal", table.Name);
+        Assert.True(table.IsDataType);
+        Assert.Equal(["Value", "ST"], table.Members.Select(m => m.Name));
     }
 
     [Fact]

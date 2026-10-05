@@ -88,4 +88,25 @@ public sealed record MemberTable
         Number.Length == 0 ? string.Empty : "Number " + Number;
 
     public bool HasMemoryLayout => MemoryLayout.Length > 0;
+
+    /// <summary>
+    /// A user-defined data type rather than a data block: a declaration with no storage of
+    /// its own.
+    /// </summary>
+    /// <remarks>
+    /// The IEC 61131-3 notion, not a vendor's: a structure type declared once and used by the
+    /// blocks that hold values. It changes two words on the pane and nothing else - a type's
+    /// initial values are defaults every instance starts from, not the start values of one
+    /// block, and calling the table "the data block interface" would name the wrong object.
+    /// Added 2026-10-04 when data types first got a table (they showed as plain text before).
+    /// </remarks>
+    public bool IsDataType { get; init; }
+
+    /// <summary>The value column's header: what the IDE calls it for this kind of object.</summary>
+    public string ValueHeader => IsDataType ? "DEFAULT VALUE" : "START VALUE";
+
+    /// <summary>The one-line note under the title.</summary>
+    public string ReadOnlyNote => IsDataType
+        ? "Read-only view of the data type's members. This table does not write back."
+        : "Read-only view of the data block interface. This table does not write back.";
 }
