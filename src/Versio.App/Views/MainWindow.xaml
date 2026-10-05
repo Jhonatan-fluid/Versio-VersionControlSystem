@@ -921,6 +921,15 @@
                                                      Value="{x:Null}">
                                             <Setter Property="Visibility" Value="Visible" />
                                         </DataTrigger>
+                                        <!-- Last, so it wins: "covered the moment there are
+                                             lines" assumed whatever covers it is opaque, and a
+                                             rendered view need not be - the interface table's
+                                             split showed this sentence through its code pane
+                                             while the diff loaded (2026-10-04). A rendered or
+                                             web view on screen is an answer, not "select a file". -->
+                                        <DataTrigger Binding="{Binding ShowRawPane}" Value="False">
+                                            <Setter Property="Visibility" Value="Collapsed" />
+                                        </DataTrigger>
                                     </Style.Triggers>
                                 </Style>
                             </TextBlock.Style>
