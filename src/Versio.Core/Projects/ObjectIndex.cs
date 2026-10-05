@@ -59,6 +59,9 @@ public sealed record NamedObject
     public string TypeLabel => ObjectTypeNames.Chip(Vendor, Type);
 }
 
+/// <summary>One object found by name: its identity and every file it was exported to.</summary>
+public sealed record ObjectFiles(string Guid, IReadOnlyList<string> Paths);
+
 /// <summary>
 /// Every exported file in the workspace, by the path git reports it under.
 /// </summary>
@@ -95,7 +98,36 @@ public sealed class ObjectIndex
 
     private readonly Dictionary<string, NamedObject> _byPath;
 
-    private ObjectIndex(Dictionary<string, NamedObject> byPath) => _byPath = byPath;
+    /// <summary>
+    /// Project and object name to every file of that object - what a type reference resolves
+    /// through. Keyed per project: two projects may each have their own <c>MotL</c>, and a
+    /// member can only mean the one in its own project.
+    /// </summary>
+    private readonly Dictionary<(string Project, string Name), ObjectFiles> _byName;
+
+    private ObjectIndex(Dictionary<string, NamedObject> byPath)
+    {
+        _byPath = byPath;
+        _byName = byPath
+            .GroupBy(e => (e.Value.Project, e.Value.Name), new ProjectNameComparer())
+            .ToDictionary(
+                g => g.Key,
+                g =>
+                {
+                    // One object per name: the first guid in path order. A second object
+                    // with the same name in one project (possible across folders in some
+                    // vendors' trees) is ambiguous, and resolving to the first is stable
+                    // rather than right - say so if it ever matters.
+                    var guid = g.OrderBy(e => e.Key, StringComparer.OrdinalIgnoreCase).First().Value.Guid;
+                    return new ObjectFiles(
+                        guid,
+                        g.Where(e => e.Value.Guid == guid)
+                         .Select(e => e.Key)
+                         .OrderBy(p => p, StringComparer.OrdinalIgnoreCase)
+                         .ToList());
+                },
+                new ProjectNameComparer());
+    }
 
     /// <summary>How many exported files are indexed.</summary>
     public int Count => _byPath.Count;
@@ -155,6 +187,29 @@ public sealed class ObjectIndex
         }
 
         return _byPath.GetValueOrDefault(Normalize(repoRelativePath));
+    }
+
+    /// <summary>
+    /// The object named <paramref name="name"/> in <paramref name="project"/>, with every file
+    /// it was exported to, or null when the export wrote no such object.
+    /// </summary>
+    /// <remarks>
+    /// Case-insensitive, as IEC identifiers are. A miss is the ordinary answer for a library or
+    /// system type: those are referenced by name and never exported into the project.
+    /// </remarks>
+    public ObjectFiles? FindByName(string project, string name) =>
+        _byName.GetValueOrDefault((project, name));
+
+    private sealed class ProjectNameComparer : IEqualityComparer<(string Project, string Name)>
+    {
+        public bool Equals((string Project, string Name) x, (string Project, string Name) y) =>
+            string.Equals(x.Project, y.Project, StringComparison.OrdinalIgnoreCase)
+            && string.Equals(x.Name, y.Name, StringComparison.OrdinalIgnoreCase);
+
+        public int GetHashCode((string Project, string Name) key) =>
+            HashCode.Combine(
+                StringComparer.OrdinalIgnoreCase.GetHashCode(key.Project),
+                StringComparer.OrdinalIgnoreCase.GetHashCode(key.Name));
     }
 
     /// <summary>

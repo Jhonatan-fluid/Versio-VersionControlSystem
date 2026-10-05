@@ -6762,6 +6762,111 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
     }
 
     /// <summary>Build the rendered view for a tree row, or null when only raw makes sense.</summary>
+    /// <summary>
+    /// Resolve each member's type reference to an object in the same project, and mark the
+    /// ones whose object has uncommitted changes.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Asked for by the owner on 2026-10-04: a block whose member is typed by a UDT should
+    /// link to that UDT, and should say so when the UDT changed. A changed type changes what
+    /// the block holds, and the block's own diff is empty - it is the one change a reviewer
+    /// reading the block cannot otherwise see.
+    /// </para>
+    /// <para>
+    /// The format names the reference; the object index, built from the manifests, says
+    /// whether the export wrote such an object and which files it is. "Changed" is any of
+    /// those files in the working tree's change list - the same list the Git panel shows, so
+    /// a highlighted row and the panel can never disagree. A reference to a library or system
+    /// type finds nothing and is left as text: a link to nowhere is worse than none.
+    /// </para>
+    /// </remarks>
+    private MemberTable LinkTypes(MemberTable table, string sourceFile)
+    {
+        if (!table.Members.Any(m => m.TypeReference.Length > 0)
+            || Sync.Objects.Lookup(sourceFile) is not { } owner)
+        {
+            return table;
+        }
+
+        var changed = Pending.Select(p => p.Path).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var linked = 0;
+
+        var rows = table.Members.Select(member =>
+        {
+            if (member.TypeReference.Length == 0
+                || Sync.Objects.FindByName(owner.Project, member.TypeReference) is not { } target)
+            {
+                return member;
+            }
+
+            linked++;
+            return member with
+            {
+                LinkGuid = target.Guid,
+                ReferenceChanged = target.Paths.Any(changed.Contains),
+            };
+        }).ToList();
+
+        _logger.Debug(LogCategory.Ui,
+            $"member table {table.Name}: {linked} type reference(s) linked, " +
+            $"{rows.Count(r => r.ReferenceChanged)} to a changed object");
+
+        return table with { Members = rows };
+    }
+
+    /// <summary>A linked type pressed in a member table; the parameter is the object's guid.</summary>
+    public RelayCommand<string> OpenObjectCommand =>
+        _openObjectCommand ??= new RelayCommand<string>(OpenObject);
+
+    private RelayCommand<string>? _openObjectCommand;
+
+    /// <summary>
+    /// Open the object a type link points at, the way selecting its row would.
+    /// </summary>
+    /// <remarks>
+    /// Looked for in the Project panel's tree first, where a changed object lives, then the
+    /// Explorer's, which lists every object. Opened with the same <see cref="ShowNode"/> a
+    /// click runs, so the defaults are the tree's: a changed type opens on its diff - which
+    /// is "show me what changed" - and a clean one on its table. Not found is said in the
+    /// log rather than guessed at.
+    /// </remarks>
+    private void OpenObject(string guid)
+    {
+        _logger.Click("Pane.TypeLink");
+
+        var node = FindObjectNode(Sync.Tree.Select(r => r.Node), guid)
+                   ?? FindObjectNode(Explorer.Tree.Select(r => r.Node), guid);
+
+        if (node is null)
+        {
+            _logger.Info(LogCategory.Ui, $"type link not followed, no object {guid} in either tree");
+            return;
+        }
+
+        _logger.Info(LogCategory.Ui, $"following type link to {node.Name} ({node.Path})");
+        ShowNode(new TreeRow(node, depth: 0), visualizeOnly: node.Status == ChangeKind.Unmodified);
+    }
+
+    private static ProjectTreeNode? FindObjectNode(IEnumerable<ProjectTreeNode> nodes, string guid)
+    {
+        foreach (var node in nodes)
+        {
+            if (node.Kind is ProjectNodeKind.Object
+                && string.Equals(node.Guid, guid, StringComparison.OrdinalIgnoreCase))
+            {
+                return node;
+            }
+
+            if (FindObjectNode(node.Children, guid) is { } found)
+            {
+                return found;
+            }
+        }
+
+        return null;
+    }
+
     private object? BuildRenderedContent(TreeRow row)
     {
         if (RepositoryPath is not { } root)
@@ -6852,8 +6957,22 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
                     foreach (var file in node.Files)
                     {
                         if (ReadOrNull(file) is { } text
-                            && format.TryParseMemberTable(file, text) is { IsValid: true } table)
+                            && format.TryParseMemberTable(file, text) is { IsValid: true } parsed)
                         {
+                            var table = LinkTypes(parsed, file);
+
+                            // A code block is its interface AND its code. The table alone
+                            // would take the code out of the Rendered tab it was always in,
+                            // so the source rides underneath it.
+                            if (table.IsInterface
+                                && row.PrimaryFile is { } code
+                                && SourceRender.Load(Absolute(code), code,
+                                       noChanges: node.Status == ChangeKind.Unmodified) is { } codeView
+                                && !codeView.PseudoDiff.Contains('\0'))
+                            {
+                                return new InterfaceRender { Table = table, Source = codeView };
+                            }
+
                             return table;
                         }
                     }

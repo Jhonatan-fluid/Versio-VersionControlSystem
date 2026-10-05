@@ -19,6 +19,49 @@ produce a diff touching everything else.
 
 ---
 
+### Data types and function blocks as tables, with a type's changes shown on the block that uses it
+
+**2026-10-04, asked for by the owner** looking at `AnaVal.udt` and `Service_Interaction_FB.scl`
+in the Rendered tab: SCL text, every member's attribute block running off the right edge.
+
+- **UDTs** (`SW.Types.PlcStruct`) are tabled from the native XML the export already writes
+  beside each `.udt` - the same Interface tree the data-block table reads, so the TIA parser's
+  gate admitted it. `MemberTable.IsDataType` (the IEC notion, not the vendor's word) changes the
+  value column to DEFAULT VALUE, what the IDE calls a type's initial values.
+- **FBs and FCs** are tabled as an interface: a heading band per non-empty section (Input,
+  Output, InOut, Static, Temp, Constant), with the block's **code kept underneath** behind a
+  splitter - tabling the interface must not take away what the tab always showed
+  (`InterfaceRender`). Organization blocks stay out; a test pins it, as the FB test used to.
+- **Type links.** A quoted datatype (`"MotL"`, `Array[1..4] of "AnaVal"`) is a reference the
+  format names (`MemberRow.TypeReference`); the app resolves it through a new
+  `ObjectIndex.FindByName` to an object in the same project. Resolved, it is a link that opens
+  that object exactly as its tree row would. Unresolved - a library or system type the export
+  never wrote, like the fixture's `MotL` - it stays text: a link to nowhere is worse than none.
+- **A changed type marks the row.** If any file of the linked object is in the working tree's
+  change list (the Git panel's own list, so the two cannot disagree), the member's row is
+  tinted. This is the one change a reviewer reading the block cannot otherwise see: the
+  block's own diff is empty. The link then opens the type **on its diff**, because that is
+  where a changed object opens. `MemberTablePaneFlowTests` goes red if the marking is forced
+  off (checked); `InterfaceLinkWindowTests` realises the window and finds the drawn link bound
+  to the shell's command, the part no view-model test sees.
+
+**And one older defect found by looking at it.** "Select a file to see what changed" sits
+behind the diff and assumed whatever covers it is opaque. The interface split is not, so the
+sentence showed through the code pane while the diff loaded. It now hides whenever a rendered
+or web view is on screen.
+
+**Also on this date, the blank page behind the browser views.** Both page views went blank in
+the owner's window: `WebView2CompositionControl` renders through Windows.Graphics.Capture and
+threw `FileNotFoundException` for `Microsoft.Windows.SDK.NET` from `OnApplyTemplate`, four times
+on the UI thread, caught by the dispatcher handler and logged. Headless-Edge previews and the
+suite had both been green - neither creates the control. The App and its two test projects now
+target `net9.0-windows10.0.17763.0` (a `TargetPlatformVersion` property beside the old TFM is
+ignored, measured), with the output folder pinned to `bin\Debug\net9.0-windows` so build.bat and
+the tools scripts are untouched. **Cost: +23.6 MB** of SDK projection in the output. Rejected:
+the HWND WebView2, which needs nothing but draws over the in-window toasts.
+
+---
+
 ### A Markdown file's Rendered tab drew the raw text, and HTML had no page view at all
 
 **Found 2026-10-04** by the owner, on `docs/outpost/PLAN.md`: Rendered pressed, and the pane

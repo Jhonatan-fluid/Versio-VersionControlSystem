@@ -1293,6 +1293,17 @@
                                                                     <ColumnDefinition Width="Auto" SharedSizeGroup="MemAccess" MinWidth="108" />
                                                                     <ColumnDefinition Width="*" MinWidth="120" />
                                                                 </Grid.ColumnDefinitions>
+
+                                                                <!-- A changed type under this row: tinted in the
+                                                                     modified colour, with the reason on hover. The
+                                                                     block's own diff is empty for this change, so
+                                                                     the row is the only place it shows. -->
+                                                                <Rectangle Grid.ColumnSpan="5" IsHitTestVisible="False"
+                                                                           Fill="{DynamicResource Brush.Status.Modified}"
+                                                                           Opacity="0.16"
+                                                                           Visibility="{Binding ReferenceChanged,
+                                                                               Converter={StaticResource BoolToVisibility}}" />
+
                                                                 <Border Style="{StaticResource MemberTableCell}">
                                                                     <TextBlock Text="{Binding DisplayName}"
                                                                                TextTrimming="CharacterEllipsis"
@@ -1302,12 +1313,51 @@
                                                                                Foreground="{DynamicResource Brush.Text.Primary}" />
                                                                 </Border>
                                                                 <Border Grid.Column="1" Style="{StaticResource MemberTableCell}">
-                                                                    <TextBlock Text="{Binding Datatype}"
-                                                                               TextTrimming="CharacterEllipsis"
-                                                                               ToolTip="{Binding Datatype}"
-                                                                               FontFamily="{DynamicResource Font.Mono}"
-                                                                               FontSize="{DynamicResource Font.Size.Caption}"
-                                                                               Foreground="{DynamicResource Brush.Text.Secondary}" />
+                                                                    <Grid>
+                                                                        <TextBlock Text="{Binding Datatype}"
+                                                                                   TextTrimming="CharacterEllipsis"
+                                                                                   ToolTip="{Binding Datatype}"
+                                                                                   FontFamily="{DynamicResource Font.Mono}"
+                                                                                   FontSize="{DynamicResource Font.Size.Caption}"
+                                                                                   Foreground="{DynamicResource Brush.Text.Secondary}">
+                                                                            <TextBlock.Style>
+                                                                                <Style TargetType="TextBlock">
+                                                                                    <Style.Triggers>
+                                                                                        <DataTrigger Binding="{Binding HasLink}" Value="True">
+                                                                                            <Setter Property="Visibility" Value="Collapsed" />
+                                                                                        </DataTrigger>
+                                                                                    </Style.Triggers>
+                                                                                </Style>
+                                                                            </TextBlock.Style>
+                                                                        </TextBlock>
+                                                                        <!-- A type the export wrote: a link that opens it
+                                                                             the way its tree row would, on its diff when it
+                                                                             has changed. Library and system types resolve to
+                                                                             nothing and stay text above. -->
+                                                                        <TextBlock TextTrimming="CharacterEllipsis"
+                                                                                   AutomationProperties.Name="Open the type"
+                                                                                   FontFamily="{DynamicResource Font.Mono}"
+                                                                                   FontSize="{DynamicResource Font.Size.Caption}"
+                                                                                   Visibility="{Binding HasLink,
+                                                                                       Converter={StaticResource BoolToVisibility}}">
+                                                                            <Hyperlink Command="{Binding DataContext.OpenObjectCommand,
+                                                                                           RelativeSource={RelativeSource AncestorType=Window}}"
+                                                                                       CommandParameter="{Binding LinkGuid}"
+                                                                                       Foreground="{DynamicResource Brush.Accent.Default}">
+                                                                                <Hyperlink.Style>
+                                                                                    <Style TargetType="Hyperlink">
+                                                                                        <Setter Property="ToolTip" Value="Open this type" />
+                                                                                        <Style.Triggers>
+                                                                                            <DataTrigger Binding="{Binding ReferenceChanged}" Value="True">
+                                                                                                <Setter Property="ToolTip" Value="This type has uncommitted changes. Open it to see what changed." />
+                                                                                            </DataTrigger>
+                                                                                        </Style.Triggers>
+                                                                                    </Style>
+                                                                                </Hyperlink.Style>
+                                                                                <Run Text="{Binding Datatype, Mode=OneWay}" />
+                                                                            </Hyperlink>
+                                                                        </TextBlock>
+                                                                    </Grid>
                                                                 </Border>
                                                                 <Border Grid.Column="2" Style="{StaticResource MemberTableCell}">
                                                                     <TextBlock Text="{Binding StartValue}"
@@ -1333,6 +1383,22 @@
                                                                                FontSize="{DynamicResource Font.Size.Caption}"
                                                                                Foreground="{DynamicResource Brush.Text.Disabled}" />
                                                                 </Border>
+
+                                                                <!-- A section of a block interface (Input, Output,
+                                                                     InOut, ...): one band across the row, drawn over
+                                                                     the empty cells, the way the IDE groups them. -->
+                                                                <Border Grid.ColumnSpan="5" Padding="8,3"
+                                                                        Background="{DynamicResource Brush.Surface.Raised}"
+                                                                        BorderBrush="{DynamicResource Brush.Border.Subtle}"
+                                                                        BorderThickness="0,0,0,1"
+                                                                        Visibility="{Binding IsSectionHeading,
+                                                                            Converter={StaticResource BoolToVisibility}}">
+                                                                    <TextBlock Text="{Binding Name}"
+                                                                               FontFamily="{DynamicResource Font.UI}"
+                                                                               FontSize="{DynamicResource Font.Size.Caption}"
+                                                                               FontWeight="{DynamicResource Font.Weight.Semibold}"
+                                                                               Foreground="{DynamicResource Brush.Text.Primary}" />
+                                                                </Border>
                                                             </Grid>
                                                         </DataTemplate>
                                                     </ItemsControl.ItemTemplate>
@@ -1341,6 +1407,26 @@
                                         </Border>
                                     </StackPanel>
                                 </ScrollViewer>
+                            </DataTemplate>
+
+                            <!-- A code block: the interface table over its code, split by a
+                                 movable divider. The table is the MemberTable template above,
+                                 picked by type; the code is the same source view the tab
+                                 showed before the interface became a table. -->
+                            <DataTemplate DataType="{x:Type vm:InterfaceRender}">
+                                <Grid>
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="2*" MinHeight="80" />
+                                        <RowDefinition Height="Auto" />
+                                        <RowDefinition Height="3*" MinHeight="80" />
+                                    </Grid.RowDefinitions>
+                                    <ContentControl Content="{Binding Table}" Focusable="False" />
+                                    <GridSplitter Grid.Row="1" Height="5" HorizontalAlignment="Stretch"
+                                                  ResizeDirection="Rows" Focusable="False"
+                                                  Background="{DynamicResource Brush.Border.Subtle}" />
+                                    <views:DiffView Grid.Row="2" SourceRows="{Binding Source.Rows}"
+                                                    FilePath="{Binding Source.Path}" />
+                                </Grid>
                             </DataTemplate>
 
                             <DataTemplate DataType="{x:Type vm:ProjectSummaryRender}">

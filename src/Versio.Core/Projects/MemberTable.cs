@@ -43,6 +43,38 @@ public sealed record MemberRow
     /// <summary>Nesting depth, zero at the block root. Drives indent in the pane.</summary>
     public int Depth { get; init; }
 
+    /// <summary>
+    /// The name of a user-defined type or block this member's type refers to, as the format
+    /// recognised it in <see cref="Datatype"/>; empty for elementary types.
+    /// </summary>
+    /// <remarks>
+    /// Filled by the format, because only the format knows how its language spells a
+    /// reference to a user type. Core never parses <see cref="Datatype"/>.
+    /// </remarks>
+    public string TypeReference { get; init; } = string.Empty;
+
+    /// <summary>
+    /// A heading row naming a section of a block interface (inputs, outputs, ...), with no
+    /// member of its own. <see cref="Name"/> carries the section's name.
+    /// </summary>
+    public bool IsSectionHeading { get; init; }
+
+    /// <summary>
+    /// The object <see cref="TypeReference"/> resolved to in this workspace, or null when it
+    /// names nothing the export wrote (a library or system type). Filled by the host, which
+    /// is the only party holding the object index.
+    /// </summary>
+    public string? LinkGuid { get; init; }
+
+    /// <summary>
+    /// The referenced object has uncommitted changes. Filled by the host with
+    /// <see cref="LinkGuid"/>: a member whose type changed underneath it is a change to this
+    /// block's meaning that its own diff does not show.
+    /// </summary>
+    public bool ReferenceChanged { get; init; }
+
+    public bool HasLink => LinkGuid is not null;
+
     /// <summary>What the NAME column draws: the leaf, padded by depth.</summary>
     public string DisplayName => new string('\u00A0', Math.Max(0, Depth) * 2) + Name;
 }
@@ -102,11 +134,24 @@ public sealed record MemberTable
     /// </remarks>
     public bool IsDataType { get; init; }
 
+    /// <summary>
+    /// A code block's interface - its parameters and locals - rather than storage.
+    /// </summary>
+    /// <remarks>
+    /// Rows come in sections (inputs, outputs, in-outs, statics, temporaries, constants), each
+    /// opened by an <see cref="MemberRow.IsSectionHeading"/> row. The block's code is not here;
+    /// the host shows it beside the table.
+    /// </remarks>
+    public bool IsInterface { get; init; }
+
     /// <summary>The value column's header: what the IDE calls it for this kind of object.</summary>
-    public string ValueHeader => IsDataType ? "DEFAULT VALUE" : "START VALUE";
+    public string ValueHeader => IsDataType || IsInterface ? "DEFAULT VALUE" : "START VALUE";
 
     /// <summary>The one-line note under the title.</summary>
-    public string ReadOnlyNote => IsDataType
-        ? "Read-only view of the data type's members. This table does not write back."
-        : "Read-only view of the data block interface. This table does not write back.";
+    public string ReadOnlyNote => (IsDataType, IsInterface) switch
+    {
+        (true, _) => "Read-only view of the data type's members. This table does not write back.",
+        (_, true) => "Read-only view of the block interface. A linked type opens that object; a highlighted row's type has uncommitted changes.",
+        _ => "Read-only view of the data block interface. This table does not write back.",
+    };
 }

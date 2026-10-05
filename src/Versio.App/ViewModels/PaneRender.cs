@@ -98,6 +98,19 @@ public sealed record MarkdownRender
         new() { Path = repoRelativePath, Blocks = Markdown.Parse(text) };
 }
 
+/// <summary>
+/// A code block's Rendered view: its interface as a table, its code underneath.
+/// </summary>
+/// <remarks>
+/// The table is what changed on 2026-10-04 (FB members as rows, user types linked); the code
+/// is what the tab always showed, kept so tabling the interface did not take it away.
+/// </remarks>
+public sealed record InterfaceRender
+{
+    public required MemberTable Table { get; init; }
+    public required SourceRender Source { get; init; }
+}
+
 /// <summary>The project row's rendered view: the facts a glance should answer.</summary>
 public sealed record ProjectSummaryRender
 {

@@ -55,6 +55,33 @@ public sealed class ObjectIndexTests
     }
 
     [Fact]
+    public void A_name_resolves_to_its_object_and_every_file_of_it_within_one_project()
+    {
+        // What a type reference in a block interface links through: "AnaVal" in this
+        // project, both files of it (the readable one and the native one), and never the
+        // same name in a different project.
+        var index = ObjectIndex.Of([
+            Project(objects: [
+                Obj("Types/AnaVal.udt", "AnaVal", "UDT", "u1", "SCL"),
+                Obj("Types/AnaVal.xml", "AnaVal", "UDT", "u1", "XML_REVIEW"),
+                Obj("Blocks/Motor.scl", "Motor", "FB", "f1", "SCL"),
+            ]),
+            Project("plc/Other.project", "plc/Other", "Other.project",
+                Obj("Types/AnaVal.udt", "AnaVal", "UDT", "u9", "SCL")),
+        ]);
+
+        var found = index.FindByName("Machine", "anaval");
+
+        Assert.NotNull(found);
+        Assert.Equal("u1", found.Guid);
+        Assert.Equal(["plc/Machine/Types/AnaVal.udt", "plc/Machine/Types/AnaVal.xml"], found.Paths);
+        Assert.Equal("u9", index.FindByName("Other", "AnaVal")!.Guid);
+
+        // A library or system type is referenced by name and never exported.
+        Assert.Null(index.FindByName("Machine", "MotL"));
+    }
+
+    [Fact]
     public void A_path_the_manifest_does_not_describe_resolves_to_nothing()
     {
         var index = ObjectIndex.Of([

@@ -333,12 +333,11 @@ public sealed class TiaPortalMemberTableTests
     }
 
     [Fact]
-    public void A_function_block_with_an_interface_is_not_a_table()
+    public void A_function_block_tables_its_interface_by_section_with_type_references()
     {
-        // Same Interface schema as a DB. The local-name gate is the whole of
-        // "data blocks, not every block". Delete it and this goes green for the
-        // wrong object.
-        const string fb = """
+        // Shaped on the fixture's Service_Interaction_FB: user types in quotes, an empty
+        // Static section, and a Temp of a UDT. Refused here until 2026-10-04.
+        var table = MustParse("""
             <?xml version="1.0" encoding="utf-8"?>
             <Document>
               <SW.Blocks.FB ID="0">
@@ -346,20 +345,68 @@ public sealed class TiaPortalMemberTableTests
                   <Interface>
                     <Sections>
                       <Section Name="Input">
-                        <Member Name="Enable" Datatype="Bool">
-                          <StartValue>FALSE</StartValue>
-                        </Member>
+                        <Member Name="Startbit" Datatype="Bool" />
+                      </Section>
+                      <Section Name="InOut">
+                        <Member Name="Pump_100" Datatype="&quot;MotL&quot;" />
+                        <Member Name="Levels" Datatype="Array[1..4] of &quot;AnaVal&quot;" />
+                      </Section>
+                      <Section Name="Static" />
+                      <Section Name="Temp">
+                        <Member Name="State" Datatype="&quot;Service_States&quot;" />
                       </Section>
                     </Sections>
                   </Interface>
-                  <Name>Motor</Name>
+                  <Name>Service_Interaction_FB</Name>
                   <Number>1</Number>
                 </AttributeList>
               </SW.Blocks.FB>
             </Document>
+            """);
+
+        Assert.True(table.IsInterface);
+        Assert.False(table.IsDataType);
+
+        // Headings for the three non-empty sections, none for Static.
+        Assert.Equal(
+            ["Input", "Startbit", "InOut", "Pump_100", "Levels", "Temp", "State"],
+            table.Members.Select(m => m.Name));
+        Assert.Equal(["Input", "InOut", "Temp"],
+            table.Members.Where(m => m.IsSectionHeading).Select(m => m.Name));
+
+        var references = table.Members.ToDictionary(m => m.Name, m => m.TypeReference);
+        Assert.Equal(string.Empty, references["Startbit"]);
+        Assert.Equal("MotL", references["Pump_100"]);
+        Assert.Equal("AnaVal", references["Levels"]);
+        Assert.Equal("Service_States", references["State"]);
+    }
+
+    [Fact]
+    public void An_organization_block_is_not_a_table()
+    {
+        // Same Interface schema as every block. The local-name gate is the whole of "the
+        // blocks somebody reviews as a table"; widen it to any SW.Blocks.* and this goes
+        // green for an OB's start information.
+        const string ob = """
+            <?xml version="1.0" encoding="utf-8"?>
+            <Document>
+              <SW.Blocks.OB ID="0">
+                <AttributeList>
+                  <Interface>
+                    <Sections>
+                      <Section Name="Input">
+                        <Member Name="Initial_Call" Datatype="Bool" />
+                      </Section>
+                    </Sections>
+                  </Interface>
+                  <Name>Main</Name>
+                  <Number>1</Number>
+                </AttributeList>
+              </SW.Blocks.OB>
+            </Document>
             """;
 
-        Assert.Null(Parse("Motor.xml", fb));
+        Assert.Null(Parse("Main.xml", ob));
     }
 
     [Fact]

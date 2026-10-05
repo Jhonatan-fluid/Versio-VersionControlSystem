@@ -14,9 +14,18 @@ namespace Versio.Plc.TiaPortal;
 /// lines of XML. PLC data types (<c>SW.Types.PlcStruct</c>) carry the same tree and
 /// are tabled too since 2026-10-04 - the owner asked for UDTs as tables rather than
 /// SCL text - marked <see cref="MemberTable.IsDataType"/> so the pane says "default
-/// value" as the IDE does. Function blocks and functions use the same Interface schema
-/// and are still refused: their sections are parameters and temporaries, a different
-/// pane, and widening the gate further would silently table the wrong objects.
+/// value" as the IDE does. Function blocks and functions (<c>SW.Blocks.FB</c>,
+/// <c>SW.Blocks.FC</c>) are tabled as an interface, also since 2026-10-04: their
+/// sections are parameters, statics and temporaries, so each non-empty section opens
+/// with a heading row, the way the IDE's interface editor groups them. Organization
+/// blocks stay out - their interface is the system's start information, not something
+/// anybody reviews.
+/// </para>
+/// <para>
+/// A member whose type is written in quotes (<c>"MotL"</c>, <c>Array[1..4] of
+/// "AnaVal"</c>) refers to a user-defined type or block by name; that name goes in
+/// <see cref="MemberRow.TypeReference"/> for the host to resolve and link. The quotes
+/// are this vendor's spelling, which is why the format does it rather than Core.
 /// </para>
 /// <para>
 /// Nested members flatten to a dotted path. Array start values live on
@@ -31,6 +40,8 @@ public static class TiaPortalMemberTableParser
     private const string InstanceDb = "SW.Blocks.InstanceDB";
     private const string GlobalDb = "SW.Blocks.GlobalDB";
     private const string PlcStruct = "SW.Types.PlcStruct";
+    private const string FunctionBlock = "SW.Blocks.FB";
+    private const string Function = "SW.Blocks.FC";
 
     public static MemberTable? TryParse(string relativePath, string content)
     {
@@ -63,12 +74,14 @@ public static class TiaPortalMemberTableParser
             return null;
         }
 
+        var isInterface = block.Name.LocalName is FunctionBlock or Function;
         var members = new List<MemberRow>();
         var iface = Child(attrs, "Interface");
         var sections = iface is null ? null : Child(iface, "Sections");
         if (sections is not null)
         {
-            WalkSections(sections, parentPath: "", depth: 0, inheritedSection: "", members);
+            WalkSections(sections, parentPath: "", depth: 0, inheritedSection: "", members,
+                headings: isInterface);
         }
 
         return new MemberTable
@@ -79,28 +92,45 @@ public static class TiaPortalMemberTableParser
             MemoryLayout = Text(attrs, "MemoryLayout"),
             Members = members,
             IsDataType = block.Name.LocalName == PlcStruct,
+            IsInterface = isInterface,
         };
     }
 
     /// <summary>
-    /// The two data-block kinds and the PLC data type. <c>SW.Blocks.FB</c> has an
-    /// Interface too; treating any <c>SW.Blocks.*</c> as a table is the mutation the FB
-    /// fixture exists to catch.
+    /// The data-block kinds, the PLC data type, and the two code blocks with a reviewable
+    /// interface. Not every <c>SW.Blocks.*</c>: an organization block has an Interface too,
+    /// and tabling it is the mutation the OB fixture exists to catch.
     /// </summary>
     private static bool IsDataBlock(XElement element) =>
-        element.Name.LocalName is InstanceDb or GlobalDb or PlcStruct;
+        element.Name.LocalName is InstanceDb or GlobalDb or PlcStruct or FunctionBlock or Function;
 
     private static void WalkSections(
         XElement sections,
         string parentPath,
         int depth,
         string inheritedSection,
-        List<MemberRow> members)
+        List<MemberRow> members,
+        bool headings = false)
     {
         foreach (var section in Named(sections, "Section"))
         {
             var sectionName = (string?)section.Attribute("Name") ?? inheritedSection;
-            foreach (var member in Named(section, "Member"))
+            var sectionMembers = Named(section, "Member").ToList();
+
+            // An empty section is noise in a review: "Static" with nothing under it says
+            // nothing the absence of the heading does not.
+            if (headings && sectionMembers.Count > 0)
+            {
+                members.Add(new MemberRow
+                {
+                    Path = sectionName,
+                    Name = sectionName,
+                    Section = sectionName,
+                    IsSectionHeading = true,
+                });
+            }
+
+            foreach (var member in sectionMembers)
             {
                 WalkMember(member, parentPath, depth, sectionName, members);
             }
@@ -117,12 +147,14 @@ public static class TiaPortalMemberTableParser
         var name = (string?)member.Attribute("Name") ?? string.Empty;
         var path = parentPath.Length == 0 ? name : parentPath + "." + name;
         var access = AccessOf(member);
+        var datatype = (string?)member.Attribute("Datatype") ?? string.Empty;
 
         members.Add(new MemberRow
         {
             Path = path,
             Name = name,
-            Datatype = (string?)member.Attribute("Datatype") ?? string.Empty,
+            Datatype = datatype,
+            TypeReference = TypeReferenceIn(datatype),
             Section = section,
             StartValue = Text(member, "StartValue"),
             ExternalAccess = access,
@@ -150,6 +182,23 @@ public static class TiaPortalMemberTableParser
         {
             WalkSections(nested, path, depth + 1, section, members);
         }
+    }
+
+    /// <summary>
+    /// The user type a datatype names: the first quoted name in it, so <c>"MotL"</c> and
+    /// <c>Array[1..4] of "AnaVal"</c> both resolve. Elementary types are unquoted, and so
+    /// are system types such as <c>IEC_TIMER</c> - those have nothing in the export to link.
+    /// </summary>
+    private static string TypeReferenceIn(string datatype)
+    {
+        var open = datatype.IndexOf('"', StringComparison.Ordinal);
+        if (open < 0)
+        {
+            return string.Empty;
+        }
+
+        var close = datatype.IndexOf('"', open + 1);
+        return close > open + 1 ? datatype[(open + 1)..close] : string.Empty;
     }
 
     /// <summary>

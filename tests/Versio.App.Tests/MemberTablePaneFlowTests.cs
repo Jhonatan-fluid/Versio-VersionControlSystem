@@ -79,6 +79,12 @@ public sealed class MemberTablePaneFlowTests
                       <StartValue>FALSE</StartValue>
                     </Member>
                   </Section>
+                  <Section Name="InOut">
+                    <Member Name="Drive" Datatype="&quot;MotL&quot;" />
+                  </Section>
+                  <Section Name="Temp">
+                    <Member Name="Level" Datatype="&quot;AnaVal&quot;" />
+                  </Section>
                 </Sections>
               </Interface>
               <Name>Motor</Name>
@@ -284,8 +290,10 @@ public sealed class MemberTablePaneFlowTests
     }
 
     [Fact]
-    public async Task A_function_block_still_renders_as_source()
+    public async Task A_function_block_renders_its_interface_over_its_code()
     {
+        // Source only until 2026-10-04. The code is still there, under the table: tabling the
+        // interface must not take away what the Rendered tab always showed.
         using var repo = new TempRepo();
         GivenATrackedPortalProject(repo);
 
@@ -294,7 +302,89 @@ public sealed class MemberTablePaneFlowTests
 
         shell.Sync.SelectedNode = await Row(shell, "Motor");
 
-        var source = Assert.IsType<SourceRender>(shell.RenderedContent);
-        Assert.Contains("SW.Blocks.FB", source.PseudoDiff);
+        var render = Assert.IsType<InterfaceRender>(shell.RenderedContent);
+        Assert.True(render.Table.IsInterface);
+        Assert.Equal(["Input", "Enable", "InOut", "Drive", "Temp", "Level"],
+            render.Table.Members.Select(m => m.Name));
+        Assert.Contains("SW.Blocks.FB", render.Source.PseudoDiff);
+    }
+
+    /// <summary>Commit the data type only, so the block stays in the tree and the type is clean.</summary>
+    private static void CommitTheDataType(TempRepo repo)
+    {
+        repo.Git("add plc/Station/Types");
+        repo.Git("commit -q -m types");
+    }
+
+    private static MemberRow Member(ShellViewModel shell, string name) =>
+        Assert.Single(Assert.IsType<InterfaceRender>(shell.RenderedContent).Table.Members, m => m.Name == name);
+
+    [Fact]
+    public async Task A_member_typed_by_an_exported_type_links_to_it_and_a_library_type_does_not()
+    {
+        using var repo = new TempRepo(identity: true);
+        GivenATrackedPortalProject(repo);
+        CommitTheDataType(repo);
+
+        using var shell = Shell();
+        await shell.OpenAsync(repo.Path);
+        shell.Sync.SelectedNode = await Row(shell, "Motor");
+
+        var level = Member(shell, "Level");
+        Assert.Equal("udt1", level.LinkGuid);
+        Assert.False(level.ReferenceChanged, "AnaVal is committed and untouched");
+
+        // MotL is referenced by name and was never exported: text, not a link to nowhere.
+        var drive = Member(shell, "Drive");
+        Assert.Equal("MotL", drive.TypeReference);
+        Assert.False(drive.HasLink);
+    }
+
+    [Fact]
+    public async Task A_changed_type_marks_the_member_and_its_link_opens_the_type_on_its_diff()
+    {
+        // The owner's case: the UDT changed, the FB's own diff is empty, and the FB row must
+        // say so - then one press shows what changed.
+        using var repo = new TempRepo(identity: true);
+        GivenATrackedPortalProject(repo);
+        CommitTheDataType(repo);
+
+        File.AppendAllText(Path.Combine(repo.Path, "plc", "Station", "Types", "AnaVal.udt"), "// edited\n");
+
+        using var shell = Shell();
+        await shell.OpenAsync(repo.Path);
+        shell.Sync.SelectedNode = await Row(shell, "Motor");
+
+        var level = Member(shell, "Level");
+        Assert.True(level.ReferenceChanged);
+        Assert.False(Member(shell, "Enable").ReferenceChanged);
+
+        shell.OpenObjectCommand.Execute(level.LinkGuid);
+
+        var type = Assert.IsType<MemberTable>(shell.RenderedContent);
+        Assert.Equal("AnaVal", type.Name);
+
+        // Changed, so it opens where a changed object opens: on its diff.
+        Assert.True(shell.ShowRawPane);
+        await Eventually.Until(
+            () => shell.SelectedDiffPath?.EndsWith("AnaVal.udt", StringComparison.OrdinalIgnoreCase) == true
+                  && shell.SelectedDiff.Contains("// edited", StringComparison.Ordinal),
+            "the type's diff is on screen");
+    }
+
+    [Fact]
+    public async Task A_link_to_an_object_in_neither_tree_changes_nothing()
+    {
+        using var repo = new TempRepo();
+        GivenATrackedPortalProject(repo);
+
+        using var shell = Shell();
+        await shell.OpenAsync(repo.Path);
+        shell.Sync.SelectedNode = await Row(shell, "Motor");
+        var before = shell.RenderedContent;
+
+        shell.OpenObjectCommand.Execute("no-such-guid");
+
+        Assert.Same(before, shell.RenderedContent);
     }
 }
