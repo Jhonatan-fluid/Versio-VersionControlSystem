@@ -224,6 +224,9 @@ public sealed class TiaPortalProjectFormat : IPlcProjectFormat
     public MemberTable? TryParseMemberTable(string relativePath, string content) =>
         TiaPortalMemberTableParser.TryParse(relativePath, content);
 
+    public Versio.Core.Iec.Ladder.LadderDocument? TryParseLadder(string relativePath, string content) =>
+        Ladder.TiaPortalLadderParser.TryParse(relativePath, content);
+
     /// <summary>
     /// An SCL block's body: the lines after <c>BEGIN</c> up to the block's closing keyword
     /// (<c>END_FUNCTION_BLOCK</c>, <c>END_FUNCTION</c>, <c>END_ORGANIZATION_BLOCK</c>).

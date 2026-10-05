@@ -1,0 +1,189 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Hand-written, NOT exported by TIA Portal. No fixture has ladder logic yet: Main_1's only
+     network is empty and every other graphical block in CleaningStation is FBD. Written against
+     the SimaticML FlgNet v5 schema those FBD blocks use, so only the networks are invented.
+     Replace with a Portal export when one exists: see docs/vendors/tia/DRIVING.md,
+     "Graphical blocks". -->
+<Document>
+  <Engineering version="V21" />
+  <SW.Blocks.OB ID="0">
+    <AttributeList>
+      <Name>Parallel</Name>
+      <Number>1</Number>
+      <ProgrammingLanguage>LAD</ProgrammingLanguage>
+    </AttributeList>
+    <ObjectList>
+      <SW.Blocks.CompileUnit ID="10" CompositionName="CompileUnits">
+        <AttributeList>
+          <NetworkSource>
+            <FlgNet xmlns="http://www.siemens.com/automation/Openness/SW/NetworkSource/FlgNet/v5">
+              <Parts>
+                <Access Scope="GlobalVariable" UId="21">
+                  <Symbol><Component Name="Start" /></Symbol>
+                </Access>
+                <Access Scope="GlobalVariable" UId="22">
+                  <Symbol><Component Name="Motor" /></Symbol>
+                </Access>
+                <Access Scope="GlobalVariable" UId="23">
+                  <Symbol><Component Name="Stop" /></Symbol>
+                </Access>
+                <Access Scope="GlobalVariable" UId="24">
+                  <Symbol><Component Name="Motor" /></Symbol>
+                </Access>
+                <Part Name="Contact" UId="25" />
+                <Part Name="Contact" UId="26" />
+                <Part Name="Contact" UId="27">
+                  <Negated Name="operand" />
+                </Part>
+                <Part Name="Coil" UId="28" />
+              </Parts>
+              <Wires>
+                <Wire UId="1007">
+                  <Powerrail />
+                  <NameCon UId="25" Name="in" />
+                  <NameCon UId="26" Name="in" />
+                </Wire>
+                <Wire UId="1008">
+                  <IdentCon UId="21" />
+                  <NameCon UId="25" Name="operand" />
+                </Wire>
+                <Wire UId="1009">
+                  <IdentCon UId="22" />
+                  <NameCon UId="26" Name="operand" />
+                </Wire>
+                <Wire UId="1010">
+                  <NameCon UId="25" Name="out" />
+                  <NameCon UId="26" Name="out" />
+                  <NameCon UId="27" Name="in" />
+                </Wire>
+                <Wire UId="1011">
+                  <IdentCon UId="23" />
+                  <NameCon UId="27" Name="operand" />
+                </Wire>
+                <Wire UId="1012">
+                  <NameCon UId="27" Name="out" />
+                  <NameCon UId="28" Name="in" />
+                </Wire>
+                <Wire UId="1013">
+                  <IdentCon UId="24" />
+                  <NameCon UId="28" Name="operand" />
+                </Wire>
+              </Wires>
+            </FlgNet>
+          </NetworkSource>
+          <ProgrammingLanguage>LAD</ProgrammingLanguage>
+        </AttributeList>
+        <ObjectList>
+          <MultilingualText ID="1A" CompositionName="Comment">
+            <ObjectList>
+              <MultilingualTextItem ID="1A1" CompositionName="Items">
+                <AttributeList>
+                  <Culture>en-US</Culture>
+                  <Text></Text>
+                </AttributeList>
+              </MultilingualTextItem>
+            </ObjectList>
+          </MultilingualText>
+          <MultilingualText ID="1B" CompositionName="Title">
+            <ObjectList>
+              <MultilingualTextItem ID="1B1" CompositionName="Items">
+                <AttributeList>
+                  <Culture>en-US</Culture>
+                  <Text>Seal-in</Text>
+                </AttributeList>
+              </MultilingualTextItem>
+            </ObjectList>
+          </MultilingualText>
+        </ObjectList>
+      </SW.Blocks.CompileUnit>
+      <SW.Blocks.CompileUnit ID="20" CompositionName="CompileUnits">
+        <AttributeList>
+          <NetworkSource>
+            <FlgNet xmlns="http://www.siemens.com/automation/Openness/SW/NetworkSource/FlgNet/v5">
+              <Parts>
+                <Access Scope="GlobalVariable" UId="41">
+                  <Symbol><Component Name="Auto" /></Symbol>
+                </Access>
+                <Access Scope="GlobalVariable" UId="42">
+                  <Symbol><Component Name="Manual" /></Symbol>
+                </Access>
+                <Access Scope="GlobalVariable" UId="43">
+                  <Symbol><Component Name="Lamp" /></Symbol>
+                </Access>
+                <Access Scope="GlobalVariable" UId="44">
+                  <Symbol><Component Name="Alarm" /></Symbol>
+                </Access>
+                <Part Name="Contact" UId="45" />
+                <Part Name="Contact" UId="46" />
+                <Part Name="O" UId="47">
+                  <TemplateValue Name="Card" Type="Cardinality">2</TemplateValue>
+                </Part>
+                <Part Name="SCoil" UId="48" />
+                <Part Name="RCoil" UId="49" />
+              </Parts>
+              <Wires>
+                <Wire UId="1014">
+                  <Powerrail />
+                  <NameCon UId="45" Name="in" />
+                  <NameCon UId="46" Name="in" />
+                </Wire>
+                <Wire UId="1015">
+                  <IdentCon UId="41" />
+                  <NameCon UId="45" Name="operand" />
+                </Wire>
+                <Wire UId="1016">
+                  <IdentCon UId="42" />
+                  <NameCon UId="46" Name="operand" />
+                </Wire>
+                <Wire UId="1017">
+                  <NameCon UId="45" Name="out" />
+                  <NameCon UId="47" Name="in1" />
+                </Wire>
+                <Wire UId="1018">
+                  <NameCon UId="46" Name="out" />
+                  <NameCon UId="47" Name="in2" />
+                </Wire>
+                <Wire UId="1019">
+                  <NameCon UId="47" Name="out" />
+                  <NameCon UId="48" Name="in" />
+                  <NameCon UId="49" Name="in" />
+                </Wire>
+                <Wire UId="1020">
+                  <IdentCon UId="43" />
+                  <NameCon UId="48" Name="operand" />
+                </Wire>
+                <Wire UId="1021">
+                  <IdentCon UId="44" />
+                  <NameCon UId="49" Name="operand" />
+                </Wire>
+              </Wires>
+            </FlgNet>
+          </NetworkSource>
+          <ProgrammingLanguage>LAD</ProgrammingLanguage>
+        </AttributeList>
+        <ObjectList>
+          <MultilingualText ID="2A" CompositionName="Comment">
+            <ObjectList>
+              <MultilingualTextItem ID="2A1" CompositionName="Items">
+                <AttributeList>
+                  <Culture>en-US</Culture>
+                  <Text></Text>
+                </AttributeList>
+              </MultilingualTextItem>
+            </ObjectList>
+          </MultilingualText>
+          <MultilingualText ID="2B" CompositionName="Title">
+            <ObjectList>
+              <MultilingualTextItem ID="2B1" CompositionName="Items">
+                <AttributeList>
+                  <Culture>en-US</Culture>
+                  <Text>Mode lamp</Text>
+                </AttributeList>
+              </MultilingualTextItem>
+            </ObjectList>
+          </MultilingualText>
+        </ObjectList>
+      </SW.Blocks.CompileUnit>
+    </ObjectList>
+  </SW.Blocks.OB>
+</Document>

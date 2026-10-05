@@ -252,6 +252,25 @@ public interface IPlcProjectFormat
     Projects.MemberTable? TryParseMemberTable(string relativePath, string content) => null;
 
     /// <summary>
+    /// This file's ladder networks in the neutral model, or null when the file is not a
+    /// ladder block this format can read.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The same shape as <see cref="TryParseMemberTable"/> and for the same reason: the pane
+    /// asks every registered format, and a vendor with no ladder parser keeps the default and
+    /// costs nothing. Everything after the parse (structure, layout, diff, drawing) is
+    /// <c>Versio.Core.Iec.Ladder</c>, so adding a vendor's ladder is one parser in that
+    /// vendor's pack and this override, never an App or Core edit.
+    /// </para>
+    /// <para>
+    /// Null for anything that is not ladder, including other graphical languages: those
+    /// keep their current view rather than being drawn as something they are not.
+    /// </para>
+    /// </remarks>
+    Iec.Ladder.LadderDocument? TryParseLadder(string relativePath, string content) => null;
+
+    /// <summary>
     /// The zero-based lines of a block's code body in its readable source - from the first
     /// line after the declaration to the line before the block's closing keyword (end
     /// exclusive) - or null when the format cannot say.

@@ -1,0 +1,150 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Hand-written, NOT exported by TIA Portal. No fixture has ladder logic yet: Main_1's only
+     network is empty and every other graphical block in CleaningStation is FBD. Written against
+     the SimaticML FlgNet v5 schema those FBD blocks use, so only the networks are invented.
+     Replace with a Portal export when one exists: see docs/vendors/tia/DRIVING.md,
+     "Graphical blocks". -->
+<Document>
+  <Engineering version="V21" />
+  <SW.Blocks.OB ID="0">
+    <AttributeList>
+      <Name>Edges</Name>
+      <Number>1</Number>
+      <ProgrammingLanguage>LAD</ProgrammingLanguage>
+    </AttributeList>
+    <ObjectList>
+      <SW.Blocks.CompileUnit ID="10" CompositionName="CompileUnits">
+        <AttributeList>
+          <NetworkSource>
+            <FlgNet xmlns="http://www.siemens.com/automation/Openness/SW/NetworkSource/FlgNet/v5">
+              <Parts>
+                <Access Scope="GlobalVariable" UId="21">
+                  <Symbol><Component Name="Button" /></Symbol>
+                </Access>
+                <Access Scope="GlobalVariable" UId="22">
+                  <Symbol><Component Name="Edge_Mem" /></Symbol>
+                </Access>
+                <Access Scope="GlobalVariable" UId="23">
+                  <Symbol><Component Name="Pulse" /></Symbol>
+                </Access>
+                <Part Name="PContact" UId="24" />
+                <Part Name="Coil" UId="25" />
+              </Parts>
+              <Wires>
+                <Wire UId="1038">
+                  <Powerrail />
+                  <NameCon UId="24" Name="in" />
+                </Wire>
+                <Wire UId="1039">
+                  <IdentCon UId="21" />
+                  <NameCon UId="24" Name="operand" />
+                </Wire>
+                <Wire UId="1040">
+                  <IdentCon UId="22" />
+                  <NameCon UId="24" Name="bit" />
+                </Wire>
+                <Wire UId="1041">
+                  <NameCon UId="24" Name="out" />
+                  <NameCon UId="25" Name="in" />
+                </Wire>
+                <Wire UId="1042">
+                  <IdentCon UId="23" />
+                  <NameCon UId="25" Name="operand" />
+                </Wire>
+              </Wires>
+            </FlgNet>
+          </NetworkSource>
+          <ProgrammingLanguage>LAD</ProgrammingLanguage>
+        </AttributeList>
+        <ObjectList>
+          <MultilingualText ID="1A" CompositionName="Comment">
+            <ObjectList>
+              <MultilingualTextItem ID="1A1" CompositionName="Items">
+                <AttributeList>
+                  <Culture>en-US</Culture>
+                  <Text></Text>
+                </AttributeList>
+              </MultilingualTextItem>
+            </ObjectList>
+          </MultilingualText>
+          <MultilingualText ID="1B" CompositionName="Title">
+            <ObjectList>
+              <MultilingualTextItem ID="1B1" CompositionName="Items">
+                <AttributeList>
+                  <Culture>en-US</Culture>
+                  <Text>Rising edge</Text>
+                </AttributeList>
+              </MultilingualTextItem>
+            </ObjectList>
+          </MultilingualText>
+        </ObjectList>
+      </SW.Blocks.CompileUnit>
+      <SW.Blocks.CompileUnit ID="20" CompositionName="CompileUnits">
+        <AttributeList>
+          <NetworkSource>
+            <FlgNet xmlns="http://www.siemens.com/automation/Openness/SW/NetworkSource/FlgNet/v5">
+              <Parts>
+                <Access Scope="GlobalVariable" UId="41">
+                  <Symbol><Component Name="Run" /></Symbol>
+                </Access>
+                <Access Scope="GlobalVariable" UId="42">
+                  <Symbol><Component Name="Stopped" /></Symbol>
+                </Access>
+                <Access Scope="GlobalVariable" UId="43">
+                  <Symbol><Component Name="Edge_Mem2" /></Symbol>
+                </Access>
+                <Part Name="Contact" UId="44" />
+                <Part Name="NCoil" UId="45" />
+              </Parts>
+              <Wires>
+                <Wire UId="1043">
+                  <Powerrail />
+                  <NameCon UId="44" Name="in" />
+                </Wire>
+                <Wire UId="1044">
+                  <IdentCon UId="41" />
+                  <NameCon UId="44" Name="operand" />
+                </Wire>
+                <Wire UId="1045">
+                  <NameCon UId="44" Name="out" />
+                  <NameCon UId="45" Name="in" />
+                </Wire>
+                <Wire UId="1046">
+                  <IdentCon UId="42" />
+                  <NameCon UId="45" Name="operand" />
+                </Wire>
+                <Wire UId="1047">
+                  <IdentCon UId="43" />
+                  <NameCon UId="45" Name="bit" />
+                </Wire>
+              </Wires>
+            </FlgNet>
+          </NetworkSource>
+          <ProgrammingLanguage>LAD</ProgrammingLanguage>
+        </AttributeList>
+        <ObjectList>
+          <MultilingualText ID="2A" CompositionName="Comment">
+            <ObjectList>
+              <MultilingualTextItem ID="2A1" CompositionName="Items">
+                <AttributeList>
+                  <Culture>en-US</Culture>
+                  <Text></Text>
+                </AttributeList>
+              </MultilingualTextItem>
+            </ObjectList>
+          </MultilingualText>
+          <MultilingualText ID="2B" CompositionName="Title">
+            <ObjectList>
+              <MultilingualTextItem ID="2B1" CompositionName="Items">
+                <AttributeList>
+                  <Culture>en-US</Culture>
+                  <Text>Falling edge</Text>
+                </AttributeList>
+              </MultilingualTextItem>
+            </ObjectList>
+          </MultilingualText>
+        </ObjectList>
+      </SW.Blocks.CompileUnit>
+    </ObjectList>
+  </SW.Blocks.OB>
+</Document>

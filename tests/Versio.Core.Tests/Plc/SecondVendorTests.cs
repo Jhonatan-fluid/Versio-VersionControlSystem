@@ -175,6 +175,15 @@ public sealed class SecondVendorTests
     }
 
     [Fact]
+    public void A_format_that_does_not_override_TryParseLadder_returns_null()
+    {
+        // The same rule for ladder: a vendor with no ladder parser compiles and draws nothing,
+        // and the pane falls through to the file's own view.
+        IPlcProjectFormat format = new FakeTwinCatFormat();
+        Assert.Null(format.TryParseLadder("block.xml", "<Document />"));
+    }
+
+    [Fact]
     public void One_type_string_renders_in_whichever_vendors_vocabulary_wrote_it()
     {
         // The collision the split exists to survive. PLC_LOGIC is a real CODESYS type and the

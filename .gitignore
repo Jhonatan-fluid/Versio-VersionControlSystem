@@ -137,3 +137,6 @@ fixtures/projects/TC3_PlcSample_reStrText/TC3_PlcSample_reStrText.~u*
 fixtures/projects/TC3_PlcSample_reStrText/**/LineIDs.dbg
 fixtures/projects/TC3_PlcSample_reStrText/TC3_PlcSample_reStrText.versio_staging/
 fixtures/projects/TC3_PlcSample_reStrText/TC3_PlcSample_reStrText.versio_trash/
+
+# A ladder drawing that differs from its approved file; see TiaPortalLadderTests.
+*.received.html

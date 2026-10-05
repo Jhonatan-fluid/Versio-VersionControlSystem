@@ -1,0 +1,119 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Hand-written, NOT exported by TIA Portal. No fixture has ladder logic yet: Main_1's only
+     network is empty and every other graphical block in CleaningStation is FBD. Written against
+     the SimaticML FlgNet v5 schema those FBD blocks use, so only the networks are invented.
+     Replace with a Portal export when one exists: see docs/vendors/tia/DRIVING.md,
+     "Graphical blocks". -->
+<Document>
+  <Engineering version="V21" />
+  <SW.Blocks.OB ID="0">
+    <AttributeList>
+      <Name>CallAndCompare</Name>
+      <Number>1</Number>
+      <ProgrammingLanguage>LAD</ProgrammingLanguage>
+    </AttributeList>
+    <ObjectList>
+      <SW.Blocks.CompileUnit ID="10" CompositionName="CompileUnits">
+        <AttributeList>
+          <NetworkSource>
+            <FlgNet xmlns="http://www.siemens.com/automation/Openness/SW/NetworkSource/FlgNet/v5">
+              <Parts>
+                <Access Scope="LocalVariable" UId="21">
+                  <Symbol><Component Name="level" /></Symbol>
+                </Access>
+                <Access Scope="LiteralConstant" UId="22">
+                  <Constant><ConstantValue>80.0</ConstantValue></Constant>
+                </Access>
+                <Access Scope="GlobalVariable" UId="23">
+                  <Symbol><Component Name="Pump_Cmd" /></Symbol>
+                </Access>
+                <Access Scope="LocalVariable" UId="24">
+                  <Symbol><Component Name="running" /></Symbol>
+                </Access>
+                <Access Scope="LiteralConstant" UId="25">
+                  <Constant><ConstantValue>100</ConstantValue></Constant>
+                </Access>
+                <Access Scope="LocalVariable" UId="26">
+                  <Symbol><Component Name="speed" /></Symbol>
+                </Access>
+                <Part Name="Gt" UId="27">
+                  <TemplateValue Name="SrcType" Type="Type">Real</TemplateValue>
+                </Part>
+                <Call UId="28">
+                  <CallInfo Name="Pump_Start" BlockType="FC">
+                    <Parameter Name="Cmd" Section="Input" Type="Bool" />
+                    <Parameter Name="Running" Section="Output" Type="Bool" />
+                  </CallInfo>
+                </Call>
+                <Part Name="Move" UId="29" DisabledENO="true">
+                  <TemplateValue Name="Card" Type="Cardinality">1</TemplateValue>
+                </Part>
+              </Parts>
+              <Wires>
+                <Wire UId="1029">
+                  <Powerrail />
+                  <NameCon UId="27" Name="pre" />
+                </Wire>
+                <Wire UId="1030">
+                  <IdentCon UId="21" />
+                  <NameCon UId="27" Name="in1" />
+                </Wire>
+                <Wire UId="1031">
+                  <IdentCon UId="22" />
+                  <NameCon UId="27" Name="in2" />
+                </Wire>
+                <Wire UId="1032">
+                  <NameCon UId="27" Name="out" />
+                  <NameCon UId="28" Name="en" />
+                </Wire>
+                <Wire UId="1033">
+                  <IdentCon UId="23" />
+                  <NameCon UId="28" Name="Cmd" />
+                </Wire>
+                <Wire UId="1034">
+                  <NameCon UId="28" Name="Running" />
+                  <IdentCon UId="24" />
+                </Wire>
+                <Wire UId="1035">
+                  <NameCon UId="28" Name="eno" />
+                  <NameCon UId="29" Name="en" />
+                </Wire>
+                <Wire UId="1036">
+                  <IdentCon UId="25" />
+                  <NameCon UId="29" Name="in" />
+                </Wire>
+                <Wire UId="1037">
+                  <NameCon UId="29" Name="out1" />
+                  <IdentCon UId="26" />
+                </Wire>
+              </Wires>
+            </FlgNet>
+          </NetworkSource>
+          <ProgrammingLanguage>LAD</ProgrammingLanguage>
+        </AttributeList>
+        <ObjectList>
+          <MultilingualText ID="1A" CompositionName="Comment">
+            <ObjectList>
+              <MultilingualTextItem ID="1A1" CompositionName="Items">
+                <AttributeList>
+                  <Culture>en-US</Culture>
+                  <Text></Text>
+                </AttributeList>
+              </MultilingualTextItem>
+            </ObjectList>
+          </MultilingualText>
+          <MultilingualText ID="1B" CompositionName="Title">
+            <ObjectList>
+              <MultilingualTextItem ID="1B1" CompositionName="Items">
+                <AttributeList>
+                  <Culture>en-US</Culture>
+                  <Text>Pump on high level</Text>
+                </AttributeList>
+              </MultilingualTextItem>
+            </ObjectList>
+          </MultilingualText>
+        </ObjectList>
+      </SW.Blocks.CompileUnit>
+    </ObjectList>
+  </SW.Blocks.OB>
+</Document>

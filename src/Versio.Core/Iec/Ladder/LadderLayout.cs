@@ -422,7 +422,7 @@ public static class LadderLayout
         LdReturn r => TwoTerminal(r, "return", "", null, x, top, Tag("RET")),
         LdBox { InlineCompare: true } b => Compare(b, x, top, wired),
         LdBox b => Box(b, "box", b.TypeName, b.Detail, b.Instance, b.Pins, dashed: false, x, top, wired),
-        LdUnsupported u => Box(u, "unsupported", u.VendorName, "not drawn", null, u.Pins, dashed: true, x, top, wired),
+        LdUnsupported u => Box(u, "unsupported", u.VendorName, "unrecognised", null, u.Pins, dashed: true, x, top, wired),
         _ => TwoTerminal(node, "unsupported", node.GetType().Name, null, x, top, Tag("?")),
     };
 
@@ -590,8 +590,9 @@ public static class LadderLayout
 
         var leftLabel = LabelWidth(left);
         var rightLabel = LabelWidth(right);
-        var names = left.Select(p => TextWidth(p.Name)).DefaultIfEmpty(0).Max()
-                    + right.Select(p => TextWidth(p.Name)).DefaultIfEmpty(0).Max() + 24;
+        var leftNames = left.Select(p => TextWidth(p.Name)).DefaultIfEmpty(0).Max();
+        var rightNames = right.Select(p => TextWidth(p.Name)).DefaultIfEmpty(0).Max();
+        var names = leftNames + rightNames + 24;
         var boxWidth = Math.Min(
             BoxMaxWidth,
             Math.Max(Math.Max(BoxMinWidth, names), Math.Max(TextWidth(title), TextWidth(detail ?? "")) + 16));
@@ -621,13 +622,20 @@ public static class LadderLayout
             items.Add(new LdText(cx, boxTop + 29, Fit(detail, boxWidth - 8), detail, LdAlign.Middle, "detail"));
         }
 
+        // Each side's pin names get what the other side leaves, not half each: "Cmd" beside
+        // "Running" must not cut "Running" to "Runn…" while the left half stands empty (seen in
+        // the first specimen gallery). Only a box at its width cap falls back to halves.
+        var fits = names <= boxWidth;
+        var leftRoom = fits ? boxWidth - rightNames - 12 : (boxWidth / 2) - 6;
+        var rightRoom = fits ? boxWidth - leftNames - 12 : (boxWidth / 2) - 6;
+
         var pins = new Dictionary<string, (double, double)>(StringComparer.Ordinal);
         for (var i = 0; i < left.Count; i++)
         {
             var pin = left[i];
             var y = boxTop + header + (i * PinRow) + (PinRow / 2);
             var edge = boxX - (pin.Negated ? 6 : 0);
-            items.Add(new LdText(boxX + 4, y + 4, Fit(pin.Name, (boxWidth / 2) - 6), pin.Name, LdAlign.Start, "pin"));
+            items.Add(new LdText(boxX + 4, y + 4, Fit(pin.Name, leftRoom), pin.Name, LdAlign.Start, "pin"));
             if (pin.Negated)
             {
                 items.Add(new LdCircle(boxX - 3, y, 3));
@@ -650,7 +658,7 @@ public static class LadderLayout
             var pin = right[i];
             var y = boxTop + header + (i * PinRow) + (PinRow / 2);
             var edge = boxX + boxWidth + (pin.Negated ? 6 : 0);
-            items.Add(new LdText(boxX + boxWidth - 4, y + 4, Fit(pin.Name, (boxWidth / 2) - 6), pin.Name, LdAlign.End, "pin"));
+            items.Add(new LdText(boxX + boxWidth - 4, y + 4, Fit(pin.Name, rightRoom), pin.Name, LdAlign.End, "pin"));
             if (pin.Negated)
             {
                 items.Add(new LdCircle(boxX + boxWidth + 3, y, 3));
