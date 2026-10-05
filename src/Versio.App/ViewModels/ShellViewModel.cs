@@ -7076,10 +7076,14 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
     {
         var unrecognised = body.Networks.Sum(n => n.Nodes.OfType<LdUnsupported>().Count());
         var otherLanguage = body.Networks.Count(n => n.UnsupportedLanguage is not null);
-        var byRank = body.Networks.Count(n => n.UnsupportedLanguage is null && !LadderStructure.Of(n).IsSeriesParallel);
+        // A function block diagram never has a rung shape to miss, so only ladder networks can
+        // have been drawn by rank; counting FBD there would report every one as a fallback.
+        var fbd = body.Networks.Count(n => n.UnsupportedLanguage is null && n.Language == LdLanguage.FunctionBlock);
+        var byRank = body.Networks.Count(n => n.UnsupportedLanguage is null && n.Language == LdLanguage.Ladder
+                                              && n.Nodes.Count > 0 && !LadderStructure.Of(n).IsSeriesParallel);
         var against = comparison.HasOldSide ? "against HEAD" : "with nothing committed to compare";
         _logger.Info(LogCategory.Ui,
-            $"ladder {file}: {body.Networks.Count} networks {against}; {comparison.ChangedCount} changed, "
+            $"diagram {file}: {body.Networks.Count} networks ({fbd} FBD) {against}; {comparison.ChangedCount} changed, "
             + $"{comparison.AddedCount} added, {comparison.RemovedCount} removed, {comparison.MovedCount} moved; "
             + $"{unrecognised} unrecognised parts, {otherLanguage} networks in another language, {byRank} drawn by rank");
     }
