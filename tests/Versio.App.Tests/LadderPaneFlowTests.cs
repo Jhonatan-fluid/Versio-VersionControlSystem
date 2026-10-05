@@ -242,6 +242,66 @@ public sealed class LadderPaneFlowTests
         Assert.Same(render.Ladder, render.Code);
     }
 
+    private static LadderRender Render(string block, string title, bool pending = false)
+    {
+        var network = new LadderNetwork
+        {
+            Number = 1,
+            Title = title,
+            Nodes = [new LdLeftRail("r"), new LdCoil("c", "\"Out\"", LdCoilKind.Normal)],
+            Nets = [new LdNet([new LdPinRef("r", LdPins.Out), new LdPinRef("c", LdPins.In)])],
+        };
+        var body = new LadderBody(block, [network]);
+        return new LadderRender
+        {
+            Path = $"plc/{block}.xml",
+            Comparison = LadderDiff.Compare(body, body),
+            Style = LadderStyle.Default,
+            Pending = pending,
+        };
+    }
+
+    [Fact]
+    public void The_page_is_built_escaped_and_walled_without_starting_a_browser()
+    {
+        StaHarness.Run(() =>
+        {
+            var view = new Versio.App.Views.LadderPageView
+            {
+                Visibility = System.Windows.Visibility.Collapsed,
+                Ladder = Render("Main", "<script>bad()</script>"),
+            };
+
+            var page = view.PageHtml;
+            Assert.Contains("Content-Security-Policy", page, StringComparison.Ordinal);
+            Assert.Contains("script-src https://ladder.versio;", page, StringComparison.Ordinal);
+            Assert.DoesNotContain("<script>bad", page, StringComparison.Ordinal);
+            Assert.Contains("data-block=\"Main\"", page, StringComparison.Ordinal);
+            Assert.Null(view.Child);
+        });
+    }
+
+    [Fact]
+    public void A_reused_view_drops_the_last_blocks_diagram_while_the_next_is_pending()
+    {
+        // WPF reuses a template's view when the next selection is also a ladder. Pending must
+        // empty the page, or the previous block's networks stay on screen under the new name.
+        StaHarness.Run(() =>
+        {
+            var view = new Versio.App.Views.LadderPageView
+            {
+                Visibility = System.Windows.Visibility.Collapsed,
+                Ladder = Render("First", "first"),
+            };
+            Assert.Contains("data-block=\"First\"", view.PageHtml, StringComparison.Ordinal);
+
+            view.Ladder = Render("Second", "second", pending: true);
+
+            Assert.DoesNotContain("data-block=\"First\"", view.PageHtml, StringComparison.Ordinal);
+            Assert.DoesNotContain("<div class=\"ld-page\"", view.PageHtml, StringComparison.Ordinal);
+        });
+    }
+
     [Fact]
     public async Task A_late_comparison_never_lands_on_another_block()
     {

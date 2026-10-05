@@ -93,14 +93,17 @@ public sealed class LadderPageView : Border
 
     private async void Render()
     {
-        // Pending: the committed copy is still being read. An empty page until it lands, never
-        // a page that says "no changes" about a block that has some.
-        if (Ladder is not { Pending: false } ladder || _unavailable)
+        if (Ladder is not { } ladder || _unavailable)
         {
             return;
         }
 
-        var html = LadderPage.Build(LadderHtml.Fragment(ladder.Comparison, ladder.Style), this);
+        // Pending: the committed copy is still being read. An empty page until it lands, never
+        // a page that says "no changes" about a block that has some. And empty, not skipped:
+        // WPF reuses this view when the next selection is also a ladder, so skipping would
+        // leave the previous block's diagram on screen under the new block's name.
+        var fragment = ladder.Pending ? string.Empty : LadderHtml.Fragment(ladder.Comparison, ladder.Style);
+        var html = LadderPage.Build(fragment, this);
 
         // Raw then back to Rendered changes visibility and nothing else; reloading the same page
         // would lose where the reader had scrolled to.
