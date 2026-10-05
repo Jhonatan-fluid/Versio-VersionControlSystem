@@ -200,7 +200,22 @@ public static class LadderLayout
         switch (piece)
         {
             case LeafPiece leaf when width <= leaf.W + 0.01:
-                context.Groups.Add(Draw(leaf.Node, x, top, context.Wired).Group);
+                var group = Draw(leaf.Node, x, top, context.Wired).Group;
+
+                // The last coil of a rung with no right rail ends at its bracket: a lead running
+                // on to the edge reads as a rung that continues into nothing.
+                if (terminal && !context.RightRail && IsOutput(leaf))
+                {
+                    var right = group.Bounds.Right;
+                    group = group with
+                    {
+                        Items = group.Items
+                            .Where(i => i is not LdLine l || Math.Abs(l.X2 - right) > 0.01 || l.Y1 != l.Y2)
+                            .ToList(),
+                    };
+                }
+
+                context.Groups.Add(group);
                 break;
             case LeafPiece leaf:
                 PlaceSeries([leaf], leaf.A, x, top, width, terminal, context);
