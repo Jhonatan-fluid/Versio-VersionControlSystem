@@ -37,13 +37,20 @@ public sealed class CommitWhileIdeHoldsProjectTests
         using var shell = TestShell.Build(out var sink, toolchain: toolchain);
         await shell.OpenAsync(repo.Path);
 
+        // Every wait reports the log and the shell's state AS IT FAILED. This test timed out
+        // at ~33 s in three of nine full-suite runs on 2026-10-05, never alone, and the old
+        // messages could not say which wait or why - one snapshotted the log before waiting.
+        string State() =>
+            $"busy={shell.Busy.IsBusy} exports={toolchain.Jobs.Count(j => j.Operation == PlcOperation.Export)} " +
+            $"commit.canExecute={shell.CommitCommand.CanExecute(null)} commit.running={shell.CommitCommand.IsRunning}\nlog:\n" +
+            string.Join("\n", sink.Snapshot().Select(e => $"{e.Level} {e.Category} {e.Message}"));
+
         // Opening adopts the project and, with a toolchain present, catches up with an export:
         // the state an engineer is in once Versio has seen the project.
         await Eventually.Until(
             () => toolchain.Jobs.Any(j => j.Operation == PlcOperation.Export),
-            "the catch-up export ran. log:\n" + string.Join("\n",
-                sink.Snapshot().Select(e => $"{e.Level} {e.Category} {e.Message}")));
-        await Eventually.Until(() => !shell.Busy.IsBusy, "the catch-up export finished");
+            "the catch-up export ran", State);
+        await Eventually.Until(() => !shell.Busy.IsBusy, "the catch-up export finished", State);
 
         // Portal opens the project - it writes Station.info beside the pointer - and saves.
         File.WriteAllText(Path.Combine(station, "Station.info"), "held by TIA Portal");
@@ -54,7 +61,7 @@ public sealed class CommitWhileIdeHoldsProjectTests
         var exports = toolchain.Jobs.Count(j => j.Operation == PlcOperation.Export);
 
         shell.CommitMessage = "work saved in Portal";
-        await Eventually.Press(shell.CommitCommand, "commit");
+        await Eventually.Press(shell.CommitCommand, "commit", State);
 
         // Nothing was committed: the mirror in that commit would not describe the project.
         Assert.Equal(head, Head(repo));

@@ -56,6 +56,36 @@ public static class Eventually
         Assert.Fail($"waited {Deadline.TotalSeconds:F0}s and {what} never happened");
     }
 
+    /// <summary>
+    /// The same wait, with the failure's context composed when it fails rather than when the
+    /// wait starts.
+    /// </summary>
+    /// <remarks>
+    /// A message string is built at the call, so a log snapshot inside it shows the log from
+    /// before the wait - exactly the part that does not explain why the wait timed out. Added
+    /// for <c>CommitWhileIdeHoldsProjectTests</c>, which timed out at ~33 s in three of nine
+    /// full-suite runs on 2026-10-05 and never alone, and said nothing about which wait or why.
+    /// </remarks>
+    public static async Task Until(Func<bool> condition, string what, Func<string> context)
+    {
+        try
+        {
+            await Until(condition, what);
+        }
+        catch (Xunit.Sdk.FailException)
+        {
+            Assert.Fail($"waited {Deadline.TotalSeconds:F0}s and {what} never happened\n{context()}");
+        }
+    }
+
+    /// <summary><see cref="Press(AsyncCommand, string)"/>, with failure context composed at failure.</summary>
+    public static async Task Press(AsyncCommand command, string what, Func<string> context)
+    {
+        await Until(() => command.CanExecute(null), $"{what} became available", context);
+        command.Execute(null);
+        await Until(() => !command.IsRunning, $"{what} finished", context);
+    }
+
     /// <summary>Wait for a command to become live, press it, and wait for it to finish.</summary>
     /// <remarks>
     /// <para>
