@@ -204,6 +204,9 @@ public sealed class TreeRow : ObservableObject
     /// <summary>Export state for a project row, empty elsewhere.</summary>
     public string Detail => Node.Detail;
 
+    /// <summary>The Explorer's toolchain pill — <c>TIA Portal V21</c> — or empty.</summary>
+    public string Toolchain => Node.Toolchain;
+
     /// <summary>True while a toolchain run is in flight for this project.</summary>
     public bool IsBusy => Node.Busy;
 
@@ -221,6 +224,8 @@ public sealed class TreeRow : ObservableObject
     {
         ProjectNodeKind.Project or ProjectNodeKind.Library or ProjectNodeKind.Task
             or ProjectNodeKind.Device => Detail,
+        // Only the Explorer sets a folder's Detail: the state of the directory project it is.
+        ProjectNodeKind.Folder => Detail,
         _ => TypeLabel,
     };
 

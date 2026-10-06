@@ -84,6 +84,7 @@
                                     <ColumnDefinition Width="*" />
                                     <ColumnDefinition Width="Auto" />
                                     <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="Auto" />
                                 </Grid.ColumnDefinitions>
                                 <TextBlock Grid.Column="0" Text="{Binding Glyph}"
                                            VerticalAlignment="Center"
@@ -130,6 +131,41 @@
                                            FontFamily="{DynamicResource Font.UI}"
                                            FontSize="{DynamicResource Font.Size.Caption}"
                                            Foreground="{DynamicResource Brush.Text.Disabled}" />
+                                <!-- TOOLCHAIN: which IDE opens what is in here - "TIA Portal V21".
+                                     On the project's folder for a directory project, on the
+                                     row itself for a one-file project; RepoExplorerBuilder has
+                                     why. Accent, not a status colour: it is an identity, never
+                                     a state, and green or amber here would read as "in sync"
+                                     or "changed".
+                                     LAST COLUMN, ONE MINIMUM WIDTH. The first cut sat it before
+                                     the export state, so a row with "in sync" pushed its pill
+                                     left of one without, and "TwinCAT 3" was narrower than
+                                     "TIA Portal V21" - four pills at four positions and three
+                                     widths in the running window. At the right edge with a
+                                     floor wide enough for the longest single label, they line
+                                     up as a column. A minimum rather than a width, so a folder
+                                     holding V20 and V21 grows instead of clipping. -->
+                                <Border Grid.Column="4" Margin="8,0,4,0" MinWidth="100"
+                                        Background="{DynamicResource Brush.Accent.Muted}"
+                                        CornerRadius="8" Padding="6,0"
+                                        VerticalAlignment="Center"
+                                        ToolTip="PLC project detected here">
+                                    <Border.Style>
+                                        <Style TargetType="Border">
+                                            <Setter Property="Visibility" Value="Visible" />
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding Toolchain}" Value="">
+                                                    <Setter Property="Visibility" Value="Collapsed" />
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </Border.Style>
+                                    <TextBlock Text="{Binding Toolchain}"
+                                               TextAlignment="Center"
+                                               FontFamily="{DynamicResource Font.UI}"
+                                               FontSize="{DynamicResource Font.Size.Caption}"
+                                               Foreground="{DynamicResource Brush.Text.Primary}" />
+                                </Border>
                                 <Border Grid.Column="3" Margin="8,0,4,0"
                                         Background="{DynamicResource Brush.Surface.Sunken}"
                                         CornerRadius="8" Padding="6,0"

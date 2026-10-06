@@ -21,6 +21,24 @@ public sealed class TiaPortalProjectFormat : IPlcProjectFormat
 
     public string LogCategory => TiaPortalLog.Category;
 
+    /// <inheritdoc />
+    /// <remarks>
+    /// The extension is the release: <c>.ap21</c> opens only in V21, and an older Portal
+    /// refuses it outright while a newer one offers an irreversible upgrade. So the pill
+    /// says the number rather than only the vendor. Anything that does not read as
+    /// <c>.apNN</c> / <c>.alNN</c> falls back to the plain name rather than guessing.
+    /// </remarks>
+    public string ProjectLabelFor(string projectPath)
+    {
+        var ext = System.IO.Path.GetExtension(projectPath);
+        return ext.Length == 5
+               && (ext.StartsWith(".ap", StringComparison.OrdinalIgnoreCase)
+                   || ext.StartsWith(".al", StringComparison.OrdinalIgnoreCase))
+               && char.IsAsciiDigit(ext[3]) && char.IsAsciiDigit(ext[4])
+            ? $"{DisplayName} V{ext[3..]}"
+            : DisplayName;
+    }
+
     /// <remarks>
     /// Measured 2026-08-19: a warm probe of CleaningStation is 42 s, a warm export 37 s.
     /// The host still uses a twenty-minute timeout because a 488 MB project and a first

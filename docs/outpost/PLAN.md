@@ -1,13 +1,15 @@
 # Versio Outpost
 
-**Date:** 2026-10-04, revised 2026-10-05 with the fixes from a review of the write path.
+**Date:** 2026-10-04, revised 2026-10-05 with the fixes from a review of the write path, the
+EC2 host, and the removal of git: Outpost keeps its own versions and compares them with each
+other.
 **This is a design record, not the live queue.** What Versio is today
 lives in [`../STATUS.md`](../STATUS.md). This document is how Outpost should be built, and why
 each piece sits where it does. Nothing here is implemented.
 
 | | |
 |---|---|
-| Document | The Outpost design: scheduled backup of the program on a controller, a diff against what engineering committed, and a confirmed restore |
+| Document | The Outpost design: scheduled backup of the program on a controller, every changed backup kept as a version, a rendered diff between any two versions, and a confirmed restore |
 | Sibling of | The Versio desktop app. Same vendor runners and the same export. A different window, a different verb |
 | First measurement | A CODESYS `upload_source` against a controller that already holds `Archive.prj`, before any of the product is built |
 | Where the worker runs | A Windows EC2 instance per site, reaching the plant's controllers over a site-to-site VPN (§13). A plant PC is the fallback shape |
@@ -19,7 +21,7 @@ each piece sits where it does. Nothing here is implemented.
 
 Read [`../STATUS.md`](../STATUS.md) for where Versio is. Read this for the product that talks to
 controllers. The desktop app's job is the file on disk and the git mirror. Outpost's job is the
-other copy of the program: the one running in the plant.
+other copy of the program: the one running in the plant, and how it has changed over time.
 
 The argument, in the order a builder needs it:
 
@@ -34,11 +36,12 @@ The argument, in the order a builder needs it:
 
 ## 1. Why this exists
 
-A PLC project in git is the program somebody meant to ship. The program on the controller is
-the one the machine is running. Those two diverge whenever someone goes online, loads from a
-USB stick, or downloads from a laptop that never pushed. Versio already turns a project file
-into a reviewable mirror. It cannot see the controller, because the engineer's laptop is not on
-the plant network at 02:00, and the desktop app was built to refuse a download.
+The program on a controller is the one the machine is running, and it changes whenever someone
+goes online, loads from a USB stick, or downloads from a laptop. Nobody else may know it
+changed. Whatever copy the engineers keep, wherever they keep it, says what somebody meant to
+ship, not what is running. Versio already turns a project file into a reviewable mirror. It
+cannot see the controller, because the engineer's laptop is not on the plant network at 02:00,
+and the desktop app was built to refuse a download.
 
 Copia DeviceLink and octoplant already sell the missing half. DeviceLink is a Windows agent on
 a PC that can reach the PLC and has the vendor IDE licensed. It polls for jobs, uploads into a
@@ -47,10 +50,18 @@ temp folder, and a server compares that with git. A difference can auto-commit o
 its own database: scheduled upload, compare, notify, restore. Some of its vendors also have a
 checksum mode that can say "changed" and cannot put the program back.
 
-Outpost takes the half Versio is already good at — the mirror, the diff, the refusal to record
-a lie — and points it at the controller. It does not become octoplant. The history of what
-changed is git. The list of runs is a database. The file you would load onto a replacement
-controller stays with the worker, with a second copy beside it (§8).
+Outpost takes the half Versio is already good at — the mirror, the diff and how it is drawn,
+the refusal to record a lie — and points it at the controller. Every backup that differs from
+the last is kept as a **version** of that device. A person compares any two: the latest
+against the one before, against three versions back, or against the device's reference copy.
+The diff is drawn the way the desktop app draws it: SCL and ST as highlighted text, ladder as
+networks, data types as member tables.
+
+Outpost does not use git. The customer's engineers keep their projects wherever they keep
+them, and Outpost neither reads that nor writes to it. The git repository Versio's own fixtures
+live in is a test asset, not a place Outpost touches. Versions are files stored by content
+hash, with an index in a database (§8). The list of runs is that database too. The file you
+would load onto a replacement controller stays with the worker, with a second copy beside it.
 
 ### Why it is not the desktop app
 
@@ -78,10 +89,12 @@ one confirmed verb inside that.
 | Outpost, not a mode of the WPF app | A download that stops a PLC does not live next to Commit |
 | The worker is an EC2 instance, one or more per site | It is the realistic deployment: a clean machine nobody uses interactively, built from one image, replaceable. It reaches the controllers over a site-to-site VPN that the site owns. The pain this costs is written down in §13, not discovered later |
 | The worker calls out to the API | Nothing dials the worker. The VPN is the one route into the controller network, and it carries vendor protocols from the worker's private addresses only (§13) |
-| Git holds the text that changed | That is the history a person reads. A `.project` does not diff |
+| A version store holds the text that changed, not git | The mirror is what a person reads and diffs; a `.project` does not diff. Git was the first design, with a device branch per controller pushed to a repository. It was rejected on 2026-10-05: customers' engineers do not keep their projects where Outpost can see them, there is no engineering branch to compare against, and a push credential, a clone, branch clutter, and a "pushed or not" outcome all existed only to serve git. §8 |
+| Any two versions can be compared | Latest against the previous version, against N versions back, or against the device's reference copy. That is the question a person brings: what changed since last night, and since it was commissioned. §8 |
+| The diff is drawn the way the desktop app draws it | One set of renderers in `Versio.Core`, HTML, used by the page. Ladder already is (`LadderHtml`). Text and member tables join it. §8 |
 | The vendor project stays with the worker, and a second copy in S3 | That is the file you restore. A text mirror is not that file |
-| A database holds every run | "Up to date" at 02:00 is a row. An empty nightly commit would bury the real ones |
-| Passwords stay in DPAPI on the worker | A password in the database, in git, or in an agent chat is a password in a log. The API holds only copies sealed to a worker's key, which it cannot read (§8) |
+| A database holds every run | "Up to date" at 02:00 is a row. An empty nightly version would bury the real ones |
+| Passwords stay in DPAPI on the worker | A password in the database, in the version store, or in an agent chat is a password in a log. The API holds only copies sealed to a worker's key, which it cannot read (§8) |
 | The schedule only reads | Restore is a different verb, confirmed by a person, for an exact file and the exact controllers they were shown |
 | An open IDE does not skip the backup | On a plant-PC worker, the worker uses a scratch project and does not take the person's window. An EC2 worker has nobody's IDE on it (§4) |
 | The agent uses the same API as the page | It cannot confirm a different file from the one the person was shown |
@@ -111,7 +124,7 @@ flowchart TB
   web[React page]
   api[Outpost API]
   db[(Postgres)]
-  git[(Git device branch)]
+  store[(Version store, S3)]
   worker[Outpost worker, EC2 in the site's VPC]
   notify[Email or webhook]
   ide["CODESYS.exe or Portal or TcXaeShell"]
@@ -123,7 +136,8 @@ flowchart TB
   agent --> api
   web --> api
   api --> db
-  api --> git
+  api --> store
+  worker --> store
   api --> notify
   notify --> person
   worker -->|"calls out, long-poll"| api
@@ -134,8 +148,8 @@ flowchart TB
 
 | Piece | Runs where | Talks to | Never does |
 |---|---|---|---|
-| React page | A browser | The API over HTTPS | Open an IDE, open a PLC session, store a password, commit |
-| Outpost API | Beside the database and a git clone | Postgres, git, the worker's outbound connection | Load Openness, spawn `CODESYS.exe`, route to a PLC |
+| React page | A browser | The API over HTTPS | Open an IDE, open a PLC session, store a password, write a version |
+| Outpost API | AWS, beside the database (§13) | Postgres, the version store, the worker's outbound connection | Load Openness, spawn `CODESYS.exe`, route to a PLC, reference a vendor pack |
 | MCP server | Beside the API, or in it | The same API, with the person's token | A second path to the worker or the PLC |
 | Outpost worker | A Windows EC2 instance in the site's VPC, built from the worker image (§13). A plant PC is the fallback | The API, outbound. The vendor IDE, locally. The controller, through that IDE and the site's VPN | Accept a connection from the internet. Rewrite a person's open project |
 | Vendor IDE | That same instance, installed in the image, licensed the way §13 says | The controller | Get shipped inside the Outpost installer |
@@ -160,9 +174,10 @@ sequenceDiagram
   W->>IDE: scratch project, headless
   IDE->>PLC: read, or a confirmed download
   IDE-->>W: a project on disk
-  W->>W: existing export
-  W->>API: mirror, hash, outcome
-  API->>API: row, and a commit only if the hash changed
+  W->>W: existing export, and the drawable form
+  W->>W: new files into the version store
+  W->>API: mirror hash, file list, outcome
+  API->>API: row, and a new version only if the hash changed
 ```
 
 A job takes minutes. CODESYS cold start alone is 17–31 seconds
@@ -245,29 +260,30 @@ This is the daily path. It only reads.
    the same project exported twice produces the same bytes. That rule already exists because a
    spurious diff destroys the reason the mirror exists. The worker exports once. Only when step 7
    finds a different hash does it export the same upload a second time, before anything is kept.
-   If the two disagree, the outcome is **Unstable export** and nothing is committed. An unchanged
+   If the two disagree, the outcome is **Unstable export** and nothing is kept. An unchanged
    run pays for one export; a change, which is rare, pays for two.
-7. The worker compares the mirror hash with the last committed hash for this device, which the
+7. The worker compares the mirror hash with the hash of the device's latest version, which the
    API sends with the job. The API is the only place that knows it: with several workers in a
    site, no single worker's disk does.
-   - Same hash: outcome **Up to date**. A database row. No commit. The tray stays quiet.
-   - Different hash: the worker keeps the vendor project under
-     `backups/<device>/<hash>/`, starts the second copy (§8), sends the mirror to the API, and
-     the API commits it on `device/<device>` with the run id in the message. The row stores the
-     SHA. Outcome **Modified**. The site's channels say a new version is available, naming the
-     device, if the site asked for that (§8); on a plant-PC worker, the tray says it too.
+   - Same hash: outcome **Up to date**. A database row. No new version. The tray stays quiet.
+   - Different hash: the worker keeps the vendor project under `backups/<device>/<hash>/`,
+     starts the second copy (§8), parses the drawable form (§8), puts into the version store
+     the files it does not already hold, and posts the version's manifest. The API checks every
+     file is there and records the version, with the run id and the source. Outcome
+     **Modified**. The site's channels say a new version is available, naming the device, if
+     the site asked for that (§8); on a plant-PC worker, the tray says it too.
 8. Scratch is deleted after a successful export. A failed export keeps the vendor project for a
-   retention window (**Conversion failed**) and does not commit a half mirror.
+   retention window (**Conversion failed**) and does not record a half mirror.
 9. The worker then reports the row. If the API does not accept it, the worker keeps the result
    in a local outbox and retries. A backup the page never shows is a lost backup.
 
-The engineering branch is not updated. The desktop app's working tree, direction lock, and
-`.project` are not on this path. Adopting an upload into the open project would be the merge
-hole already measured as `P-M2` in [`../STATUS.md`](../STATUS.md), with a PLC attached.
+Nothing the engineers keep is touched. The desktop app's working tree, direction lock, and
+`.project` are not on this path. Adopting an upload into a project someone has open would be the
+merge hole already measured as `P-M2` in [`../STATUS.md`](../STATUS.md), with a PLC attached.
 
-The commit message says how the mirror was obtained: scheduled read, run-now, or a file a person
-recorded. The next scheduled read still talks to the controller. If a recorded file was not what
-is running, the next run shows the difference.
+Each version records how its mirror was obtained: scheduled read, run-now, a file a person
+recorded, or the read-back after a restore. The next scheduled read still talks to the
+controller. If a recorded file was not what is running, the next run shows the difference.
 
 ### When it runs, and in what order
 
@@ -318,8 +334,9 @@ schedule page when the person saves it, not a surprise the next morning.
 One device has at most one active run. A run that is Pending or Running for a device absorbs a
 new request for the same device. A second tick coalesces, as in step 2. Run now on a device that
 is already Pending returns that run, moved to the front. Run now on a device that is Running is
-queued behind it. Two workers never read one controller at once, and two commits never race on
-one device branch.
+queued behind it. Two workers never read one controller at once, and two versions of one device
+are never recorded in a race. A device that is a target in an unfinished restore batch takes no
+backups at all until the batch is done with it (§6).
 
 ---
 
@@ -365,8 +382,8 @@ not download. That run waits for the next schedule.
 **Run now** is a normal device run. The worker reads the controller. The row says so.
 
 Dropping a `.project`, a CODESYS archive, a TIA archive, or a TwinCAT tree on the page is a
-different source. The file did not come off the PLC, so it is not written onto `device/<device>`
-as though a read had produced it.
+different source. The file did not come off the PLC, so it is not recorded as a version of the
+device as though a read had produced it, unless a person says it should be.
 
 ```mermaid
 sequenceDiagram
@@ -379,23 +396,37 @@ sequenceDiagram
   API->>W: scratch this run
   W->>IDE: open the copy and export
   IDE-->>W: mirror and hash
-  W->>API: compared with the device branch
+  W->>API: compared with the device's versions
   API-->>Web: the diff
-  Web->>API: compare only, or record as this device
+  Web->>API: compare only, record as a version, or record as the reference
 ```
 
 The bytes go to the worker's scratch directory. They are not stored in the database. The worker
 has to be online; the page refuses the drop when it is not, because the export needs the IDE.
-The export, the hash, and the diff against the last device commit and against the engineering
-branch are the same as a fetched project. The vendor project is kept on disk under its hash
-either way, so it can still be opened. A partial export is **Conversion failed**, not a commit.
+The export, the hash, the drawable form, and the diff are the same as for a fetched project. The
+diff is against the device's latest version by default, and against any of its versions if the
+person picks one. The vendor project is kept on disk under its hash either way, so it can still
+be opened. A partial export is **Conversion failed**, not a version.
 
 The person chooses after seeing the diff:
 
-- **Compare only.** No commit. The device branch still means "what we read from the controller."
-- **Record as this device's program.** They are saying this file is the one that was on the
-  controller. The mirror is committed the same way as a modified run, and the message says it
-  was supplied. The next scheduled read still checks the PLC.
+- **Compare only.** No version. The device's versions still mean "what we read from the
+  controller", plus what people explicitly recorded.
+- **Record as a version.** They are saying this file is the one that was on the controller. It
+  is recorded the same way as a modified run, marked as supplied. The next scheduled read still
+  checks the PLC.
+- **Record as the reference copy.** The file is recorded as a version, marked as supplied, and
+  becomes the device's reference: the copy every later backup can be compared against (§8).
+  The usual case is the program the machine was commissioned with.
+
+Either way of recording makes the file the device's **latest** version. That is intended: an
+engineer who records a baseline means "compare from here". The next scheduled backup is compared
+against it, and if the controller is not running that file, the backup is **Modified** and the
+diff shows exactly how the controller differs from the baseline. Because that changes what every
+later comparison means, recording is gated. Before it is accepted, the page shows the diff
+between the file and the device's current latest version, and says in words that this file will
+become the latest backup and the next read will be compared against it. The engineer accepts or
+cancels. The version records who accepted.
 
 A project whose name, or whose device name in the tree, does not match the device record is
 refused before either choice. A Versio text mirror dropped on its own can be diffed and cannot
@@ -411,7 +442,13 @@ The page says, before it accepts the file, that the worker will open it in the I
 
 A write sends a vendor project: a version Outpost already holds from a backup, or a program copy
 a person uploads for this write (*One program, many controllers*, below). The text mirror is not
-enough, and neither is a compare-only drop that was never kept as a vendor file. The file is
+enough, and neither is a compare-only drop that was never kept as a vendor file.
+
+**Only a complete backup can be sent.** A version marked **Partial** (know-how-protected blocks
+without source, safety blocks, unknown modules) or **Stale source** is never offered for a
+restore, and an uploaded program whose export comes back partial is refused for a batch. The
+picker shows only versions whose vendor project is complete and still held. A version that is
+not offered says why. The file is
 copied into scratch. The stored copy is not modified, so a failed restore cannot damage the
 version you meant to send.
 
@@ -514,10 +551,10 @@ list file is emailed, left in Downloads, and opened by whoever finds it; a passw
 password in a log. The file names a credential slot. Slots are filled on the page the usual way
 (§8).
 
-An address that matches a device record becomes that device: its site, its slots, its branch. An
-address that matches none is an ad-hoc target. It must fall inside a site, by the site's address
-ranges or because the person picked the site, because the site decides which worker can reach
-it. It has no device branch. After the batch, the page offers to add the ad-hoc targets as
+An address that matches a device record becomes that device: its site, its slots, its versions.
+An address that matches none is an ad-hoc target. It must fall inside a site, by the site's
+address ranges or because the person picked the site, because the site decides which worker can
+reach it. It has no versions. After the batch, the page offers to add the ad-hoc targets as
 devices, so the next backup schedule can include them.
 
 #### The preview
@@ -584,9 +621,20 @@ the batch carries on and reports. The case that argued for a pause is a bad prog
 next nine controllers would get the same program. The guard against that is the person: the
 first failure is in front of them straight away, and Stop is one click.
 
-A target that ends **Restored** on a known device has its read-back committed on that device's
-branch as a read, with the batch named in the message. The device's history shows the restore,
-and the next scheduled backup compares against it. An ad-hoc target gets the row only.
+A target that ends **Restored** on a known device has its read-back handled like any backup
+(§3). If it differs from the device's latest version, it is recorded as a new version, marked as
+a restore and naming the batch. If it is the same, because the program sent was already the
+latest, no version is recorded and the run points at the existing one, still marked as a
+restore. Either way, the device's history shows the restore, and the next scheduled backup
+compares against what was read back. An ad-hoc target gets the row only.
+
+**Backups of a device pause while it is being restored.** From the moment a device is a target
+in a batch that has not finished with it (pre-read, waiting its turn, downloading, read-back),
+its scheduled backups and Run now wait. They do not run against a controller in the middle of
+being replaced, and they do not count as **Missed**: the page says "paused, restore in
+progress". When the target ends, whatever the result, backups resume, and missed ticks coalesce
+into one run as usual (§3). A removed target, or a stopped batch, releases the device the same
+way.
 
 #### Each target's copy
 
@@ -596,7 +644,10 @@ controller. The saved device record is not rewritten unless the person asked for
 separately.
 
 That copy is a different file from the one in the batch. Each target has its own hash, and
-**Restored** compares the read-back against that target's copy, not the batch file. Only the
+**Restored** compares the read-back against that target's copy, not the batch file. So before
+downloading, the worker exports each target's adjusted copy the same way a backup is exported,
+and records its mirror hash on the target. That is one more export per target, paid during the
+preview, and it is the hash the read-back must match. Only the
 path the IDE uses to reach the controller is changed. Anything the download would write into the
 controller's own network identity — a TIA station's IP address or PROFINET name, a CODESYS device
 address — is either already that target's, or listed in the batch as an override for that
@@ -661,7 +712,8 @@ person confirmed it.
 The agent can, without stopping a controller:
 
 - List devices, hosts, schedules, and runs.
-- Read a diff between two uploads, or between a controller and the engineering branch.
+- List a device's versions and read the diff between any two of them, or against the device's
+  reference copy.
 - Start a backup read.
 - Submit a program and a list of controllers (devices, addresses, or a list file) as a batch
   **in waiting**.
@@ -703,13 +755,13 @@ Three stores, plus a secret store. None of them does another's job.
 
 ```mermaid
 flowchart TB
-  web[React and agent] --> db[(Postgres)]
-  web --> api[API]
-  api --> db
-  api --> git[(device branch)]
+  web[React and agent] --> api[API]
+  api --> db[(Postgres: runs, versions, manifests)]
+  api --> store[(S3: mirror files by content hash)]
   worker[Worker] --> api
-  worker --> disk["ProgramData backups and scratch"]
-  worker --> secret[DPAPI credential slots]
+  worker --> store
+  worker --> disk["Data volume: vendor projects, scratch, outbox"]
+  worker --> secret[KMS or DPAPI: passwords]
 ```
 
 ### Postgres, beside the API
@@ -719,17 +771,53 @@ worker, which is a development layout and not a plant.
 
 | Table | Holds | Does not hold |
 |---|---|---|
-| `site` | name, time zone, address ranges, enrollment code hash, KMS key and S3 bucket (EC2), expected offline hours, patching window, where the second copy goes, confirm window, whether a write needs a second approver, notification channels | A password |
+| `site` | customer id (§16), name, time zone, address ranges, enrollment code hash, KMS key and S3 bucket (EC2), expected offline hours, patching window, retention defaults for new devices, the bucket's grace period for deleted objects, where the second copy goes, confirm window, whether a write needs a second approver, notification channels | A password |
 | `person` | identity from the sign-in provider, role per site | A password. Sign-in is the company's provider, not a table here |
 | `host` | id, site, display name, shape (EC2 or plant PC), EC2 instance id, image version, last seen, token hash, public key (plant PC), which IDEs the installer found and their versions, whether writes are switched on (reported, read-only) | A password, a project |
-| `device` | site, preferred worker, vendor, name in the project tree, address, repo, project path, mirror scope, profile, schedule times and window end, credential **slot names** and which workers have collected them, the oldest a good backup may be | The secret itself |
-| `run` | device, batch if any, source, priority, state, outcome, phase, times, error sentence, mirror hash, commit SHA, path of the vendor file on that host, where its second copy is, identity JSON when there is no project, who acted, who confirmed, the confirm fingerprint | File bytes |
+| `device` | site, preferred worker, vendor, project name, name in the project tree, address (unique within the site), mirror scope, profile, schedule times and window end, retention settings (§8), credential **slot names** and which workers have collected them, the oldest a good backup may be, its reference version, who set it and when | The secret itself |
+| `version` | device, number (1, 2, 3 … per device), mirror hash, source (scheduled read, run now, recorded file, restore read-back), the run that made it, image version of the worker, Versio exporter version, complete or partial, who accepted it when it was a recorded file, created at, where its vendor project is | The files themselves |
+| `version_file` | version, path in the mirror, content hash, size, kind (text, ladder, member table, other) | The bytes, which are in S3 under the content hash |
+| `drawable` | text file's content hash, parser version, where its JSON is in S3 | Anything a version's hash covers. It is a cache (§8) |
+| `run` | device, batch if any, source, priority, state, outcome, phase, times, error sentence, mirror hash, the version it made or matched, path of the vendor file on that host, where its second copy is, identity JSON when there is no project, who acted, who confirmed, the confirm fingerprint | File bytes |
 | `batch` | program hash, where the program came from (a held version or an upload), state `waiting` / `confirmed` / `expired` / `running` / `done` / `stopped`, expiry, who confirmed | A second copy of the project, a list file |
 | `batch_target` | batch, order, address, device or ad-hoc, site, overrides, credential slot name, list-file line number, pre-read hash, state (§6 diagram), its own fingerprint, who confirmed it, who removed or changed it, its run | A password. The list file is parsed into these rows and not kept |
 | `sealed_secret` | slot, and either the site's KMS key (EC2) or one worker (plant PC), ciphertext sealed to that key, expiry for the per-worker kind | Anything the API can decrypt |
 
-Git is a bad job queue. The row exists so the page can say the run happened when nothing was
-committed.
+A run and a version are different things. Most runs make no version: "Up to date" at 02:00 is a
+run row that points at the version it matched. The row exists so the page can say the run
+happened when nothing changed.
+
+### Where everything lives, and what survives a crash
+
+| What | Where | If that machine is lost |
+|---|---|---|
+| Vendor projects, the files a restore sends | The worker's data volume under `backups/`, and a second copy in the site's S3 bucket | A replacement worker restores from the S3 copy (*The second copy*, below) |
+| Versions, the text a diff is drawn from | The site's S3 bucket, stored by content hash | Kept by S3, which is built to survive the loss of a data centre |
+| The drawable form | S3, beside the versions | A cache. Regenerated by a worker from the version's text |
+| Which files make up which version, runs, devices, sites, people, sealed passwords | Postgres on RDS | **The database backups below** |
+| Logs | The worker's data volume, copied to CloudWatch | CloudWatch keeps the copy |
+
+The database is the piece whose loss would hurt most. Without it, S3 still holds every file, and
+nothing says which files make up which version of which device. So:
+
+- **RDS automated backups with point-in-time restore**, kept for 35 days, the longest RDS
+  allows. Any minute in that window can be restored, so a bad migration or a mistaken bulk edit
+  is undone by restoring to the minute before it.
+- **Multi-AZ.** The database runs with a standby in a second availability zone. A failed
+  server, or a zone outage, fails over in a minute or two without a restore.
+- **A manual snapshot before every schema migration**, kept until the next release has been
+  running for a week.
+- The API is stateless. Losing the API server means deploying it again; nothing is restored.
+
+The owner chose this on 2026-10-05 as enough. Stronger protection was considered and left for
+later (§17): copies that cannot be deleted (S3 Object Lock), a copy in a separate AWS account
+(AWS Backup), a copy in a second region, writing each version's file list into S3 too so the
+database could be rebuilt from the bucket, and a scheduled restore drill. What is not covered
+today, said plainly: someone with delete rights on the site's bucket can still delete it, and
+losing a whole AWS region loses the site until the region returns.
+
+On a plant-PC worker, the second copy is another worker or a share. The database is the same
+RDS either way.
 
 ### People and what they may do
 
@@ -740,42 +828,149 @@ Roles are per site:
 |---|---|
 | Viewer | See devices, runs, logs, and diffs |
 | Operator | Run now, change schedules, drop a file to compare |
-| Engineer | Record a dropped file as a device's program, prepare a batch, manage password slots |
+| Engineer | Record a dropped file as a version, set a device's reference copy, prepare a batch, manage password slots |
 | Approver | Confirm a write. With a sign-in a few minutes old, on the page, never through an agent |
+| Admin | Create and edit sites and devices, issue enrollment codes, retire workers, invite people and give them roles, set a site's settings: notification channels, confirm window, second approver, retention defaults |
 
-The roles add up: an approver can do everything an engineer can. A site that sets "a write needs
-a second approver" also needs a second approver, who is not the person who prepared the batch.
-Stopping a line is not a permission that comes free with being able to read a diff.
+The first four roles add up: an approver can do everything an engineer can. A site that sets "a
+write needs a second approver" also needs a second approver, who is not the person who prepared
+the batch. Stopping a line is not a permission that comes free with being able to read a diff.
 
-### Git, for the text that changed
+Admin is a separate line, not a fifth step on that ladder. Setting things up is not the same
+trust as stopping a line, and an admin is not an approver unless someone gave them that role.
+An admin can give roles to themselves, so every role change is logged and sent to the site's
+notification channels: a new approver is news the site should hear about, not something it
+finds out later.
 
-A changed export is one commit on `device/<device>`, in the repository the desktop app already
-uses. The commit is the mirror: `.st`, native XML, YAML, the manifest. A `.project` or a TIA
-tree does not diff, which is the reason Versio exists. The page's diff is `git diff` between two
-SHAs on that branch, or between that branch and the engineering branch.
+### The version store, for the text that changed
 
-The API does the commit, not the worker. The mirror is small enough to send. The worker then
-does not need a credential that can push the engineering remote. The vendor project, which is
-the large file, never goes to git. Git LFS of a nightly 500 MB TIA tree was rejected for that
-reason.
+A changed export becomes a new **version** of the device. A version is the mirror: `.st`, SCL,
+native XML, YAML, the manifest. Exactly the files the export wrote, and nothing derived from
+them; the drawable form below is kept to one side. A `.project` or a TIA tree does
+not diff, which is the reason Versio exists. The vendor project, the large file a restore needs,
+is not in the version store. It is on the worker's disk and in its second copy (below).
 
-Where that commit is made, and what the API's credential may push, is open (§16). "The
-repository the desktop app already uses" is the remote. It is not a decision that the API
-commits inside an engineer's working tree.
+Git is not used, and nothing about this store needs it:
 
-An unchanged upload does not get a commit. The row points at the previous SHA.
+- **Files are stored by content.** Each file of a mirror goes to the site's S3 bucket once,
+  under the hash of its content. A version is a `version` row and a list of `version_file` rows:
+  path, content hash, size, kind. A nightly backup in which one block changed adds one file to
+  S3, not a copy of the project. An unchanged backup adds nothing at all: no version, only the
+  run row that matched the latest one. That is the one thing git would have given, and storing
+  by content hash gives it without a repository.
+- **A version's hash is the hash of its file list**, and that list holds only the exported
+  files. That is the mirror hash §3 compares. Anything Outpost computes from those files, such
+  as the drawable form, is outside the hash, so improving how Outpost reads a file can never make
+  an unchanged controller look changed.
+- **Recording a version is two writes in order.** The worker puts the files S3 does not have
+  yet; content-addressed writes are safe to repeat. Then it posts the file list, and the API
+  checks every file is present before it inserts the `version` row. The row is the moment the
+  version exists. A failure before it leaves files nobody points at, which cost nothing and are
+  swept later, never a version with a missing file.
+- **Versions are numbered per device**, 1, 2, 3 …, and each one records its source: scheduled
+  read, run now, a file a person recorded, or the read-back after a restore.
 
-A device branch has a layout, so that `git diff` against engineering means something:
+Mirror scope stays. One CODESYS project can hold several applications, and one TIA project
+several stations. The device record names the part of the mirror that belongs to this
+controller: the whole mirror for a one-PLC project, and the station's part for one TIA station.
+An upload records only that part, so a station's version never appears to have "deleted" the
+other nine stations.
 
-- It has its own history, starting from nothing. It is a record of reads, not a fork of
-  engineering, and it is never merged.
-- It holds the device's **mirror scope** at the same paths the engineering branch uses. One
-  CODESYS project can hold several applications, and one TIA project several stations. The
-  device record names the subtree of the mirror that belongs to this controller: the whole
-  mirror for a one-PLC project, and the station's subtree for one TIA station. An upload writes
-  only that subtree.
-- The diff against engineering is limited to that scope. A station's branch is not shown as
-  having "deleted" the other nine stations.
+### Comparing versions
+
+The question a person brings is "what changed?", asked against something. The page offers:
+
+- **Latest against the previous version.** The default, and what a new-version notice opens.
+- **Latest against N versions back**: two, three, any number, picked from the list.
+- **Latest against the reference copy.** Each device has one reference version: by default its
+  first version, or one a person sets. Usually it is the program the machine was commissioned
+  with, recorded from a file (§5). Moving the reference is an engineer's action, and the device
+  records who moved it and when. It answers "what has changed since it was commissioned?"
+- **Any two versions** of the device, picked by number or date.
+
+**A Versio upgrade can look like a program change.** When a new release changes how the mirror is
+written, a new YAML field or a different ordering, every device's next backup differs from its
+last one without anything changing on a controller. Each version records the exporter version
+that wrote it. The first run after the exporter changes is flagged like an image change (§9),
+not announced as a new program. When two versions being compared were written by different
+exporter versions, the page says so above the diff, so a person reading a comparison against a
+reference from two years ago knows some of what they see may be format, not program. Where the
+older version's vendor project is still held, a worker can re-export it with the current
+exporter for that comparison, and the page offers that. The re-export is compared like a
+compare-only drop; it does not replace or renumber the old version.
+
+Comparisons stay inside one device. Comparing one device's version against another device's was
+considered and rejected on 2026-10-05 by the owner: each device is its own controller, at its
+own address, with its own history, and that is the question Outpost answers. A device is
+identified by its address, which is unique within its site. Two device records cannot hold the
+same address in one site, and the page refuses the second.
+
+Two things are compared that are not versions: a dropped file someone chose to compare only
+(§5), and a controller's pre-read before a restore (§6). Their files go into the store the same
+way, by content, and the comparison runs the same way. No `version` row points at them, so they
+never appear in the device's history. How long they are kept is a retention setting (below); a
+pre-read is kept at least until its batch ends.
+
+### How a diff is computed
+
+The API loads both versions' file lists. A path with the same content hash on both sides is the
+same file and is not opened. A path on one side only is added or removed. A path whose hash
+differs is compared by its kind:
+
+| Kind | Compared by | Drawn by |
+|---|---|---|
+| Ladder and FBD | `LadderDiff` in `Versio.Core`, network by network, the comparison the desktop app already uses | `LadderHtml`, which already exists, and whose remarks already name the Outpost page as its second caller |
+| Data types and FB interfaces | `MemberTableDiff` in `Versio.Core`, as the desktop app does | A member-table HTML renderer, **new** (§12) |
+| SCL, ST, XML, YAML, and anything else readable | A line diff in .NET that emits the unified diff format. `UnifiedDiffParser`, `SideBySideDiff`, and `IntralineEmphasis` read it unchanged | A text-diff HTML renderer on `SyntaxTokenizer`, **new** (§12) |
+
+**The text line diff is the one piece the desktop app gets from git**, which prints the unified
+diff that `UnifiedDiffParser` reads. Outpost produces the same format from a .NET diff library
+instead, so everything after the parser is shared. Running `git diff --no-index` on the API
+host to match the desktop app's hunks exactly was considered and rejected: it brings git back
+as a dependency for alignment parity nobody asked for. The two may place a hunk boundary
+differently in rare cases. They never disagree about which lines changed.
+
+The rule in `SideBySideDiff`'s remarks still holds: one diff source per view, so the unified and
+side-by-side views cannot show different changes. In Outpost that one source is the library.
+
+### The drawable form, and who parses it
+
+Ladder and member tables are not diffed as text. They are parsed into the neutral models in
+`Versio.Core`, and parsing is vendor knowledge: each vendor's format implements
+`TryParseLadder` and `TryParseMemberTable`
+([`IPlcToolchain.cs`](../../src/Versio.Core/Plc/IPlcToolchain.cs)). The API has no reference to
+a vendor pack (§11), so the API cannot parse.
+
+So the worker parses. It references the packs already, the way `Versio.App` does. When it
+records a version, it also parses each drawable file into its neutral model and stores that as
+JSON. It is stored **to one side**, not in the version: in S3, indexed by the `drawable` table,
+keyed by the text file's content hash and the parser's version. The API compares and draws those models
+with code that is all in `Versio.Core`.
+
+The text is the truth, and the drawable form is a cache of it that can be thrown away and made
+again at any time. That is why it is outside the version's hash. The first design stored the
+JSON as files of the version. Then a parser improvement would have changed every version's file
+list, so the next nightly backup of every controller in the fleet would have reported
+**Modified** with nothing changed on any of them.
+
+When a parser improves, its version number changes, and the cache for the new number starts
+empty. A diff that needs a drawable form the cache does not have yet shows that file as
+highlighted text, says the drawing is being prepared, and asks a worker in the site to parse it,
+a short job like any other. The next view draws it. A worker can also re-parse a device's whole
+history in the background after an image upgrade. Nothing about any version changes.
+
+### Rendering
+
+The page shows what the desktop app shows: highlighted SCL and ST, ladder and FBD as networks,
+data types and interfaces as member tables, side by side or unified. The renderers live in
+`Versio.Core` and produce HTML fragments, the way `LadderHtml` does. The API serves them and
+React places them. React does not reimplement them, for `LadderHtml`'s own reason: one renderer,
+tested in one place, cannot drift between two products. Everything that came from a file is
+escaped. No text from a controller reaches the page as markup.
+
+The desktop app draws text and member-table diffs in WPF today. Moving it onto the new HTML
+renderers would leave one renderer for both products. That is worth doing, and it is not this
+plan.
 
 "Download the project" from the page is a request the API forwards to a worker that holds the
 file. The second copy below exists so a restore survives a dead PC, not so the page becomes a
@@ -785,12 +980,12 @@ place to download binaries; that is still later (§17).
 
 | Path | Lifetime |
 |---|---|
-| `scratch/<run id>/` | The upload or the dropped file. Deleted after a successful export. Kept on conversion failure for a retention window |
+| `scratch/<run id>/` | The upload or the dropped file. Deleted after a successful export. Kept on conversion failure for the device's *Failed conversions* setting (below) |
 | `backups/<device>/<hash>/` | One copy of the vendor project per distinct hash. This is what a restore copies from |
 | `outbox/` | A finished result the API has not accepted yet |
 
-Unchanged runs store nothing new. **Disk full** fails before the commit, and the worker does not
-delete the vendor file the latest device commit already points at in order to make room.
+Unchanged runs store nothing new. **Disk full** fails before the version is recorded, and the
+worker does not delete the vendor file of the device's latest version in order to make room.
 
 ### The second copy
 
@@ -805,24 +1000,61 @@ a second place, chosen per site:
 - on a plant PC, another worker in the same site, which receives it on its own outbound
   connection, or a file share the site names.
 
-The row is **Modified** once the commit is on the branch, as before. Until the copy is
-confirmed, the page shows that version as held in one place. A device whose latest version has
-been in one place for more than a day is flagged the same way as an overdue backup. A restore
-may use either copy; the copy is checked against its hash before it is used.
+The row is **Modified** once the version is recorded. Until the vendor file's second copy is
+confirmed, the page shows that version as restorable from one place only. A device whose latest
+version has been in one place for more than a day is flagged the same way as an overdue backup.
+A restore may use either copy; the copy is checked against its hash before it is used.
 
-Retention, so `backups/` does not grow until **Disk full**:
+### Retention, set by whoever adds the backup
 
-- Every version is kept until a newer one exists in two places.
-- After that, the last ten distinct versions per device are kept (the site can change the
-  number), plus any version a waiting batch names, plus the last version each controller was
-  restored to.
-- Pruning an older version deletes it from both places, writes a log line, and marks the run
-  rows that pointed at it. Its mirror stays in git. The page says that version can be diffed
-  and can no longer be restored.
+How much is kept, and for how long, differs between deployments and between machines. A press
+line that changes weekly and a utility PLC that changes once a year do not want the same
+numbers. So retention is configured per device, by whoever adds or edits that device, beside its
+schedule: how often, when, how many, and for how long. The site holds the defaults a new device
+starts with. Nothing here is a constant in the code.
 
-The order on a changed run is: write the vendor file, then ask the API to commit, then mark the
-row **Modified** only if the SHA is on the branch. Export succeeded and the push did not is
-**Not recorded**. The vendor file stays.
+| Setting | What it keeps | Default the site starts with |
+|---|---|---|
+| Restorable versions | How many of the device's latest versions keep their vendor project, so they can be sent back to the controller | 10 |
+| Restorable for | How long a version's vendor project is kept, whatever the count | 90 days |
+| History | How long versions themselves, the text a diff is drawn from, are kept: forever, the last N, or N days | Forever |
+| Compared files | How long compare-only drops and their vendor files are kept (§5) | 30 days |
+| Failed conversions | How long scratch from a **Conversion failed** run is kept for someone to look at | 14 days |
+
+When a count and an age both apply, a file is kept while either one says keep. Being generous
+is the right mistake for a backup product.
+
+Some things are kept whatever the settings say, because pruning them would lose something the
+product exists to protect:
+
+- The device's latest version, and its vendor project.
+- The reference version, and its vendor project. It is the one a person is most likely to want
+  back on the machine.
+- Any version a batch that has not finished names, and every pre-read until its batch ends;
+  **Changed since confirm** compares against them.
+- The last version each controller was restored to.
+- Any vendor project until a newer one exists in two places.
+
+Pruning a vendor project deletes it from both places, writes a log line, and marks the version.
+The page says that version can still be compared and can no longer be restored. Pruning a
+version from the history removes it from the pickers; its number is not reused, so "version 12"
+always means one thing. A comparison against "N versions back" counts the versions that still
+exist.
+
+Lowering a setting is shown before it is saved: the page lists what the new numbers would delete,
+and the person confirms. It is logged, and the site is told. A retention change that quietly
+deletes three years of history is the same failure as a lost backup, only slower.
+
+**Deleting in a versioned bucket.** The S3 buckets are versioned (§13), so a delete only hides an
+object behind a delete marker, and the bytes stay, and are paid for, forever. Each bucket has a
+lifecycle rule that permanently removes hidden object versions after a grace period, seven days
+by default and set per site. Pruning therefore means what the page says it means, and a pruning
+mistake can still be undone inside that week.
+
+The order on a changed run is: write the vendor file, put the mirror's files in the store, then
+ask the API to record the version, and mark the row **Modified** only once the `version` row
+exists. Export succeeded and the version was not recorded is **Not recorded**. The vendor file
+and the stored files stay, and the outbox retries.
 
 ### Passwords
 
@@ -856,8 +1088,8 @@ code is served by the API, so a compromised API could serve a page that leaks th
 is typed. It closes the stored copy and the log, which is what the rule is about. It does not
 make the API trusted.
 
-The worker writes the job file the script reads with a locked-down ACL, outside any git repo,
-and deletes that file when the process exits. Logs follow the rule already in
+The worker writes the job file the script reads with a locked-down ACL, outside scratch and the
+backups directory, and deletes that file when the process exits. Logs follow the rule already in
 [`GitCliClient`](../../src/Versio.Infrastructure/Git/GitCliClient.cs): a credential never reaches
 a line.
 
@@ -954,7 +1186,7 @@ owns the backup.
 
 ## 9. What a run can end as
 
-The page shows one of these. A partial mirror is never committed. A manual file uses the same
+The page shows one of these. A partial mirror is never recorded as a clean version. A manual file uses the same
 list, with the source on the row.
 
 **The job has not finished**
@@ -966,28 +1198,29 @@ list, with the source on the row.
 | Cancelled | A person stopped it. Kill the process this run started. Leave no scratch. **Not once a download has begun** (§6): then Cancel is refused |
 | Missed, coalesced | Several scheduled times passed while the worker was offline or busy. When it returns it runs once |
 | Missed | The schedule's window ended before the run started. The next scheduled time tries again |
+| Paused, restore in progress | The device is a target in a batch that has not finished with it. The run waits and is not counted as Missed (§6) |
 | Timed out | The toolchain did not finish inside the job limit. Kill the process this run started, the way Versio's Stop reaps a CODESYS or Portal PID. Leave no scratch. **Not once a download has begun** (§6): then it is Needs a person, and nothing is killed |
 
 **The read finished**
 
 | Outcome | Meaning |
 |---|---|
-| Up to date | Hash matches the last commit. A row only. The tray stays quiet |
-| Modified | Hash differs. Vendor file kept under the new hash. Commit on `device/<device>`. The row stores the SHA. The site is told a new version is available (§8) |
-| Modified, worker image changed | As Modified, on the first run after the worker's image version changed. The page says the difference may be the image's libraries or device descriptions rather than the controller, and does not announce it as a new program (§13) |
-| Compared | A person supplied a file and did not record it. Vendor file kept. The device branch is unchanged |
-| Recorded from a file | They confirmed the supplied file stands for this device. Same commit as Modified, and the message says it was supplied |
-| Identity only | The controller answered and there is no project to export. CODESYS without `Archive.prj` is this. Record the code identity. No commit, no invented diff |
-| Stale source | CODESYS returned `Archive.prj`, and the running application's identity does not match it. The archive is the last source download, which can be older than an online change. Keep the file, show the diff, do not call the row up to date. A commit says the source and the running code disagree |
-| Partial | The upload finished and some of it has no source: know-how protection, safety blocks, TwinCAT without type information, or a module whose device description was not on that PC. Commit only the readable mirror, and list what was missing. Not a clean backup |
-| Conversion failed | A vendor project arrived and the export did not. Keep it for a retention window. Do not commit a half mirror |
-| Unstable export | The same upload exported twice did not match. Do not commit noise |
+| Up to date | Hash matches the device's latest version. A row only, pointing at that version. The tray stays quiet |
+| Modified | Hash differs. Vendor file kept under the new hash. A new version recorded, and the row points at it. The site is told a new version is available (§8) |
+| Modified, worker image changed | As Modified, on the first run after the worker's image version or Versio's exporter version changed. The page says the difference may be the image's libraries, its device descriptions, or the export format rather than the controller, and does not announce it as a new program (§8, §13) |
+| Compared | A person supplied a file and did not record it. Vendor file kept. The device's versions are unchanged |
+| Recorded from a file | They confirmed the supplied file stands for this device. Recorded as a version like Modified, marked as supplied, and as the reference copy if they chose that (§5) |
+| Identity only | The controller answered and there is no project to export. CODESYS without `Archive.prj` is this. Record the code identity on the row. No version, no invented diff |
+| Stale source | CODESYS returned `Archive.prj`, and the running application's identity does not match it. The archive is the last source download, which can be older than an online change. Keep the file, show the diff, do not call the row up to date. If a version is recorded, it is marked: the source and the running code disagree |
+| Partial | The upload finished and some of it has no source: know-how protection, safety blocks, TwinCAT without type information, or a module whose device description was not on that worker. Record only the readable mirror as a version marked partial, and list what was missing. Not a clean backup |
+| Conversion failed | A vendor project arrived and the export did not. Keep it for a retention window. Do not record a half mirror |
+| Unstable export | The same upload exported twice did not match. Do not record noise |
 
 **The result would have been a lie, so it was refused**
 
 | Outcome | Meaning |
 |---|---|
-| Wrong program | The project name or the device name in the tree does not match the device record. A scheduled read can hit this when someone loaded a different program. No commit onto this device's branch |
+| Wrong program | The project name or the device name in the tree does not match the device record. A scheduled read can hit this when someone loaded a different program. No version is recorded for this device |
 | Would upgrade | Opening the project would convert it to this PC's service pack, or the IDE is the wrong version. Refuse. A backup that rewrites the program is a different program |
 | Needs a person | The IDE stopped on a question the script cannot answer: a project-update prompt, a TIA language mismatch, a safety upload that was never enabled, or a device description that no eligible worker has. Name the question and, for a description, the workers that were tried. This is not a generic timeout |
 
@@ -1010,9 +1243,9 @@ list, with the source on the row.
 
 | Outcome | Meaning |
 |---|---|
-| Not recorded | The export succeeded and the commit or the push did not. The row must not say Modified unless that SHA is on the branch. The vendor file stays |
+| Not recorded | The export succeeded and the version was not recorded: the store write or the `version` row failed. The row must not say Modified unless the version exists. The vendor file and the stored files stay, and the outbox retries |
 | Row not written | The API did not take the row. The worker's outbox retries it |
-| Disk full | Fail before the commit. Do not delete the vendor file the latest commit points at |
+| Disk full | Fail before the version is recorded. Do not delete the vendor file of the device's latest version |
 
 **The write to the controller**
 
@@ -1118,10 +1351,17 @@ measured. The host that would drive it is the one Versio already has, COM into
 ## 11. How it sits on the code that exists
 
 `PlcOperation` today is Probe, Export, Import
-([`PlcJob.cs`](../../src/Versio.Core/Plc/PlcJob.cs)). Outpost adds operations the desktop sync
-orchestrator does not call:
+([`PlcJob.cs`](../../src/Versio.Core/Plc/PlcJob.cs)). **It stays that.** This section first
+added Upload, Download, and StoreSource to that enum. That was superseded on 2026-10-05 by
+[`../project/PLAN.md`](../project/PLAN.md) §6: a controller verb in `PlcOperation` is one every
+sync caller can see, and Versio Project needs the same verbs at the desk. So both products call
+one vendor-neutral **online-session contract** in `Versio.Core`, implemented once per vendor
+pack. Outpost puts its batch confirmation in front of it; Project puts its dialog in front of
+it. Neither implements a second download.
 
-| Operation | Neutral result | Who implements it |
+The verbs Outpost needs from that contract, and what each returns:
+
+| Verb | Neutral result | Who implements it |
 |---|---|---|
 | Upload | A project appeared in this scratch directory, or a named failure: unreachable, no source, identity only, stale source, needs a person | The vendor pack. CODESYS first |
 | Download | Read-back matches, or interrupted, or a named refusal | The vendor pack, only after the API says the batch is confirmed |
@@ -1129,7 +1369,7 @@ orchestrator does not call:
 
 `PlcResult` stays small. A vendor-neutral outcome enum lives next to it. The strings `Archive.prj`,
 `StationUpload`, and `TcXaeShell` do not. `VendorSeamTests` already fails the build on a leak;
-the new enum and the new operation have to pass it. Nothing in `Sync/`, `Git/`, `Locking/`,
+the new enum and the session contract have to pass it. Nothing in `Sync/`, `Git/`, `Locking/`,
 `Watching/`, or `Diff/` learns a vendor's name. The desktop orchestrator does not grow a call to
 Download.
 
@@ -1140,14 +1380,19 @@ Suggested projects, beside the ones Versio already has:
 
 | Project | What it is |
 |---|---|
-| `Versio.Outpost.Api` | ASP.NET. Postgres, the job API, the git commit of a mirror, enrollment. References `Versio.Core` and the git infrastructure. No ProjectReference to a vendor pack |
-| `Versio.Outpost.Worker` | Windows service, tray, queue, DPAPI, scratch and backups. References the vendor infrastructure projects the way `Versio.App` does, and registers packs in one place |
+| `Versio.Outpost.Api` | ASP.NET. Postgres, the job API, the version store, comparing two versions and serving the rendered diff, enrollment. References `Versio.Core` only. No ProjectReference to a vendor pack, and no git |
+| `Versio.Outpost.Worker` | Windows service, session agent, tray, queue, secrets, scratch and backups, writing to the version store, and parsing the drawable form (§8). References the vendor infrastructure projects the way `Versio.App` does, and registers packs in one place |
 | `Versio.Outpost.Mcp` | A thin MCP server. Every tool is an API call. No vendor reference |
-| `web/outpost` | The React page. Schedule, devices, run history, diff, confirm |
+| `web/outpost` | The React page. Schedule, devices, run history, versions, the comparison picker, the rendered diff it embeds, confirm |
+
+`Versio.Core` grows two renderers for this, beside `LadderHtml`: a text diff and a member-table
+diff, both as HTML (§8). They are pure, so they are tested in `Versio.Core.Tests` the way the
+ladder drawing is.
 
 The worker is not `Versio.App` without a window. The app's direction lock, watcher, and commit
 gate are for an engineer editing a working tree. Pulling them into the worker would let an
-upload adopt into a checkout. The worker calls `IPlcRunner` and stops there.
+upload adopt into a checkout. The worker calls `IPlcRunner` and the online-session contract,
+and stops there.
 
 ---
 
@@ -1203,7 +1448,10 @@ is built. The plant-PC shape stays available.
 
 ### Step 1 — The operation, behind the seam
 
-Add Upload to `PlcOperation`. Implement it in the CODESYS pack only. The neutral result is a
+Add Upload to the online-session contract shared with Versio Project
+([`../project/PLAN.md`](../project/PLAN.md) §6), not to `PlcOperation`. If Project's 14.1 has
+already defined the contract, Outpost adds nothing but its caller. Implement it in the CODESYS
+pack only. The neutral result is a
 scratch project or a named failure. Tests in `Versio.Plc.Codesys.Pure.Tests` for the plan and
 the refusal to download. A live test joins `Versio.Plc.Codesys.Tests` and is not part of the
 fast loop. `VendorSeamTests` stays green.
@@ -1211,11 +1459,29 @@ fast loop. `VendorSeamTests` stays green.
 ### Step 2 — The API and the database
 
 Sites, people, hosts, devices, runs, batches. No file bytes, no passwords. A run can be
-inserted, moved through Pending and Running, and finished with one of the outcomes in §9. The
-commit of a mirror is a function the API exposes once a worker posts a hash and a tree.
-Unchanged hash does not commit. This step has no IDE in it. `Versio.Core` and
-`Versio.Integration.Tests` cover the git part: a device branch with its own history and its
-mirror scope, a second identical post, a push that fails and leaves the row **Not recorded**.
+inserted, moved through Pending and Running, and finished with one of the outcomes in §9.
+Recording a version is a function the API exposes once a worker posts a file list whose files
+are in the store. An unchanged hash records nothing. This step has no IDE and no git in it. The
+tests cover the version store: a second identical post records nothing; a file list naming a
+file the store lacks is refused, and the row stays **Not recorded**; an unchanged file is stored
+once across many versions; versions are numbered per device; the mirror scope keeps one
+station's version from showing nine stations deleted; the reference version can be moved, and
+records who moved it.
+
+The comparison is tested here too, because it is pure once the versions exist: latest against
+previous, against N back, against the reference; a file with the same hash on both sides is not
+opened; added and removed files are listed. A second device with an address already used in its
+site is refused. A new parser version leaves every version's hash unchanged, and a missing
+drawable form falls back to text and asks for a parse rather than failing the diff.
+
+### Step 2b — The two renderers
+
+The text-diff and member-table HTML renderers in `Versio.Core` (§8), and the .NET line diff
+that feeds `UnifiedDiffParser`. Tested in `Versio.Core.Tests` the way `LadderHtml` is: a known
+pair of files renders a known fragment; every character from a file is escaped; the unified and
+side-by-side views of one pair show the same changed lines. This step is the biggest piece of
+new code in the product that is not about controllers, so it is a step of its own and is
+estimated on its own.
 
 The queue is tested here, without a worker, because it is pure: twenty runs due at one time
 against one simulated worker of concurrency one come out one at a time, earliest due first and
@@ -1227,9 +1493,9 @@ oldest acceptable backup goes red, and a worker with no heartbeat is offline.
 
 ### Step 3 — The worker, unpackaged, on one instance
 
-A console process is enough. It enrolls, long-polls, runs Upload, runs Export, posts the
-mirror, deletes scratch, and writes the vendor file before it asks for the commit. DPAPI slots,
-collected sealed. Outbox when the API is down. Concurrency and queue depth are the worker's own
+A console process is enough. It enrolls, long-polls, runs Upload, runs Export, parses the
+drawable form, writes the vendor file, puts the mirror's new files in the store, and only then
+asks for the version to be recorded. It deletes scratch. DPAPI slots, collected sealed. Outbox when the API is down. Concurrency and queue depth are the worker's own
 limits, defaulting to one run executing and a short queue behind it. A run the worker cannot
 take stays pending in the API for another eligible worker. The second copy, to S3. Passwords
 through the site's KMS key. Retiring the worker deletes its store.
@@ -1246,9 +1512,10 @@ when it refuses is §16, not a choice made in this step.
 
 ### Step 4 — The page
 
-Devices, a schedule, run history, and a diff of two SHAs. Run now. The diff is the text the API
-got from git. The WPF view does not move; the files do. Passwords are a form that posts once
-and is not echoed back.
+Devices, a schedule, run history, and the device's versions. The comparison picker: latest
+against previous, against N back, against the reference, or any two. The diff is the HTML the
+API rendered with step 2b's renderers and `LadderHtml`; the page places it and draws nothing
+itself. Run now. Passwords are a form that posts once and is not echoed back.
 
 ### Step 5 — The image, the package, and the tray
 
@@ -1481,10 +1748,11 @@ stopped outside its windows can set expected offline hours. During those hours t
 not reported offline (§8), and the page says Run now will wait.
 
 **10. Where the API is.** Expected in AWS as well, in its own account (item 8): the API, Postgres
-on RDS, its git clone, and the MCP server. The worker reaches it over HTTPS, through PrivateLink
-or a public TLS endpoint. Because the worker lives in AWS, the plant's HTTP proxy is not in the
-path, which removes a pain the plant-PC shape has. Where the API's clone commits is still
-§16.
+on RDS, the version store in the site's S3 bucket, and the MCP server. The worker reaches it
+over HTTPS, through PrivateLink or a public TLS endpoint. Because the worker lives in AWS, the
+plant's HTTP proxy is not in the path, which removes a pain the plant-PC shape has. There is no
+git clone and no repository credential anywhere in the deployment. Whose AWS account that is,
+ours or the customer's, and whether one service serves many customers, is open (§16).
 
 ### The plant-PC shape
 
@@ -1534,10 +1802,22 @@ should not.
   device's run that is already active (§3).
 - `GET` the site's queue: Pending runs in the order workers will take them, with estimates.
 - The worker posts progress, including that operation's log lines and heartbeats, then a
-  completion: outcome, mirror hash, mirror tree when the hash is new, identity JSON when there
-  is no tree, the vendor-file path on that host, and the lines that belong on the run row.
-- The API commits when the hash is new and returns the SHA. The worker's completion is not
-  **Modified** until that SHA exists.
+  completion: outcome, mirror hash, the file list when the hash is new (its files already put in
+  the store), identity JSON when there is no project, the vendor-file path on that host, and the
+  lines that belong on the run row.
+- The API records the version when the hash is new, after checking every listed file is in the
+  store, and returns its number. The worker's completion is not **Modified** until that version
+  exists.
+
+**Versions and diffs**
+
+- `GET /devices/{id}/versions`: number, date, source, whether its vendor project can still be
+  restored, which one is the reference.
+- `PUT /devices/{id}/reference` with a version number. An engineer's call; recorded with who and
+  when.
+- `GET /compare` with two versions of one device. Also by shorthand: `latest` against `previous`, `latest-N`, or `reference`. The body is the list of
+  added, removed, and changed files, and for each changed file the rendered HTML fragment and
+  its counts. The page asks for one file's fragment at a time when a version touches many.
 
 **A supplied file and a batch**
 
@@ -1562,15 +1842,10 @@ should not.
   only with its own write switch on.
 - Cancel a run. Refused once its download phase has begun.
 
-**Diffs**
-
-- `GET` a diff by two SHAs, or by a device and the engineering branch. The body is the text git
-  already produces. The page renders `.st`, native XML, and YAML.
-
 **Agent**
 
-The MCP tools are these calls and nothing else: list devices, list runs, see the queue, get a
-diff, start a read, create a batch, add targets to a batch that is not confirmed, remove a
+The MCP tools are these calls and nothing else: list devices, list runs, see the queue, list a
+device's versions, compare two versions, start a read, create a batch, add targets to a batch that is not confirmed, remove a
 target that has not started, get a batch. Getting a batch returns the link a person opens to
 confirm it. There is no confirm tool. No tool takes a password. No tool takes a "force" flag
 that skips the read or the confirm.
@@ -1597,15 +1872,26 @@ These are the ones that lose a program or stop a line if they are relaxed.
 - A batch downloads one controller at a time, in the order the person set. A failed target is
   reported at once and not retried, and the next target starts.
 - A list file never carries a password.
-- The device branch means reads, plus files a person explicitly recorded. A compare-only drop
-  does not land there.
-- The engineering branch and the desktop working tree are never updated by Outpost.
-- A wrong project is not committed onto this device to keep the job green.
+- A device's versions mean reads, plus files a person explicitly recorded, plus read-backs after
+  a restore. A compare-only drop does not become a version.
+- Outpost does not read or write the engineers' own copies of their projects, wherever they keep
+  them, and does not use git.
+- A version is recorded only after every file it lists is in the store. What is kept, and for
+  how long, is the device's retention setting. The latest version, the reference, and anything
+  an unfinished batch needs are kept whatever it says, and lowering a setting shows what it
+  would delete first.
+- Only a complete backup can be sent to a controller. A Partial or Stale source version is
+  never offered for a restore.
+- A device's backups pause while it is a target in an unfinished batch.
+- Recording a file makes it the device's latest version, and only after the engineer has seen
+  the diff and accepted the warning.
+- A wrong project is not recorded as this device's version to keep the job green.
 - A project the IDE would upgrade is not opened in a way that converts it.
 - A partial mirror is not described as up to date. A missing device description is named, tried on the other workers that have the same IDE version, and then left for a person to install. The worker does not install a GSD itself.
-- An unstable export is not committed.
-- Passwords do not enter the database in a form the API can read, and do not enter git, the
-  tray text, the log, or the agent.
+- An unstable export is not recorded.
+- Passwords do not enter the database in a form the API can read, and do not enter the version
+  store, the tray text, the log, or the agent.
+- No text from a controller reaches the page as markup. The renderers escape everything.
 - A run writes a log with an operation id and a heartbeat. An idle poll does not write one line
   per poll. The page can show the lines for that run after the worker is off.
 - The installer does not contain vendor binaries.
@@ -1623,9 +1909,14 @@ These are the ones that lose a program or stop a line if they are relaxed.
   agreed to.
 - A download does not change a controller's own network identity unless the batch names that
   override and the person saw it.
-- A version is not pruned until a newer one exists in two places. A worker is not retired
-  without listing the versions only it holds.
+- A vendor project is not pruned until a newer one exists in two places, and the reference
+  version's is not pruned at all. A worker is not retired without listing the vendor projects
+  only it holds.
 - An overdue backup is noticed by the API, not left for the worker to report.
+- The database runs Multi-AZ with automated backups and point-in-time restore, and a snapshot
+  is taken before every migration.
+- A version's hash covers only the exported files. Nothing Outpost computes from them is part of
+  it.
 - A worker instance is never a Spot instance, and termination and stop protection are on.
   Nothing restarts it during a download: not an upgrade, not patching, not an AWS event Outpost
   could see coming.
@@ -1639,8 +1930,7 @@ These are the ones that lose a program or stop a line if they are relaxed.
 ## 16. Open
 
 These are not decisions. A builder does not pick one while implementing. Step 0, the CODESYS
-measurement, does not depend on them. The package, the commit onto a device branch, and a
-restore do.
+measurement, does not depend on them. The package and a restore do.
 
 ### Who starts the IDE
 
@@ -1657,17 +1947,21 @@ worker's own account, and no tray (§13, item 4). **Still open for the plant-PC 
 that machine may be an engineer's, and automatic logon of a second account may not be
 acceptable.
 
-### Where the API commits
+### ~~Where the API commits~~
 
-§8 puts the device-branch commit in the repository the desktop app already uses, and the API
+~~§8 puts the device-branch commit in the repository the desktop app already uses, and the API
 does the commit. If that commit is made in an engineer's working tree, the desktop watcher and
 the direction lock see a change that person did not make. What is not decided: where the API's
-checkout lives, and what its git credential is allowed to push. §11 already says the worker is
-not the desktop app. That does not name the API's clone.
+checkout lives, and what its git credential is allowed to push.~~
+
+**Gone, 2026-10-05.** The premise was wrong. Customers' engineers do not keep their projects in a
+repository Outpost uses, and the repository the desktop app's fixtures live in is a test asset.
+Outpost does not use git. Versions live in its own store (§8), and there is no commit, clone, or
+push credential left to place.
 
 ### A hash that moved because the worker did
 
-The compare in §3 is against the last commit on `device/<device>`. That baseline is decided.
+The compare in §3 is against the device's latest version. That baseline is decided.
 What is not decided is a second worker, eligible because it has the same IDE version, exporting
 different bytes because its libraries or its device descriptions are not the same set. The row
 would be **Modified** and the site would be told about a new version of a program the controller did
@@ -1743,6 +2037,30 @@ for the versions the existing fixtures use. If a needed version is client-only, 
 between dedicated hosts with our own Windows client licence (expensive) and the plant-PC shape
 for that version. It is not chosen.
 
+### Where the page and the API are deployed, and for whom
+
+Decided: the page is used by many people, each signed in through their company's provider, each
+with their own roles per site (§8). Every action they take is recorded with their name. What is
+not decided is who runs the service those people sign in to. Three shapes are possible:
+
+| Shape | What it is | What it costs |
+|---|---|---|
+| One shared service | We run one Outpost for every customer. Each customer is a tenant above its sites | Every query, bucket, key, and log has to be separated by customer, and a mistake shows one customer's programs to another. The cheapest to run, the most expensive to get right |
+| One deployment per customer, run by us | The same stack, stood up once per customer, in an AWS account per customer that we operate | No mixing between customers by construction. More accounts to patch and watch |
+| One deployment per customer, in their AWS | The customer runs it in their own account. We ship the templates and the image | Their OT and IT keep the data and the keys, which plant security teams often require. We do not see their logs when something fails |
+
+The data model is the same for all three: the top of it is a site, and a site belongs to one
+customer. A shared service would add a customer level above the site and a customer id on
+every row. That is easy to add now and hard to add later, so `site` carries a customer id from
+the start whichever shape is chosen.
+
+What depends on this choice: where sign-in is configured, who holds the KMS keys and the
+buckets, who can read the API's logs, whether the "workers in a separate AWS account" rule
+(§13, item 8) means the customer's account or ours, and how an upgrade of the page reaches
+customers. The recommendation, if one is needed, is one deployment per customer. It keeps every
+customer's programs, passwords, and keys apart without relying on a filter in every query.
+Whether we run it or they do can then be decided per customer. It is not chosen.
+
 ### Per-site prerequisites, not design
 
 These do not change the design. Each one blocks a site until it is done, and each is tracked
@@ -1761,6 +2079,9 @@ window.
 | Downloading to several controllers of one batch at once | A site shows that one at a time is too slow for a real rollout, and says how many lines it is willing to stop together |
 | Backing up process data: retained and persistent variables, recipes, TIA data block actual values | The program backup works. A restore's confirm says this data is not covered (§6) |
 | Compile-on-push, the §13.8 server | A different product, and a licensing question |
+| The desktop app drawing text and member-table diffs with the HTML renderers | Outpost's renderers have shipped. Then one renderer serves both products, as `LadderHtml` already does |
+| Publishing a device's versions to a customer's own repository | A customer asks for it. It would be an explicit export with its own credential, never the store |
 | Checksum-only as a product mode | Step 0 says whether an identity can be read. Until then it is not a screen |
 | Retargeting a saved device's address from an agent | The batch carries addresses. Changing the stored device is a separate, explicit edit |
+| Stronger protection of backups: S3 Object Lock, a copy in a separate AWS account, a copy in a second region, version file lists written into S3, a scheduled restore drill | A customer requires it, or an incident shows the database backups are not enough. The database backups in §8 are the baseline |
 | Signing the worker package | Versio's own installer is still unsigned ([`../STATUS.md`](../STATUS.md) item 5). Outpost does not get ahead of that |

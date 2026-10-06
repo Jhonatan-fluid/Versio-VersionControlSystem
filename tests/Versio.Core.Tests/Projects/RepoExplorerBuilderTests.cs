@@ -1,4 +1,5 @@
 using Versio.Core.Git;
+using Versio.Core.Plc;
 using Versio.Core.Projects;
 using Xunit;
 
@@ -182,5 +183,168 @@ public sealed class RepoExplorerBuilderTests
             }));
 
         Assert.All(Flatten(roots), n => Assert.Equal(ChangeKind.Unmodified, n.Status));
+    }
+
+    // --- the toolchain pill ------------------------------------------------------------
+
+    private static IReadOnlyList<ProjectTreeNode> BuildLabelled(
+        IReadOnlyList<string> files,
+        params WorkspaceProject[] projects) =>
+        RepoExplorerBuilder.Build(
+            files,
+            projects,
+            new ProjectTreeOptions { ChangedOnly = false, HideUnchangedProjects = false },
+            path => path.EndsWith(".dirproj", StringComparison.OrdinalIgnoreCase)
+                ? DirectoryFormat.Instance
+                : path.EndsWith(".fileproj", StringComparison.OrdinalIgnoreCase)
+                    ? FileFormat.Instance
+                    : null);
+
+    private static ProjectTreeNode At(IReadOnlyList<ProjectTreeNode> roots, string path) =>
+        Assert.Single(Flatten(roots), n => n.Path == path);
+
+    [Fact]
+    public void A_directory_project_labels_the_folder_it_is_not_its_pointer_or_parent()
+    {
+        var roots = BuildLabelled(
+        [
+            "plc/Station/Station.dirproj",
+            "plc/Station/System/PEData.plf",
+            "plc/readme.md",
+        ]);
+
+        Assert.Equal("Dir V21", At(roots, "plc/Station").Toolchain);
+        Assert.Equal(string.Empty, At(roots, "plc/Station/Station.dirproj").Toolchain);
+        Assert.Equal(string.Empty, At(roots, "plc").Toolchain);
+        Assert.Equal(string.Empty, At(roots, "plc/readme.md").Toolchain);
+    }
+
+    [Fact]
+    public void A_one_file_project_labels_its_own_row_and_leaves_the_folder_alone()
+    {
+        // The folder holding a single-file project is often just where projects are kept;
+        // a pill on it would say the whole folder is one vendor's project.
+        var roots = BuildLabelled(["plc/Machine.fileproj", "plc/notes.txt"]);
+
+        Assert.Equal("File tool", At(roots, "plc/Machine.fileproj").Toolchain);
+        Assert.Equal(string.Empty, At(roots, "plc").Toolchain);
+    }
+
+    [Fact]
+    public void A_tracked_project_grafted_into_the_tree_keeps_its_pill()
+    {
+        var tracked = new WorkspaceProject
+        {
+            ProjectPath = "plc/Machine.fileproj",
+            ExportPath = "plc/Machine",
+            ExportState = "in sync",
+        };
+
+        var roots = BuildLabelled(["plc/Machine.fileproj", "plc/Machine/A.st"], tracked);
+
+        var project = Assert.Single(Flatten(roots), n => n.Kind == ProjectNodeKind.Project);
+        Assert.Equal("File tool", project.Toolchain);
+    }
+
+    [Fact]
+    public void A_tracked_directory_project_says_its_state_on_the_folder_that_wears_the_pill()
+    {
+        // Seen in the running window: the CODESYS rows said "in sync" and the TIA and TwinCAT
+        // folders beside them said nothing, because the state was on the collapsed pointer row.
+        var tracked = new WorkspaceProject
+        {
+            ProjectPath = "plc/Station/Station.dirproj",
+            ExportPath = "plc/Station/Station",
+            ExportState = "in sync",
+        };
+
+        var roots = BuildLabelled(
+            ["plc/Station/Station.dirproj", "plc/Station/System/PEData.plf", "plc/Other/x.txt"],
+            tracked);
+
+        Assert.Equal("in sync", At(roots, "plc/Station").Detail);
+        Assert.Equal("in sync", At(roots, "plc/Station/Station.dirproj").Detail);
+        Assert.Equal(string.Empty, At(roots, "plc").Detail);
+        Assert.Equal(string.Empty, At(roots, "plc/Other").Detail);
+    }
+
+    [Fact]
+    public void An_untracked_directory_project_has_a_pill_and_no_state()
+    {
+        var roots = BuildLabelled(["plc/Station/Station.dirproj"]);
+
+        Assert.Equal("Dir V21", At(roots, "plc/Station").Toolchain);
+        Assert.Equal(string.Empty, At(roots, "plc/Station").Detail);
+    }
+
+    [Fact]
+    public void A_template_beside_a_project_adds_no_pill_of_its_own()
+    {
+        var roots = BuildLabelled(["plc/Machine_template.fileproj"]);
+
+        Assert.All(Flatten(roots), n => Assert.Equal(string.Empty, n.Toolchain));
+    }
+
+    [Fact]
+    public void Two_projects_in_one_folder_show_both_labels_once_each()
+    {
+        var roots = BuildLabelled(
+        [
+            "plc/Station/Station.dirproj",
+            "plc/Station/Old.dirproj",
+            "plc/Station/Other.dirproj",
+        ]);
+
+        Assert.Equal("Dir V21", At(roots, "plc/Station").Toolchain);
+
+        var mixed = BuildLabelled(["plc/Station/A.dirproj", "plc/Station/B_v20.dirproj"]);
+        Assert.Equal("Dir V20 · Dir V21", At(mixed, "plc/Station").Toolchain);
+    }
+
+    private abstract class StandInFormat : IPlcProjectFormat
+    {
+        public abstract PlcVendor Vendor { get; }
+        public abstract string DisplayName { get; }
+        public PlcCapabilities Capabilities => new();
+        public abstract IReadOnlyList<string> ProjectExtensions { get; }
+        public bool IsTemplate(string path) =>
+            path.Contains("_template", StringComparison.OrdinalIgnoreCase);
+        public string ConventionalExportPath(string projectPath) => projectPath + ".export";
+        public string? OccupancyMarkerFor(string projectPath) => null;
+        public IReadOnlyList<string> TransientPatternsFor(string projectPath) => [];
+        public ProjectOccupancy ParseOccupancy(string markerContents) => ProjectOccupancy.Free;
+        public bool NeedsTextToPlan(string relativePath) => false;
+        public ImportPlan PlanImport(
+            ProjectManifest? manifest,
+            IReadOnlyList<MirrorFile> mirror,
+            IReadOnlyDictionary<string, string> departed) =>
+            new() { Files = [] };
+        public ObjectTypeName? DisplayNameFor(string type) => null;
+    }
+
+    /// <summary>A project that is the folder around its pointer, versioned by name.</summary>
+    private sealed class DirectoryFormat : StandInFormat, IPlcProjectFormat
+    {
+        public static readonly DirectoryFormat Instance = new();
+
+        public override PlcVendor Vendor => new("DirStandIn");
+        public override string DisplayName => "Dir";
+        public override IReadOnlyList<string> ProjectExtensions => [".dirproj"];
+
+        public string PayloadPathFor(string projectPath) =>
+            System.IO.Path.GetDirectoryName(projectPath) ?? projectPath;
+
+        public string ProjectLabelFor(string projectPath) =>
+            projectPath.Contains("_v20", StringComparison.OrdinalIgnoreCase) ? "Dir V20" : "Dir V21";
+    }
+
+    /// <summary>A one-file project that keeps every default — the label is its name.</summary>
+    private sealed class FileFormat : StandInFormat
+    {
+        public static readonly FileFormat Instance = new();
+
+        public override PlcVendor Vendor => new("FileStandIn");
+        public override string DisplayName => "File tool";
+        public override IReadOnlyList<string> ProjectExtensions => [".fileproj"];
     }
 }

@@ -19,6 +19,18 @@ public sealed class TiaPortalFormatTests
     }
 
     [Fact]
+    public void The_explorer_pill_names_the_release_the_extension_opens_in()
+    {
+        var format = TiaPortalProjectFormat.Instance;
+        Assert.Equal("TIA Portal V21", format.ProjectLabelFor(@"plc\Station\Station.ap21"));
+        Assert.Equal("TIA Portal V17", format.ProjectLabelFor("plc/Line.ap17"));
+        Assert.Equal("TIA Portal V20", format.ProjectLabelFor("plc/Line.AL20"));
+        // Not an .apNN: the plain name, never a guessed number.
+        Assert.Equal("TIA Portal", format.ProjectLabelFor("plc/Line.apx"));
+        Assert.Equal("TIA Portal", format.ProjectLabelFor("plc/Line"));
+    }
+
+    [Fact]
     public void The_payload_is_the_directory_containing_the_pointer_file()
     {
         var payload = TiaPortalProjectFormat.Instance.PayloadPathFor(@"C:\plc\Station\Station.ap21");

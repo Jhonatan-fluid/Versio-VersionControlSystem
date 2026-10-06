@@ -46,6 +46,25 @@ public interface IPlcProjectFormat
     string DisplayName { get; }
 
     /// <summary>
+    /// The pill the Explorer draws on a project of this format, e.g. <c>TIA Portal V21</c>.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Default is <see cref="DisplayName"/>. Read from the path alone, because the tree is
+    /// built in <c>Versio.Core</c>, which reads no disk — and because it has to label a
+    /// project nobody has adopted, which has no manifest to ask.
+    /// </para>
+    /// <para>
+    /// A format whose path carries its release overrides this: a TIA Portal project's
+    /// <c>.apXX</c> extension <i>is</i> the version that opens it, and that is the one
+    /// fact somebody browsing a repository of mixed V17–V21 projects needs before
+    /// starting the wrong Portal. Asked of the format so the tree never learns which
+    /// vendors put a version in the extension.
+    /// </para>
+    /// </remarks>
+    string ProjectLabelFor(string projectPath) => DisplayName;
+
+    /// <summary>
     /// How this vendor's runner labels its own log lines.
     /// </summary>
     /// <remarks>

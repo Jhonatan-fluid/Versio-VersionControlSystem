@@ -60,13 +60,13 @@ marking, duplicate-param keys, and the detail-pane lookup. All of them are in
 
 | Project | Tests | Time | Needs |
 |---|---|---|---|
-| `Versio.Core.Tests` | 1,643 | under a second | nothing |
+| `Versio.Core.Tests` | 1,650 | under a second | nothing |
 | `Versio.Integration.Tests` | 168 | ~10 s | real git |
 | `Versio.App.Tests` | 769 | 8 m 38 s on 2026-10-05; ~3.6 min on 2026-09-22 | nothing |
 | `Versio.Arch.Tests` | 27 | instant | nothing |
 | `Versio.Plc.Codesys.Pure.Tests` | 263 | under a second | nothing |
 | `Versio.Plc.Codesys.Parity.Tests` | 97 | ~15 s | `python` on PATH — skips cleanly without it, so check the count |
-| `Versio.Plc.TiaPortal.Pure.Tests` | 92 | instant | nothing |
+| `Versio.Plc.TiaPortal.Pure.Tests` | 93 | instant | nothing |
 | `Versio.Plc.TiaPortal.Tests` | 5 | seconds when skipped; minutes when Portal runs the import gate | **real TIA Portal** — skips without Openness membership or LFS content |
 | `Versio.Plc.TwinCat.Pure.Tests` | 21 | instant | nothing |
 | `Versio.Plc.TwinCat.Tests` | 6 | seconds when skipped; ~5 min when XAE runs the import gate | **real TwinCAT XAE** — skips without `TcXaeShell.DTE.17.0` or the fixture |
@@ -94,6 +94,8 @@ real toolchain.
 | [`vendors/twincat/DRIVING.md`](vendors/twincat/DRIVING.md) | How TwinCAT 3 is driven. PLC-software loop is evidence; I/O is export-only; remaining TwinCAT is coverage skips |
 | [`phase1/`](phase1/) | Phase 1 archive — founding architecture, import plan, git-panel plan, Phase 0 measurements |
 | [`archive/`](archive/) | Phase 2 queue, UX plan, session handoffs, the long STATUS diary they replaced |
+| [`project/PLAN.md`](project/PLAN.md) | Design record for Versio Project — one PLC beside the IDE. Not the live queue |
+| [`outpost/PLAN.md`](outpost/PLAN.md) | Design record for Versio Outpost — plant backup and confirmed restore. Not the live queue |
 
 ---
 
@@ -385,6 +387,11 @@ copy of `TC3_PlcSample_reStrText`. Studio 5000 remains additive, not this queue.
 a packaged worker that backs up and, on confirmation, restores controller programs, with a
 React page and an agent on the same API. §16 of that file is still open. It is not an item
 above until it is put there.
+
+**Design record, not this queue.** [`project/PLAN.md`](project/PLAN.md) is Versio Project:
+a second process in the Versio install, one PLC project beside the IDE, with online status,
+a confirmed download, and one MCP server whose clients can edit the mirror and cannot touch
+the controller. §15 of that file is still open. It is not an item above until it is put there.
 
 ---
 

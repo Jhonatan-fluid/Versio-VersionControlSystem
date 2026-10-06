@@ -107,9 +107,22 @@ public sealed record ProjectTreeNode
     /// <remarks>
     /// Carries the export state of a <see cref="ProjectNodeKind.Project"/> row — the thing a
     /// project row reports instead of a diff, because a <c>.project</c> is a binary compound
-    /// document and there is no diff to show.
+    /// document and there is no diff to show. In the Explorer, a folder that <i>is</i> a
+    /// directory project carries the same state, so it reads like a one-file project's row.
     /// </remarks>
     public string Detail { get; init; } = string.Empty;
+
+    /// <summary>
+    /// Which toolchain opens the PLC project this node holds or is, e.g. <c>TIA Portal V21</c>.
+    /// Empty almost everywhere.
+    /// </summary>
+    /// <remarks>
+    /// Set only by <see cref="RepoExplorerBuilder"/>, in the format's own words
+    /// (<c>IPlcProjectFormat.ProjectLabelFor</c>), so this record carries a vendor's name as
+    /// data without the tree knowing one. On the folder for a project that is a directory,
+    /// and on the project's own row for one that is a single file — see the builder for why.
+    /// </remarks>
+    public string Toolchain { get; init; } = string.Empty;
 
     /// <summary>
     /// Every file this object exports to, repo-relative.
