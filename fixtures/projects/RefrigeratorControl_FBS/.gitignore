@@ -1,0 +1,9 @@
+# CODESYS File-Based Storage writes per-machine state into .sidecars/, and none of it is the
+# program. Two files there would make this fixture lie or leak if a re-save ever committed them:
+#
+# - .~u is the "open in CODESYS" marker (user, machine, pid, ticks). Committed, it would tell
+#   every checkout that the project is held by whoever saved the fixture.
+# - <project>-<user>-<machine>.opt is one person's IDE options, and carries their account name.
+#
+# The fixture was committed without .sidecars/ at all (6044ed1); this keeps it that way.
+RefrigeratorControl.fbsproj/.sidecars/
