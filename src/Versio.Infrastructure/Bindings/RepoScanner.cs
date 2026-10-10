@@ -36,6 +36,11 @@ public sealed class RepoScanner(
         [.. _formats.SelectMany(f => f.ProjectExtensions)
                     .Distinct(StringComparer.OrdinalIgnoreCase)];
 
+    /// <summary>Every folder extension any registered format claims as a source project.</summary>
+    private IReadOnlyList<string> SourceExtensions =>
+        [.. _formats.SelectMany(f => f.SourceProjectExtensions)
+                    .Distinct(StringComparer.OrdinalIgnoreCase)];
+
     private static readonly string[] SkipDirectories =
         [".git", ".vs", "bin", "obj", "node_modules", ".versio"];
 
@@ -43,11 +48,12 @@ public sealed class RepoScanner(
         IGitClient? git, CancellationToken ct)
     {
         var projects = new List<string>();
+        var sources = new List<string>();
         var exportDirs = new List<string>();
         var manifestIds = new Dictionary<string, string>(StringComparer.Ordinal);
         var started = System.Diagnostics.Stopwatch.StartNew();
 
-        await Task.Run(() => Walk(repositoryRoot, projects, exportDirs, manifestIds, ct), ct)
+        await Task.Run(() => Walk(repositoryRoot, projects, sources, exportDirs, manifestIds, ct), ct)
             .ConfigureAwait(false);
 
         // git's own rename detection is the strongest signal available for re-linking a
@@ -62,24 +68,30 @@ public sealed class RepoScanner(
         // be offered, so "it did not offer to track my project" is answered here first.
         _log.Info(LogCategory.Fs,
             $"scanned {repositoryRoot} in {started.ElapsedMilliseconds} ms: " +
-            $"{projects.Count} project(s), {exportDirs.Count} export tree(s), " +
-            $"{renames.Count} rename(s)");
+            $"{projects.Count} project(s), {sources.Count} source project(s), " +
+            $"{exportDirs.Count} export tree(s), {renames.Count} rename(s)");
 
         foreach (var project in projects)
         {
             _log.Debug(LogCategory.Fs, $"found project {project}");
         }
 
+        foreach (var source in sources)
+        {
+            _log.Debug(LogCategory.Fs, $"found source project {source} (shown from its files, never synced)");
+        }
+
         return new RepoSnapshot
         {
             ProjectFiles = projects,
+            SourceProjects = sources,
             ExportDirectories = exportDirs,
             ManifestBindingIds = manifestIds,
             GitRenames = renames,
         };
     }
 
-    private void Walk(string directory, List<string> projects, List<string> exportDirs,
+    private void Walk(string directory, List<string> projects, List<string> sources, List<string> exportDirs,
                       Dictionary<string, string> manifestIds, CancellationToken ct)
     {
         ct.ThrowIfCancellationRequested();
@@ -129,7 +141,16 @@ public sealed class RepoScanner(
                 continue;
             }
 
-            Walk(child, projects, exportDirs, manifestIds, ct);
+            // A source project is a folder, not a file, and the folder is the whole project.
+            // Not walked into: it holds no project files of its own, and the fixture's one is
+            // 80 files whose largest are megabytes of visualisation XML.
+            if (SourceExtensions.Contains(Path.GetExtension(name), StringComparer.OrdinalIgnoreCase))
+            {
+                sources.Add(Relative(child));
+                continue;
+            }
+
+            Walk(child, projects, sources, exportDirs, manifestIds, ct);
         }
     }
 

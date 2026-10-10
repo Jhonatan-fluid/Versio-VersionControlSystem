@@ -41,6 +41,17 @@ public sealed record RepoSnapshot
     /// <summary>Every *.project found, repo-relative, forward slashes.</summary>
     public IReadOnlyList<string> ProjectFiles { get; init; } = [];
 
+    /// <summary>
+    /// Every folder a format claims as a source project, repo-relative, forward slashes.
+    /// </summary>
+    /// <remarks>
+    /// Its own list, never merged into <see cref="ProjectFiles"/>: everything that reads
+    /// <see cref="ProjectFiles"/> (adoption, orphan findings, the rows that get bindings) is
+    /// about projects Versio tracks, and a source project is shown, never tracked. See
+    /// <see cref="Plc.IPlcProjectFormat.SourceProjectExtensions"/>.
+    /// </remarks>
+    public IReadOnlyList<string> SourceProjects { get; init; } = [];
+
     /// <summary>Directories that contain a _manifest.json, repo-relative.</summary>
     public IReadOnlyList<string> ExportDirectories { get; init; } = [];
 

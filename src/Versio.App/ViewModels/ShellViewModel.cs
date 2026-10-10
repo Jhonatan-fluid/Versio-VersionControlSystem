@@ -7578,6 +7578,11 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
     /// </remarks>
     private ProjectSummaryRender BuildProjectSummary(Versio.Core.Projects.ProjectTreeNode node)
     {
+        if (Sync.SourceProjectFor(node.Path) is { } source)
+        {
+            return SourceProjectSummary(node, source);
+        }
+
         var facts = new List<FactRow>();
         var manifest = Sync.ManifestFor(node.Path);
 
@@ -7675,6 +7680,45 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         if (manifest.Warnings.Count > 0)
         {
             facts.Add(new FactRow("Warnings", $"{manifest.Warnings.Count} — see the log"));
+        }
+
+        return new ProjectSummaryRender { Name = node.Name, Facts = facts };
+    }
+
+    /// <summary>The card for a source project: what it is, which vendor wrote it, and what is in it.</summary>
+    /// <remarks>
+    /// <para>
+    /// Its own card rather than the tracked one with rows left out. The tracked card reads the
+    /// vendor from a manifest and falls back to a default, says "never exported" when there is
+    /// no manifest, and reports a toolchain and a coverage. For a folder of source files each of
+    /// those is wrong rather than empty: the vendor is whoever claimed the folder, nothing is
+    /// ever exported, and no toolchain is involved.
+    /// </para>
+    /// <para>
+    /// The object counts use the same grouping as the tracked card, so a reviewer comparing
+    /// the two kinds of project is comparing like with like.
+    /// </para>
+    /// </remarks>
+    private static ProjectSummaryRender SourceProjectSummary(
+        Versio.Core.Projects.ProjectTreeNode node, SourceProjectView source)
+    {
+        var facts = new List<FactRow>
+        {
+            new("Vendor", source.Format.DisplayName),
+            new("Stored as", "its own readable files, saved by the vendor's IDE"),
+            new("Sync", "none. Versio shows and draws this project; it never exports, imports or locks it"),
+            new("Project folder", $"{source.FileCount} file(s)"),
+        };
+
+        if (source.Manifest is { } manifest)
+        {
+            var counts = manifest.Objects
+                .Where(o => !string.IsNullOrEmpty(o.Path))
+                .GroupBy(o => string.IsNullOrEmpty(o.Guid) ? o.Path : o.Guid, StringComparer.Ordinal)
+                .GroupBy(g => g.First().Type, StringComparer.OrdinalIgnoreCase)
+                .OrderByDescending(g => g.Count())
+                .Select(g => Versio.Core.Projects.ObjectTypeNames.Counted(manifest.Vendor, g.Key, g.Count()));
+            facts.Add(new FactRow("Objects", string.Join(", ", counts)));
         }
 
         return new ProjectSummaryRender { Name = node.Name, Facts = facts };
@@ -7818,6 +7862,22 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
             PaneNote = string.Empty;
 
             var coverage = Sync.CoverageFor(row.Node.Path);
+
+            // A source project is a folder of readable files, not a binary, and the sentence
+            // below would tell a reviewer the opposite of what they are looking at.
+            if (Sync.SourceProjectFor(row.Node.Path) is not null)
+            {
+                SelectedDiff = string.Join(Environment.NewLine,
+                [
+                    row.Node.Path,
+                    string.Empty,
+                    "This project is a folder of readable files, saved that way by its vendor's IDE.",
+                    "Versio shows and draws it and never exports, imports or locks it. Its objects",
+                    "are the tree underneath this row, and each one's diff is its own file's.",
+                ]);
+
+                return;
+            }
 
             SelectedDiff = string.Join(Environment.NewLine,
             [

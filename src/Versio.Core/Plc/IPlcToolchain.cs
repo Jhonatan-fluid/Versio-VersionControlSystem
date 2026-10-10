@@ -81,6 +81,49 @@ public interface IPlcProjectFormat
     IReadOnlyList<string> ProjectExtensions { get; }
 
     /// <summary>
+    /// Directory extensions whose folder <i>is</i> a project, stored by its vendor as its own
+    /// readable source. Such a project is shown and drawn, and never synced.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Default is none, so every format Versio already drives is untouched. A vendor that
+    /// saves a project as a folder of text files (see <c>docs/fbs/PLAN.md</c>) has already done
+    /// the job Versio's export does: the files a person edits are the project. There is nothing
+    /// to export, import, lock or wait for, and the folder has no mirror of its own.
+    /// </para>
+    /// <para>
+    /// <b>Separate from <see cref="ProjectExtensions"/> on purpose, and never adopted.</b> A
+    /// project found through <see cref="ProjectExtensions"/> is tracked: it gets a binding, a
+    /// lock, a watcher job and an export, and a failed export blocks commits. Registering a
+    /// source project that way, with no runner behind it, would fail its first export and then
+    /// block every commit in the repository. The scanner reports these separately so nothing
+    /// in sync, locking or the commit gate ever sees one.
+    /// </para>
+    /// </remarks>
+    IReadOnlyList<string> SourceProjectExtensions => [];
+
+    /// <summary>
+    /// The objects of a source project (<see cref="SourceProjectExtensions"/>) as a manifest, read
+    /// from the project's file list alone, or null when this format does not describe it.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The manifest is the shape the tree already draws a mirror from, so a source project goes
+    /// through the same tree, the same object index and the same rendered views as an exported
+    /// one. Nothing downstream learns that it was made from a folder rather than read from a
+    /// <c>_manifest.json</c>.
+    /// </para>
+    /// <para>
+    /// <b>Handed the list, never the disk</b>, the same contract as <c>TryParseMemberTable</c>:
+    /// the format stays pure and is tested against a list of paths. Paths in
+    /// <paramref name="relativeFiles"/> and in the manifest are relative to
+    /// <paramref name="projectPath"/>, with forward slashes. Files that are not objects (the
+    /// vendor's caches, sidecars, its own metadata) are the format's to leave out.
+    /// </para>
+    /// </remarks>
+    Projects.ProjectManifest? DescribeSourceProject(string projectPath, IReadOnlyList<string> relativeFiles) => null;
+
+    /// <summary>
     /// True when a path is a template rather than a working project.
     /// </summary>
     /// <remarks>

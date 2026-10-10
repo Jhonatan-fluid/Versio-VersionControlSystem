@@ -26,7 +26,7 @@ namespace Versio.App.ViewModels;
 /// says "exporting…" for 17–31 seconds and then reports what happened. Rebuilding the whole
 /// list to move one row through that would lose the selection mid-export.
 /// </remarks>
-public sealed class ProjectRow(string path, string? bindingId) : ObservableObject
+public sealed class ProjectRow(string path, string? bindingId, bool readFromFiles = false) : ObservableObject
 {
     private string _state = "not tracked";
     private bool _busy;
@@ -43,6 +43,12 @@ public sealed class ProjectRow(string path, string? bindingId) : ObservableObjec
     public string? BindingId { get; } = bindingId;
 
     public bool Tracked => BindingId is not null;
+
+    /// <summary>
+    /// True for a source project: a folder its vendor saved as readable files, shown and drawn
+    /// and never synced. It has no binding and never will, so it is not "untracked" either.
+    /// </summary>
+    public bool ReadFromFiles { get; } = readFromFiles;
 
     /// <summary>One short phrase for the row: "not tracked", "in sync", "exporting…".</summary>
     public string State
@@ -66,6 +72,8 @@ public sealed class ProjectRow(string path, string? bindingId) : ObservableObjec
 
     public string BrushKey => (Tracked, _state) switch
     {
+        // Not the untracked amber: nothing about a source project is waiting on anybody.
+        (false, _) when ReadFromFiles => "Brush.Status.Renamed",
         (false, _) => "Brush.Status.Modified",
         (_, "failed") => "Brush.Status.Deleted",
         (_, "conflict") => "Brush.Status.Conflict",
@@ -73,6 +81,12 @@ public sealed class ProjectRow(string path, string? bindingId) : ObservableObjec
         _ => "Brush.Status.Renamed",
     };
 }
+
+/// <summary>
+/// What the last tree build read for one source project: the format that claimed the folder,
+/// the objects it described, and how many files were there.
+/// </summary>
+public sealed record SourceProjectView(IPlcProjectFormat Format, ProjectManifest? Manifest, int FileCount);
 
 /// <summary>
 /// The PLC sync panel.
@@ -338,6 +352,21 @@ public sealed class SyncViewModel : ObservableObject
     /// </remarks>
     /// <summary>Bindings whose mirror is behind their project, from the last gate evaluation.</summary>
     private readonly HashSet<string> _staleBindings = new(StringComparer.Ordinal);
+
+    /// <summary>
+    /// The folders the last scan found as source projects, repo-relative. Shown and drawn,
+    /// never bound: see <see cref="IPlcProjectFormat.SourceProjectExtensions"/>.
+    /// </summary>
+    private IReadOnlyList<string> _sourceProjects = [];
+
+    /// <summary>What the last applied tree build read for each source project, by folder.</summary>
+    private readonly Dictionary<string, SourceProjectView> _sourceViews = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// The state a source project's row and card show. There is no lock behind it to report,
+    /// so it says what the project is rather than how it is doing.
+    /// </summary>
+    public const string SourceProjectState = "read from its files";
 
     /// <summary>Whether the once-per-repository catch-up export has already run.</summary>
     private bool _caughtUp;
@@ -1574,6 +1603,15 @@ public sealed class SyncViewModel : ObservableObject
             Projects.Add(row);
         }
 
+        // After the tracked ones and never through adoption: nothing above this line, and
+        // nothing in AutoAdoptAsync, ever sees a source project. Failing an export it could
+        // never have run would block every commit in the repository.
+        _sourceProjects = snapshot.SourceProjects;
+        foreach (var source in snapshot.SourceProjects.OrderBy(p => p, StringComparer.Ordinal))
+        {
+            Projects.Add(new ProjectRow(source, null, readFromFiles: true) { State = SourceProjectState });
+        }
+
         Findings.Clear();
         foreach (var finding in findings.Where(f => f.NeedsAttention))
         {
@@ -1588,13 +1626,17 @@ public sealed class SyncViewModel : ObservableObject
             ?? Projects.FirstOrDefault(p => p.Tracked)
             ?? Projects.FirstOrDefault();
 
-        Summary = Projects.Count switch
+        var fromFiles = Projects.Count(p => p.ReadFromFiles);
+        Summary = (Projects.Count, fromFiles) switch
         {
-            0 => "No PLC projects found in this repository.",
-            1 => Projects[0].Tracked
+            (0, _) => "No PLC projects found in this repository.",
+            (1, 1) => "1 project, shown from its own files.",
+            (1, _) => Projects[0].Tracked
                 ? "1 project, tracked."
                 : "1 project found. It is not tracked yet.",
-            _ => $"{Projects.Count} projects, {Projects.Count(p => p.Tracked)} tracked.",
+            (_, 0) => $"{Projects.Count} projects, {Projects.Count(p => p.Tracked)} tracked.",
+            _ => $"{Projects.Count} projects, {Projects.Count(p => p.Tracked)} tracked, " +
+                 $"{fromFiles} shown from their own files.",
         };
 
         RaiseCommandStates();
@@ -2045,6 +2087,30 @@ public sealed class SyncViewModel : ObservableObject
                               ?? "tracked",
                 Busy = Projects.FirstOrDefault(p => p.BindingId == binding.Id)?.Busy ?? false,
             });
+        }
+
+        // The same folders the Project panel draws, read the same way, so the two panels never
+        // disagree about what a source project holds.
+        var problems = new List<string>();
+        foreach (var folder in _sourceProjects)
+        {
+            if (PlcFormats.ForSourceProject(folder) is not { } format)
+            {
+                continue;
+            }
+
+            projects.Add(new WorkspaceProject
+            {
+                ProjectPath = folder,
+                ExportPath = folder,
+                Manifest = format.DescribeSourceProject(folder, ListSourceFiles(folder, problems)),
+                ExportState = SourceProjectState,
+            });
+        }
+
+        foreach (var problem in problems)
+        {
+            _logger.Warn(LogCategory.Sync, problem);
         }
 
         return projects;
@@ -2576,6 +2642,10 @@ public sealed class SyncViewModel : ObservableObject
                                         ?.Busy ?? false)))
             .ToList();
 
+        // Source projects, beside the bindings and never among them. Captured here, on the UI
+        // thread, like the bindings are: the scan that writes the list runs on this thread too.
+        var folders = _sourceProjects;
+
         // Everything the tree is derived from, in one string. A manifest's write time stands
         // in for its contents: it is written by an export and by nothing else, so a changed
         // timestamp means a changed export, and hashing eleven files on every keystroke to
@@ -2585,6 +2655,10 @@ public sealed class SyncViewModel : ObservableObject
             search,
             .. sources.Select(x =>
                 $"{x.ProjectPath}|{x.ExportPath}|{x.State}|{x.Busy}|{ManifestStamp(x.ManifestPath)}"),
+
+            // A source project's objects come from its file list, and git's status (below)
+            // already moves whenever a file is added, removed or edited inside it.
+            .. folders.Select(f => $"source|{f}"),
             .. status.Changes
                 .OrderBy(c => c.Path, StringComparer.Ordinal)
                 .Select(c => $"{c.Path}|{c.Effective}|{c.IsStaged}"),
@@ -2680,10 +2754,37 @@ public sealed class SyncViewModel : ObservableObject
                 });
             }
 
+            var tracked = projects.Count;
+            var views = new Dictionary<string, SourceProjectView>(StringComparer.OrdinalIgnoreCase);
+            var unlisted = new List<string>();
+            foreach (var folder in folders)
+            {
+                if (PlcFormats.ForSourceProject(folder) is not { } format)
+                {
+                    continue;
+                }
+
+                var files = ListSourceFiles(folder, unlisted);
+                var manifest = format.DescribeSourceProject(folder, files);
+                views[folder] = new SourceProjectView(format, manifest, files.Count);
+
+                projects.Add(new WorkspaceProject
+                {
+                    // The folder is both: it is the project, and it is the readable tree the
+                    // objects' paths are relative to. The tree claims every file under it.
+                    ProjectPath = folder,
+                    ExportPath = folder,
+                    Manifest = manifest,
+                    ExportState = SourceProjectState,
+                });
+            }
+
             return (Roots: WorkspaceTreeBuilder.Build(projects, status.Changes,
                         new ProjectTreeOptions { ChangedOnly = false, Search = search }),
                     Coverage: coverage,
-                    Tracked: projects.Count,
+                    Tracked: tracked,
+                    Views: views,
+                    Unlisted: unlisted,
                     Unreadable: unreadable,
 
                     // Built here rather than by the git panel, off the same parsed manifests
@@ -2708,6 +2809,17 @@ public sealed class SyncViewModel : ObservableObject
             _logger.Warn(LogCategory.Sync, $"manifest not fully readable - {problem}");
         }
 
+        foreach (var problem in built.Unlisted)
+        {
+            _logger.Warn(LogCategory.Sync, problem);
+        }
+
+        _sourceViews.Clear();
+        foreach (var (folder, view) in built.Views)
+        {
+            _sourceViews[folder] = view;
+        }
+
         var roots = built.Roots;
 
         _coverage.Clear();
@@ -2730,8 +2842,6 @@ public sealed class SyncViewModel : ObservableObject
 
         var objects = roots.Sum(CountObjects);
         var changed = status.Changes.Count;
-        var shownProjects = roots.Count(r => r.Kind == ProjectNodeKind.Project);
-        var hidden = built.Tracked - shownProjects;
 
         // The hidden ones, by name, so the panel can list them beside the tree rather than
         // only counting them. Taken from the sources rather than re-derived: a project is
@@ -2740,10 +2850,19 @@ public sealed class SyncViewModel : ObservableObject
             .Where(r => r.Kind == ProjectNodeKind.Project)
             .Select(r => r.Path)
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        // Counted per kind. A source project with nothing changed is listed in the same quiet
+        // note as an in-sync tracked one, but the sentences below talk about TRACKED projects,
+        // and an unchanged folder of source files is not one.
+        var hidden = sources.Count(s => !shownPaths.Contains(s.ProjectPath.Replace('\\', '/')));
+        var hiddenFolders = built.Views.Keys.Count(f => !shownPaths.Contains(f));
         ReconcileInSync(sources
             .Where(s => !shownPaths.Contains(s.ProjectPath.Replace('\\', '/')))
             .Select(s => new InSyncProjectRow(
                 System.IO.Path.GetFileName(s.ProjectPath), s.ProjectPath, s.State))
+            .Concat(built.Views.Keys
+                .Where(f => !shownPaths.Contains(f))
+                .Select(f => new InSyncProjectRow(System.IO.Path.GetFileName(f), f, SourceProjectState)))
             .OrderBy(r => r.Name, StringComparer.OrdinalIgnoreCase)
             .ToList());
 
@@ -2754,7 +2873,7 @@ public sealed class SyncViewModel : ObservableObject
         // points there instead of saying they are not listed.
         TreeSummary = (Tree.Count, hidden) switch
         {
-            (0, 0) when built.Tracked == 0 => "No PLC projects tracked in this repository.",
+            (0, 0) when built.Tracked == 0 && hiddenFolders == 0 => "No PLC projects tracked in this repository.",
             (0, 1) => "Nothing has changed. The tracked project is in sync.",
             (0, var h) when h > 1 => $"Nothing has changed. All {h} tracked projects are in sync.",
             (0, _) => "Nothing has changed.",
@@ -2765,7 +2884,8 @@ public sealed class SyncViewModel : ObservableObject
 
         _logger.Debug(LogCategory.Sync,
             $"tree: {Tree.Count} root(s), {objects} object(s), {changed} changed file(s), " +
-            $"{hidden} project(s) hidden as in sync");
+            $"{hidden} project(s) hidden as in sync, {built.Views.Count} source project(s), " +
+            $"{hiddenFolders} unchanged");
 
         // Last, and it raises. Whatever is listening runs synchronously on the back of this
         // assignment, so it has to find the tree already settled rather than half-reconciled.
@@ -2809,6 +2929,34 @@ public sealed class SyncViewModel : ObservableObject
             // Mid-write, or on a share that just went away. Treat it as changed rather than
             // taking the panel down over a file that is only ever a convenience.
             return Guid.NewGuid().ToString("N");
+        }
+    }
+
+    /// <summary>
+    /// What the last tree build read for a source project, or null when the path is not one.
+    /// </summary>
+    public SourceProjectView? SourceProjectFor(string projectPath) =>
+        _sourceViews.GetValueOrDefault(Normalize(projectPath));
+
+    /// <summary>
+    /// Every file under a source project, relative to it with forward slashes, for the format to
+    /// describe. A folder that cannot be listed is reported and drawn empty, never thrown: the
+    /// build runs on a background thread, and an exception there would leave the panel blank.
+    /// </summary>
+    private List<string> ListSourceFiles(string folder, List<string> problems)
+    {
+        var root = AbsolutePath(folder);
+        try
+        {
+            return Directory.EnumerateFiles(root, "*", SearchOption.AllDirectories)
+                .Select(f => System.IO.Path.GetRelativePath(root, f).Replace('\\', '/'))
+                .Order(StringComparer.Ordinal)
+                .ToList();
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            problems.Add($"{folder}: could not list its files: {e.Message}");
+            return [];
         }
     }
 

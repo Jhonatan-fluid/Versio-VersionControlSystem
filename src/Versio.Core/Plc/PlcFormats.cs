@@ -102,6 +102,26 @@ public static class PlcFormats
             f => f.ProjectExtensions.Contains(extension, StringComparer.OrdinalIgnoreCase));
     }
 
+    /// <summary>
+    /// The format that claims a folder as a source project, or null when none does.
+    /// </summary>
+    /// <remarks>
+    /// Kept apart from <see cref="ForPath"/> so that nothing asking "is this a project to track"
+    /// can be answered yes for a folder. See <see cref="IPlcProjectFormat.SourceProjectExtensions"/>
+    /// for why a source project is never tracked.
+    /// </remarks>
+    public static IPlcProjectFormat? ForSourceProject(string directoryPath)
+    {
+        var extension = System.IO.Path.GetExtension(directoryPath.TrimEnd('/', '\\'));
+        if (string.IsNullOrEmpty(extension))
+        {
+            return null;
+        }
+
+        return All.FirstOrDefault(
+            f => f.SourceProjectExtensions.Contains(extension, StringComparer.OrdinalIgnoreCase));
+    }
+
     /// <summary>The format for a vendor, or null when none is registered.</summary>
     public static IPlcProjectFormat? ForVendor(PlcVendor vendor) =>
         All.FirstOrDefault(f => f.Vendor == vendor);
