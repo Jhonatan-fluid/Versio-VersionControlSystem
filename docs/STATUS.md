@@ -96,6 +96,7 @@ real toolchain.
 | [`archive/`](archive/) | Phase 2 queue, UX plan, session handoffs, the long STATUS diary they replaced |
 | [`project/PLAN.md`](project/PLAN.md) | Design record for Versio Project — one PLC beside the IDE. Not the live queue |
 | [`outpost/PLAN.md`](outpost/PLAN.md) | Design record for Versio Outpost — plant backup and confirmed restore. Not the live queue |
+| [`fbs/PLAN.md`](fbs/PLAN.md) | Design record for CODESYS File-Based Storage — an `.fbsproj` folder shown and drawn as a project, never synced. What the fixture measured. Not the live queue |
 
 ---
 
@@ -299,7 +300,14 @@ One list. Reorder it; do not copy it into another file.
      - **owner eyeball** of the FBD scenarios (`40_` to `44_` in the scratch repository).
    - **Other vendors.** CODESYS `NetworkList` and TwinCAT PLCopen `<LD>` are each one parser
      in their own pack behind `TryParseLadder`. PLCopen's reader belongs in `Versio.Core/Iec/`,
-     because it is a standard both use.
+     because it is a standard both use. The CODESYS one is step 1 of item 9.
+9. **CODESYS File-Based Storage, shown and drawn — started 2026-10-10 on `FileBasedStorage`.**
+   An `.fbsproj` folder is detected and shown as a project: a tree, ST laid out like the IDE,
+   member tables, ladder drawn and diffed. It is **never synced**: there is no binding, lock,
+   export or import, because the folder already is the readable source. The plan, the order,
+   what the fixture measured (file headers, no declaration/body divider, `^` child folders,
+   `.xml.v3` without the export envelope), and the specimens still wanted are in
+   [`fbs/PLAN.md`](fbs/PLAN.md). Fixture: `fixtures/projects/RefrigeratorControl_FBS/`.
 7. **Wait for a specimen, not a build.** C5 (`DELETE_UNREADABLE`) and `native_partial` close when
    reality produces an object nobody has observed. They cannot be manufactured. See
    [`phase1/IMPORT-PLAN.md`](phase1/IMPORT-PLAN.md).

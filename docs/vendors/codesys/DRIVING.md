@@ -1583,3 +1583,23 @@ code that produces the file. TwinCAT TIID and TIA hardware are not this pass.
 | The import, and why it is two phases | `src/Versio.Scripts.Codesys/versio_import.py` |
 | The `.st` file format | `src/Versio.Scripts.Codesys/versio_text.py` and `src/Versio.Core/Iec/StTextCodec.cs` |
 | The seam | `src/Versio.Core/Plc/IPlcToolchain.cs` and `PlcJob.cs` |
+
+---
+
+## 15. File-Based Storage projects
+
+CODESYS 3.5.22 with File-Based Storage 1.0 (PDE licence) saves a project as a folder
+`Name.fbsproj\` of readable files instead of one `.project`. **Versio does not drive CODESYS for
+one.** It is shown and drawn, never exported or imported, because the folder already is what the
+export produces for a classic project. The design and its reasons are in
+[`../../fbs/PLAN.md`](../../fbs/PLAN.md). The facts a reader of this file needs:
+
+| | |
+|---|---|
+| Children | In `<parent file>^/` — `FB_Alarm.fb.st^/M_Reset.meth.st` |
+| User folders | A directory holding `.folder_meta.json` (`objectGuid` only). Empty ones exist |
+| ST objects | `.prg.st`, `.fb.st`, `.meth.st`, `.prop.st`, `.gvl`, `.enum`, `.struct`. Each opens with a `(* METADATA {json} *)` header carrying the object GUID, and has **no** declaration/body divider |
+| Everything else | `*.<kind>.xml.v3`: a `__V3_META__` JSON header (`objectGuid`, `objectTypeGuid`), `__V3_CONTENT__`, then the object's archive XML **without** the `ExportFile/StructuredView` envelope §5 describes. A graphical POU inside is the same network list as a classic `NATIVE` export |
+| Escapes | `__3cEmpty__3e 0` is `<Empty> 0` |
+| Occupancy | `.sidecars/.~u`, the same four lines `ParseOccupancy` reads beside a `.project` |
+| External edits | CODESYS does not notice them. A full project reload is needed, so Versio never writes into the folder |
