@@ -19,6 +19,52 @@ produce a diff touching everything else.
 
 ---
 
+### The library, task and device tables drew the new file under a DIFF header and marked nothing
+
+**2026-10-10, the owner, on `RefrigeratorControl`'s Application Library Manager.** Six
+visualisation libraries had moved from `4.9.0.0` (one from `4.8.0.0`) to `4.10.0.0`. Raw
+showed six changed `defaultResolution` lines; the tree showed six `M` rows under the manager;
+the Rendered tab, under a pane header that says **DIFF**, showed 25 rows with nothing marked.
+"That's the whole point of this tool. The rendered view needs to show what changed."
+
+**Cause:** the catalog arms of `BuildRenderedContent` parsed the working file and returned it.
+Nothing ever read HEAD for them. The tree has compared each reference against HEAD's copy since
+the catalogs were grafted (`LibrarySnapshot { Current, Baseline }`), and the member table and
+the ladder had both learned to mark themselves on 2026-10-05, so the three catalog tables were
+the only rendered views still drawing a changed file as if it were clean.
+
+**Fix:** `CatalogDiff` (Core, pure) marks a catalog against its committed copy the way
+`MemberTableDiff` marks a member table:
+- added and modified rows are tinted, with the tree's A / M / D letter beside the name;
+- a changed cell shows old → new;
+- a deleted row comes back where it was, struck through;
+- the name's hover lists every field that moved, including the ones with no column (a
+  library parameter, a watchdog time, a device parameter);
+- a one-line summary sits over the table.
+
+Rows are matched by the tree's own keys and each row's own `ContentEquals`, so the table and
+the tree cannot disagree. `ShowNode` runs it for **every** catalog shown, not only for a
+changed row. A library row the tree calls clean still opens its manager's whole table, and
+the changed rows are in that table. A clean file costs one `git show`, then returns quietly. A
+file that differs only outside its rows (header, order) says so in the summary.
+
+**One design point worth keeping:** the mark is a single `RowMark` property on each row type,
+and every `ContentEquals` resets it on both sides. Without that, a row the pane had marked
+would compare unequal to its own plain parse. `CatalogDiffTests.A_mark_is_never_part_of_what_a_row_records`
+pins it.
+
+**Evidence:**
+- Ten Core tests.
+- Two flow tests in `RenderedPaneFlowTests` (a manager and a task configuration changed after
+  a commit). Disabling the `MarkCatalogChangesAsync` call in `ShowNode` turned both red; it
+  was restored.
+
+**Left alone:** the single-task and single-connector detail panes (`TaskDetailRender`,
+`DeviceDetailRender`) still show facts without old values. The table they sit beside is now
+marked.
+
+---
+
 ### A dev build pointed at a scratch TIA binding starts a real Portal export
 
 **2026-10-05, while running the app to look at the new ladder pane.** A scratch repository had
