@@ -42,7 +42,7 @@ public static partial class CodesysV3File
     {
         ArgumentNullException.ThrowIfNull(content);
 
-        var text = content.TrimStart('﻿');
+        var text = content.TrimStart('\uFEFF');
         if (!text.StartsWith(MetaMarker, StringComparison.Ordinal))
         {
             return null;

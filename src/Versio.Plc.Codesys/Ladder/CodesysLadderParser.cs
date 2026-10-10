@@ -90,7 +90,7 @@ public static class CodesysLadderParser
         {
             // git show keeps a BOM the working-tree read does not; the parser must not care
             // which side of the comparison it is reading.
-            xml = content.TrimStart('﻿');
+            xml = content.TrimStart('\uFEFF');
         }
         else
         {

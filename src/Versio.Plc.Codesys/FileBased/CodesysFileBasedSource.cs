@@ -56,7 +56,7 @@ public static class CodesysFileBasedSource
         }
 
         var lines = content.Replace("\r\n", "\n").Split('\n');
-        if (!lines[0].TrimStart('﻿').StartsWith(HeaderOpen, StringComparison.Ordinal))
+        if (!lines[0].TrimStart('\uFEFF').StartsWith(HeaderOpen, StringComparison.Ordinal))
         {
             return null;
         }
