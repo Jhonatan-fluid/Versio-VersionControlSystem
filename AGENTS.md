@@ -200,6 +200,13 @@ did nothing: a Phase 5 mutation check reported the acceptance test still passing
 feature disabled, which is the most misleading answer a mutation check can give. **Rebuild after
 touching python**, always.
 
+**A mutation check that restores from a backup must touch the file afterwards.** MSBuild
+decides what to rebuild by timestamp. A backup made with a plain copy is older than the build
+of the mutant, so restoring it makes the project look up to date and the **mutant stays in the
+binary**. On 2026-10-10 one restored scanner mutation leaked into five later checks and into
+the "unmutated" baseline: everything went red and proved nothing. `os.utime(path, None)` after
+the restore, or `touch`, and re-run the baseline before believing any of it.
+
 **The suite is the safety net, so keep it honest.** `Versio.App.Tests` shells own watchers,
 pollers, the log console and the repository lock — `using var shell = ...`, always, and never
 construct one inline as an argument, because then there is nothing to put `using` on. Fifty-six
@@ -245,10 +252,10 @@ stays that way.
 | Suite | Count | Time | Needs |
 |---|---|---|---|
 | `Versio.Core.Tests` | 1,660 | under a second | nothing |
-| `Versio.Integration.Tests` | 168 | ~10 s | real git |
-| `Versio.App.Tests` | 771 | ~3.6 min on 2026-09-22, 8 m 38 s on 2026-10-05 (idleness not checked); STA, no window shown; it was ~50 s once | nothing |
+| `Versio.Integration.Tests` | 171 | ~10 s | real git |
+| `Versio.App.Tests` | 776 | ~3.6 min on 2026-09-22, 8 m 38 s on 2026-10-05 (idleness not checked); STA, no window shown; it was ~50 s once | nothing |
 | `Versio.Arch.Tests` | 27 | instant | nothing — it reads assembly metadata, IL and the `.csproj` files |
-| `Versio.Plc.Codesys.Pure.Tests` | 263 | under a second | nothing — the planner, the codecs, the protocol |
+| `Versio.Plc.Codesys.Pure.Tests` | 323 | under a second | nothing — the planner, the codecs, the protocol |
 | `Versio.Plc.Codesys.Parity.Tests` | 97 | ~15 s | `python` on PATH — **skips cleanly without it, so check the count, not the colour** |
 | `Versio.Plc.TiaPortal.Pure.Tests` | 93 | instant | nothing — format, planner, protocol, LAD and FBD parser |
 | `Versio.Plc.TiaPortal.Tests` | 5 | seconds when skipped; minutes when Portal runs the import gate | **real TIA Portal** — skips cleanly without Openness membership or LFS content. Import Fact is green |

@@ -191,15 +191,28 @@ model is a graph on purpose, and `LadderModel` already says a tree "turns into o
 
 Each step is one commit, and each builds and passes on its own.
 
-1. **The LD/FBD parser.** It needs nothing from FBS, and it also draws the classic mirror's
-   `Signals.xml`, which shows as raw XML today. The FBS copy and the classic copy must parse to
-   equal bodies.
-2. **The source-project seam and detection.** No binding, no lock, no gate. This is tested by
-   breaking it on purpose.
-3. **The tree.** First check whether `ProjectTreeBuilder` absorbs the `^` segment of a child's
-   path when `Parent` nests it. If it does not, add one neutral tree-path field to
-   `ProjectObject`, never `^` logic in Core.
-4. **CODESYS describe**, over the fixture's real file list.
+1. ~~**The LD/FBD parser.**~~ **Built 2026-10-10 (1031c92).** It also draws the classic
+   mirror's `Signals.xml`, which showed as raw XML before. The FBS copy and the classic copy
+   parse to the same networks, and a test holds them to it. The FBD view is the same body with
+   `DefaultViewMode` flipped, which is a real specimen because CODESYS stores one network list
+   for both views. Looking at the drawing caught one defect before commit: an FBD
+   `Lamp := DoorOpen` lost `DoorOpen`, because the layout labels only unwired pins. Approved
+   drawings: `tests/Versio.Plc.Codesys.Pure.Tests/Specimens/Ladder/Approved/`.
+2. ~~**The source-project seam and detection.**~~ **Built 2026-10-10.** The new pieces:
+   - `IPlcProjectFormat.SourceProjectExtensions` and `DescribeSourceProject`;
+   - `PlcFormats.ForSourceProject`;
+   - `RepoSnapshot.SourceProjects`;
+   - the scanner branch;
+   - a row with `ReadFromFiles`, the tree, the explorer, and the project card.
+
+   Six deliberate breakages each turned specific tests red.
+3. ~~**The tree.**~~ **Needed no Core change.** `ProjectTreeBuilder` already drops an owner's
+   own directory for a schema-9 mirror (`FoldersInsideOwner`'s `+ 1`), and an FBS `^` folder is
+   exactly that directory. The fixture draws as the IDE's tree. One difference from the IDE is
+   carried, not fixed: a folder holding only `.folder_meta.json` (`Library/Alarm/ITFs/`) is
+   not drawn, because the tree's folders come from objects' paths, and the classic mirror
+   behaves the same.
+4. ~~**CODESYS describe.**~~ **Built 2026-10-10 (17c8efc)**, over the fixture's real file list.
 5. **The syntax and section hooks**, and CODESYS's answers.
 6. **Member tables.** Check `StDeclarationParser` first against the header, `{attribute}`
    lines, `NAMESPACE`, `VAR PERSISTENT` and tab-aligned declarations.

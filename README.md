@@ -207,18 +207,19 @@ Versio.sln
 │  ├─ Versio.TestSupport/       not a test project: the three helpers more than one suite
 │  │                            needs (TestPaths, TestLogger, VendorSeamScanner, LadderInvariants)
 │  ├─ Versio.Core.Tests/        1,660 unit tests — pure, no IO, under a second
-│  ├─ Versio.Integration.Tests/ 168 tests against real git and the real filesystem, ~10 s.
+│  ├─ Versio.Integration.Tests/ 171 tests against real git and the real filesystem, ~10 s.
 │  │                            NO CODESYS: that is a different project now, so this one
 │  │                            needs no filter and cannot accidentally cost half an hour
-│  ├─ Versio.App.Tests/         771 tests that build the real windows and panels against
+│  ├─ Versio.App.Tests/         776 tests that build the real windows and panels against
 │  │                            the real stylesheet on an STA thread — none is ever shown
-│  ├─ Versio.Plc.Codesys.Pure.Tests/ 263 pure vendor tests — the planner, the codecs, the
-│  │                            protocol — under a second, needing nothing
+│  ├─ Versio.Plc.Codesys.Pure.Tests/ 323 pure vendor tests — the planner, the codecs, the
+│  │                            protocol, the LD/FBD parser, the File-Based Storage layout —
+│  │                            under a second, needing nothing
 │  ├─ Versio.Plc.Codesys.Parity.Tests/ 97 CPython parity tests over the vendor's python,
 │  │                            ~15 s, no CODESYS — python on PATH, skips cleanly without
 │  ├─ Versio.Plc.Codesys.Tests/ 55 tests against real CODESYS, ~30 min. The CODESYS gate
 │  │                            before a commit, and the only suite that needs that toolchain
-│  ├─ Versio.Plc.TiaPortal.Pure.Tests/ 92 pure vendor tests — format, planner, protocol,
+│  ├─ Versio.Plc.TiaPortal.Pure.Tests/ 93 pure vendor tests — format, planner, protocol,
 │  │                            data-block member table, LAD and FBD parser and approved drawings
 │  ├─ Versio.Plc.TiaPortal.Tests/ 5 tests against real TIA Portal; skip with a count when
 │                               Openness membership or the install is missing
@@ -394,10 +395,10 @@ dotnet test tests/Versio.Core.Tests
 | Suite | Tests | Needs | Runs in |
 |---|---|---|---|
 | `Versio.Core.Tests` | 1,660 | nothing — pure, no IO, no clock, no UI | ~0.3 s |
-| `Versio.Integration.Tests` | 168 | a real `git.exe` and the real filesystem | ~10 s |
+| `Versio.Integration.Tests` | 171 | a real `git.exe` and the real filesystem | ~10 s |
 | `Versio.Arch.Tests` | 27 | nothing — it reads assembly metadata, IL, and the project files | instant |
-| `Versio.App.Tests` | 771 | Windows (WPF). Builds the real dialogs against the real stylesheet on an STA thread; **no window is ever shown** | ~3.6–8.6 min |
-| `Versio.Plc.Codesys.Pure.Tests` | 263 | nothing — the vendor's planner, codecs and protocol, pure | under a second |
+| `Versio.App.Tests` | 776 | Windows (WPF). Builds the real dialogs against the real stylesheet on an STA thread; **no window is ever shown** | ~3.6–8.6 min |
+| `Versio.Plc.Codesys.Pure.Tests` | 323 | nothing — the vendor's planner, codecs, protocol, LD/FBD parser and File-Based Storage layout, pure | under a second |
 | `Versio.Plc.Codesys.Parity.Tests` | 97 | `python` on PATH, no CODESYS — **skips cleanly without python, so check the count** | ~15 s |
 | `Versio.Plc.TiaPortal.Pure.Tests` | 93 | nothing — format, planner, protocol, scrubber, member table, LAD and FBD parser | instant |
 | `Versio.Plc.TiaPortal.Tests` | 5 | **a real TIA Portal**; skips cleanly without Openness membership | seconds when skipped |
