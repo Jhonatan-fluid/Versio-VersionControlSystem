@@ -195,6 +195,15 @@ public sealed class CodesysProjectFormat : IPlcProjectFormat
         CodesysObjectTypeNames.TryFor(type);
 
     /// <remarks>
+    /// CODESYS File-Based Storage (3.5.22, PDE licence): a project saved as a folder of
+    /// readable files. Shown and drawn, never exported or imported. See <c>docs/fbs/PLAN.md</c>.
+    /// </remarks>
+    public IReadOnlyList<string> SourceProjectExtensions => FileBased.CodesysFileBasedLayout.Extensions;
+
+    public Versio.Core.Projects.ProjectManifest? DescribeSourceProject(string projectPath, IReadOnlyList<string> relativeFiles) =>
+        FileBased.CodesysFileBasedLayout.Describe(projectPath, relativeFiles);
+
+    /// <remarks>
     /// The LD/FBD network list, from a classic mirror's native <c>.xml</c> or a File-Based Storage
     /// <c>.xml.v3</c>; null for everything else, CFC and SFC included, which keep their raw view.
     /// </remarks>
