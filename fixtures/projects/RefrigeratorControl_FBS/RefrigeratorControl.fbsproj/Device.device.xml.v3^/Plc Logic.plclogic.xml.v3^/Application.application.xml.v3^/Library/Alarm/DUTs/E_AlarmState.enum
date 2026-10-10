@@ -1,0 +1,16 @@
+(* METADATA
+{
+	"v3Meta": {
+		"objectGuid": "b3ed1034-86fd-4b6d-855b-7957d7d5255e"
+	}
+}
+*)
+{attribute 'qualified_only'}
+{attribute 'strict'}
+{attribute 'to_string'}
+TYPE E_AlarmState :
+(
+	Off 		:= 0,
+	Active 		:= 1
+);
+END_TYPE

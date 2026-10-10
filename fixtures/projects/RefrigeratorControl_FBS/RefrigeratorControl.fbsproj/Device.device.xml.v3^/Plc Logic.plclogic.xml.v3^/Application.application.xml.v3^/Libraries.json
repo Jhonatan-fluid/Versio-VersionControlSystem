@@ -1,0 +1,246 @@
+{
+	"references": {
+		"Standard": {
+			"$type": "Placeholder",
+			"placeholder": "Standard",
+			"defaultResolution": "Standard, * (System)",
+			"allowUnqualifiedAccess": true
+		},
+		"Util": {
+			"$type": "Placeholder",
+			"placeholder": "Util",
+			"defaultResolution": "Util, * (System)",
+			"allowUnqualifiedAccess": true
+		},
+		"VisuDialogs": {
+			"$type": "Placeholder",
+			"placeholder": "VisuDialogs",
+			"defaultResolution": "VisuDialogs, * (System)",
+			"allowUnqualifiedAccess": true
+		}
+	},
+	"placeholderOverrides": {
+		"CBML": "Common Behaviour Model, 4.0.0.0 (CODESYS)",
+		"Collections": "Collections, 3.5.17.0 (System)",
+		"ElementCollections": "Element Collections, 4.0.0.0 (CODESYS)",
+		"FloatingPointUtils": "FloatingPointUtils, 4.0.0.0 (System)",
+		"Standard": "Standard, 3.5.22.0 (System)",
+		"Standard64": "Standard64, 3.5.20.0 (System)",
+		"StringUtils": "StringUtils, 3.5.22.0 (System)",
+		"Util": "Util, 3.5.22.0 (System)"
+	},
+	"v3Meta": {
+		"objectGuid": "63f43dce-203a-48c5-b1b9-4754ec306ed4",
+		"objectTypeGuid": "adb5cb65-8e1d-4a00-b70a-375ea27582f3",
+		"properties": {
+			"_3S.CoDeSys.BaseLibraries.BaseLibrariesProperty": "<?xml version=\"1.0\" encoding=\"utf-8\"?><Single xml:space=\"preserve\" Type=\"{61a44170-da69-49a8-99a4-c61280b4559c}\" Method=\"IArchivable\"><Dictionary2 Name=\"PlaceholderResolution\"><Entry><Key><Single Type=\"string\">MemoryBlockManager</Single></Key><Value><Single Type=\"string\">Memory Block Manager, 3.5.21.30 (CODESYS)</Single></Value></Entry></Dictionary2></Single>"
+		}
+	},
+	"libraryParameters": {
+		"#System_VisuElem3DPath": {
+			"GC_POINTS_PER_POLYGON": "100"
+		},
+		"#System_VisuElemCamDisplayer": {
+			"GC_POINTS_PER_CAM": "100"
+		},
+		"#Util": {
+			"IBLOCKSIZE": "22800"
+		}
+	},
+	"v3SystemLibraries": [
+		{
+			"namespace": "_3S_LICENSE",
+			"libraryReference": {
+				"$type": "Placeholder",
+				"placeholder": "3SLicense",
+				"defaultResolution": "3SLicense, 0.0.0.0 (CODESYS)",
+				"resolverGuid": "97c3b452-d9fa-4ac2-9d0c-3d420aa6d95b",
+				"allowUnqualifiedAccess": true
+			}
+		},
+		{
+			"namespace": "BPLog",
+			"libraryReference": {
+				"$type": "Placeholder",
+				"placeholder": "BreakpointLogging",
+				"defaultResolution": "Breakpoint Logging Functions, * (3S - Smart Software Solutions GmbH)",
+				"allowUnqualifiedAccess": true
+			}
+		},
+		{
+			"namespace": "DED",
+			"libraryReference": {
+				"$type": "Placeholder",
+				"placeholder": "CAA Device Diagnosis",
+				"defaultResolution": "CAA Device Diagnosis, 3.5.22.0 (CAA Technical Workgroup)"
+			}
+		},
+		{
+			"namespace": "IoDrvBallufIOL",
+			"libraryReference": {
+				"$type": "Placeholder",
+				"placeholder": "IoDrvBallufIOL",
+				"defaultResolution": "IoDrvBallufIOL, 4.9.0.0 (CODESYS)",
+				"allowUnqualifiedAccess": true
+			}
+		},
+		{
+			"namespace": "IoDrvEthercatLib",
+			"libraryReference": {
+				"$type": "Placeholder",
+				"placeholder": "IODrvEtherCAT",
+				"defaultResolution": "IoDrvEtherCAT, 4.1.0.0 (3S - Smart Software Solutions GmbH)",
+				"allowUnqualifiedAccess": true
+			}
+		},
+		{
+			"namespace": "IoStandard",
+			"libraryReference": {
+				"$type": "Placeholder",
+				"placeholder": "IoStandard",
+				"defaultResolution": "IoStandard, 3.5.22.0 (System)",
+				"allowUnqualifiedAccess": true,
+				"linkAllContent": true
+			}
+		},
+		{
+			"namespace": "VisuElem3DPath",
+			"libraryReference": {
+				"$type": "Placeholder",
+				"placeholder": "System_VisuElem3DPath",
+				"defaultResolution": "VisuElem3DPath, 4.7.0.0 (System)",
+				"resolverGuid": "2717eb6a-dd07-4c66-8d8d-cacebd7b18ae",
+				"allowUnqualifiedAccess": true
+			}
+		},
+		{
+			"namespace": "VisuElemCamDisplayer",
+			"libraryReference": {
+				"$type": "Placeholder",
+				"placeholder": "System_VisuElemCamDisplayer",
+				"defaultResolution": "VisuElemCamDisplayer, 4.7.0.0 (System)",
+				"resolverGuid": "2717eb6a-dd07-4c66-8d8d-cacebd7b18ae",
+				"allowUnqualifiedAccess": true
+			}
+		},
+		{
+			"namespace": "VisuElemMeter",
+			"libraryReference": {
+				"$type": "Placeholder",
+				"placeholder": "System_VisuElemMeter",
+				"defaultResolution": "VisuElemMeter, 4.10.0.0 (System)",
+				"resolverGuid": "2717eb6a-dd07-4c66-8d8d-cacebd7b18ae",
+				"allowUnqualifiedAccess": true
+			}
+		},
+		{
+			"namespace": "VisuElems",
+			"libraryReference": {
+				"$type": "Placeholder",
+				"placeholder": "System_VisuElems",
+				"defaultResolution": "VisuElems, 4.10.0.0 (System)",
+				"resolverGuid": "2717eb6a-dd07-4c66-8d8d-cacebd7b18ae",
+				"allowUnqualifiedAccess": true
+			}
+		},
+		{
+			"namespace": "VisuElemsAlarm",
+			"libraryReference": {
+				"$type": "Placeholder",
+				"placeholder": "System_VisuElemsAlarm",
+				"defaultResolution": "VisuElemsAlarm, 4.10.0.0 (System)",
+				"resolverGuid": "2717eb6a-dd07-4c66-8d8d-cacebd7b18ae",
+				"allowUnqualifiedAccess": true
+			}
+		},
+		{
+			"namespace": "VisuElemsDateTime",
+			"libraryReference": {
+				"$type": "Placeholder",
+				"placeholder": "System_VisuElemsDateTime",
+				"defaultResolution": "VisuElemsDateTime, 4.9.0.0 (System)",
+				"resolverGuid": "2717eb6a-dd07-4c66-8d8d-cacebd7b18ae",
+				"allowUnqualifiedAccess": true
+			}
+		},
+		{
+			"namespace": "VisuElemsSpecialControls",
+			"libraryReference": {
+				"$type": "Placeholder",
+				"placeholder": "System_VisuElemsSpecialControls",
+				"defaultResolution": "VisuElemsSpecialControls, 4.7.0.0 (System)",
+				"resolverGuid": "2717eb6a-dd07-4c66-8d8d-cacebd7b18ae",
+				"allowUnqualifiedAccess": true
+			}
+		},
+		{
+			"namespace": "VisuElemsWinControls",
+			"libraryReference": {
+				"$type": "Placeholder",
+				"placeholder": "System_VisuElemsWinControls",
+				"defaultResolution": "VisuElemsWinControls, 4.10.0.0 (System)",
+				"resolverGuid": "2717eb6a-dd07-4c66-8d8d-cacebd7b18ae",
+				"allowUnqualifiedAccess": true
+			}
+		},
+		{
+			"namespace": "VisuElemTextEditor",
+			"libraryReference": {
+				"$type": "Placeholder",
+				"placeholder": "System_VisuElemTextEditor",
+				"defaultResolution": "VisuElemTextEditor, 4.8.0.0 (System)",
+				"resolverGuid": "2717eb6a-dd07-4c66-8d8d-cacebd7b18ae",
+				"allowUnqualifiedAccess": true
+			}
+		},
+		{
+			"namespace": "VisuElemTrace",
+			"libraryReference": {
+				"$type": "Placeholder",
+				"placeholder": "System_VisuElemTrace",
+				"defaultResolution": "VisuElemTrace, 4.10.0.0 (System)",
+				"resolverGuid": "2717eb6a-dd07-4c66-8d8d-cacebd7b18ae",
+				"allowUnqualifiedAccess": true
+			}
+		},
+		{
+			"namespace": "VisuElemXYChart",
+			"libraryReference": {
+				"$type": "Placeholder",
+				"placeholder": "System_VisuElemXYChart",
+				"defaultResolution": "VisuElemXYChart, 4.10.0.0 (System)",
+				"resolverGuid": "2717eb6a-dd07-4c66-8d8d-cacebd7b18ae",
+				"allowUnqualifiedAccess": true
+			}
+		},
+		{
+			"namespace": "VisuInputs",
+			"libraryReference": {
+				"$type": "Placeholder",
+				"placeholder": "System_VisuInputs",
+				"defaultResolution": "VisuInputs, 4.7.0.0 (System)",
+				"resolverGuid": "2717eb6a-dd07-4c66-8d8d-cacebd7b18ae",
+				"allowUnqualifiedAccess": true
+			}
+		},
+		{
+			"namespace": "VisuNativeControl",
+			"libraryReference": {
+				"$type": "Placeholder",
+				"placeholder": "System_VisuNativeControl",
+				"defaultResolution": "VisuNativeControl, 4.9.0.0 (System)",
+				"resolverGuid": "2717eb6a-dd07-4c66-8d8d-cacebd7b18ae",
+				"allowUnqualifiedAccess": true
+			}
+		},
+		{
+			"namespace": "VisuUserManagement",
+			"libraryReference": {
+				"$type": "Placeholder",
+				"placeholder": "VisuUserManagement",
+				"defaultResolution": "VisuUserMgmt, * (System)",
+				"allowUnqualifiedAccess": true
+			}
+		}
+	]
+}

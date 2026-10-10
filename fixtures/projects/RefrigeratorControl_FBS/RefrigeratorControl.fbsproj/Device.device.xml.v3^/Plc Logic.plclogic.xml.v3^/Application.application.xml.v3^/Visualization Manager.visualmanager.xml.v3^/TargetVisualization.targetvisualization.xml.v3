@@ -1,0 +1,25 @@
+__V3_META__
+{
+	"objectGuid": "66448585-0a01-4509-8552-4fef7274fe4f",
+	"objectTypeGuid": "bc63f5fa-d286-4786-994e-7b27e4f97bd5",
+	"embeddedObjectTypeGuids": []
+}
+__V3_CONTENT__
+<?xml version="1.0" encoding="utf-8"?>
+<Single xml:space="preserve" Type="{bc63f5fa-d286-4786-994e-7b27e4f97bd5}" Method="IArchivable">
+	<Single Name="ViewSettings" Type="{cb5403ec-4e3b-4965-9be8-913e6068f7cb}" Method="IArchivable">
+		<Single Name="StartVisu" Type="string">Live_Visu</Single>
+		<Null Name="HtmFileName" />
+		<Single Name="UpdateRate" Type="int">200</Single>
+		<Single Name="CommBufferSize" Type="int">50000</Single>
+		<Single Name="BestFit" Type="bool">False</Single>
+		<Single Name="ClientSizeMode" Type="{c37fe731-4f69-4d98-82fe-4f9aefbe200d}">AutoDetect</Single>
+		<Single Name="ClientSizeX" Type="int">2000</Single>
+		<Single Name="ClientSizeY" Type="int">2000</Single>
+		<Single Name="Antialiasing" Type="bool">True</Single>
+		<Single Name="ClientOperationType" Type="{bd122c9a-5824-461f-8b56-d89816d314bf}">Keyboard</Single>
+		<Single Name="ScaleTypeIsotropic" Type="bool">False</Single>
+		<Single Name="UseScalingOptionsForDialogs" Type="bool">False</Single>
+		<Single Name="FillBackground" Type="bool">False</Single>
+	</Single>
+</Single>

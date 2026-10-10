@@ -48,10 +48,10 @@
       "type": "GVL"
     }, 
     {
-      "bytes": 6881, 
+      "bytes": 6887, 
       "form": "LIBRARIES", 
       "guid": "63f43dce-203a-48c5-b1b9-4754ec306ed4", 
-      "hash": "sha256:b1fed68daff82af12ff91140851b384787041df6a5a7e609a2e1d2dee8ff1935", 
+      "hash": "sha256:9b3bdb416e469a0a4ffcec77b636a55590e271e890c8387e7eec1e326f836d10", 
       "name": "Library Manager", 
       "path": "Device/Plc Logic/Application/Library Manager.libraries.yaml", 
       "type": "LIBRARY_MANAGER"
@@ -542,10 +542,10 @@
       "type": "GLOBAL_TEXTLIST"
     }, 
     {
-      "bytes": 4320, 
+      "bytes": 4326, 
       "form": "LIBRARIES", 
       "guid": "a154b962-4c42-4c66-82dc-2eaa6ce24df5", 
-      "hash": "sha256:02fd6bc96b0476661420cd01e902f18578478cbb7e2968f5fa818696df45f25e", 
+      "hash": "sha256:9da3a538a29e6164f71fa2af816535f3035959ea1dda2c05d5f985ea9b0a93e7", 
       "name": "Library Manager", 
       "path": "Library Manager.libraries.yaml", 
       "type": "LIBRARY_MANAGER"

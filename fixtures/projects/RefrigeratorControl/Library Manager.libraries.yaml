@@ -18,7 +18,7 @@ references:
   - name: "#System_VisuElems"
     namespace: VisuElems
     placeholder: System_VisuElems
-    defaultResolution: "VisuElems, 4.9.1.0 (System)"
+    defaultResolution: "VisuElems, 4.10.0.0 (System)"
     systemLibrary: true
     optional: false
     qualifiedOnly: false
@@ -26,7 +26,7 @@ references:
   - name: "#System_VisuElemMeter"
     namespace: VisuElemMeter
     placeholder: System_VisuElemMeter
-    defaultResolution: "VisuElemMeter, 4.9.0.0 (System)"
+    defaultResolution: "VisuElemMeter, 4.10.0.0 (System)"
     systemLibrary: true
     optional: false
     qualifiedOnly: false
@@ -42,7 +42,7 @@ references:
   - name: "#System_VisuElemsWinControls"
     namespace: VisuElemsWinControls
     placeholder: System_VisuElemsWinControls
-    defaultResolution: "VisuElemsWinControls, 4.9.0.0 (System)"
+    defaultResolution: "VisuElemsWinControls, 4.10.0.0 (System)"
     systemLibrary: true
     optional: false
     qualifiedOnly: false
@@ -58,7 +58,7 @@ references:
   - name: "#System_VisuElemTrace"
     namespace: VisuElemTrace
     placeholder: System_VisuElemTrace
-    defaultResolution: "VisuElemTrace, 4.9.0.0 (System)"
+    defaultResolution: "VisuElemTrace, 4.10.0.0 (System)"
     systemLibrary: true
     optional: false
     qualifiedOnly: false
@@ -74,7 +74,7 @@ references:
   - name: "#System_VisuElemsAlarm"
     namespace: VisuElemsAlarm
     placeholder: System_VisuElemsAlarm
-    defaultResolution: "VisuElemsAlarm, 4.9.0.0 (System)"
+    defaultResolution: "VisuElemsAlarm, 4.10.0.0 (System)"
     systemLibrary: true
     optional: false
     qualifiedOnly: false
@@ -110,7 +110,7 @@ references:
   - name: "#System_VisuElemXYChart"
     namespace: VisuElemXYChart
     placeholder: System_VisuElemXYChart
-    defaultResolution: "VisuElemXYChart, 4.8.0.0 (System)"
+    defaultResolution: "VisuElemXYChart, 4.10.0.0 (System)"
     systemLibrary: true
     optional: false
     qualifiedOnly: false

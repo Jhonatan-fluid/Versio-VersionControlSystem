@@ -12,6 +12,7 @@ each piece sits where it does. Nothing here is implemented.
 | Document | The Outpost design: scheduled backup of the program on a controller, every changed backup kept as a version, a rendered diff between any two versions, and a confirmed restore |
 | Sibling of | The Versio desktop app. Same vendor runners and the same export. A different window, a different verb |
 | First measurement | A CODESYS `upload_source` against a controller that already holds `Archive.prj`, before any of the product is built |
+| First build | A proof of concept with every piece on one Windows PC: page, API, Postgres, an S3-compatible store, the worker, and CODESYS Control Win as the controller. Same code and rules as production; only where it runs differs (§12) |
 | Where the worker runs | A Windows EC2 instance per site, reaching the plant's controllers over a site-to-site VPN (§13). A plant PC is the fallback shape |
 | Out of scope until measured | TwinCAT target recovery. Writing to a controller from a schedule |
 
@@ -100,6 +101,7 @@ one confirmed verb inside that.
 | The agent uses the same API as the page | It cannot confirm a different file from the one the person was shown |
 | No vendor DLLs in the installer | Versio already locates CODESYS, Portal, and XAE. Shipping them would be the leak the seam exists to prevent |
 | The same log the desktop app writes | A silent failure is a bug even when the run row is right. The worker uses `VersioLogger`: operation id, heartbeat, a daily file |
+| The first build is a proof of concept on one PC | Every system working as designed, with nothing in AWS and no open question from §16 in the way. Moving it to AWS changes settings, not code, and if it needs code, a seam is in the wrong place. §12 |
 | A person sets when, the program sets the order | Twenty backups due at 02:00 on one worker that runs one at a time are twenty runs in a row, not twenty IDEs and not a choice anyone has to make. §3 |
 | Workers and devices belong to a site | An IDE version says what a worker can open, not what it can reach. A password goes only to the site that needs it. §2 |
 | Writes are switched on at the worker, not from the page | The worker trusts the API's word that a batch was confirmed. An API that can stop a PLC is a target; the switch means a stolen API cannot reach a controller whose PC never agreed. §6 |
@@ -273,7 +275,8 @@ This is the daily path. It only reads.
      **Modified**. The site's channels say a new version is available, naming the device, if
      the site asked for that (§8); on a plant-PC worker, the tray says it too.
 8. Scratch is deleted after a successful export. A failed export keeps the vendor project for a
-   retention window (**Conversion failed**) and does not record a half mirror.
+   while the device's *Failed conversions* setting says (**Conversion failed**, §8) and does not
+   record a half mirror.
 9. The worker then reports the row. If the API does not accept it, the worker keeps the result
    in a local outbox and retries. A backup the page never shows is a lost backup.
 
@@ -766,15 +769,16 @@ flowchart TB
 
 ### Postgres, beside the API
 
-The history the page lists. SQLite is only acceptable if one box is both the API and the only
-worker, which is a development layout and not a plant.
+The history the page lists. Postgres everywhere, including the proof of concept on one PC
+(§12). SQLite was once allowed for a one-box layout and is not any more: a proof that runs on a
+different database proves less about the one that ships.
 
 | Table | Holds | Does not hold |
 |---|---|---|
 | `site` | customer id (§16), name, time zone, address ranges, enrollment code hash, KMS key and S3 bucket (EC2), expected offline hours, patching window, retention defaults for new devices, the bucket's grace period for deleted objects, where the second copy goes, confirm window, whether a write needs a second approver, notification channels | A password |
 | `person` | identity from the sign-in provider, role per site | A password. Sign-in is the company's provider, not a table here |
 | `host` | id, site, display name, shape (EC2 or plant PC), EC2 instance id, image version, last seen, token hash, public key (plant PC), which IDEs the installer found and their versions, whether writes are switched on (reported, read-only) | A password, a project |
-| `device` | site, preferred worker, vendor, project name, name in the project tree, address (unique within the site), mirror scope, profile, schedule times and window end, retention settings (§8), credential **slot names** and which workers have collected them, the oldest a good backup may be, its reference version, who set it and when | The secret itself |
+| `device` | site, preferred worker, vendor, project name, name in the project tree, address (unique within the site), mirror scope, profile, schedule times and window end, retention settings (§8), which password slots it needs (none by default) and which workers have collected them, the oldest a good backup may be, its reference version, who set it and when | The secret itself |
 | `version` | device, number (1, 2, 3 … per device), mirror hash, source (scheduled read, run now, recorded file, restore read-back), the run that made it, image version of the worker, Versio exporter version, complete or partial, who accepted it when it was a recorded file, created at, where its vendor project is | The files themselves |
 | `version_file` | version, path in the mirror, content hash, size, kind (text, ladder, member table, other) | The bytes, which are in S3 under the content hash |
 | `drawable` | text file's content hash, parser version, where its JSON is in S3 | Anything a version's hash covers. It is a cache (§8) |
@@ -1058,6 +1062,23 @@ and the stored files stay, and the outbox retries.
 
 ### Passwords
 
+**Which passwords a device needs is part of setting up its backup.** Whoever adds the device
+picks, beside its schedule and retention: none, device login, application password, know-how
+password, or any combination. **None is the default**, because most controllers on a plant
+network are not protected. A device with no slots needs nothing sealed, so every worker in its
+site with the right IDE version is eligible for it, and **No credential** cannot happen to it.
+The choice can be changed later, by the same people who may edit the device.
+
+The controller is what actually decides, and it may disagree with the record. Someone protects a
+PLC after it was added, or the person who added it did not know. So the worker answers any
+password prompt it has no slot for by cancelling it, the rule §10 already has for TIA's
+callbacks, and never leaves the IDE sitting on the prompt until the job timer kills it. That run
+is **Password not configured** (§9): one failure, naming what the controller asked for, and
+the page offers to add that slot and fill it in. It is not retried on the timer, so a schedule
+cannot lock the controller's account. The reverse, a slot configured that the controller never
+asks for, does no harm. The run notes it, and the device page shows the slot as unused so a
+stale password can be removed.
+
 One secret per device and slot: device user, application password, know-how password. The
 database stores the slot name. Where the readable secret lives differs by shape. On EC2 it lives
 nowhere: the worker decrypts the sealed copy through KMS for the run that needs it, writes it
@@ -1213,7 +1234,7 @@ list, with the source on the row.
 | Identity only | The controller answered and there is no project to export. CODESYS without `Archive.prj` is this. Record the code identity on the row. No version, no invented diff |
 | Stale source | CODESYS returned `Archive.prj`, and the running application's identity does not match it. The archive is the last source download, which can be older than an online change. Keep the file, show the diff, do not call the row up to date. If a version is recorded, it is marked: the source and the running code disagree |
 | Partial | The upload finished and some of it has no source: know-how protection, safety blocks, TwinCAT without type information, or a module whose device description was not on that worker. Record only the readable mirror as a version marked partial, and list what was missing. Not a clean backup |
-| Conversion failed | A vendor project arrived and the export did not. Keep it for a retention window. Do not record a half mirror |
+| Conversion failed | A vendor project arrived and the export did not. Keep it for the device's *Failed conversions* setting (§8). Do not record a half mirror |
 | Unstable export | The same upload exported twice did not match. Do not record noise |
 
 **The result would have been a lie, so it was refused**
@@ -1232,7 +1253,8 @@ list, with the source on the row.
 | Unreachable | No session to the controller. The row names the address that was tried |
 | Gateway down | The worker's own CODESYS gateway or TwinCAT route is not running. The fix is on the PC, not at the PLC |
 | Busy controller | Another engineering session is online on the PLC. Do not log them off. Retry next schedule |
-| No credential | The device requires a password and the slot is empty. Do not start the IDE |
+| No credential | The device has a password slot and it is empty. Do not start the IDE |
+| Password not configured | The controller asked for a password the device has no slot for. The worker cancelled the prompt rather than wait on it. The row names what was asked for (device login, application, know-how), and the page offers to add the slot. Not retried on the timer (§8) |
 | License | Scripting or Openness is not licensed. Do not retry on the timer |
 | Writes disabled | A restore target has no eligible worker with writes switched on at the PC, or the address is not on that PC's list. Refused before the confirm (§6) |
 | Expired | The batch was not confirmed inside its window. Nothing was written. Confirming means reading the controllers again |
@@ -1325,8 +1347,9 @@ was set at download time; without it the run is **Needs a person** or a named fa
 silent skip.
 
 A password or upload-inhibit callback that is not answered hangs Portal the same way a `--noUI`
-modal hangs CODESYS. Every callback the host does not have a slot for is **Needs a person**,
-with the question in the row. A language mismatch between the offline project and the online
+modal hangs CODESYS. A password callback the device has no slot for is **Password not
+configured** (§8). Every other callback the host cannot answer is **Needs a person**, with the
+question in the row. A language mismatch between the offline project and the online
 project fails the upload the same way; Copia's TIA notes describe that failure, and the row
 should quote it rather than say "timed out".
 
@@ -1401,6 +1424,74 @@ and stops there.
 The order is the safety argument. A web page built before `upload_source` has been seen is a
 page for a product that may not exist.
 
+It is built twice over, in two phases. **Phase 1 is a proof of concept with every piece on one
+Windows PC**: the page, the API, the database, the version store, the worker, and the
+controller. Every system works as designed: the same code, the same contracts, the same rules
+in §15. Only where each piece runs is different. **Phase 2 moves the same code to AWS**, to the
+EC2 shape in §13. The phases differ in configuration, not in code, and that is the test of
+whether the seams are where this plan says they are.
+
+### The proof of concept: everything on one PC
+
+| Piece | In production (§13) | In the proof of concept | Why that is faithful |
+|---|---|---|---|
+| The page | Served by the API in AWS | The same React build, served by the API on `https://localhost` | Same code. The browser does not know where the API is |
+| The API | AWS, its own account | The same ASP.NET process on the PC, as a console app or a local service | Same code, different settings |
+| The database | Postgres on RDS, Multi-AZ, with backups | Postgres for Windows, installed locally | The same engine and the same migrations. SQLite is not used even here: a proof that runs on a different database proves less |
+| The version store and second copy | S3, versioned, with a lifecycle rule | MinIO for Windows, a single local executable that speaks the S3 API, with versioning on | Same S3 calls, different endpoint. Content addressing, versioning, and the lifecycle rule all behave as in AWS |
+| Passwords | The site's KMS key | The plant-PC shape (§8): the worker's own key pair in DPAPI, sealed in the browser | Already a designed shape, not a stand-in. Sealing, collecting, and "the API cannot read it" are all exercised |
+| Sign-in | The customer's identity provider (OIDC) | Local accounts, which §8 already allows for a development layout, with all five roles | Every role check and every "who did it" record runs. Only the login screen differs |
+| The worker | EC2 instance from the image, session agent in an auto-logged-on account | The plant-PC shape on this PC: the service, and the session agent in the signed-in user's session | The plant-PC shape is a designed shape. §4 applies, because CODESYS may be open on this PC: a real test of that rule |
+| The controller | Real controllers over a site-to-site VPN | CODESYS Control Win, the soft PLC, on the same PC. PLCSIM Advanced for TIA if it accepts an upload (step 0) | A real CODESYS runtime with a real `Archive.prj`, real downloads, real stops. No VPN and no hardware |
+| Notifications | Email or webhook | A local mail catcher (such as smtp4dev) and a webhook into a local log | The same channel code, pointed at local endpoints |
+| Logs | Data volume and CloudWatch | The same file under `%ProgramData%\Versio\Outpost\logs` | Same sink. CloudWatch is a copy, not the sink |
+| The agent | MCP beside the API | The same MCP server, locally, with Cursor on the same PC | Same tools, same refusal to confirm |
+
+The proof does not change any rule to make itself easier. Writes are switched off at the worker
+until switched on locally. A download to Control Win stops it, and the confirm says so. A
+password prompt with no slot is cancelled. The proof shows the product as it will behave in a
+plant, on a PC.
+
+**What the proof of concept proves**, as a demonstration that runs from start to finish:
+
+1. A device is added for Control Win, with a schedule and retention, and with no password.
+2. Scheduled backups run, an unchanged one is **Up to date**, and a change made in the IDE and
+   downloaded to Control Win becomes a new version, **Modified**, with a notification.
+3. The page compares latest against previous, against N back, and against a reference recorded
+   from a file behind its warning, drawn as ST text, ladder where the project has it, and member
+   tables.
+4. The queue: twenty devices due at one time, on one worker with a concurrency of one, run one
+   after another. Control Win is one controller, and one address belongs to one device, so the
+   other nineteen are stand-in devices on a stand-in runner, the way the existing test suites use
+   stand-in formats. The queue, the order, and the pause on restore are what is under test, not
+   the controller. The stand-in runner is a demonstration pack, registered only by a proof of
+   concept setting, and never shipped in the installer or the image.
+5. Passwords: Control Win's user management switched on, then the three cases in step 3.
+6. A restore: a version sent back to Control Win, confirmed by an approver, read back, and
+   **Restored**. A batch of three in sequence, two of them stand-ins, one made to fail, and the
+   next one still starting. What a CODESYS read-back compares is still open (§16), and this is
+   where it gets answered: Control Win is the first place a full download and the upload after
+   it can both be looked at. The proof writes down what the read-back can see before the word
+   **Restored** is allowed on the page.
+7. A crash: the worker killed in the middle of a backup, and the outbox recording the result when
+   it returns. The API killed and restarted with nothing lost. The database restored from a
+   local backup.
+8. The agent lists versions and prepares a batch, and is refused when it tries to confirm.
+
+**What it does not prove**, so nobody reads more into it: anything about AWS (EC2, KMS, S3
+itself, RDS, the image pipeline, separate accounts), the VPN and vendor protocols over a router,
+vendor licences on a cloud machine, speed against real hardware, several real workers sharing a
+site, and TwinCAT. Those are phase 2: step 0b, step 5, and the EC2 shape in §13.
+
+**What it needs and nothing more**: this PC, CODESYS with Control Win, Postgres, MinIO, and
+nothing from §16. Who will run the service, licences in AWS, and Windows Server support all
+matter only in phase 2.
+
+**The order in phase 1** is: step 0 (on Control Win), step 1, step 2, step 2b, step 3 on this PC,
+step 4, step 6, step 7 on Control Win, step 8. **Phase 2** is then step 0b, step 3 again on an
+EC2 instance, step 5, and real controllers. A step below that names EC2 or step 0b is about phase
+2; its phase 1 form is the same work on this PC.
+
 ### Step 0 — Measure CODESYS before any product
 
 One script, one real controller that already has `Archive.prj`, launched the way
@@ -1474,6 +1565,13 @@ opened; added and removed files are listed. A second device with an address alre
 site is refused. A new parser version leaves every version's hash unchanged, and a missing
 drawable form falls back to text and asks for a parse rather than failing the diff.
 
+Retention and roles are tested here as well, with a clock the test controls. A device's count
+and age settings prune vendor projects and history as configured, and a file is kept while
+either setting says keep. The latest version, the reference, anything an unfinished batch
+names, and the last restored-to version survive any setting. Lowering a setting reports what it
+would delete before anything is deleted. Only an admin can create a site or a device, issue an
+enrollment code, or give a role, and every role change is logged and notified.
+
 ### Step 2b — The two renderers
 
 The text-diff and member-table HTML renderers in `Versio.Core` (§8), and the .NET line diff
@@ -1491,7 +1589,11 @@ turns a run that never started into **Missed**; a local time inside a clock chan
 The silence timer is tested the same way, with a clock the test controls: a device past its
 oldest acceptable backup goes red, and a worker with no heartbeat is offline.
 
-### Step 3 — The worker, unpackaged, on one instance
+### Step 3 — The worker, unpackaged: this PC first, then one instance
+
+In phase 1 the worker runs on this PC in the plant-PC shape, against Control Win, with MinIO as
+the store and DPAPI for passwords. Everything below that names EC2, S3, KMS, or step 0b is the
+same step repeated in phase 2.
 
 A console process is enough. It enrolls, long-polls, runs Upload, runs Export, parses the
 drawable form, writes the vendor file, puts the mirror's new files in the store, and only then
@@ -1499,6 +1601,13 @@ asks for the version to be recorded. It deletes scratch. DPAPI slots, collected 
 limits, defaulting to one run executing and a short queue behind it. A run the worker cannot
 take stays pending in the API for another eligible worker. The second copy, to S3. Passwords
 through the site's KMS key. Retiring the worker deletes its store.
+
+Passwords are proved in three cases, on Control Win in phase 1 and on the controller from step
+0b in phase 2: a device with no slots
+backs up with nothing sealed; a protected controller with its slot filled backs up; and that
+same protected controller added with no slots ends **Password not configured** within seconds,
+names what it asked for, does not run into the job timer, and is not retried. The third is the
+one that would otherwise look like a hang.
 
 Prove a scheduled read end to end against the controller from step 0b, on the instance from
 step 0b. Then terminate that instance, launch a new one, and prove the next read works with no
@@ -1531,8 +1640,10 @@ raises the tray notice. The write switch is in the tray and in the installer.
 
 ### Step 6 — A file a person supplies
 
-§5. Compare only, and record. Wrong project refused. Text mirror without a vendor project
-refused as a backup.
+§5. Compare only, record as a version, and record as the reference. Recording shows the diff
+against the current latest and the warning that this file becomes the latest backup, and is not
+accepted until the engineer accepts it; the version names who did. Wrong project refused. Text
+mirror without a vendor project refused as a backup.
 
 ### Step 7 — Restore
 
@@ -1544,8 +1655,11 @@ The write path has tests that nothing else would catch: with writes off at the P
 is refused before confirm; Cancel during the download phase is refused; the job timer expiring
 during the download kills nothing and leaves **Needs a person**; a batch past its window is
 **Expired**; a target whose network identity would change without an override is refused; a
-confirm from a person without the approver role is refused. Break each one deliberately and
-see the test go red.
+confirm from a person without the approver role is refused; a Partial or Stale source version
+is not offered as a program to send; a device that is a target in an unfinished batch takes no
+scheduled backup and shows "paused, restore in progress", and resumes when the batch is done
+with it; a read-back that matches the latest version records no new version. Break each one
+deliberately and see the test go red.
 
 The many-controller flow is tested without a controller, because most of it is pure: a list
 file with a bad address, a duplicate, an unknown override column, or a password column; an
@@ -1562,7 +1676,7 @@ batch. A test that the tool list has no confirm, and that an agent-scoped token 
 the confirm endpoint. No password parameter on any tool.
 
 Stop after step 0 if the probe fails, and after step 0b for any vendor that cannot be reached
-from EC2. Steps 1–3 are the product. Steps 4–5 are how a person
+from EC2. Steps 1–3, with 2b, are the product. Steps 4–5 are how a person
 reaches it. Steps 6–8 are the verbs that write, and they wait until a read has been seen to
 work.
 
@@ -1872,6 +1986,8 @@ These are the ones that lose a program or stop a line if they are relaxed.
 - A batch downloads one controller at a time, in the order the person set. A failed target is
   reported at once and not retried, and the next target starts.
 - A list file never carries a password.
+- A password prompt the device has no slot for is cancelled, never waited on, and ends the run
+  as Password not configured without a retry.
 - A device's versions mean reads, plus files a person explicitly recorded, plus read-backs after
   a restore. A compare-only drop does not become a version.
 - Outpost does not read or write the engineers' own copies of their projects, wherever they keep
@@ -1930,7 +2046,10 @@ These are the ones that lose a program or stop a line if they are relaxed.
 ## 16. Open
 
 These are not decisions. A builder does not pick one while implementing. Step 0, the CODESYS
-measurement, does not depend on them. The package and a restore do.
+measurement, does not depend on them, and neither does the phase 1 proof of concept (§12),
+except that its restore step cannot call a CODESYS restore **Restored** until the read-back
+question below is answered. Phase 2, the package, and a restore at a real site do depend on
+them.
 
 ### Who starts the IDE
 

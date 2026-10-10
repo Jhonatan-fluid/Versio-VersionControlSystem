@@ -1,0 +1,19 @@
+(* METADATA
+{
+	"v3Meta": {
+		"objectGuid": "d4cddb32-5f0d-4b0e-a8e1-b4b75273c866"
+	}
+}
+*)
+{attribute 'qualified_only'}
+{attribute 'strict'}
+{attribute 'to_string'}
+TYPE E_AlarmCategory :
+(
+	General 	:= 0,
+	Power 		:= 1,
+	Safety 		:= 2, 
+	Comms 		:= 3,
+	Hardware 	:= 4
+);
+END_TYPE

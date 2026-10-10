@@ -1,0 +1,18 @@
+(* METADATA
+{
+	"v3Meta": {
+		"objectGuid": "2b527b43-4c18-4de1-8fd7-9e1e7dd6e392"
+	}
+}
+*)
+{attribute 'qualified_only'}
+{attribute 'strict'}
+{attribute 'to_string'}
+TYPE E_AlarmSeverity :
+(
+	Diagnostic	 	:= 1,
+	Low				:= 2,
+	Medium			:= 3,
+	High			:= 4
+);
+END_TYPE

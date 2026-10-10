@@ -51,114 +51,6 @@ references:
     optional: false
     qualifiedOnly: false
     publishSymbols: false
-  - name: "#System_VisuElems"
-    namespace: VisuElems
-    placeholder: System_VisuElems
-    defaultResolution: "VisuElems, 4.9.1.0 (System)"
-    systemLibrary: true
-    optional: false
-    qualifiedOnly: false
-    publishSymbols: false
-  - name: "#System_VisuElemMeter"
-    namespace: VisuElemMeter
-    placeholder: System_VisuElemMeter
-    defaultResolution: "VisuElemMeter, 4.9.0.0 (System)"
-    systemLibrary: true
-    optional: false
-    qualifiedOnly: false
-    publishSymbols: false
-  - name: "#System_VisuElemsSpecialControls"
-    namespace: VisuElemsSpecialControls
-    placeholder: System_VisuElemsSpecialControls
-    defaultResolution: "VisuElemsSpecialControls, 4.7.0.0 (System)"
-    systemLibrary: true
-    optional: false
-    qualifiedOnly: false
-    publishSymbols: false
-  - name: "#System_VisuElemsWinControls"
-    namespace: VisuElemsWinControls
-    placeholder: System_VisuElemsWinControls
-    defaultResolution: "VisuElemsWinControls, 4.9.0.0 (System)"
-    systemLibrary: true
-    optional: false
-    qualifiedOnly: false
-    publishSymbols: false
-  - name: "#System_VisuElemTextEditor"
-    namespace: VisuElemTextEditor
-    placeholder: System_VisuElemTextEditor
-    defaultResolution: "VisuElemTextEditor, 4.8.0.0 (System)"
-    systemLibrary: true
-    optional: false
-    qualifiedOnly: false
-    publishSymbols: false
-  - name: "#System_VisuElemTrace"
-    namespace: VisuElemTrace
-    placeholder: System_VisuElemTrace
-    defaultResolution: "VisuElemTrace, 4.9.0.0 (System)"
-    systemLibrary: true
-    optional: false
-    qualifiedOnly: false
-    publishSymbols: false
-  - name: "#System_VisuNativeControl"
-    namespace: VisuNativeControl
-    placeholder: System_VisuNativeControl
-    defaultResolution: "VisuNativeControl, 4.9.0.0 (System)"
-    systemLibrary: true
-    optional: false
-    qualifiedOnly: false
-    publishSymbols: false
-  - name: "#System_VisuElemsAlarm"
-    namespace: VisuElemsAlarm
-    placeholder: System_VisuElemsAlarm
-    defaultResolution: "VisuElemsAlarm, 4.9.0.0 (System)"
-    systemLibrary: true
-    optional: false
-    qualifiedOnly: false
-    publishSymbols: false
-  - name: "#System_VisuElemCamDisplayer"
-    namespace: VisuElemCamDisplayer
-    placeholder: System_VisuElemCamDisplayer
-    defaultResolution: "VisuElemCamDisplayer, 4.7.0.0 (System)"
-    systemLibrary: true
-    optional: false
-    qualifiedOnly: false
-    publishSymbols: false
-    parameters:
-      GC_POINTS_PER_CAM: "100"
-  - name: "#System_VisuElem3DPath"
-    namespace: VisuElem3DPath
-    placeholder: System_VisuElem3DPath
-    defaultResolution: "VisuElem3DPath, 4.7.0.0 (System)"
-    systemLibrary: true
-    optional: false
-    qualifiedOnly: false
-    publishSymbols: false
-    parameters:
-      GC_POINTS_PER_POLYGON: "100"
-  - name: "#System_VisuElemsDateTime"
-    namespace: VisuElemsDateTime
-    placeholder: System_VisuElemsDateTime
-    defaultResolution: "VisuElemsDateTime, 4.9.0.0 (System)"
-    systemLibrary: true
-    optional: false
-    qualifiedOnly: false
-    publishSymbols: false
-  - name: "#System_VisuElemXYChart"
-    namespace: VisuElemXYChart
-    placeholder: System_VisuElemXYChart
-    defaultResolution: "VisuElemXYChart, 4.8.0.0 (System)"
-    systemLibrary: true
-    optional: false
-    qualifiedOnly: false
-    publishSymbols: false
-  - name: "#System_VisuInputs"
-    namespace: VisuInputs
-    placeholder: System_VisuInputs
-    defaultResolution: "VisuInputs, 4.7.0.0 (System)"
-    systemLibrary: true
-    optional: false
-    qualifiedOnly: false
-    publishSymbols: false
   - name: "#IoStandard"
     namespace: IoStandard
     placeholder: IoStandard
@@ -203,6 +95,114 @@ references:
     namespace: IoDrvBallufIOL
     placeholder: IoDrvBallufIOL
     defaultResolution: "IoDrvBallufIOL, 4.9.0.0 (CODESYS)"
+    systemLibrary: true
+    optional: false
+    qualifiedOnly: false
+    publishSymbols: false
+  - name: "#System_VisuElems"
+    namespace: VisuElems
+    placeholder: System_VisuElems
+    defaultResolution: "VisuElems, 4.10.0.0 (System)"
+    systemLibrary: true
+    optional: false
+    qualifiedOnly: false
+    publishSymbols: false
+  - name: "#System_VisuElemMeter"
+    namespace: VisuElemMeter
+    placeholder: System_VisuElemMeter
+    defaultResolution: "VisuElemMeter, 4.10.0.0 (System)"
+    systemLibrary: true
+    optional: false
+    qualifiedOnly: false
+    publishSymbols: false
+  - name: "#System_VisuElemsSpecialControls"
+    namespace: VisuElemsSpecialControls
+    placeholder: System_VisuElemsSpecialControls
+    defaultResolution: "VisuElemsSpecialControls, 4.7.0.0 (System)"
+    systemLibrary: true
+    optional: false
+    qualifiedOnly: false
+    publishSymbols: false
+  - name: "#System_VisuElemsWinControls"
+    namespace: VisuElemsWinControls
+    placeholder: System_VisuElemsWinControls
+    defaultResolution: "VisuElemsWinControls, 4.10.0.0 (System)"
+    systemLibrary: true
+    optional: false
+    qualifiedOnly: false
+    publishSymbols: false
+  - name: "#System_VisuElemTextEditor"
+    namespace: VisuElemTextEditor
+    placeholder: System_VisuElemTextEditor
+    defaultResolution: "VisuElemTextEditor, 4.8.0.0 (System)"
+    systemLibrary: true
+    optional: false
+    qualifiedOnly: false
+    publishSymbols: false
+  - name: "#System_VisuElemTrace"
+    namespace: VisuElemTrace
+    placeholder: System_VisuElemTrace
+    defaultResolution: "VisuElemTrace, 4.10.0.0 (System)"
+    systemLibrary: true
+    optional: false
+    qualifiedOnly: false
+    publishSymbols: false
+  - name: "#System_VisuNativeControl"
+    namespace: VisuNativeControl
+    placeholder: System_VisuNativeControl
+    defaultResolution: "VisuNativeControl, 4.9.0.0 (System)"
+    systemLibrary: true
+    optional: false
+    qualifiedOnly: false
+    publishSymbols: false
+  - name: "#System_VisuElemsAlarm"
+    namespace: VisuElemsAlarm
+    placeholder: System_VisuElemsAlarm
+    defaultResolution: "VisuElemsAlarm, 4.10.0.0 (System)"
+    systemLibrary: true
+    optional: false
+    qualifiedOnly: false
+    publishSymbols: false
+  - name: "#System_VisuElemCamDisplayer"
+    namespace: VisuElemCamDisplayer
+    placeholder: System_VisuElemCamDisplayer
+    defaultResolution: "VisuElemCamDisplayer, 4.7.0.0 (System)"
+    systemLibrary: true
+    optional: false
+    qualifiedOnly: false
+    publishSymbols: false
+    parameters:
+      GC_POINTS_PER_CAM: "100"
+  - name: "#System_VisuElem3DPath"
+    namespace: VisuElem3DPath
+    placeholder: System_VisuElem3DPath
+    defaultResolution: "VisuElem3DPath, 4.7.0.0 (System)"
+    systemLibrary: true
+    optional: false
+    qualifiedOnly: false
+    publishSymbols: false
+    parameters:
+      GC_POINTS_PER_POLYGON: "100"
+  - name: "#System_VisuElemsDateTime"
+    namespace: VisuElemsDateTime
+    placeholder: System_VisuElemsDateTime
+    defaultResolution: "VisuElemsDateTime, 4.9.0.0 (System)"
+    systemLibrary: true
+    optional: false
+    qualifiedOnly: false
+    publishSymbols: false
+  - name: "#System_VisuElemXYChart"
+    namespace: VisuElemXYChart
+    placeholder: System_VisuElemXYChart
+    defaultResolution: "VisuElemXYChart, 4.10.0.0 (System)"
+    systemLibrary: true
+    optional: false
+    qualifiedOnly: false
+    publishSymbols: false
+  - name: "#System_VisuInputs"
+    namespace: VisuInputs
+    placeholder: System_VisuInputs
+    defaultResolution: "VisuInputs, 4.7.0.0 (System)"
     systemLibrary: true
     optional: false
     qualifiedOnly: false

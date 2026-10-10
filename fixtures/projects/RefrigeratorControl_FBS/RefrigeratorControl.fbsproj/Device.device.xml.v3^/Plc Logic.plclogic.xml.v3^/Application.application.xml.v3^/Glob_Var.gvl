@@ -1,0 +1,23 @@
+(* METADATA
+{
+	"v3Meta": {
+		"objectGuid": "f8ccf7f9-314d-4201-b460-0f935fbcbf7d"
+	}
+}
+*)
+{attribute 'qualified_only'}
+NAMESPACE Glob_Var
+VAR_GLOBAL
+//Inputs
+	TempActual: REAL:=8.0;
+	TempSet: REAL:=8.0;
+	DoorOpen: BOOL;
+	AlarmThreshold:TIME:=T#10S;
+	DoorOpenThreshold:TIME:=T#10S;
+
+//Outputs
+	Compressor: BOOL;
+	Signal: BOOL;
+	Lamp: BOOL;
+END_VAR
+END_NAMESPACE

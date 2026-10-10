@@ -1,0 +1,13 @@
+(* METADATA
+{
+	"v3Meta": {
+		"objectGuid": "4686c4cd-f467-4000-9d56-feab29dfab29"
+	}
+}
+*)
+{attribute 'qualified_only'}
+NAMESPACE GVL_Alarm
+VAR_GLOBAL
+	AlarmConstant : DINT := 3;
+END_VAR
+END_NAMESPACE

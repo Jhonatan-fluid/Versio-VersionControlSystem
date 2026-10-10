@@ -1,0 +1,29 @@
+__V3_META__
+{
+	"objectGuid": "b2f965ce-81cf-4cb5-9cf7-a0b56a712217",
+	"objectTypeGuid": "261bd6e6-249c-4232-bb6f-84c2fbeef430",
+	"embeddedObjectTypeGuids": [
+		"a9ed5b7e-75c5-4651-af16-d2c27e98cb94"
+	]
+}
+__V3_CONTENT__
+<?xml version="1.0" encoding="utf-8"?>
+<Single xml:space="preserve" Type="{261bd6e6-249c-4232-bb6f-84c2fbeef430}" Method="IArchivable">
+	<Null Name="persvarlist" />
+	<Single Name="Interface" Type="{a9ed5b7e-75c5-4651-af16-d2c27e98cb94}" Method="IArchivable">
+		<Single Name="TextDocument" Type="{f3878285-8e4f-490b-bb1b-9acbb7eb04db}" Method="IArchivable">
+			<Single Name="TextBlobForSerialisation" Type="string">{attribute 'qualified_only'}
+VAR_GLOBAL PERSISTENT RETAIN
+	// Generated instance path of persistent variable
+	PLC_PRG.Alarm.Settings: ST_AlarmSettings;
+	// Generated instance path of persistent variable
+	PLC_PRG.Alarm.Configuration: ST_AlarmHmiConfiguration;
+END_VAR</Single>
+			<Single Name="LineInfoPersistence" Type="string">b2f965ce-81cf-4cb5-9cf7-a0b56a712217_Decl_LineIds</Single>
+		</Single>
+	</Single>
+	<Null Name="NetVarProperties" />
+	<Single Name="guidinit" Type="System.Guid">2c555a83-4d98-4209-836e-28d6084df62a</Single>
+	<Single Name="guidcyclic" Type="System.Guid">152f5045-2f94-4447-98cd-a0383b537b0a</Single>
+	<Single Name="dymmattributecount" Type="int">0</Single>
+</Single>
