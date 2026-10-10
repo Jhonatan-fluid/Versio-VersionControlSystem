@@ -213,7 +213,19 @@ Each step is one commit, and each builds and passes on its own.
    not drawn, because the tree's folders come from objects' paths, and the classic mirror
    behaves the same.
 4. ~~**CODESYS describe.**~~ **Built 2026-10-10 (17c8efc)**, over the fixture's real file list.
-5. **The syntax and section hooks**, and CODESYS's answers.
+5. ~~**The syntax and section hooks**, and CODESYS's answers.~~ **Built 2026-10-10.** The new
+   pieces:
+   - `IPlcProjectFormat.SourceSections` and `SyntaxFor`;
+   - `PlcFormats.SectionsFor` and `SyntaxFor`;
+   - `SourceSections` and an overload of `StSourceLayout.Lay` in `Versio.Core.Iec`.
+
+   CODESYS answers only for a file that opens with its `(* METADATA` header, so a classic
+   mirror's `.st` keeps Versio's delimiter layout. A closing keyword is hidden only when it is
+   the object's own (`END_PROGRAM` for a `PROGRAM`) and alone on its line: the second read
+   caught that "any `END_` line" would have hidden a bare `END_IF`. `LanguageCatalog`'s
+   Structured Text and XML became public so a format can name them; no CODESYS extension
+   entered the catalog. The `DiffView` highlighting call is not under test, so it is on the
+   owner's eyeball list.
 6. **Member tables.** Check `StDeclarationParser` first against the header, `{attribute}`
    lines, `NAMESPACE`, `VAR PERSISTENT` and tab-aligned declarations.
 7. **"Open in CODESYS" on the row,** read from `.sidecars/.~u` through the existing

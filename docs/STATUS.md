@@ -60,11 +60,11 @@ marking, duplicate-param keys, and the detail-pane lookup. All of them are in
 
 | Project | Tests | Time | Needs |
 |---|---|---|---|
-| `Versio.Core.Tests` | 1,660 | under a second | nothing |
+| `Versio.Core.Tests` | 1,664 | under a second | nothing |
 | `Versio.Integration.Tests` | 171 | ~10 s | real git |
-| `Versio.App.Tests` | 776 | 6 m 35 s on 2026-10-10; 8 m 38 s on 2026-10-05; ~3.6 min on 2026-09-22 | nothing |
+| `Versio.App.Tests` | 777 | 6 m 35 s on 2026-10-10; 8 m 38 s on 2026-10-05; ~3.6 min on 2026-09-22 | nothing |
 | `Versio.Arch.Tests` | 27 | instant | nothing |
-| `Versio.Plc.Codesys.Pure.Tests` | 323 | under a second | nothing |
+| `Versio.Plc.Codesys.Pure.Tests` | 340 | under a second | nothing |
 | `Versio.Plc.Codesys.Parity.Tests` | 97 | ~15 s | `python` on PATH — skips cleanly without it, so check the count |
 | `Versio.Plc.TiaPortal.Pure.Tests` | 93 | instant | nothing |
 | `Versio.Plc.TiaPortal.Tests` | 5 | seconds when skipped; minutes when Portal runs the import gate | **real TIA Portal** — skips without Openness membership or LFS content |
@@ -312,12 +312,13 @@ One list. Reorder it; do not copy it into another file.
    - CODESYS LD/FBD drawn, from the classic mirror and from FBS alike;
    - the folder found, never adopted;
    - its tree read as the IDE's;
-   - the row, the explorer and the project card.
+   - the row, the explorer and the project card;
+   - ST laid out with its sections (FBS 1.0 has no declaration/body divider), and
+     `.gvl`/`.enum`/`.struct` highlighted through the format.
 
    **Left, in order:**
-   - ST laid out with its sections (FBS 1.0 has no declaration/body divider);
-   - highlighting for `.gvl`/`.enum`/`.struct`;
-   - member tables;
+   - member tables (this needs a neutral IEC variable-block parser; `StDeclarationParser`
+     reads only the header);
    - "open in CODESYS" from `.sidecars/.~u`;
    - CFC;
    - the owner's eyeball of the drawing (right rail?) and of the row.
