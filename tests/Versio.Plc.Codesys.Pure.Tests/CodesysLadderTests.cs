@@ -1,0 +1,325 @@
+using Versio.Core.Iec.Ladder;
+using Versio.Plc.Codesys.Ladder;
+using Versio.TestSupport;
+using Xunit;
+
+namespace Versio.Plc.Codesys.Tests;
+
+/// <summary>
+/// The CODESYS LD/FBD network list into the neutral ladder model, from the fixture's real
+/// <c>Signals</c> block in both of its containers.
+/// </summary>
+/// <remarks>
+/// <para>
+/// <b>Real output, one block.</b> <c>Signals</c> is CODESYS's own export, written twice: the
+/// classic mirror's <c>Signals.xml</c> and File-Based Storage's <c>Signals.pou.xml.v3</c>. It has
+/// three networks: a contact into a TON whose output drives a coil and a jump, a chain of two boxes
+/// in series with two contacts, and a labelled contact and coil. Everything it lacks (OR,
+/// negation, edges, set/reset, EN/ENO) is listed in <c>docs/fbs/PLAN.md</c> §5. The parser draws
+/// anything it cannot name as unrecognised rather than guessing, and these tests pin that too.
+/// </para>
+/// <para>
+/// <b>Approved drawings.</b> As in the TIA tests: a difference writes <c>*.received.html</c>
+/// beside <c>Specimens/Ladder/Approved/*.approved.html</c> and fails. Approving is copying it over
+/// after looking at it in a browser.
+/// </para>
+/// </remarks>
+public sealed class CodesysLadderTests
+{
+    private static readonly string Approved =
+        Path.Combine(TestPaths.Root, "tests", "Versio.Plc.Codesys.Pure.Tests", "Specimens", "Ladder", "Approved");
+
+    private const string FbsPath =
+        "Device.device.xml.v3^/Plc Logic.plclogic.xml.v3^/Application.application.xml.v3^/Signals.pou.xml.v3";
+
+    private static readonly string FbsFile = Path.Combine(
+        TestPaths.Project("RefrigeratorControl_FBS"), "RefrigeratorControl.fbsproj",
+        FbsPath.Replace('/', Path.DirectorySeparatorChar));
+
+    private static readonly string ClassicFile = Path.Combine(
+        TestPaths.Project("RefrigeratorControl"), "Device", "Plc Logic", "Application", "Signals.xml");
+
+    private static LadderDocument Fbs(string? content = null)
+    {
+        var document = CodesysProjectFormat.Instance.TryParseLadder(FbsPath, content ?? File.ReadAllText(FbsFile));
+        Assert.NotNull(document);
+        return document;
+    }
+
+    private static LadderDocument Classic()
+    {
+        var document = CodesysProjectFormat.Instance.TryParseLadder(
+            "Device/Plc Logic/Application/Signals.xml", File.ReadAllText(ClassicFile));
+        Assert.NotNull(document);
+        return document;
+    }
+
+    private static string Shape(LadderNetwork network) => ShapeOf(LadderStructure.Of(network).Root);
+
+    private static string ShapeOf(LdBlock? block) => block switch
+    {
+        null => "",
+        LdLeaf leaf => leaf.Node.Id,
+        LdSeries s => "S(" + string.Join(",", s.Items.Select(ShapeOf)) + ")",
+        LdParallel p => "P(" + string.Join("|", p.Branches.Select(ShapeOf)) + ")",
+        _ => "?",
+    };
+
+    private static T Node<T>(LadderNetwork network, string id) where T : LdNode =>
+        Assert.IsType<T>(network.Nodes.Single(n => n.Id == id));
+
+    private static string Fbd() =>
+        File.ReadAllText(FbsFile).Replace(
+            "<Single Name=\"DefaultViewMode\" Type=\"string\">Ld</Single>",
+            "<Single Name=\"DefaultViewMode\" Type=\"string\">Fbd</Single>",
+            StringComparison.Ordinal);
+
+    [Fact]
+    public void Signals_is_three_ladder_networks_named_after_its_file()
+    {
+        var document = Fbs();
+
+        Assert.Equal("Signals", document.Body.BlockName);
+        Assert.Equal([1, 2, 3], document.Body.Networks.Select(n => n.Number));
+        Assert.All(document.Body.Networks, n => Assert.Equal(LdLanguage.Ladder, n.Language));
+        Assert.Same(CodesysLadderParser.Style, document.Style);
+    }
+
+    [Fact]
+    public void Network_1_is_a_contact_into_a_timer_driving_a_coil_and_a_jump()
+    {
+        var network = Fbs().Body.Networks[0];
+
+        Assert.Equal("S(13,11,P(7|141))", Shape(network));
+        Assert.Equal("Glob_Var.Compressor", Node<LdContact>(network, "13").Operand);
+
+        var timer = Node<LdBox>(network, "11");
+        Assert.Equal("TON", timer.TypeName);
+        Assert.Equal("TON_0", timer.Instance);
+        Assert.Equal(["IN", "PT", "Q"], timer.Pins.Select(p => p.Name));
+        Assert.Equal("Glob_Var.AlarmThreshold", timer.Pins.Single(p => p.Name == "PT").Operand);
+        Assert.Null(timer.Pins.Single(p => p.Name == "IN").Operand);
+
+        Assert.Equal("Glob_Var.Signal", Node<LdCoil>(network, "7").Operand);
+        Assert.Equal("DoorIsOpen", Node<LdJump>(network, "141").Target);
+    }
+
+    [Fact]
+    public void Network_2s_and_puts_the_nested_timer_and_blink_in_series_with_two_contacts()
+    {
+        var network = Fbs().Body.Networks[1];
+
+        // AND(BLINK(ENABLE := TON(IN := DoorOpen, ...), ...), TON_1.Q, DoorOpen) => Signal: the
+        // innermost first input is where the rung starts, and AND is series, not a box.
+        Assert.Equal("S(25,23,98,139,113,102)", Shape(network));
+        Assert.Equal("Glob_Var.DoorOpen", Node<LdContact>(network, "25").Operand);
+        Assert.Equal("TON_1", Node<LdBox>(network, "23").Instance);
+
+        var blink = Node<LdBox>(network, "98");
+        Assert.Equal("blink", blink.TypeName);
+        Assert.Equal(["ENABLE", "TIMELOW", "TIMEHIGH", "OUT"], blink.Pins.Select(p => p.Name));
+        Assert.Equal("tSignalTime", blink.Pins.Single(p => p.Name == "TIMELOW").Operand);
+
+        Assert.Equal("TON_1.Q", Node<LdContact>(network, "139").Operand);
+        Assert.DoesNotContain(network.Nodes, n => n is LdBox { TypeName: "AND" });
+    }
+
+    [Fact]
+    public void Network_3_carries_its_label_and_is_one_contact_and_one_coil()
+    {
+        var network = Fbs().Body.Networks[2];
+
+        Assert.Equal("S(119,125)", Shape(network));
+        Assert.Equal("DoorIsOpen", Assert.Single(LadderStructure.Of(network).Labels).Name);
+        Assert.Equal("Glob_Var.Lamp", Node<LdCoil>(network, "125").Operand);
+    }
+
+    [Fact]
+    public void The_file_based_copy_and_the_classic_export_are_the_same_networks()
+    {
+        // The same block, written into two containers. If this fails, one of the two is being
+        // read differently, and a project moved to File-Based Storage would show a change that
+        // is not one.
+        var fbs = Fbs().Body;
+        var classic = Classic().Body;
+
+        Assert.Equal(classic.BlockName, fbs.BlockName);
+        Assert.Equal(
+            classic.Networks.Select(LadderStructure.Fingerprint),
+            fbs.Networks.Select(LadderStructure.Fingerprint));
+    }
+
+    [Fact]
+    public void Every_network_has_a_rung_shape_and_draws_within_the_shared_invariants()
+    {
+        foreach (var network in Fbs().Body.Networks)
+        {
+            var drawing = LadderLayout.Lay(network, CodesysLadderParser.Style);
+            Assert.Null(drawing.FallbackReason);
+            var problems = LadderInvariants.Violations(drawing);
+            Assert.True(problems.Count == 0, $"network {network.Number}: {string.Join("; ", problems)}");
+        }
+    }
+
+    [Fact]
+    public void The_same_body_in_fbd_view_is_boxes_with_operands_on_their_pins_and_no_rail()
+    {
+        // CODESYS stores one network list and lets the IDE show it as LD or FBD, so flipping the
+        // view mode is a real FBD specimen, not an invented one.
+        var document = Fbs(Fbd());
+        var network = document.Body.Networks[1];
+
+        Assert.All(document.Body.Networks, n => Assert.Equal(LdLanguage.FunctionBlock, n.Language));
+        Assert.DoesNotContain(network.Nodes, n => n is LdLeftRail or LdContact);
+
+        var and = Node<LdBox>(network, "112");
+        Assert.Equal("AND", and.TypeName);
+        Assert.Equal(["IN1", "IN2", "IN3", "OUT"], and.Pins.Select(p => p.Name));
+        Assert.Equal("TON_1.Q", and.Pins.Single(p => p.Name == "IN2").Operand);
+        Assert.Equal("Glob_Var.DoorOpen", Node<LdBox>(network, "23").Pins.Single(p => p.Name == "IN").Operand);
+
+        // The boxes are chained by wires: TON.Q into BLINK.ENABLE into AND.IN1 into the coil.
+        Assert.Contains(network.Nets, n => n.Ends.Contains(new LdPinRef("23", "Q")) && n.Ends.Contains(new LdPinRef("98", "ENABLE")));
+        Assert.Contains(network.Nets, n => n.Ends.Contains(new LdPinRef("98", "OUT")) && n.Ends.Contains(new LdPinRef("112", "IN1")));
+        Assert.Contains(network.Nets, n => n.Ends.Contains(new LdPinRef("112", "OUT")) && n.Ends.Contains(new LdPinRef("102", LdPins.In)));
+
+        foreach (var each in document.Body.Networks)
+        {
+            var problems = LadderInvariants.Violations(LadderLayout.Lay(each, CodesysLadderParser.Style));
+            Assert.True(problems.Count == 0, $"network {each.Number}: {string.Join("; ", problems)}");
+        }
+    }
+
+    [Fact]
+    public void An_output_flag_nobody_has_measured_is_drawn_as_unrecognised_not_as_a_plain_coil()
+    {
+        // Network 3's coil, given a flag value the fixture never shows. A set or reset coil drawn
+        // as a normal one would show a reviewer logic the PLC does not run.
+        var edited = File.ReadAllText(FbsFile);
+        var coil = edited.IndexOf("<Single Name=\"Operand\" Type=\"string\">Glob_Var.Lamp</Single>", StringComparison.Ordinal);
+        var flag = edited.IndexOf("<Single Name=\"Flags\" Type=\"int\">0</Single>", coil, StringComparison.Ordinal);
+        edited = string.Concat(edited.AsSpan(0, flag), "<Single Name=\"Flags\" Type=\"int\">8</Single>",
+            edited.AsSpan(flag + "<Single Name=\"Flags\" Type=\"int\">0</Single>".Length));
+
+        var network = Fbs(edited).Body.Networks[2];
+
+        var element = Node<LdUnsupported>(network, "125");
+        Assert.Equal("output (flags 8)", element.VendorName);
+        Assert.Equal("Glob_Var.Lamp", element.Pins.Single(p => p.Name == "operand").Operand);
+        Assert.Equal("S(119,125)", Shape(network));
+    }
+
+    [Fact]
+    public void An_operand_codesys_does_not_call_boolean_is_not_drawn_as_a_contact()
+    {
+        // Network 3's contact, marked non-Boolean. Where power flows that is a shape the fixture
+        // never shows, and a contact on a TIME or an INT is an element nobody placed.
+        var edited = File.ReadAllText(FbsFile);
+        var operand = edited.LastIndexOf("<Single Name=\"Operand\" Type=\"string\">Glob_Var.DoorOpen</Single>", StringComparison.Ordinal);
+        var boolean = edited.IndexOf("<Single Name=\"Boolean\" Type=\"bool\">True</Single>", operand, StringComparison.Ordinal);
+        edited = string.Concat(edited.AsSpan(0, boolean), "<Single Name=\"Boolean\" Type=\"bool\">False</Single>",
+            edited.AsSpan(boolean + "<Single Name=\"Boolean\" Type=\"bool\">True</Single>".Length));
+
+        var network = Fbs(edited).Body.Networks[2];
+
+        var element = Node<LdUnsupported>(network, "119");
+        Assert.Equal("operand (not Boolean)", element.VendorName);
+        Assert.Equal("Glob_Var.DoorOpen", element.Pins.Single(p => p.Name == "operand").Operand);
+        Assert.Equal("S(119,125)", Shape(network));
+    }
+
+    [Fact]
+    public void A_commented_out_network_says_so_in_its_title_and_an_il_network_is_a_placeholder()
+    {
+        var text = File.ReadAllText(FbsFile);
+        var first = text.IndexOf("<Single Name=\"OutCommented\" Type=\"bool\">False</Single>", StringComparison.Ordinal);
+        text = string.Concat(text.AsSpan(0, first), "<Single Name=\"OutCommented\" Type=\"bool\">True</Single>",
+            text.AsSpan(first + "<Single Name=\"OutCommented\" Type=\"bool\">False</Single>".Length));
+        var il = text.LastIndexOf("<Single Name=\"ILActive\" Type=\"bool\">False</Single>", StringComparison.Ordinal);
+        text = string.Concat(text.AsSpan(0, il), "<Single Name=\"ILActive\" Type=\"bool\">True</Single>",
+            text.AsSpan(il + "<Single Name=\"ILActive\" Type=\"bool\">False</Single>".Length));
+
+        var networks = Fbs(text).Body.Networks;
+
+        Assert.Equal("(commented out)", networks[0].Title);
+        Assert.NotEmpty(networks[0].Nodes);
+        Assert.Equal("IL", networks[2].UnsupportedLanguage);
+        Assert.Empty(networks[2].Nodes);
+    }
+
+    [Fact]
+    public void A_contact_renamed_in_a_copy_is_that_one_network_changed()
+    {
+        // Network 2, six elements. Network 3 has two, and one of two changed reads as the network
+        // replaced, which is LadderDiff's answer and not this parser's question.
+        var original = File.ReadAllText(FbsFile);
+        var edited = original.Replace(">TON_1.Q<", ">TON_1.ET<", StringComparison.Ordinal);
+
+        var comparison = LadderDiff.Compare(Fbs(original).Body, Fbs(edited).Body);
+
+        var row = Assert.Single(comparison.Rows, r => r.Change != LadderChange.Same);
+        Assert.Equal(LadderChange.Changed, row.Change);
+        Assert.Equal(2, row.New!.Network.Number);
+        Assert.Equal(LdMark.Modified, row.New.Marks["139"]);
+    }
+
+    [Theory]
+    [InlineData("x/PLC_PRG.prg.st", "PROGRAM PLC_PRG\nEND_PROGRAM")]
+    [InlineData("x/Signals.xml", "not xml")]
+    [InlineData("x/Signals.pou.xml.v3", "<?xml version=\"1.0\"?><Single />")]
+    [InlineData("x/Signals.pou.xml.v3", "__V3_META__\n{}\n__V3_CONTENT__\nnot xml")]
+    [InlineData("x/Signals.pou.xml.v3", "")]
+    public void Anything_that_is_not_a_network_list_is_null(string path, string content)
+    {
+        Assert.Null(CodesysProjectFormat.Instance.TryParseLadder(path, content));
+    }
+
+    [Theory]
+    [InlineData("RefrigeratorControl_FBS", "RefrigeratorControl.fbsproj/Device.device.xml.v3^/Plc Logic.plclogic.xml.v3^/Application.application.xml.v3^/Task Configuration.taskconfig.xml.v3^/MainTask.task.xml.v3")]
+    [InlineData("RefrigeratorControl_FBS", "RefrigeratorControl.fbsproj/Device.device.xml.v3^/Plc Logic.plclogic.xml.v3^/Application.application.xml.v3^/PersistentVars.varpersistent.xml.v3")]
+    [InlineData("RefrigeratorControl", "Device/Plc Logic/Application/Glob_Var.gvl.xml")]
+    [InlineData("MachineWithMembers", "Device/Plc Logic/Application/PLC_PRG.xml")]
+    public void Real_objects_that_are_not_ld_or_fbd_are_null(string project, string relative)
+    {
+        // The last one is CFC: graphical, and not drawn until CFC has a layout of its own.
+        var path = Path.Combine(TestPaths.Project(project), relative.Replace('/', Path.DirectorySeparatorChar));
+
+        Assert.Null(CodesysProjectFormat.Instance.TryParseLadder(relative, File.ReadAllText(path)));
+    }
+
+    [Theory]
+    [InlineData(false, "Signals")]
+    [InlineData(true, "Signals_fbd")]
+    public void Signals_draws_as_approved(bool fbd, string approvedAs)
+    {
+        var document = Fbs(fbd ? Fbd() : null);
+        var html = LadderHtml.Fragment(LadderDiff.Compare(document.Body, document.Body), document.Style);
+
+        var approved = Path.Combine(Approved, approvedAs + ".approved.html");
+        var received = Path.Combine(Approved, approvedAs + ".received.html");
+        if (File.Exists(approved) && File.ReadAllText(approved) == html)
+        {
+            File.Delete(received);
+            return;
+        }
+
+        Directory.CreateDirectory(Approved);
+        File.WriteAllText(received, html);
+        Assert.Fail($"{approvedAs}: the drawing differs from {approved}. Look at {received} in a browser; if it is right, copy it over the approved file.");
+    }
+
+    [Fact]
+    public void A_gallery_of_signals_is_written_for_a_human_to_look_at()
+    {
+        var page = new System.Text.StringBuilder($"<!doctype html><meta charset=utf-8><style>{LadderPageAssets.Css} body{{background:var(--ld-bg)}}</style>");
+        foreach (var (name, document) in new[] { ("Signals (LD)", Fbs()), ("Signals (FBD view)", Fbs(Fbd())) })
+        {
+            page.Append("<h2 style=\"font:600 15px sans-serif\">").Append(name).Append("</h2>")
+                .Append(LadderHtml.Fragment(LadderDiff.Compare(document.Body, document.Body), document.Style));
+        }
+
+        var path = Path.Combine(AppContext.BaseDirectory, "codesys-ladder-gallery.html");
+        File.WriteAllText(path, page.ToString());
+        Assert.True(new FileInfo(path).Length > 1000);
+    }
+}

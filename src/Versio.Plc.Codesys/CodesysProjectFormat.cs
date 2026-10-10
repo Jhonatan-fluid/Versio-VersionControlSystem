@@ -194,4 +194,11 @@ public sealed class CodesysProjectFormat : IPlcProjectFormat
     public Versio.Core.Projects.ObjectTypeName? DisplayNameFor(string type) =>
         CodesysObjectTypeNames.TryFor(type);
 
+    /// <remarks>
+    /// The LD/FBD network list, from a classic mirror's native <c>.xml</c> or a File-Based Storage
+    /// <c>.xml.v3</c>; null for everything else, CFC and SFC included, which keep their raw view.
+    /// </remarks>
+    public Versio.Core.Iec.Ladder.LadderDocument? TryParseLadder(string relativePath, string content) =>
+        Ladder.CodesysLadderParser.TryParse(relativePath, content);
+
 }
