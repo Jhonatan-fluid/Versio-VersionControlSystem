@@ -195,4 +195,54 @@ public class StSourceLayoutTests
         Assert.Empty(StSourceLayout.Body("A;", 5, 9));
         Assert.Equal(["A;"], StSourceLayout.Body("A;", -3, 99).Cast<SourceCodeLine>().Select(r => r.Text));
     }
+
+    // A vendor's own file, sections found by its format: a two-line header, a two-line
+    // declaration, a two-line body, a closing keyword.
+    private const string Sectioned =
+        "(* header\n*)\nPROGRAM P\nVAR x : BOOL; END_VAR\nx := TRUE;\n\nEND_PROGRAM";
+
+    [Fact]
+    public void Sections_draw_like_the_delimiter_with_the_header_and_the_closing_keyword_left_out()
+    {
+        var rows = StSourceLayout.Lay(Sectioned, new SourceSections(HeaderEnd: 2, DeclarationEnd: 4, BodyEnd: 6));
+
+        Assert.Equal(
+            ["|Declaration", "1 PROGRAM P", "2 VAR x : BOOL; END_VAR", "|Implementation", "1 x := TRUE;"],
+            rows.Select(r => r switch
+            {
+                SourceDivider d => "|" + d.Label,
+                SourceCodeLine l => $"{l.Number} {l.Text}",
+                _ => "?",
+            }));
+
+        // The file line survives the renumbering, so a click still lands on the file.
+        Assert.Equal(5, rows.OfType<SourceCodeLine>().Single(l => l.Text == "x := TRUE;").FileLine);
+    }
+
+    [Fact]
+    public void Sections_with_no_body_are_the_declaration_alone_with_no_divider()
+    {
+        var rows = StSourceLayout.Lay("(*\n*)\nTYPE T : INT; END_TYPE", new SourceSections(2, 3, BodyEnd: null));
+
+        var line = Assert.IsType<SourceCodeLine>(Assert.Single(rows));
+        Assert.Equal((1, "TYPE T : INT; END_TYPE", 3), (line.Number, line.Text, line.FileLine));
+    }
+
+    [Fact]
+    public void No_sections_is_the_layout_there_always_was()
+    {
+        var file = StTextCodec.Join(Declaration, Implementation);
+
+        Assert.Equal(StSourceLayout.Lay(file), StSourceLayout.Lay(file, sections: null));
+    }
+
+    [Fact]
+    public void Sections_that_overrun_the_file_are_clamped_rather_than_thrown()
+    {
+        // A format reading a file that changed under it must not take the pane down.
+        var rows = StSourceLayout.Lay("A;\nB;", new SourceSections(HeaderEnd: 9, DeclarationEnd: 1, BodyEnd: 99));
+
+        Assert.Equal(["Declaration", "Implementation"], rows.OfType<SourceDivider>().Select(d => d.Label));
+        Assert.Empty(rows.OfType<SourceCodeLine>());
+    }
 }

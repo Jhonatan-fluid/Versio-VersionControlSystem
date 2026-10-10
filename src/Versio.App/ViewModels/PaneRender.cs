@@ -71,7 +71,9 @@ public sealed record SourceRender
         {
             Path = repoRelativePath,
             PseudoDiff = builder.ToString(),
-            Rows = StSourceLayout.Lay(text),
+            // A vendor's own source file (File-Based Storage) has no Versio delimiter; its format
+            // says where the declaration ends. Everything else lays out exactly as before.
+            Rows = StSourceLayout.Lay(text, Versio.Core.Plc.PlcFormats.SectionsFor(repoRelativePath, text)),
             NoChanges = noChanges,
         };
     }

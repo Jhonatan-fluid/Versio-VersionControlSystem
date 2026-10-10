@@ -203,6 +203,16 @@ public sealed class CodesysProjectFormat : IPlcProjectFormat
     public Versio.Core.Projects.ProjectManifest? DescribeSourceProject(string projectPath, IReadOnlyList<string> relativeFiles) =>
         FileBased.CodesysFileBasedLayout.Describe(projectPath, relativeFiles);
 
+    /// <remarks>File-Based Storage text only: a file that opens with its <c>(* METADATA</c> header.</remarks>
+    public Versio.Core.Iec.SourceSections? SourceSections(string relativePath, string content) =>
+        FileBased.CodesysFileBasedSource.Sections(relativePath, content);
+
+    public (int Start, int End)? CodeBody(string relativePath, string content) =>
+        FileBased.CodesysFileBasedSource.CodeBody(relativePath, content);
+
+    public Versio.Core.Diff.SyntaxLanguage? SyntaxFor(string relativePath) =>
+        FileBased.CodesysFileBasedSource.Syntax(relativePath);
+
     /// <remarks>
     /// The LD/FBD network list, from a classic mirror's native <c>.xml</c> or a File-Based Storage
     /// <c>.xml.v3</c>; null for everything else, CFC and SFC included, which keep their raw view.

@@ -57,7 +57,12 @@ public sealed record SyntaxLanguage
 /// </remarks>
 public static class LanguageCatalog
 {
-    private static readonly SyntaxLanguage StructuredText = new()
+    /// <summary>
+    /// IEC 61131-3 Structured Text. Public so a vendor's format can name it for an extension
+    /// this catalog does not map, without the catalog learning that vendor's extensions
+    /// (<c>IPlcProjectFormat.SyntaxFor</c>).
+    /// </summary>
+    public static readonly SyntaxLanguage StructuredText = new()
     {
         Name = "Structured Text",
         // IEC 61131-3 is case-insensitive.
@@ -140,7 +145,8 @@ public static class LanguageCatalog
         },
     };
 
-    private static readonly SyntaxLanguage Xml = new()
+    /// <summary>XML. Public for the same reason as <see cref="StructuredText"/>.</summary>
+    public static readonly SyntaxLanguage Xml = new()
     {
         Name = "XML",
         BlockComments = [("<!--", "-->")],

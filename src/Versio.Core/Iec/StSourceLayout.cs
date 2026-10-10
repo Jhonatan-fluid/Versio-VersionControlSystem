@@ -27,6 +27,28 @@ public sealed record SourceCodeLine(int Number, string Text, int FileLine) : Sou
 public sealed record SourceDivider(string Label, string? FileText) : SourceRow;
 
 /// <summary>
+/// Where a source file's parts are, by zero-based line, when the file says so in its own syntax
+/// rather than with Versio's delimiter.
+/// </summary>
+/// <param name="HeaderEnd">
+/// The first line after a header the vendor writes for itself (an object id, say), which the IDE
+/// does not show. Zero when there is none.
+/// </param>
+/// <param name="DeclarationEnd">The first line after the declaration.</param>
+/// <param name="BodyEnd">
+/// The first line after the code body, or null when the object has no body (a type, a global
+/// variable list). Lines from here on (a closing keyword alone on its line) are not drawn, as
+/// the IDE does not draw them.
+/// </param>
+/// <remarks>
+/// A vendor whose own files hold declaration and body with no divider between them (CODESYS
+/// File-Based Storage does) is the only one who can say where the split is. The format answers
+/// with this, and <see cref="StSourceLayout.Lay(string?, SourceSections?)"/> draws it the way it
+/// draws Versio's own delimiter.
+/// </remarks>
+public sealed record SourceSections(int HeaderEnd, int DeclarationEnd, int? BodyEnd);
+
+/// <summary>
 /// Lays a <see cref="StTextCodec"/> payload out as the two panes the IDE shows: the
 /// declaration, and the implementation numbered from 1 again.
 /// </summary>
@@ -88,6 +110,43 @@ public static class StSourceLayout
     /// ending in a newline has as many lines as it has newlines; splitting on them yields one
     /// more, and the old view numbered that empty tail as a line of its own.
     /// </summary>
+    /// <summary>
+    /// A file laid out by the sections its vendor's format found, or as <see cref="Lay(string?)"/>
+    /// does when there are none.
+    /// </summary>
+    /// <remarks>
+    /// The same rows a Versio <c>.st</c> gets: a Declaration divider, the declaration numbered
+    /// from 1, an Implementation divider, and the body numbered from 1 again, with blank edges
+    /// left out. The header and anything after the body are not drawn; the Raw tab still has them.
+    /// An object with no body is drawn as its declaration alone, with no divider, which is how a
+    /// type with no delimiter has always been drawn here.
+    /// </remarks>
+    public static IReadOnlyList<SourceRow> Lay(string? content, SourceSections? sections)
+    {
+        if (sections is null)
+        {
+            return Lay(content);
+        }
+
+        var lines = SplitLines(content);
+        var header = Math.Clamp(sections.HeaderEnd, 0, lines.Count);
+        var declarationEnd = Math.Clamp(sections.DeclarationEnd, header, lines.Count);
+
+        var rows = new List<SourceRow>(lines.Count + 2);
+        if (sections.BodyEnd is not { } end)
+        {
+            AddSection(rows, lines, header, declarationEnd);
+            return rows;
+        }
+
+        var bodyEnd = Math.Clamp(end, declarationEnd, lines.Count);
+        rows.Add(new SourceDivider(DeclarationLabel, FileText: null));
+        AddSection(rows, lines, header, declarationEnd);
+        rows.Add(new SourceDivider(ImplementationLabel, FileText: null));
+        AddSection(rows, lines, declarationEnd, bodyEnd);
+        return rows;
+    }
+
     private static List<string> SplitLines(string? content)
     {
         var lines = (content ?? string.Empty).Replace("\r\n", "\n").Split('\n').ToList();

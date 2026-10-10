@@ -122,6 +122,14 @@ public static class PlcFormats
             f => f.SourceProjectExtensions.Contains(extension, StringComparer.OrdinalIgnoreCase));
     }
 
+    /// <summary>The first registered format's sections for a file, or null when none claims it.</summary>
+    public static Iec.SourceSections? SectionsFor(string relativePath, string content) =>
+        All.Select(f => f.SourceSections(relativePath, content)).FirstOrDefault(s => s is not null);
+
+    /// <summary>The first registered format's language for a file, or null to leave it to the catalog.</summary>
+    public static Diff.SyntaxLanguage? SyntaxFor(string relativePath) =>
+        All.Select(f => f.SyntaxFor(relativePath)).FirstOrDefault(s => s is not null);
+
     /// <summary>The format for a vendor, or null when none is registered.</summary>
     public static IPlcProjectFormat? ForVendor(PlcVendor vendor) =>
         All.FirstOrDefault(f => f.Vendor == vendor);

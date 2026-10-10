@@ -336,6 +336,31 @@ public interface IPlcProjectFormat
     Iec.Ladder.LadderDocument? TryParseLadder(string relativePath, string content) => null;
 
     /// <summary>
+    /// Where this vendor's own source file has its header, declaration and body, or null when the
+    /// file is not one of this vendor's or carries Versio's delimiter.
+    /// </summary>
+    /// <remarks>
+    /// Default null, and every file Versio exports keeps its layout: a Versio <c>.st</c> says
+    /// where its body starts with <see cref="Iec.StTextCodec.ImplementationDelimiter"/>. A vendor
+    /// that saves its own readable files (a source project, <see cref="SourceProjectExtensions"/>)
+    /// writes declaration and body with no divider between them, and only that vendor's syntax
+    /// says where one ends. Handed the path and the content, like the other render hooks, so the
+    /// format stays pure.
+    /// </remarks>
+    Iec.SourceSections? SourceSections(string relativePath, string content) => null;
+
+    /// <summary>
+    /// How to highlight one of this vendor's files whose extension the neutral catalog does not
+    /// know, or null to leave it to the catalog.
+    /// </summary>
+    /// <remarks>
+    /// A vendor's own extensions (a global variable list saved as <c>.gvl</c>, say) are its
+    /// vocabulary. Mapping them in <see cref="Diff.LanguageCatalog"/> would put one vendor's
+    /// file names in neutral code, so the vendor names the language instead.
+    /// </remarks>
+    Diff.SyntaxLanguage? SyntaxFor(string relativePath) => null;
+
+    /// <summary>
     /// The zero-based lines of a block's code body in its readable source - from the first
     /// line after the declaration to the line before the block's closing keyword (end
     /// exclusive) - or null when the format cannot say.
