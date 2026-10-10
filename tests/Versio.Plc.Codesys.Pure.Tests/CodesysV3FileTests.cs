@@ -12,7 +12,7 @@ public sealed class CodesysV3FileTests
         const string File = "__V3_META__\n{\n\t\"objectGuid\": \"x\"\n}\n__V3_CONTENT__\n<?xml version=\"1.0\"?>\n<Single />";
 
         Assert.Equal("<?xml version=\"1.0\"?>\n<Single />", CodesysV3File.Content(File));
-        Assert.Equal("<?xml version=\"1.0\"?>\n<Single />", CodesysV3File.Content("﻿" + File));
+        Assert.Equal("<?xml version=\"1.0\"?>\n<Single />", CodesysV3File.Content("\uFEFF" + File));
     }
 
     [Theory]
