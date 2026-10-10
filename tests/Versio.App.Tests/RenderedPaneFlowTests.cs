@@ -215,6 +215,62 @@ public sealed class RenderedPaneFlowTests
     }
 
     [Fact]
+    public async Task A_changed_library_manager_marks_its_table_with_what_moved()
+    {
+        // The owner, 2026-10-10: the visualisation libraries moved 4.9 → 4.10, Raw and the tree
+        // both said so, and this table drew the new file with nothing marked. "That's the whole
+        // point of this tool." Deleting the MarkCatalogChangesAsync call in ShowNode turns this red.
+        using var repo = new TempRepo();
+        GivenATrackedProject(repo);
+        repo.Git("add .");
+        repo.Git("commit -qm exported");
+
+        var yaml = Path.Combine(repo.Path, "plc", "Machine", "App", "Library Manager.libraries.yaml");
+        File.WriteAllText(yaml, File.ReadAllText(yaml)
+            .Replace("Standard, * (System)", "Standard, 3.5.22.0 (System)", StringComparison.Ordinal)
+            + "  - name: \"#Util\"\n    placeholder: Util\n    defaultResolution: \"Util, * (System)\"\n");
+
+        using var shell = Shell();
+        await shell.OpenAsync(repo.Path);
+        shell.Sync.SelectedNode = await Row(shell, "Library Manager");
+
+        await Eventually.Until(
+            () => shell.RenderedContent is LibraryCatalog { HasChangeSummary: true },
+            "the library table was marked");
+
+        var catalog = Assert.IsType<LibraryCatalog>(shell.RenderedContent);
+        Assert.Equal("Since the last commit: 1 changed, 1 added - marked below.", catalog.ChangeSummary);
+
+        var standard = Assert.Single(catalog.References, r => r.Name == "#Standard");
+        Assert.True(standard.Mark.IsModified);
+        Assert.Equal("Standard, * (System)", standard.ResolutionBefore);
+        Assert.True(Assert.Single(catalog.References, r => r.Name == "#Util").Mark.IsAdded);
+    }
+
+    [Fact]
+    public async Task A_changed_task_configuration_marks_its_table()
+    {
+        using var repo = new TempRepo();
+        GivenATrackedProject(repo);
+        repo.Git("add .");
+        repo.Git("commit -qm exported");
+
+        var yaml = Path.Combine(repo.Path, "plc", "Machine", "App", "Task Configuration.tasks.yaml");
+        File.WriteAllText(yaml, File.ReadAllText(yaml).Replace("t#20ms", "t#10ms", StringComparison.Ordinal));
+
+        using var shell = Shell();
+        await shell.OpenAsync(repo.Path);
+        shell.Sync.SelectedNode = await Row(shell, "Task Configuration");
+
+        await Eventually.Until(
+            () => shell.RenderedContent is TaskCatalog { HasChangeSummary: true },
+            "the task table was marked");
+
+        var task = Assert.Single(Assert.IsType<TaskCatalog>(shell.RenderedContent).Tasks);
+        Assert.Equal("t#20ms", task.ScheduleBefore);
+    }
+
+    [Fact]
     public async Task A_clean_file_shows_itself_and_says_nothing_changed()
     {
         // The correction the owner asked for by name: a clean object used to render as a

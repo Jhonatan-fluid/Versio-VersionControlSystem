@@ -43,6 +43,94 @@
                 <Setter Property="Padding" Value="8,5" />
                 <Setter Property="SnapsToDevicePixels" Value="True" />
             </Style>
+
+            <!--
+                Catalog change marks: the library, task and device tables, each row carrying a
+                Core RowMark. The member table's marks, as styles, because three tables repeat
+                them and a fourth will. Window.Resources for the reason MemberTableCell is.
+            -->
+            <Style x:Key="CatalogRowTint" TargetType="Rectangle">
+                <Setter Property="IsHitTestVisible" Value="False" />
+                <Setter Property="Visibility" Value="Collapsed" />
+                <Style.Triggers>
+                    <DataTrigger Binding="{Binding Mark.IsAdded}" Value="True">
+                        <Setter Property="Visibility" Value="Visible" />
+                        <Setter Property="Fill" Value="{DynamicResource Brush.Diff.AddedBg}" />
+                    </DataTrigger>
+                    <DataTrigger Binding="{Binding Mark.IsModified}" Value="True">
+                        <Setter Property="Visibility" Value="Visible" />
+                        <Setter Property="Fill" Value="{DynamicResource Brush.Status.Modified}" />
+                        <Setter Property="Opacity" Value="0.22" />
+                    </DataTrigger>
+                    <DataTrigger Binding="{Binding Mark.IsRemoved}" Value="True">
+                        <Setter Property="Visibility" Value="Visible" />
+                        <Setter Property="Fill" Value="{DynamicResource Brush.Diff.DeletedBg}" />
+                    </DataTrigger>
+                </Style.Triggers>
+            </Style>
+            <!-- The tree's own A / M / D, so the kind of change does not rest on colour alone. -->
+            <Style x:Key="CatalogChangeGlyph" TargetType="TextBlock">
+                <Setter Property="Width" Value="16" />
+                <Setter Property="DockPanel.Dock" Value="Left" />
+                <Setter Property="Text" Value="{Binding Mark.Glyph}" />
+                <Setter Property="ToolTip" Value="{Binding Mark.Label}" />
+                <Setter Property="AutomationProperties.Name" Value="Change since the last commit" />
+                <Setter Property="FontFamily" Value="{DynamicResource Font.Mono}" />
+                <Setter Property="FontSize" Value="{DynamicResource Font.Size.Caption}" />
+                <Setter Property="FontWeight" Value="{DynamicResource Font.Weight.Semibold}" />
+                <Style.Triggers>
+                    <DataTrigger Binding="{Binding Mark.IsAdded}" Value="True">
+                        <Setter Property="Foreground" Value="{DynamicResource Brush.Status.Added}" />
+                    </DataTrigger>
+                    <DataTrigger Binding="{Binding Mark.IsModified}" Value="True">
+                        <Setter Property="Foreground" Value="{DynamicResource Brush.Status.Modified}" />
+                    </DataTrigger>
+                    <DataTrigger Binding="{Binding Mark.IsRemoved}" Value="True">
+                        <Setter Property="Foreground" Value="{DynamicResource Brush.Status.Deleted}" />
+                    </DataTrigger>
+                </Style.Triggers>
+            </Style>
+            <!-- The row's name: struck through when deleted, and on a changed or deleted row
+                 its hover lists every field that moved - the ones the table has no column for. -->
+            <Style x:Key="CatalogRowName" TargetType="TextBlock">
+                <Setter Property="TextTrimming" Value="CharacterEllipsis" />
+                <Setter Property="FontFamily" Value="{DynamicResource Font.UI}" />
+                <Setter Property="FontSize" Value="{DynamicResource Font.Size.Caption}" />
+                <Setter Property="Foreground" Value="{DynamicResource Brush.Text.Primary}" />
+                <Style.Triggers>
+                    <DataTrigger Binding="{Binding Mark.IsModified}" Value="True">
+                        <Setter Property="ToolTip" Value="{Binding Mark.Was}" />
+                    </DataTrigger>
+                    <DataTrigger Binding="{Binding Mark.IsRemoved}" Value="True">
+                        <Setter Property="ToolTip" Value="{Binding Mark.Was}" />
+                        <Setter Property="TextDecorations" Value="Strikethrough" />
+                    </DataTrigger>
+                </Style.Triggers>
+            </Style>
+            <!-- Old → new in a cell, the old half struck through; collapsed unless the cell moved. -->
+            <Style x:Key="CatalogBefore" TargetType="TextBlock">
+                <Setter Property="DockPanel.Dock" Value="Left" />
+                <Setter Property="TextDecorations" Value="Strikethrough" />
+                <Setter Property="FontFamily" Value="{DynamicResource Font.Mono}" />
+                <Setter Property="FontSize" Value="{DynamicResource Font.Size.Caption}" />
+                <Setter Property="Foreground" Value="{DynamicResource Brush.Text.Disabled}" />
+            </Style>
+            <Style x:Key="CatalogArrow" TargetType="TextBlock">
+                <Setter Property="DockPanel.Dock" Value="Left" />
+                <Setter Property="Text" Value=" → " />
+                <Setter Property="FontSize" Value="{DynamicResource Font.Size.Caption}" />
+                <Setter Property="Foreground" Value="{DynamicResource Brush.Status.Modified}" />
+            </Style>
+            <Style x:Key="CatalogChangeSummary" TargetType="TextBlock">
+                <Setter Property="AutomationProperties.Name" Value="Changes since the last commit" />
+                <Setter Property="TextWrapping" Value="Wrap" />
+                <Setter Property="Margin" Value="0,-4,0,8" />
+                <Setter Property="FontFamily" Value="{DynamicResource Font.UI}" />
+                <Setter Property="FontSize" Value="{DynamicResource Font.Size.Caption}" />
+                <Setter Property="Foreground" Value="{DynamicResource Brush.Status.Modified}" />
+                <Setter Property="Text" Value="{Binding ChangeSummary}" />
+                <Setter Property="Visibility" Value="{Binding HasChangeSummary, Converter={StaticResource BoolToVisibility}}" />
+            </Style>
         </ResourceDictionary>
     </Window.Resources>
 
@@ -966,10 +1054,20 @@
                                 </Grid>
                             </DataTemplate>
 
+                            <!--
+                                The three catalog tables mark what changed since the last commit
+                                (owner, 2026-10-10: "the rendered view needs to show what changed").
+                                Each row carries a RowMark from CatalogDiff: the row tinted in the
+                                diff's colours, the tree's A / M / D beside the name, a moved cell
+                                drawn old → new, a deleted row struck through where it was, and the
+                                name's hover listing every field that moved. Auto columns in a
+                                shared-size scope, because a cell drawn old → new is twice as wide
+                                as the fixed widths these tables had.
+                            -->
                             <DataTemplate DataType="{x:Type projects:LibraryCatalog}">
                                 <ScrollViewer VerticalScrollBarVisibility="Auto"
                                               HorizontalScrollBarVisibility="Auto">
-                                    <StackPanel Margin="8,4">
+                                    <StackPanel Margin="8,4" Grid.IsSharedSizeScope="True">
                                         <TextBlock Text="{Binding Manager}"
                                                    FontFamily="{DynamicResource Font.UI}"
                                                    FontSize="{DynamicResource Font.Size.Body}"
@@ -980,14 +1078,15 @@
                                                    FontFamily="{DynamicResource Font.UI}"
                                                    FontSize="{DynamicResource Font.Size.Caption}"
                                                    Foreground="{DynamicResource Brush.Text.Disabled}" />
+                                        <TextBlock Style="{StaticResource CatalogChangeSummary}" />
                                         <Grid Margin="0,0,0,4">
                                             <Grid.ColumnDefinitions>
-                                                <ColumnDefinition Width="230" />
-                                                <ColumnDefinition Width="250" />
-                                                <ColumnDefinition Width="150" />
-                                                <ColumnDefinition Width="110" />
+                                                <ColumnDefinition Width="Auto" SharedSizeGroup="LibName" MinWidth="250" />
+                                                <ColumnDefinition Width="Auto" SharedSizeGroup="LibResolution" MinWidth="250" />
+                                                <ColumnDefinition Width="Auto" SharedSizeGroup="LibNamespace" MinWidth="150" />
+                                                <ColumnDefinition Width="Auto" SharedSizeGroup="LibKind" MinWidth="110" />
                                             </Grid.ColumnDefinitions>
-                                            <TextBlock Text="NAME" Style="{StaticResource SectionLabel}" />
+                                            <TextBlock Margin="16,0,0,0" Text="NAME" Style="{StaticResource SectionLabel}" />
                                             <TextBlock Grid.Column="1" Text="RESOLUTION" Style="{StaticResource SectionLabel}" />
                                             <TextBlock Grid.Column="2" Text="NAMESPACE" Style="{StaticResource SectionLabel}" />
                                             <TextBlock Grid.Column="3" Text="KIND" Style="{StaticResource SectionLabel}" />
@@ -995,45 +1094,49 @@
                                         <ItemsControl ItemsSource="{Binding References}">
                                             <ItemsControl.ItemTemplate>
                                                 <DataTemplate>
-                                                    <Grid Margin="0,2">
+                                                    <Grid>
                                                         <Grid.ColumnDefinitions>
-                                                            <ColumnDefinition Width="230" />
-                                                            <ColumnDefinition Width="250" />
-                                                            <ColumnDefinition Width="150" />
-                                                            <ColumnDefinition Width="110" />
+                                                            <ColumnDefinition Width="Auto" SharedSizeGroup="LibName" MinWidth="250" />
+                                                            <ColumnDefinition Width="Auto" SharedSizeGroup="LibResolution" MinWidth="250" />
+                                                            <ColumnDefinition Width="Auto" SharedSizeGroup="LibNamespace" MinWidth="150" />
+                                                            <ColumnDefinition Width="Auto" SharedSizeGroup="LibKind" MinWidth="110" />
                                                         </Grid.ColumnDefinitions>
-                                                        <TextBlock Text="{Binding Name}"
-                                                                   TextTrimming="CharacterEllipsis"
-                                                                   ToolTip="{Binding Name}"
-                                                                   FontFamily="{DynamicResource Font.UI}"
-                                                                   FontSize="{DynamicResource Font.Size.Caption}"
-                                                                   Foreground="{DynamicResource Brush.Text.Primary}" />
-                                                        <TextBlock Grid.Column="1" Text="{Binding DisplayVersion}"
-                                                                   TextTrimming="CharacterEllipsis"
-                                                                   ToolTip="{Binding DisplayVersion}"
-                                                                   FontFamily="{DynamicResource Font.Mono}"
-                                                                   FontSize="{DynamicResource Font.Size.Caption}"
-                                                                   Foreground="{DynamicResource Brush.Text.Secondary}" />
-                                                        <TextBlock Grid.Column="2" Text="{Binding Namespace}"
-                                                                   TextTrimming="CharacterEllipsis"
-                                                                   FontFamily="{DynamicResource Font.Mono}"
-                                                                   FontSize="{DynamicResource Font.Size.Caption}"
-                                                                   Foreground="{DynamicResource Brush.Text.Disabled}" />
-                                                        <TextBlock Grid.Column="3"
-                                                                   FontFamily="{DynamicResource Font.UI}"
-                                                                   FontSize="{DynamicResource Font.Size.Caption}"
-                                                                   Foreground="{DynamicResource Brush.Text.Disabled}">
-                                                            <TextBlock.Style>
-                                                                <Style TargetType="TextBlock">
-                                                                    <Setter Property="Text" Value="chosen" />
-                                                                    <Style.Triggers>
-                                                                        <DataTrigger Binding="{Binding SystemLibrary}" Value="True">
-                                                                            <Setter Property="Text" Value="system" />
-                                                                        </DataTrigger>
-                                                                    </Style.Triggers>
-                                                                </Style>
-                                                            </TextBlock.Style>
-                                                        </TextBlock>
+                                                        <Rectangle Grid.ColumnSpan="4" Style="{StaticResource CatalogRowTint}" />
+                                                        <DockPanel Margin="0,2,12,2">
+                                                            <TextBlock Style="{StaticResource CatalogChangeGlyph}" />
+                                                            <TextBlock Text="{Binding Name}" Style="{StaticResource CatalogRowName}" />
+                                                        </DockPanel>
+                                                        <DockPanel Grid.Column="1" Margin="0,2,12,2">
+                                                            <TextBlock Text="{Binding ResolutionBefore}" Style="{StaticResource CatalogBefore}"
+                                                                       Visibility="{Binding ResolutionChanged, Converter={StaticResource BoolToVisibility}}" />
+                                                            <TextBlock Style="{StaticResource CatalogArrow}"
+                                                                       Visibility="{Binding ResolutionChanged, Converter={StaticResource BoolToVisibility}}" />
+                                                            <TextBlock Text="{Binding DisplayVersion}"
+                                                                       ToolTip="{Binding DisplayVersion}"
+                                                                       FontFamily="{DynamicResource Font.Mono}"
+                                                                       FontSize="{DynamicResource Font.Size.Caption}"
+                                                                       Foreground="{DynamicResource Brush.Text.Secondary}" />
+                                                        </DockPanel>
+                                                        <DockPanel Grid.Column="2" Margin="0,2,12,2">
+                                                            <TextBlock Text="{Binding NamespaceBefore}" Style="{StaticResource CatalogBefore}"
+                                                                       Visibility="{Binding NamespaceChanged, Converter={StaticResource BoolToVisibility}}" />
+                                                            <TextBlock Style="{StaticResource CatalogArrow}"
+                                                                       Visibility="{Binding NamespaceChanged, Converter={StaticResource BoolToVisibility}}" />
+                                                            <TextBlock Text="{Binding Namespace}"
+                                                                       FontFamily="{DynamicResource Font.Mono}"
+                                                                       FontSize="{DynamicResource Font.Size.Caption}"
+                                                                       Foreground="{DynamicResource Brush.Text.Disabled}" />
+                                                        </DockPanel>
+                                                        <DockPanel Grid.Column="3" Margin="0,2,12,2">
+                                                            <TextBlock Text="{Binding KindBefore}" Style="{StaticResource CatalogBefore}"
+                                                                       Visibility="{Binding KindChanged, Converter={StaticResource BoolToVisibility}}" />
+                                                            <TextBlock Style="{StaticResource CatalogArrow}"
+                                                                       Visibility="{Binding KindChanged, Converter={StaticResource BoolToVisibility}}" />
+                                                            <TextBlock Text="{Binding Kind}"
+                                                                       FontFamily="{DynamicResource Font.UI}"
+                                                                       FontSize="{DynamicResource Font.Size.Caption}"
+                                                                       Foreground="{DynamicResource Brush.Text.Disabled}" />
+                                                        </DockPanel>
                                                     </Grid>
                                                 </DataTemplate>
                                             </ItemsControl.ItemTemplate>
@@ -1045,7 +1148,7 @@
                             <DataTemplate DataType="{x:Type projects:TaskCatalog}">
                                 <ScrollViewer VerticalScrollBarVisibility="Auto"
                                               HorizontalScrollBarVisibility="Auto">
-                                    <StackPanel Margin="8,4">
+                                    <StackPanel Margin="8,4" Grid.IsSharedSizeScope="True">
                                         <TextBlock Text="{Binding Configuration}"
                                                    FontFamily="{DynamicResource Font.UI}"
                                                    FontSize="{DynamicResource Font.Size.Body}"
@@ -1056,15 +1159,16 @@
                                                    FontFamily="{DynamicResource Font.UI}"
                                                    FontSize="{DynamicResource Font.Size.Caption}"
                                                    Foreground="{DynamicResource Brush.Text.Disabled}" />
+                                        <TextBlock Style="{StaticResource CatalogChangeSummary}" />
                                         <Grid Margin="0,0,0,4">
                                             <Grid.ColumnDefinitions>
-                                                <ColumnDefinition Width="170" />
-                                                <ColumnDefinition Width="110" />
-                                                <ColumnDefinition Width="70" />
-                                                <ColumnDefinition Width="90" />
+                                                <ColumnDefinition Width="Auto" SharedSizeGroup="TaskName" MinWidth="186" />
+                                                <ColumnDefinition Width="Auto" SharedSizeGroup="TaskInterval" MinWidth="110" />
+                                                <ColumnDefinition Width="Auto" SharedSizeGroup="TaskPrio" MinWidth="70" />
+                                                <ColumnDefinition Width="Auto" SharedSizeGroup="TaskWatchdog" MinWidth="90" />
                                                 <ColumnDefinition Width="*" />
                                             </Grid.ColumnDefinitions>
-                                            <TextBlock Text="TASK" Style="{StaticResource SectionLabel}" />
+                                            <TextBlock Margin="16,0,0,0" Text="TASK" Style="{StaticResource SectionLabel}" />
                                             <TextBlock Grid.Column="1" Text="INTERVAL" Style="{StaticResource SectionLabel}" />
                                             <TextBlock Grid.Column="2" Text="PRIO" Style="{StaticResource SectionLabel}" />
                                             <TextBlock Grid.Column="3" Text="WATCHDOG" Style="{StaticResource SectionLabel}" />
@@ -1073,48 +1177,61 @@
                                         <ItemsControl ItemsSource="{Binding Tasks}">
                                             <ItemsControl.ItemTemplate>
                                                 <DataTemplate>
-                                                    <Grid Margin="0,2">
+                                                    <Grid>
                                                         <Grid.ColumnDefinitions>
-                                                            <ColumnDefinition Width="170" />
-                                                            <ColumnDefinition Width="110" />
-                                                            <ColumnDefinition Width="70" />
-                                                            <ColumnDefinition Width="90" />
+                                                            <ColumnDefinition Width="Auto" SharedSizeGroup="TaskName" MinWidth="186" />
+                                                            <ColumnDefinition Width="Auto" SharedSizeGroup="TaskInterval" MinWidth="110" />
+                                                            <ColumnDefinition Width="Auto" SharedSizeGroup="TaskPrio" MinWidth="70" />
+                                                            <ColumnDefinition Width="Auto" SharedSizeGroup="TaskWatchdog" MinWidth="90" />
                                                             <ColumnDefinition Width="*" />
                                                         </Grid.ColumnDefinitions>
-                                                        <TextBlock Text="{Binding Name}"
-                                                                   TextTrimming="CharacterEllipsis"
-                                                                   FontFamily="{DynamicResource Font.UI}"
-                                                                   FontSize="{DynamicResource Font.Size.Caption}"
-                                                                   Foreground="{DynamicResource Brush.Text.Primary}" />
-                                                        <TextBlock Grid.Column="1" Text="{Binding DisplaySchedule}"
-                                                                   FontFamily="{DynamicResource Font.Mono}"
-                                                                   FontSize="{DynamicResource Font.Size.Caption}"
-                                                                   Foreground="{DynamicResource Brush.Text.Secondary}" />
-                                                        <TextBlock Grid.Column="2" Text="{Binding Priority}"
-                                                                   FontFamily="{DynamicResource Font.Mono}"
-                                                                   FontSize="{DynamicResource Font.Size.Caption}"
-                                                                   Foreground="{DynamicResource Brush.Text.Secondary}" />
-                                                        <TextBlock Grid.Column="3"
-                                                                   FontFamily="{DynamicResource Font.UI}"
-                                                                   FontSize="{DynamicResource Font.Size.Caption}"
-                                                                   Foreground="{DynamicResource Brush.Text.Disabled}">
-                                                            <TextBlock.Style>
-                                                                <Style TargetType="TextBlock">
-                                                                    <Setter Property="Text" Value="off" />
-                                                                    <Style.Triggers>
-                                                                        <DataTrigger Binding="{Binding WatchdogEnabled}" Value="True">
-                                                                            <Setter Property="Text" Value="on" />
-                                                                        </DataTrigger>
-                                                                    </Style.Triggers>
-                                                                </Style>
-                                                            </TextBlock.Style>
-                                                        </TextBlock>
-                                                        <TextBlock Grid.Column="4" Text="{Binding CallsSummary}"
-                                                                   TextTrimming="CharacterEllipsis"
-                                                                   ToolTip="{Binding CallsSummary}"
-                                                                   FontFamily="{DynamicResource Font.Mono}"
-                                                                   FontSize="{DynamicResource Font.Size.Caption}"
-                                                                   Foreground="{DynamicResource Brush.Text.Secondary}" />
+                                                        <Rectangle Grid.ColumnSpan="5" Style="{StaticResource CatalogRowTint}" />
+                                                        <DockPanel Margin="0,2,12,2">
+                                                            <TextBlock Style="{StaticResource CatalogChangeGlyph}" />
+                                                            <TextBlock Text="{Binding Name}" Style="{StaticResource CatalogRowName}" />
+                                                        </DockPanel>
+                                                        <DockPanel Grid.Column="1" Margin="0,2,12,2">
+                                                            <TextBlock Text="{Binding ScheduleBefore}" Style="{StaticResource CatalogBefore}"
+                                                                       Visibility="{Binding ScheduleChanged, Converter={StaticResource BoolToVisibility}}" />
+                                                            <TextBlock Style="{StaticResource CatalogArrow}"
+                                                                       Visibility="{Binding ScheduleChanged, Converter={StaticResource BoolToVisibility}}" />
+                                                            <TextBlock Text="{Binding DisplaySchedule}"
+                                                                       FontFamily="{DynamicResource Font.Mono}"
+                                                                       FontSize="{DynamicResource Font.Size.Caption}"
+                                                                       Foreground="{DynamicResource Brush.Text.Secondary}" />
+                                                        </DockPanel>
+                                                        <DockPanel Grid.Column="2" Margin="0,2,12,2">
+                                                            <TextBlock Text="{Binding PriorityBefore}" Style="{StaticResource CatalogBefore}"
+                                                                       Visibility="{Binding PriorityChanged, Converter={StaticResource BoolToVisibility}}" />
+                                                            <TextBlock Style="{StaticResource CatalogArrow}"
+                                                                       Visibility="{Binding PriorityChanged, Converter={StaticResource BoolToVisibility}}" />
+                                                            <TextBlock Text="{Binding Priority}"
+                                                                       FontFamily="{DynamicResource Font.Mono}"
+                                                                       FontSize="{DynamicResource Font.Size.Caption}"
+                                                                       Foreground="{DynamicResource Brush.Text.Secondary}" />
+                                                        </DockPanel>
+                                                        <DockPanel Grid.Column="3" Margin="0,2,12,2">
+                                                            <TextBlock Text="{Binding WatchdogBefore}" Style="{StaticResource CatalogBefore}"
+                                                                       Visibility="{Binding WatchdogChanged, Converter={StaticResource BoolToVisibility}}" />
+                                                            <TextBlock Style="{StaticResource CatalogArrow}"
+                                                                       Visibility="{Binding WatchdogChanged, Converter={StaticResource BoolToVisibility}}" />
+                                                            <TextBlock Text="{Binding WatchdogDisplay}"
+                                                                       FontFamily="{DynamicResource Font.UI}"
+                                                                       FontSize="{DynamicResource Font.Size.Caption}"
+                                                                       Foreground="{DynamicResource Brush.Text.Disabled}" />
+                                                        </DockPanel>
+                                                        <DockPanel Grid.Column="4" Margin="0,2,0,2">
+                                                            <TextBlock Text="{Binding CallsBefore}" Style="{StaticResource CatalogBefore}"
+                                                                       Visibility="{Binding CallsChanged, Converter={StaticResource BoolToVisibility}}" />
+                                                            <TextBlock Style="{StaticResource CatalogArrow}"
+                                                                       Visibility="{Binding CallsChanged, Converter={StaticResource BoolToVisibility}}" />
+                                                            <TextBlock Text="{Binding CallsSummary}"
+                                                                       TextTrimming="CharacterEllipsis"
+                                                                       ToolTip="{Binding CallsSummary}"
+                                                                       FontFamily="{DynamicResource Font.Mono}"
+                                                                       FontSize="{DynamicResource Font.Size.Caption}"
+                                                                       Foreground="{DynamicResource Brush.Text.Secondary}" />
+                                                        </DockPanel>
                                                     </Grid>
                                                 </DataTemplate>
                                             </ItemsControl.ItemTemplate>
@@ -1141,7 +1258,7 @@
                             <DataTemplate DataType="{x:Type projects:DeviceCatalog}">
                                 <ScrollViewer VerticalScrollBarVisibility="Auto"
                                               HorizontalScrollBarVisibility="Auto">
-                                    <StackPanel Margin="8,4">
+                                    <StackPanel Margin="8,4" Grid.IsSharedSizeScope="True">
                                         <TextBlock Text="{Binding Name}"
                                                    FontFamily="{DynamicResource Font.UI}"
                                                    FontSize="{DynamicResource Font.Size.Body}"
@@ -1152,42 +1269,54 @@
                                                    FontFamily="{DynamicResource Font.UI}"
                                                    FontSize="{DynamicResource Font.Size.Caption}"
                                                    Foreground="{DynamicResource Brush.Text.Disabled}" />
+                                        <TextBlock Style="{StaticResource CatalogChangeSummary}" />
                                         <Grid Margin="0,0,0,4">
                                             <Grid.ColumnDefinitions>
-                                                <ColumnDefinition Width="220" />
-                                                <ColumnDefinition Width="80" />
+                                                <ColumnDefinition Width="Auto" SharedSizeGroup="DevName" MinWidth="236" />
+                                                <ColumnDefinition Width="Auto" SharedSizeGroup="DevId" MinWidth="80" />
                                                 <ColumnDefinition Width="*" />
                                             </Grid.ColumnDefinitions>
-                                            <TextBlock Text="CONNECTOR" Style="{StaticResource SectionLabel}" />
+                                            <TextBlock Margin="16,0,0,0" Text="CONNECTOR" Style="{StaticResource SectionLabel}" />
                                             <TextBlock Grid.Column="1" Text="ID" Style="{StaticResource SectionLabel}" />
                                             <TextBlock Grid.Column="2" Text="PARAMETERS" Style="{StaticResource SectionLabel}" />
                                         </Grid>
                                         <ItemsControl ItemsSource="{Binding Connectors}">
                                             <ItemsControl.ItemTemplate>
                                                 <DataTemplate>
-                                                    <Grid Margin="0,2">
+                                                    <Grid>
                                                         <Grid.ColumnDefinitions>
-                                                            <ColumnDefinition Width="220" />
-                                                            <ColumnDefinition Width="80" />
+                                                            <ColumnDefinition Width="Auto" SharedSizeGroup="DevName" MinWidth="236" />
+                                                            <ColumnDefinition Width="Auto" SharedSizeGroup="DevId" MinWidth="80" />
                                                             <ColumnDefinition Width="*" />
                                                         </Grid.ColumnDefinitions>
-                                                        <TextBlock Text="{Binding DisplayName}"
-                                                                   TextTrimming="CharacterEllipsis"
-                                                                   FontFamily="{DynamicResource Font.UI}"
-                                                                   FontSize="{DynamicResource Font.Size.Caption}"
-                                                                   Foreground="{DynamicResource Brush.Text.Primary}" />
-                                                        <TextBlock Grid.Column="1" Text="{Binding ConnectorId}"
-                                                                   FontFamily="{DynamicResource Font.Mono}"
-                                                                   FontSize="{DynamicResource Font.Size.Caption}"
-                                                                   Foreground="{DynamicResource Brush.Text.Secondary}" />
-                                                        <TextBlock Grid.Column="2"
-                                                                   FontFamily="{DynamicResource Font.Mono}"
-                                                                   FontSize="{DynamicResource Font.Size.Caption}"
-                                                                   Foreground="{DynamicResource Brush.Text.Secondary}">
-                                                            <TextBlock.Text>
-                                                                <Binding Path="Parameters.Count" StringFormat="{}{0} param(s)" />
-                                                            </TextBlock.Text>
-                                                        </TextBlock>
+                                                        <Rectangle Grid.ColumnSpan="3" Style="{StaticResource CatalogRowTint}" />
+                                                        <!-- A changed parameter has no column of its own: the
+                                                             count moves only when one comes or goes, so the
+                                                             name's hover is where a changed value says old → new. -->
+                                                        <DockPanel Margin="0,2,12,2">
+                                                            <TextBlock Style="{StaticResource CatalogChangeGlyph}" />
+                                                            <TextBlock Text="{Binding DisplayName}" Style="{StaticResource CatalogRowName}" />
+                                                        </DockPanel>
+                                                        <DockPanel Grid.Column="1" Margin="0,2,12,2">
+                                                            <TextBlock Text="{Binding ConnectorIdBefore}" Style="{StaticResource CatalogBefore}"
+                                                                       Visibility="{Binding ConnectorIdChanged, Converter={StaticResource BoolToVisibility}}" />
+                                                            <TextBlock Style="{StaticResource CatalogArrow}"
+                                                                       Visibility="{Binding ConnectorIdChanged, Converter={StaticResource BoolToVisibility}}" />
+                                                            <TextBlock Text="{Binding ConnectorId}"
+                                                                       FontFamily="{DynamicResource Font.Mono}"
+                                                                       FontSize="{DynamicResource Font.Size.Caption}"
+                                                                       Foreground="{DynamicResource Brush.Text.Secondary}" />
+                                                        </DockPanel>
+                                                        <DockPanel Grid.Column="2" Margin="0,2,0,2">
+                                                            <TextBlock Text="{Binding ParameterCountBefore}" Style="{StaticResource CatalogBefore}"
+                                                                       Visibility="{Binding ParameterCountChanged, Converter={StaticResource BoolToVisibility}}" />
+                                                            <TextBlock Style="{StaticResource CatalogArrow}"
+                                                                       Visibility="{Binding ParameterCountChanged, Converter={StaticResource BoolToVisibility}}" />
+                                                            <TextBlock Text="{Binding ParameterCount}"
+                                                                       FontFamily="{DynamicResource Font.Mono}"
+                                                                       FontSize="{DynamicResource Font.Size.Caption}"
+                                                                       Foreground="{DynamicResource Brush.Text.Secondary}" />
+                                                        </DockPanel>
                                                     </Grid>
                                                 </DataTemplate>
                                             </ItemsControl.ItemTemplate>

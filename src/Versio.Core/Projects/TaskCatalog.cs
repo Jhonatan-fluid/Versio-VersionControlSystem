@@ -58,6 +58,28 @@ public sealed record TaskRecord
     /// <summary>The POUs this task calls, as one cell of a table.</summary>
     public string CallsSummary => Pous.Count == 0 ? "—" : string.Join(", ", Pous);
 
+    /// <summary>The WATCHDOG column.</summary>
+    public string WatchdogDisplay => WatchdogEnabled ? "on" : "off";
+
+    /// <summary>How this row differs from the last commit; <see cref="RowMark.None"/> unless a pane compared it.</summary>
+    public RowMark Mark { get; init; } = RowMark.None;
+
+    public string? ScheduleBefore => Mark.BeforeOf(CatalogDiff.Columns.Schedule);
+
+    public bool ScheduleChanged => ScheduleBefore is not null;
+
+    public string? PriorityBefore => Mark.BeforeOf(CatalogDiff.Columns.Priority);
+
+    public bool PriorityChanged => PriorityBefore is not null;
+
+    public string? WatchdogBefore => Mark.BeforeOf(CatalogDiff.Columns.Watchdog);
+
+    public bool WatchdogChanged => WatchdogBefore is not null;
+
+    public string? CallsBefore => Mark.BeforeOf(CatalogDiff.Columns.Calls);
+
+    public bool CallsChanged => CallsBefore is not null;
+
     /// <summary>Whether two records declare the same task.</summary>
     /// <remarks>
     /// Same construction as <see cref="LibraryReference.ContentEquals"/>, for the same two
@@ -65,11 +87,11 @@ public sealed record TaskRecord
     /// one file would read as different — and a comparison written as record equality over
     /// clones covers any field added to this type later without anyone extending a list. The
     /// POU list is compared in order, because the order is the task's own and a reorder is a
-    /// real change.
+    /// real change. <see cref="Mark"/> is reset on both sides: it says what a pane saw.
     /// </remarks>
     public bool ContentEquals(TaskRecord other)
     {
-        if (this with { Pous = NoPous } != other with { Pous = NoPous })
+        if (this with { Pous = NoPous, Mark = RowMark.None } != other with { Pous = NoPous, Mark = RowMark.None })
         {
             return false;
         }
@@ -123,6 +145,11 @@ public sealed record TaskCatalog
     public string Path { get; init; } = string.Empty;
 
     public IReadOnlyList<TaskRecord> Tasks { get; init; } = [];
+
+    /// <summary>What changed since the last commit, in one sentence; set by <see cref="CatalogDiff"/>.</summary>
+    public string ChangeSummary { get; init; } = string.Empty;
+
+    public bool HasChangeSummary => ChangeSummary.Length > 0;
 
     public static readonly TaskCatalog Empty = new();
 

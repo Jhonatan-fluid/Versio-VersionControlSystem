@@ -146,7 +146,8 @@ public static class MemberTableDiff
         return "At the last commit: " + string.Join(' ', parts.Where(p => p.Length > 0));
     }
 
-    private static string Summary(int added, int modified, int removed)
+    /// <summary>One sentence for the top of a marked table; shared with <see cref="CatalogDiff"/>.</summary>
+    internal static string Summary(int added, int modified, int removed)
     {
         var parts = new List<string>();
         if (modified > 0)

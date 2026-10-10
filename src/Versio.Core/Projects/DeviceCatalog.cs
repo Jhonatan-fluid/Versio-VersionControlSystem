@@ -49,17 +49,32 @@ public sealed record DeviceConnector
         : !string.IsNullOrEmpty(Interface) ? Interface
         : DisplayName;
 
+    /// <summary>The PARAMETERS column.</summary>
+    public string ParameterCount => $"{Parameters.Count} param(s)";
+
+    /// <summary>How this row differs from the last commit; <see cref="RowMark.None"/> unless a pane compared it.</summary>
+    public RowMark Mark { get; init; } = RowMark.None;
+
+    public string? ConnectorIdBefore => Mark.BeforeOf(CatalogDiff.Columns.ConnectorId);
+
+    public bool ConnectorIdChanged => ConnectorIdBefore is not null;
+
+    public string? ParameterCountBefore => Mark.BeforeOf(CatalogDiff.Columns.Parameters);
+
+    public bool ParameterCountChanged => ParameterCountBefore is not null;
+
     /// <summary>Whether two connectors record the same facts.</summary>
     /// <remarks>
     /// Same construction as <see cref="LibraryReference.ContentEquals"/>: record equality
     /// compares <see cref="Parameters"/> by reference, and a comparison written as record
     /// equality over clones covers a field added later without anyone extending a list.
     /// A hand-written comparison that silently ignored a new field would mark a changed
-    /// cycle time as unchanged.
+    /// cycle time as unchanged. <see cref="Mark"/> is reset on both sides: it says what a pane saw.
     /// </remarks>
     public bool ContentEquals(DeviceConnector other)
     {
-        if (this with { Parameters = NoParameters } != other with { Parameters = NoParameters })
+        if (this with { Parameters = NoParameters, Mark = RowMark.None }
+            != other with { Parameters = NoParameters, Mark = RowMark.None })
         {
             return false;
         }
@@ -136,6 +151,11 @@ public sealed record DeviceCatalog
         = new Dictionary<string, string>(StringComparer.Ordinal);
 
     public IReadOnlyList<DeviceConnector> Connectors { get; init; } = [];
+
+    /// <summary>What changed since the last commit, in one sentence; set by <see cref="CatalogDiff"/>.</summary>
+    public string ChangeSummary { get; init; } = string.Empty;
+
+    public bool HasChangeSummary => ChangeSummary.Length > 0;
 
     public static readonly DeviceCatalog Empty = new();
 

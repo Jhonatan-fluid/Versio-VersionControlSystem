@@ -92,6 +92,24 @@ public sealed record LibraryReference
         : !string.IsNullOrEmpty(Redirection) ? Redirection
         : DefaultResolution;
 
+    /// <summary>The KIND column: somebody chose it, or the toolchain pulled it in.</summary>
+    public string Kind => SystemLibrary ? "system" : "chosen";
+
+    /// <summary>How this row differs from the last commit; <see cref="RowMark.None"/> unless a pane compared it.</summary>
+    public RowMark Mark { get; init; } = RowMark.None;
+
+    public string? ResolutionBefore => Mark.BeforeOf(CatalogDiff.Columns.Resolution);
+
+    public bool ResolutionChanged => ResolutionBefore is not null;
+
+    public string? NamespaceBefore => Mark.BeforeOf(CatalogDiff.Columns.Namespace);
+
+    public bool NamespaceChanged => NamespaceBefore is not null;
+
+    public string? KindBefore => Mark.BeforeOf(CatalogDiff.Columns.Kind);
+
+    public bool KindChanged => KindBefore is not null;
+
     /// <summary>Whether two references record the same facts.</summary>
     /// <remarks>
     /// <para>
@@ -106,10 +124,15 @@ public sealed record LibraryReference
     /// comparison that silently ignored a new field would mark a changed library as unchanged,
     /// which is the failure this method exists to report.
     /// </para>
+    /// <para>
+    /// <see cref="Mark"/> is reset on both sides: it says what a pane saw, not what the
+    /// project declares.
+    /// </para>
     /// </remarks>
     public bool ContentEquals(LibraryReference other)
     {
-        if (this with { Parameters = NoParameters } != other with { Parameters = NoParameters })
+        if (this with { Parameters = NoParameters, Mark = RowMark.None }
+            != other with { Parameters = NoParameters, Mark = RowMark.None })
         {
             return false;
         }
@@ -171,6 +194,14 @@ public sealed record LibraryCatalog
     public string Path { get; init; } = string.Empty;
 
     public IReadOnlyList<LibraryReference> References { get; init; } = [];
+
+    /// <summary>
+    /// One sentence on what changed since the last commit, or empty when nothing did or
+    /// nobody compared. Set by <see cref="CatalogDiff.Compare(LibraryCatalog?, LibraryCatalog)"/>.
+    /// </summary>
+    public string ChangeSummary { get; init; } = string.Empty;
+
+    public bool HasChangeSummary => ChangeSummary.Length > 0;
 
     public static readonly LibraryCatalog Empty = new();
 

@@ -6994,6 +6994,13 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
     private (IPlcProjectFormat Format, string File, LadderDocument Document, bool Pending)? _ladderSource;
 
     /// <summary>
+    /// The catalog file the last library, task or device table was parsed from, so its
+    /// committed copy can be compared once git has read it. Reset on every build, like
+    /// <see cref="_tableSource"/>.
+    /// </summary>
+    private string? _catalogSource;
+
+    /// <summary>
     /// Counts builds of the rendered half. A late git read compares it with the count it started
     /// under and drops its result when they differ: by then somebody else's block is on screen.
     /// </summary>
@@ -7216,10 +7223,94 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         RenderedContent = shown is InterfaceRender render ? render with { Table = marked } : marked;
     }
 
+    /// <summary>
+    /// Mark the shown library, task or device table with what changed since the last commit.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The owner, 2026-10-10, on a Library Manager whose visualisation libraries had moved
+    /// from 4.9 to 4.10: Raw showed it, the tree marked six rows, and the Rendered table drew
+    /// the new file with nothing marked. "That's the whole point of this tool." The committed
+    /// copy is parsed by the same reader and compared by <see cref="CatalogDiff"/>.
+    /// </para>
+    /// <para>
+    /// Run for every catalog shown, not only for a changed row: a library row the tree calls
+    /// unmodified still opens the whole manager's table, and the six that did change are in
+    /// it. A clean file costs one <c>git show</c> and marks nothing. Dropped if the selection
+    /// moved while git worked, for the reason the member table's marks are. A file that
+    /// changed outside its rows (a header, an order) says so rather than showing a table with
+    /// nothing marked under a DIFF header.
+    /// </para>
+    /// </remarks>
+    private async Task MarkCatalogChangesAsync(string file, object shown)
+    {
+        if (_git is null || RepositoryPath is not { } root)
+        {
+            return;
+        }
+
+        string head;
+        string now;
+        try
+        {
+            head = await _git.ShowAtHeadAsync(file, CancellationToken.None).ConfigureAwait(true);
+            now = File.ReadAllText(Path.Combine(root, file.Replace('/', Path.DirectorySeparatorChar)));
+        }
+        catch (Exception ex)
+        {
+            _logger.Warn(LogCategory.Git, $"could not read {file} at HEAD to mark its table: {ex.Message}");
+            return;
+        }
+
+        if (!ReferenceEquals(RenderedContent, shown)
+            || string.Equals(head.Replace("\r\n", "\n"), now.Replace("\r\n", "\n"), StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        // An empty HEAD is a file never committed, and every row is added. A HEAD the reader
+        // refuses is the same answer: there is no old side, and inventing one would be worse.
+        var marked = shown switch
+        {
+            LibraryCatalog libraries => (object)CatalogDiff.Compare(
+                LibraryCatalog.Parse(head) is { IsValid: true } l ? l : null, libraries),
+            TaskCatalog tasks => CatalogDiff.Compare(
+                TaskCatalog.Parse(head) is { IsValid: true } t ? t : null, tasks),
+            DeviceCatalog devices => CatalogDiff.Compare(
+                DeviceCatalog.Parse(head) is { IsValid: true } d ? d : null, devices),
+            _ => null,
+        };
+
+        if (marked is null)
+        {
+            return;
+        }
+
+        // The file differs, so something changed: a table with nothing marked under a DIFF
+        // header is the failure this method exists to fix, so it says where the change is.
+        const string outsideRows =
+            "Changed since the last commit, but not in its rows - the difference is on Raw.";
+
+        (marked, var summary) = marked switch
+        {
+            LibraryCatalog { HasChangeSummary: false } l => ((object)(l with { ChangeSummary = outsideRows }), outsideRows),
+            TaskCatalog { HasChangeSummary: false } t => ((object)(t with { ChangeSummary = outsideRows }), outsideRows),
+            DeviceCatalog { HasChangeSummary: false } d => ((object)(d with { ChangeSummary = outsideRows }), outsideRows),
+            LibraryCatalog l => ((object)l, l.ChangeSummary),
+            TaskCatalog t => ((object)t, t.ChangeSummary),
+            DeviceCatalog d => ((object)d, d.ChangeSummary),
+            var other => (other, string.Empty),
+        };
+
+        _logger.Info(LogCategory.Ui, $"catalog {file}: {summary}");
+        RenderedContent = marked;
+    }
+
     private object? BuildRenderedContent(TreeRow row)
     {
         _tableSource = null;
         _ladderSource = null;
+        _catalogSource = null;
         _renderGeneration++;
 
         if (RepositoryPath is not { } root)
@@ -7279,6 +7370,7 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
                 when CatalogFile(LibraryCatalog.FileSuffix) is { } yaml
                      && ReadOrNull(yaml) is { } text
                      && LibraryCatalog.Parse(text) is { IsValid: true } catalog:
+                _catalogSource = yaml;
                 return catalog;
 
             case ProjectNodeKind.Task
@@ -7299,6 +7391,7 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
                     && ReadOrNull(libraries) is { } libText
                     && LibraryCatalog.Parse(libText) is { IsValid: true } libCatalog)
                 {
+                    _catalogSource = libraries;
                     return libCatalog;
                 }
 
@@ -7306,6 +7399,7 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
                     && ReadOrNull(tasks) is { } taskText
                     && TaskCatalog.Parse(taskText) is { IsValid: true } taskCatalog)
                 {
+                    _catalogSource = tasks;
                     return taskCatalog;
                 }
 
@@ -7313,6 +7407,7 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
                     && ReadOrNull(devices) is { } devicesText
                     && DeviceCatalog.Parse(devicesText) is { IsValid: true } devicesCatalog)
                 {
+                    _catalogSource = devices;
                     return devicesCatalog;
                 }
 
@@ -7762,6 +7857,14 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         if (tableSource is not null || ladderSource is not null)
         {
             _ = MarkChangesAsync(tableSource, ladderSource, _renderGeneration);
+        }
+
+        // A library, task or device table learns what changed the same way. Every catalog, not
+        // only a changed row's: an unmodified library row still opens its manager's whole table.
+        // Deleting this call leaves the table unmarked and RenderedPaneFlowTests goes red.
+        if (_catalogSource is { } catalogFile && RenderedContent is { } catalogShown)
+        {
+            _ = MarkCatalogChangesAsync(catalogFile, catalogShown);
         }
 
         // A deleted block has no file left to draw, so its committed copy is drawn instead,
