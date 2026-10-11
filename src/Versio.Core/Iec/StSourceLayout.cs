@@ -41,6 +41,26 @@ public enum SourceChange
 /// </remarks>
 public sealed record SourceRemovedLine(string Text, int OldFileLine) : SourceRow;
 
+/// <summary>What one side of a side-by-side row shows.</summary>
+public enum SourceSide
+{
+    Same,
+    Removed,
+    Added,
+}
+
+/// <summary>One cell of a side-by-side source row: a line of one version, numbered in that version.</summary>
+public sealed record SourceSplitCell(int Number, string Text, SourceSide Kind);
+
+/// <summary>
+/// One row of source drawn side by side: the committed version on the left, the working one on
+/// the right, or a divider across both.
+/// </summary>
+/// <param name="Left">The committed line, or null where the working file added one.</param>
+/// <param name="Right">The working line, or null where the commit had one the file no longer does.</param>
+/// <param name="Divider">A Declaration / Implementation divider spanning both sides, alone on its row.</param>
+public sealed record SourceSplitRow(SourceSplitCell? Left, SourceSplitCell? Right, SourceDivider? Divider = null);
+
 /// <summary>A drawn boundary between the declaration and the implementation.</summary>
 /// <param name="Label">What the reader is told the section below is.</param>
 /// <param name="FileText">
@@ -249,6 +269,76 @@ public static class StSourceLayout
         }
 
         return marked;
+    }
+
+    /// <summary>
+    /// Marked rows (<see cref="Mark"/>) as side-by-side pairs: removed lines facing the lines added
+    /// in their place, unchanged lines level on both sides, dividers across both.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The owner, 2026-10-10: "side by side not working on st". Raw had two columns and the
+    /// ladder had two columns; the Rendered source drew its marks in one column whatever the box
+    /// said.
+    /// </para>
+    /// <para>
+    /// <b>Each side numbered as its own version.</b> The working side keeps the numbers the layout
+    /// gave it. The committed side counts its own lines (unchanged and removed) from 1 again at
+    /// every divider, as the layout numbers each section, so a removed line reads as the line it
+    /// was in the IDE.
+    /// </para>
+    /// </remarks>
+    public static IReadOnlyList<SourceSplitRow> SideBySide(IReadOnlyList<SourceRow> marked)
+    {
+        ArgumentNullException.ThrowIfNull(marked);
+
+        var result = new List<SourceSplitRow>(marked.Count);
+        var removed = new List<SourceSplitCell>();
+        var added = new List<SourceSplitCell>();
+        var oldNumber = 0;
+
+        void Flush()
+        {
+            for (var i = 0; i < Math.Max(removed.Count, added.Count); i++)
+            {
+                result.Add(new SourceSplitRow(i < removed.Count ? removed[i] : null, i < added.Count ? added[i] : null));
+            }
+
+            removed.Clear();
+            added.Clear();
+        }
+
+        foreach (var row in marked)
+        {
+            switch (row)
+            {
+                case SourceDivider divider:
+                    Flush();
+                    oldNumber = 0;
+                    result.Add(new SourceSplitRow(null, null, divider));
+                    break;
+                case SourceRemovedLine gone:
+                    if (added.Count > 0)
+                    {
+                        Flush();
+                    }
+
+                    removed.Add(new SourceSplitCell(++oldNumber, gone.Text, SourceSide.Removed));
+                    break;
+                case SourceCodeLine { Change: SourceChange.Added } line:
+                    added.Add(new SourceSplitCell(line.Number, line.Text, SourceSide.Added));
+                    break;
+                case SourceCodeLine line:
+                    Flush();
+                    result.Add(new SourceSplitRow(
+                        new SourceSplitCell(++oldNumber, line.Text, SourceSide.Same),
+                        new SourceSplitCell(line.Number, line.Text, SourceSide.Same)));
+                    break;
+            }
+        }
+
+        Flush();
+        return result;
     }
 
     private static List<string> SplitLines(string? content)

@@ -171,6 +171,54 @@ public sealed class RenderedSourceTests
         });
     }
 
+    [Fact]
+    public void Side_by_side_draws_a_marked_source_in_two_columns_and_an_unmarked_one_in_one()
+    {
+        // The owner, 2026-10-10: "side by side not working on st". The box changed Raw and the
+        // ladder, and the Rendered source drew one column whatever it said.
+        StaHarness.Run(() =>
+        {
+            var before = FbAlarm.Replace("State := 0;", "State := 1;", StringComparison.Ordinal);
+            var marked = StSourceLayout.Mark(StSourceLayout.Lay(FbAlarm), before, FbAlarm);
+
+            var split = new Openable { FilePath = "FB_Alarm.st", SideBySide = true, SourceRows = marked };
+            var pairs = Assert.IsAssignableFrom<IReadOnlyList<SourceSplitRow>>(split.ItemsSource);
+            var changed = Assert.Single(pairs, p => p.Left?.Kind == SourceSide.Removed);
+            Assert.Equal(("\tState := 1;", "\tState := 0;"), (changed.Left!.Text, changed.Right!.Text));
+            var row = Assert.IsType<Grid>(split.RowFor(changed));
+            Assert.Equal(3, row.ColumnDefinitions.Count);
+
+            var unified = new Openable { FilePath = "FB_Alarm.st", SideBySide = false, SourceRows = marked };
+            Assert.Same(marked, unified.ItemsSource);
+
+            // Nothing marked: the same text twice would be noise, so one column even when ticked.
+            var clean = StSourceLayout.Lay(FbAlarm);
+            Assert.Same(clean, new Openable { FilePath = "FB_Alarm.st", SideBySide = true, SourceRows = clean }.ItemsSource);
+        });
+    }
+
+    [Fact]
+    public void The_rendered_template_follows_the_panes_side_by_side_box()
+    {
+        StaHarness.Run(() =>
+        {
+            var logger = new VersioLogger(new SystemClock());
+            var sink = new InMemoryLogSink();
+            logger.AddSink(sink);
+            using var shell = new ShellViewModel(logger, new LogViewModel(sink));
+            var window = new MainWindow(shell);
+
+            var rendered = Assert.Single(Logical(window).OfType<ContentControl>(),
+                c => BindingOperations.GetBinding(c, ContentControl.ContentProperty)
+                         ?.Path.Path == nameof(ShellViewModel.RenderedContent));
+            var template = Assert.IsType<DataTemplate>(
+                rendered.TryFindResource(new DataTemplateKey(typeof(SourceRender))));
+            var view = Assert.IsAssignableFrom<DiffView>(template.LoadContent());
+
+            Assert.Equal("DataContext.DiffSideBySide", BindingOperations.GetBinding(view, DiffView.SideBySideProperty)?.Path.Path);
+        });
+    }
+
     private static SourceRender Source() =>
         new() { Path = "FB_Alarm.st", PseudoDiff = "@@ -1,1 +1,1 @@\n x\n", Rows = StSourceLayout.Lay(FbAlarm) };
 

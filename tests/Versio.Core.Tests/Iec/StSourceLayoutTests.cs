@@ -298,4 +298,27 @@ public class StSourceLayoutTests
         Assert.Equal(["+ A;", "+ B;"], Marked(StSourceLayout.Mark(StSourceLayout.Lay("A;\nB;"), "", "A;\nB;")));
         Assert.Equal(["  A;", "  B;"], Marked(StSourceLayout.Mark(StSourceLayout.Lay("A;\nB;"), "A;\nB;", "A;\nB;")));
     }
+
+    [Fact]
+    public void Side_by_side_faces_removed_lines_with_their_replacements_each_numbered_in_its_version()
+    {
+        const string Before = "(* h\n*)\nPROGRAM P\nVAR x : BOOL; END_VAR\nx := TRUE;\nz := 1;\nEND_PROGRAM";
+        const string After = "(* h\n*)\nPROGRAM P\nVAR x : BOOL; END_VAR\nx := NOT x;\ny := x;\nz := 1;\nEND_PROGRAM";
+        var marked = StSourceLayout.Mark(StSourceLayout.Lay(After, new SourceSections(2, 4, 7)), Before, After);
+
+        var pairs = StSourceLayout.SideBySide(marked);
+
+        static string Cell(SourceSplitCell? c) => c is null ? "." : $"{c.Number}:{c.Kind}:{c.Text}";
+        Assert.Equal(
+        [
+            "| Declaration",
+            "1:Same:PROGRAM P / 1:Same:PROGRAM P",
+            "2:Same:VAR x : BOOL; END_VAR / 2:Same:VAR x : BOOL; END_VAR",
+            "| Implementation",
+            "1:Removed:x := TRUE; / 1:Added:x := NOT x;",
+            ". / 2:Added:y := x;",
+            "2:Same:z := 1; / 3:Same:z := 1;",
+        ],
+            pairs.Select(p => p.Divider is { } d ? "| " + d.Label : $"{Cell(p.Left)} / {Cell(p.Right)}"));
+    }
 }

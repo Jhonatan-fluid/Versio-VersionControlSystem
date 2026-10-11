@@ -7235,16 +7235,53 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
             // Where the difference is depends on what is under the table. Under a drawn diagram
             // it is in the networks right there, already marked; sending the reader to Raw for
             // it read as "the diagram below shows nothing" (the owner, on Service, 2026-10-05).
+            // The same for code under the table, since its lines are marked too (the owner, on
+            // PLC_PRG, 2026-10-10) - but only when the code body really differs: a change to a
+            // comment in the declaration is in neither the members nor the code shown.
             marked = marked with
             {
-                ChangeSummary = shown is InterfaceRender { Ladder: not null }
-                    ? "Changed since the last commit, but not in its members - the networks below show where."
-                    : "Changed since the last commit, but not in its members - the difference is on Raw.",
+                ChangeSummary = shown switch
+                {
+                    InterfaceRender { Ladder: not null } =>
+                        "Changed since the last commit, but not in its members - the networks below show where.",
+                    InterfaceRender { Source: { } code } when CodeBodyDiffers(format, file, head, code.Path) =>
+                        "Changed since the last commit, but not in its members - the code below shows where.",
+                    _ => "Changed since the last commit, but not in its members - the difference is on Raw.",
+                },
             };
         }
 
         _logger.Debug(LogCategory.Ui, $"member table {current.Name}: {marked.ChangeSummary}");
         RenderedContent = shown is InterfaceRender render ? render with { Table = marked } : marked;
+    }
+
+    /// <summary>
+    /// Whether a block's code body (the lines under its table) differs from the committed copy's,
+    /// read by the format that split it.
+    /// </summary>
+    private bool CodeBodyDiffers(IPlcProjectFormat format, string file, string head, string codeFile)
+    {
+        if (!string.Equals(file, codeFile, StringComparison.OrdinalIgnoreCase) || RepositoryPath is not { } root)
+        {
+            return false;
+        }
+
+        string now;
+        try
+        {
+            now = File.ReadAllText(Path.Combine(root, file.Replace('/', Path.DirectorySeparatorChar)));
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            return false;
+        }
+
+        string Body(string text) => format.CodeBody(file, text) is { } body
+            ? string.Join('\n', Versio.Core.Iec.StSourceLayout.Body(text, body.Start, body.End)
+                .OfType<Versio.Core.Iec.SourceCodeLine>().Select(l => l.Text))
+            : string.Empty;
+
+        return !string.Equals(Body(head), Body(now), StringComparison.Ordinal);
     }
 
     /// <summary>

@@ -224,6 +224,12 @@ public class DiffView : ListBox
             // delimiter line it stands for — so an excerpt spanning both halves still pastes
             // as valid .st. The synthetic "Declaration" divider stands for no line and pastes
             // nothing, and neither does a removed line: it is the committed file's, not this one's.
+            // Side by side copies the working side, the file as it is now.
+            IReadOnlyList<SourceSplitRow> pairs => string.Join(Environment.NewLine,
+                pairs.Where(SelectedItems.OfType<SourceSplitRow>().ToHashSet().Contains)
+                    .Select(pair => pair.Divider?.FileText ?? pair.Right?.Text)
+                    .OfType<string>()),
+
             IReadOnlyList<SourceRow> source => string.Join(Environment.NewLine,
                 source.Where(SelectedItems.OfType<SourceRow>().ToHashSet().Contains)
                     .Select(row => row switch
@@ -309,9 +315,14 @@ public class DiffView : ListBox
             // above still matters: it stops a diff parse already in flight from landing on
             // top of these rows. Stretch rather than Left so a divider runs the full width
             // of the pane; source rows carry no tint for a stretched row to smear.
-            ScrollViewer.SetHorizontalScrollBarVisibility(this, ScrollBarVisibility.Auto);
+            // Side by side: the committed version on the left, the working one on the right, as Raw
+            // and the ladder already draw it. Only worth it when something is marked; an
+            // unchanged file would be the same text twice.
+            var marked = source.Any(r => r is SourceRemovedLine or SourceCodeLine { Change: SourceChange.Added });
+            ScrollViewer.SetHorizontalScrollBarVisibility(
+                this, split && marked ? ScrollBarVisibility.Disabled : ScrollBarVisibility.Auto);
             HorizontalContentAlignment = HorizontalAlignment.Stretch;
-            ItemsSource = source;
+            ItemsSource = split && marked ? StSourceLayout.SideBySide(source) : source;
             return;
         }
 
@@ -381,6 +392,7 @@ public class DiffView : ListBox
             SideBySideRow row => BuildSplitRow(row, LanguageFor(row.Left ?? row.Right ?? row.Spanning)),
             SourceCodeLine line => BuildSourceRow(line, _language),
             SourceRemovedLine removed => BuildRemovedSourceRow(removed, _language),
+            SourceSplitRow pair => pair.Divider is { } spanning ? BuildDivider(spanning) : BuildSourceSplitRow(pair, _language),
             SourceDivider divider => BuildDivider(divider),
             _ => container.Content,
         };
@@ -437,6 +449,63 @@ public class DiffView : ListBox
         Grid.SetColumn(content, 1);
         grid.Children.Add(content);
 
+        return grid;
+    }
+
+    /// <summary>
+    /// One side-by-side source row: the committed line, a rule, the working line, each tinted as
+    /// Raw's split rows are and numbered in its own version.
+    /// </summary>
+    private UIElement BuildSourceSplitRow(SourceSplitRow pair, SyntaxLanguage language)
+    {
+        var grid = new Grid();
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+
+        var divider = new Border { Width = 1, Background = Resolve("Brush.Border.Subtle") };
+        Grid.SetColumn(divider, 1);
+        grid.Children.Add(divider);
+
+        var left = SourceSplitCell(pair.Left, language);
+        Grid.SetColumn(left, 0);
+        grid.Children.Add(left);
+
+        var right = SourceSplitCell(pair.Right, language);
+        Grid.SetColumn(right, 2);
+        grid.Children.Add(right);
+
+        return grid;
+    }
+
+    private Grid SourceSplitCell(SourceSplitCell? cell, SyntaxLanguage language)
+    {
+        var grid = new Grid
+        {
+            Background = cell?.Kind switch
+            {
+                SourceSide.Added => Resolve("Brush.Diff.AddedBg"),
+                SourceSide.Removed => Resolve("Brush.Diff.DeletedBg"),
+                _ => Brushes.Transparent,
+            },
+        };
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(46) });
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+
+        if (cell is null)
+        {
+            return grid;
+        }
+
+        grid.Children.Add(Gutter(cell.Number, 0));
+
+        var content = Highlighted(cell.Text, language);
+        content.Margin = new Thickness(6, 0, 12, 0);
+
+        // Clipped rather than scrolled, as Raw's split rows are: the halves share the viewport.
+        content.TextTrimming = TextTrimming.CharacterEllipsis;
+        Grid.SetColumn(content, 1);
+        grid.Children.Add(content);
         return grid;
     }
 
