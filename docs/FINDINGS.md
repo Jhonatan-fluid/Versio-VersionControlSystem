@@ -19,6 +19,52 @@ produce a diff touching everything else.
 
 ---
 
+### Versio Web: what the browser, the audit and the mutations found while it was built
+
+**2026-10-11, branch `WebViewer`** (docs/web/PLAN.md). Seven defects, each caught by something
+other than the first green run. Grouped because each is small; each has its own test.
+
+**Only a browser could show these.** Every server test was green while:
+- **a pasted or reloaded link to any file with an extension was a 404.** ASP.NET's default
+  single-page fallback skips paths that look like files, and nearly every PLC file's URL ends in
+  `.st` or `.xml`. Clicking inside the page worked, which is why nothing noticed. Fixed with
+  explicit fallbacks for the page's URL shapes.
+- **that fix then 404'd the page's own script and stylesheet.** Static files stand aside once
+  routing has chosen an endpoint, and the new fallbacks matched `/assets/*`. Static files now
+  run before an explicit `UseRouting()`. The test serves a real built asset and checks its
+  bytes; the first version of the test did not, and passed over the broken order.
+- **the desktop's wording leaked:** "No changes since the last commit" on a single commit, a
+  table note about uncommitted changes, a tooltip starting "At the last commit". `LadderWording`
+  (Core, desktop text by default) and `MemberTable.Note` carry the page's words; a test now looks
+  for either phrase across views and caught the tooltip after the first fix.
+
+**The audit, on versions written from memory.** `npm audit` found DOMPurify 3.2.2 (a long list
+of XSS fixes since, on the page's sanitiser), React Router 6.28 (an open-redirect advisory with no
+6.x fix), and critical-to-moderate advisories in Vite 5 and Vitest 2. Every version is now pinned
+exactly, at least two weeks old, with `npm audit` at zero; the page uses react-router 7.
+
+**Mutations that survived, and what was wrong.** Each time the code was right and the test was
+not watching:
+- the private-repository refusal (security rule 1) could be removed with every test green: the
+  fake GitHub refused an anonymous read first, so the resolver's own check never ran. Installation
+  tokens now sit behind an interface a test fills with a token that can see the private repository.
+- the regex-timeout warning was logged after the startup line the test stopped reading at. The
+  state now sits inside that line.
+- path-traversal tests passed without validation, because the fake tree simply lacked those
+  paths. They now assert nothing reached GitHub at all.
+- the "vendor named only in RegisterFormats" Arch rule read calls, and `CodesysProjectFormat.Instance`
+  is a field. Its positive control came back empty; it reads field loads and `newobj` now.
+- two defensive branches in the new renderers (filling gaps between tokens, a line-kind check
+  before a line number) could never run; they were removed and the tokenizer's coverage became
+  a seeded test of its own.
+
+**A tooling hazard, for whoever edits next.** Backslash-u escapes typed into the editing tools
+arrived in source as the literal invisible characters: U+2028 broke the build, and the others
+compiled silently, inside the code that guards against hidden characters. The checks are now
+written as code points (`0x202E`) and every new file was checked for non-ASCII.
+
+---
+
 ### The Rendered tab drew a changed source file as if it were untouched, on every vendor
 
 **2026-10-10, the owner, with a screenshot of the FBS scratch repository.** `ST_AlarmSettings`

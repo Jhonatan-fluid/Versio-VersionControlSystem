@@ -2,7 +2,11 @@
 
 **Date:** 2026-10-11, after a review of the stack, the sign-in and two security passes with the
 owner. **This is a design record, not the live queue.** What Versio is today lives in
-[`../STATUS.md`](../STATUS.md). Nothing here is implemented yet; the branch is `WebViewer`.
+[`../STATUS.md`](../STATUS.md) (item 10). **Built on `WebViewer`, 2026-10-11, not merged:**
+Steps 0 to 5 done and tested, Step 6 written but its image not built (no Docker on that machine).
+Each step below says what was built and what changed from the plan. Still to do, in order: the
+owner registers the GitHub App and sign-in is run against real GitHub; the image is built; who
+hosts it is decided.
 
 | | |
 |---|---|
@@ -155,11 +159,15 @@ the baseline, because no step here touches the app before Step 1 has its own tes
 
 **Step 1 — Text, source and member-table renderers to HTML, in Core (= Outpost Step 2b).**
 
-*Progress, 2026-10-11:* the shared line renderer (`CodeHtml`), its stylesheet
-(`CodePageAssets`) and the source renderer (`SourceHtml`) are done, with 12 tests and a tokenizer
-coverage test over 11 languages. Mutation-checked: removing the escaping, the hidden-character
-markers or one stylesheet class each turns a test red. The text diff and member tables are next.
-The large-file measurement waits for a browser to measure in (Step 4).
+*Done, 2026-10-11.* `CodeHtml` (one line of code, shared), `CodePageAssets`, `SourceHtml`,
+`UnifiedDiffWriter` + `TextDiffHtml`, `MemberTableHtml`. Mutation-checked throughout; two
+defensive branches (gap filling between tokens, a line-kind check before a line number) were
+removed when a mutation showed nothing could reach them, and the tokenizer's coverage became a
+test of its own instead. `CodeHtml.A` spells hidden characters in attributes, where a marker
+element cannot go. Later the same day, the browser showed desktop wording leaking ("since the
+last commit"); `LadderHtml` took an optional `LadderWording`, the desktop's text by default.
+**Not done:** the large-file measurement on the 33,644-line visualisation; the blocks and
+`content-visibility` are in place, unmeasured.
 
 - `Versio.Core/Diff/TextDiffHtml.cs`: unified and side-by-side, from `UnifiedDiffParser` output,
   with `SyntaxTokenizer` spans and `IntralineEmphasis`. Plus `SourceHtml.cs` for a single file,
@@ -185,10 +193,21 @@ The large-file measurement waits for a browser to measure in (Step 4).
   changed lines.
 
 **Step 2 — `src/Versio.Web` (ASP.NET Core, net9.0).**
-- References Core and the three **pure** vendor packs, never `*.Infrastructure`. It is a
+
+*Done, 2026-10-11.* Checked against real GitHub anonymously (octocat/Hello-World renders; this
+repository, private, is a 404). Departures from the plan below: `CodesysPack.Register()` and its
+siblings live in the Infrastructure packs, which also register IDE-driving toolchains, so the
+server calls `PlcFormats.Register` with each pure format in `WebHost.RegisterFormats` instead.
+`PrimaryFile` moved from the desktop's `TreeRow` into Core and `repo.json` got a pure
+`RepoConfigStore.Parse`, so the server reuses both answers rather than copying them. The
+endpoints are `/tree`, `/view`, `/compare`, `/compare/view`, `/history`, `/branches`. The
+desktop's choice of renderer (table, ladder, Markdown, source) is mirrored in `ViewService`,
+not shared, and says so; moving it into Core is later.
+
+- References Core and the three **pure** vendor packs, never `*.Infrastructure`. ~~It is a
   composition root like `Versio.App`, so it calls the same `CodesysPack.Register()`,
-  `TiaPortalPack.Register()` and `TwinCatPack.Register()`. Those calls are its only knowledge of
-  vendors.
+  `TiaPortalPack.Register()` and `TwinCatPack.Register()`.~~ (See above.) Registration is its
+  only knowledge of vendors.
 - `IRepoSource` plus `GitHubRepoSource`, built on the Git Trees and Blobs APIs, so a whole
   repository's tree costs one call.
 - Endpoints: `GET /api/repos/{o}/{r}/refs`, `/tree?ref=`, `/file?ref=&path=&view=` (returns a
@@ -208,6 +227,12 @@ The large-file measurement waits for a browser to measure in (Step 4).
 **Step 3 — Sign-in.** The GitHub App and the server-held session described above, plus a 401
 handler that sends the user back to sign in when the token has expired and cannot be refreshed.
 
+*Built and tested, 2026-10-11, against a local server that answers like GitHub's OAuth
+endpoints*: PKCE checked end to end (the verifier GitHub receives hashes to the challenge the
+browser was sent), a forged state refused, logout revoking. Installation tokens are minted per
+repository and read-only. **Not yet run against real GitHub**: that needs the App, which only
+the owner can register.
+
 **Step 4 — `web/` (React + TypeScript + Vite).**
 - Shell, tree, tabs, branch picker, compare picker, history, and routing (React Router).
 - **A fragment from the server is placed, never built.** It goes in through
@@ -216,7 +241,22 @@ handler that sends the user back to sign in when the token has expired and canno
   served as a static file, never inline.
 - The server escapes everything from a file. CSP is the second wall, as on the desktop.
 
+*Done, 2026-10-11, and looked at in the built-in browser.* Node 24.21.0 is pinned by version and
+SHA-256 in `web/node.props` (the owner asked for the repository to carry what the page needs);
+the server's Release build fetches it into `web/.node`, refuses a hash mismatch (tested with a
+false hash), and runs `npm ci` and `vite build` into `wwwroot`. Dependencies pinned exactly, at
+least two weeks old, `npm audit` at zero; the versions first written from memory were stale and
+had advisories (DOMPurify, React Router 6, Vite 5 and Vitest 2), so the page uses react-router 7.
+Two hosting bugs only the browser showed were fixed with tests: links to files with an extension
+were 404s on reload, and the first fix then 404'd the page's own assets.
+
 **Step 5 — Guardrails in `Versio.Arch.Tests`.**
+
+*Done, 2026-10-11:* exact project references; no `Process`, `File` or `Directory` in the
+server's IL; every use of a vendor member only in `WebHost.RegisterFormats`. That last rule read
+calls only at first and its positive control came back empty (a static field load is not a
+call); it reads field loads and `newobj` too now.
+
 - `Versio.Web` may reference only the pure packs, never `*.Infrastructure` and never a `.Host`.
 - Vendor names in `Versio.Web` appear only in the `Register()` calls. One row in the existing
   vendor-seam tests.
@@ -226,6 +266,10 @@ handler that sends the user back to sign in when the token has expired and canno
 of concept, one Azure App Service or AWS App Runner instance. Who runs it, and for which
 customers, is the same open question as Outpost §16 and is decided once for both.
 
+*Written, not built, 2026-10-11:* `src/Versio.Web/Dockerfile` (multi-stage, Release publish
+fetching the Linux Node by its pinned hash, non-root, read-only root file system, logs and key
+ring on volumes) and `.dockerignore`. The machine that wrote it had no Docker.
+
 **Later, on purpose:** the desktop moving onto the HTML text and member-table renderers (one
 renderer for every product, as Outpost §17 already lists); GitLab, Azure DevOps, Bitbucket;
 comments on a line; anything that writes.
@@ -234,6 +278,18 @@ comments on a line; anything that writes.
 
 The desktop parses the owner's own files. The server parses anyone's repository. The same code now
 faces the internet, and that change is the source of most of what follows.
+
+**Where each rule stands, 2026-10-11.** Built and tested (each test named in `Versio.Web.Tests`,
+`Versio.Core.Tests` or `Versio.Arch.Tests`, most also mutation-checked): 1, 2, 3, 4, 5, 6, 8,
+10, 11, 13, 14, 17. Built as code, with the production half being configuration: 7 (sessions are
+encrypted with Data Protection; protecting the key ring with a vault is deployment), 16 (the
+Dockerfile runs non-root on a read-only root; the outbound allowlist is the network's). Partly:
+9 (bidirectional, zero-width and control characters are marked; homoglyphs are not), 12 (the
+cache is in memory with a 30-minute sliding expiry, so nothing is at rest yet; a shared cache
+must bring encryption and a retention). Open: 15 (the App key is configuration, not signed in
+a vault), 18 (no webhooks or account linking exist yet), 19 (threat model, penetration test,
+cost alarm), and the comparison-size cap in 8 (one file is bounded; the changed-file list of
+two huge commits is not).
 
 **Must have, before anything goes live**
 1. **The installation token never reads for a signed-in user, and never reads a private repository.**

@@ -60,17 +60,19 @@ marking, duplicate-param keys, and the detail-pane lookup. All of them are in
 
 | Project | Tests | Time | Needs |
 |---|---|---|---|
-| `Versio.Core.Tests` | 1,716 | under a second | nothing |
+| `Versio.Core.Tests` | 1,754 | under a second | nothing |
 | `Versio.Integration.Tests` | 171 | ~10 s | real git |
 | `Versio.App.Tests` | 782 | 6 m 35 s on 2026-10-10; 8 m 38 s on 2026-10-05; ~3.6 min on 2026-09-22 | nothing |
-| `Versio.Arch.Tests` | 27 | instant | nothing |
+| `Versio.Arch.Tests` | 35 | instant | nothing |
 | `Versio.Plc.Codesys.Pure.Tests` | 365 | under a second | nothing |
 | `Versio.Plc.Codesys.Parity.Tests` | 97 | ~15 s | `python` on PATH — skips cleanly without it, so check the count |
 | `Versio.Plc.TiaPortal.Pure.Tests` | 93 | instant | nothing |
 | `Versio.Plc.TiaPortal.Tests` | 5 | seconds when skipped; minutes when Portal runs the import gate | **real TIA Portal** — skips without Openness membership or LFS content |
 | `Versio.Plc.TwinCat.Pure.Tests` | 23 | instant | nothing |
 | `Versio.Plc.TwinCat.Tests` | 6 | seconds when skipped; ~5 min when XAE runs the import gate | **real TwinCAT XAE** — skips without `TcXaeShell.DTE.17.0` or the fixture |
-| `Versio.Plc.Codesys.Tests` | 55 | **~30 min** | **real CODESYS** |
+| `Versio.Web.Tests` | 82 | a few seconds | nothing — GitHub is faked |
+| `web/` (vitest) | 11 | ~20 s | the pinned Node in `web/.node` |
+| `Versio.Plc.Codesys.Tests` | 55 | **~30 min**; 41 m 14 s, 55/55, on 2026-10-11 on `WebViewer` | **real CODESYS** |
 
 The first ten are the loop to work in — about thirty seconds plus the UI suite. The last is
 the CODESYS gate before a commit. `Versio.Plc.TiaPortal.Tests` and `Versio.Plc.TwinCat.Tests`
@@ -331,6 +333,21 @@ One list. Reorder it; do not copy it into another file.
    - "open in CODESYS" from `.sidecars/.~u`;
    - CFC;
    - the owner's eyeball of the drawing (right rail?) and of the row.
+10. **Versio Web, a read-only browser view of a repository on GitHub — built 2026-10-11 on
+   `WebViewer`, not merged.** The design, the security rules and what each step measured are
+   in [`web/PLAN.md`](web/PLAN.md). An ASP.NET Core server (`src/Versio.Web`) renders with
+   Versio.Core and the three pure packs; a React page (`web/`) places that HTML and draws no
+   code. Built: the HTML renderers for source, text diffs and member tables (Outpost's Step 2b,
+   shared), SafeXml under every pack parser, the server, sign-in through a GitHub App, the page,
+   the Arch rules, and a Dockerfile. Looked at in the built-in browser on the fixtures.
+   **Left, in order:**
+   - **register the GitHub App** (the owner's, on GitHub: read-only Contents and Metadata, a
+     callback at `/auth/callback`) and run sign-in against real GitHub; until then the server
+     runs anonymously on public repositories, which was checked against real GitHub;
+   - build the Docker image on a host that has Docker (none on the machine that wrote it);
+   - decide who hosts it (the same question as Outpost §16);
+   - type links in member tables, catalogs and FBS projects in the tree, homoglyphs, Mermaid;
+   - the large-file measurement (`content-visibility` on the 33,644-line visualisation).
 7. **Wait for a specimen, not a build.** C5 (`DELETE_UNREADABLE`) and `native_partial` close when
    reality produces an object nobody has observed. They cannot be manufactured. See
    [`phase1/IMPORT-PLAN.md`](phase1/IMPORT-PLAN.md).
