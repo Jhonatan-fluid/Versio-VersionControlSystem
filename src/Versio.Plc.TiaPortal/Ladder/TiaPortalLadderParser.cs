@@ -101,7 +101,7 @@ public static class TiaPortalLadderParser
         XDocument doc;
         try
         {
-            doc = XDocument.Parse(content);
+            doc = Versio.Core.Text.SafeXml.Parse(content);
         }
         catch (System.Xml.XmlException)
         {

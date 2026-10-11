@@ -31,7 +31,7 @@ public static class TiaPortalNativeScrubber
 
         try
         {
-            var doc = XDocument.Parse(xml, LoadOptions.PreserveWhitespace);
+            var doc = Versio.Core.Text.SafeXml.Parse(xml, LoadOptions.PreserveWhitespace);
             if (doc.Root is null)
             {
                 return xml.Trim();
@@ -79,7 +79,7 @@ public static class TiaPortalNativeScrubber
 
         try
         {
-            var doc = XDocument.Parse(xml);
+            var doc = Versio.Core.Text.SafeXml.Parse(xml);
             return doc.Descendants()
                 .Select(e => (string?)e.Attribute("UId") ?? (string?)e.Attribute("ID")
                     ?? (string?)e.Attribute("Id"))

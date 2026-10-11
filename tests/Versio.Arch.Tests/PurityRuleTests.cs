@@ -113,6 +113,46 @@ public sealed class PurityRuleTests
         Assert.Equal(ExemptCallers.OrderBy(x => x, StringComparer.Ordinal), callers);
     }
 
+    /// <summary>
+    /// XML from a repository is parsed only through <c>SafeXml</c>, in Core and the pure packs.
+    /// </summary>
+    /// <remarks>
+    /// The web viewer parses files anyone with push access wrote (docs/web/PLAN.md, security
+    /// rule 3). One <c>XDocument.Parse</c> in a parser would bring back entity expansion for
+    /// every view of a hostile file, and nothing about it would look wrong in review. The
+    /// <c>.Host</c> executables are not scanned: they parse XML their own IDE just wrote, on the
+    /// same machine, and the TIA host is net48 and cannot reference Core.
+    /// </remarks>
+    [Theory]
+    [InlineData("Versio.Core")]
+    [InlineData("Versio.Plc.Codesys")]
+    [InlineData("Versio.Plc.TiaPortal")]
+    [InlineData("Versio.Plc.TwinCat")]
+    public void Xml_is_parsed_only_through_SafeXml(string assemblyName)
+    {
+        var offenders = Calls(Assembly.Load(assemblyName))
+            .Where(c => (c.Called is "System.Xml.Linq.XDocument" or "System.Xml.Linq.XElement"
+                         && c.Member is "Parse" or "Load")
+                        || (c.Called == "System.Xml.XmlDocument" && c.Member is "Load" or "LoadXml")
+                        || (c.Called == "System.Xml.XmlReader" && c.Member == "Create"))
+            .Where(c => !c.From.StartsWith("Versio.Core.Text.SafeXml.", StringComparison.Ordinal))
+            .Select(c => $"{c.From} calls {c.Called}.{c.Member} (use Versio.Core.Text.SafeXml.Parse)")
+            .Distinct(StringComparer.Ordinal)
+            .ToList();
+
+        Assert.True(offenders.Count == 0,
+            $"{assemblyName} parses XML around SafeXml:" + Environment.NewLine + string.Join(Environment.NewLine, offenders));
+    }
+
+    [Fact]
+    public void The_xml_rule_can_see_SafeXml_itself()
+    {
+        // Its positive control: the one allowed caller must be found, or the rule above is
+        // checking an empty set.
+        Assert.Contains(Calls(Core), c => c.From.StartsWith("Versio.Core.Text.SafeXml.", StringComparison.Ordinal)
+                                          && c.Called == "System.Xml.Linq.XDocument" && c.Member == "Load");
+    }
+
     [Fact]
     public void The_scan_can_actually_find_something()
     {
