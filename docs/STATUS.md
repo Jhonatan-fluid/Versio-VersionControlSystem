@@ -70,7 +70,7 @@ marking, duplicate-param keys, and the detail-pane lookup. All of them are in
 | `Versio.Plc.TiaPortal.Tests` | 5 | seconds when skipped; minutes when Portal runs the import gate | **real TIA Portal** — skips without Openness membership or LFS content |
 | `Versio.Plc.TwinCat.Pure.Tests` | 23 | instant | nothing |
 | `Versio.Plc.TwinCat.Tests` | 6 | seconds when skipped; ~5 min when XAE runs the import gate | **real TwinCAT XAE** — skips without `TcXaeShell.DTE.17.0` or the fixture |
-| `Versio.Web.Tests` | 82 | a few seconds | nothing — GitHub is faked |
+| `Versio.Web.Tests` | 85 | a few seconds | nothing — GitHub is faked |
 | `web/` (vitest) | 11 | ~20 s | the pinned Node in `web/.node` |
 | `Versio.Plc.Codesys.Tests` | 55 | **~30 min**; 41 m 14 s, 55/55, on 2026-10-11 on `WebViewer` | **real CODESYS** |
 
@@ -98,6 +98,7 @@ real toolchain.
 | [`archive/`](archive/) | Phase 2 queue, UX plan, session handoffs, the long STATUS diary they replaced |
 | [`project/PLAN.md`](project/PLAN.md) | Design record for Versio Project — one PLC beside the IDE. Not the live queue |
 | [`outpost/PLAN.md`](outpost/PLAN.md) | Design record for Versio Outpost — plant backup and confirmed restore. Not the live queue |
+| [`web/ARCHITECTURE.md`](web/ARCHITECTURE.md) | Versio Web as built: the layers, where every file is, one request end to end, what it reuses from the desktop |
 | [`web/PLAN.md`](web/PLAN.md) | Design record for Versio Web — a read-only browser view of a repository on GitHub, drawn by the same Core renderers. Its Step 1 is Outpost's Step 2b. Not the live queue |
 | [`fbs/PLAN.md`](fbs/PLAN.md) | Design record for CODESYS File-Based Storage — an `.fbsproj` folder shown and drawn as a project, never synced. What the fixture measured. Not the live queue |
 

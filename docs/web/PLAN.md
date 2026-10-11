@@ -6,7 +6,8 @@ owner. **This is a design record, not the live queue.** What Versio is today liv
 Steps 0 to 5 done and tested, Step 6 written but its image not built (no Docker on that machine).
 Each step below says what was built and what changed from the plan. Still to do, in order: the
 owner registers the GitHub App and sign-in is run against real GitHub; the image is built; who
-hosts it is decided.
+hosts it is decided. **The map of what was built** (layers, files, one request end to end, what
+is reused from the desktop) is [`ARCHITECTURE.md`](ARCHITECTURE.md).
 
 | | |
 |---|---|
