@@ -131,7 +131,7 @@ public sealed partial class SourceHtmlTests
         Assert.DoesNotContain("\u2066", html, StringComparison.Ordinal);
         Assert.Contains("data-char=\"U+202E\"", html, StringComparison.Ordinal);
         Assert.Contains("data-hidden-chars=\"4\"", html, StringComparison.Ordinal);
-        Assert.Contains("<p class=\"cd-notice\">This file contains 4 hidden characters", html, StringComparison.Ordinal);
+        Assert.Contains("<p class=\"cd-notice\">This file contains 4 hidden or look-alike characters", html, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -143,6 +143,31 @@ public sealed partial class SourceHtmlTests
         Assert.Contains("data-char=\"U+0007\"", html, StringComparison.Ordinal);
         Assert.Contains("\t", html, StringComparison.Ordinal);
         Assert.Contains("data-hidden-chars=\"2\"", html, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void A_name_mixing_latin_and_cyrillic_is_marked_and_announced()
+    {
+        // "Compressor" with a Cyrillic first letter: it reads the same and is another variable.
+        var lookalike = (char)0x0421 + "ompressor";
+        var html = Html($"IF {lookalike} THEN x := 1; END_IF");
+
+        Assert.Contains("<span class=\"cd-confusable\" data-scripts=\"Latin and Cyrillic\"", html, StringComparison.Ordinal);
+        Assert.Contains(lookalike, html, StringComparison.Ordinal);
+        Assert.Contains("data-hidden-chars=\"1\"", html, StringComparison.Ordinal);
+        Assert.Contains("This file contains 1 hidden or look-alike character ", html, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Honest_non_latin_text_is_not_marked()
+    {
+        // A name wholly in one script, and Russian beside English in a comment or a string, are
+        // ordinary; only a name that mixes scripts is the attack.
+        var russian = new string([(char)0x0414, (char)0x0430, (char)0x0442, (char)0x0447, (char)0x0438, (char)0x043A]);
+        var html = Html($"{russian} := 1; (* {russian} sensor *) s := '{russian} ok';");
+
+        Assert.DoesNotContain("cd-confusable", html, StringComparison.Ordinal);
+        Assert.Contains("data-hidden-chars=\"0\"", html, StringComparison.Ordinal);
     }
 
     [Fact]

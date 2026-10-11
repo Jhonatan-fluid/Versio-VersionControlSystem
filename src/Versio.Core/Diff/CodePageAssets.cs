@@ -117,6 +117,8 @@ public static class CodePageAssets
         .mt-link { color: var(--cd-accent); cursor: pointer; text-decoration: underline; }
         .mt-row:hover { outline: 1px solid var(--cd-border); }
         .mt-type, .mt-value, .mt-access, .mt-comment, .mt-name { white-space: pre-wrap; }
+        .cd-confusable { text-decoration: underline wavy var(--cd-hidden); text-underline-offset: 3px;
+          background: var(--cd-hidden-bg); border-radius: 3px; }
         .cd-t-keyword { color: var(--cd-t-keyword); }
         .cd-t-type { color: var(--cd-t-type); }
         .cd-t-comment { color: var(--cd-t-comment); }

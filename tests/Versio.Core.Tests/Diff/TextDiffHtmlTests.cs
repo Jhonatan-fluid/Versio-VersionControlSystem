@@ -102,7 +102,7 @@ public sealed class TextDiffHtmlTests
         Assert.DoesNotContain(((char)0x202E).ToString(), html, StringComparison.Ordinal);
         Assert.Contains("data-char=\"U+202E\"", html, StringComparison.Ordinal);
         Assert.Contains("data-hidden-chars=\"1\"", html, StringComparison.Ordinal);
-        Assert.Contains("This file contains 1 hidden character ", html, StringComparison.Ordinal);
+        Assert.Contains("This file contains 1 hidden or look-alike character ", html, StringComparison.Ordinal);
     }
 
     [Fact]

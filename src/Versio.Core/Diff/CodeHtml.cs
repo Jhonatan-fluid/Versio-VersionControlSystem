@@ -38,14 +38,15 @@ namespace Versio.Core.Diff;
 /// attack to the reader intact, so each is replaced by a visible <c>U+XXXX</c> marker naming it,
 /// and the caller is told how many there were so the page can say so above the code. Raw C0
 /// controls are treated the same way: they are invalid in HTML and invisible in a browser.
-/// Homoglyphs (a Cyrillic <c>U+0430</c> in a Latin identifier) are not caught here yet.
+/// Look-alike letters (a Cyrillic <c>U+0430</c> in a Latin identifier) are marked too, since
+/// 2026-10-11: a name mixing scripts gets a wavy underline (<see cref="MixedScripts"/>).
 /// </para>
 /// </remarks>
 public static class CodeHtml
 {
     /// <summary>
     /// Appends <paramref name="text"/> as highlighted, escaped HTML, and returns how many hidden
-    /// characters it replaced with markers.
+    /// characters it replaced with markers plus how many names it marked as mixing scripts.
     /// </summary>
     /// <param name="emphasis">Changed-word spans (<see cref="IntralineEmphasis"/>), or null.</param>
     public static int AppendLine(
@@ -92,8 +93,8 @@ public static class CodeHtml
 
         html.Append("<p class=\"cd-notice\">This file contains ")
             .Append(hidden.ToString(CultureInfo.InvariantCulture))
-            .Append(hidden == 1 ? " hidden character" : " hidden characters")
-            .Append(" that can make code read differently from how it compiles. Each is shown as a U+ marker.</p>\n");
+            .Append(hidden == 1 ? " hidden or look-alike character" : " hidden or look-alike characters")
+            .Append(" that can make code read differently from how it compiles. Each is marked: a U+ marker for a hidden one, a wavy underline for a name mixing scripts.</p>\n");
     }
 
     /// <summary>Opens a new <c>.cd-block</c> every <see cref="BlockRows"/> rows.</summary>
@@ -199,12 +200,60 @@ public static class CodeHtml
         return E(spelled.ToString());
     }
 
+    /// <summary>
+    /// The scripts a name mixes, as "Latin and Cyrillic", or null when it uses one (or none of
+    /// the three this checks).
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Look-alike letters</b> (docs/web/PLAN.md, security rule 9). <c>Compressor</c> spelled with
+    /// a Cyrillic first letter (U+0421) reads as <c>Compressor</c> and is a different variable. A full
+    /// confusables table would flag a lot of honest text; a <i>name</i> that mixes Latin with
+    /// Cyrillic or Greek is the attack's practical form and almost never honest, so that is what
+    /// is marked. Only identifiers are checked, never comments or strings, where a sentence in
+    /// Russian beside an English word is ordinary.
+    /// </para>
+    /// <para>Written as code points, for <see cref="IsHidden"/>'s reason.</para>
+    /// </remarks>
+    public static string? MixedScripts(string text, int start, int length)
+    {
+        ArgumentNullException.ThrowIfNull(text);
+        bool latin = false, greek = false, cyrillic = false;
+        for (var i = start; i < start + length; i++)
+        {
+            switch ((int)text[i])
+            {
+                case (>= 0x41 and <= 0x5A) or (>= 0x61 and <= 0x7A) or (>= 0xC0 and <= 0x24F and not 0xD7 and not 0xF7):
+                    latin = true;
+                    break;
+                case >= 0x370 and <= 0x3FF:
+                    greek = true;
+                    break;
+                case >= 0x400 and <= 0x52F:
+                    cyrillic = true;
+                    break;
+            }
+        }
+
+        var scripts = new[] { latin ? "Latin" : null, greek ? "Greek" : null, cyrillic ? "Cyrillic" : null }.OfType<string>().ToList();
+        return scripts.Count > 1 ? string.Join(" and ", scripts) : null;
+    }
+
     private static int AppendToken(
         StringBuilder html, string text, int start, int length, TokenKind kind, IReadOnlyList<TextSpan>? emphasis)
     {
         if (length == 0)
         {
             return 0;
+        }
+
+        var mixed = kind is TokenKind.Plain or TokenKind.Keyword or TokenKind.Type && (char.IsLetter(text[start]) || text[start] == '_')
+            ? MixedScripts(text, start, length)
+            : null;
+        if (mixed is not null)
+        {
+            html.Append("<span class=\"cd-confusable\" data-scripts=\"").Append(E(mixed))
+                .Append("\" title=\"This name mixes ").Append(E(mixed)).Append(" letters, which can look identical\">");
         }
 
         var css = TokenClass(kind);
@@ -232,6 +281,12 @@ public static class CodeHtml
         if (css is not null)
         {
             html.Append("</span>");
+        }
+
+        if (mixed is not null)
+        {
+            html.Append("</span>");
+            hidden++;
         }
 
         return hidden;
