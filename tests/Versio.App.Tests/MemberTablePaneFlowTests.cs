@@ -398,18 +398,16 @@ public sealed class MemberTablePaneFlowTests
         Assert.All(Ancestors(shell.Sync.Tree, selected), a => Assert.True(a.IsExpanded, a.Name + " stayed shut"));
         Assert.False((await Row(shell, "Motor")).IsSelected);
 
-        // Rendered first, always - and the table says what changed. Here only the SCL got a
-        // comment, so the members are the same and the table says so rather than marking
-        // nothing under a row that reads "modified". The line-level diff waits on Raw.
+        // Rendered first, always. Here only the SCL got a comment, so no member changed and the
+        // table carries no note: the owner asked for one on 2026-10-05 ("the change is outside its
+        // members") and dropped it on 2026-10-11 ("no need for that note at all"). The line-level
+        // diff waits on Raw.
         Assert.True(shell.ShowRenderedPane);
-        await Eventually.Until(
-            () => shell.RenderedContent is MemberTable { ChangeSummary: var s }
-                  && s.Contains("not in its members", StringComparison.Ordinal),
-            "the table says the change is outside its members");
         await Eventually.Until(
             () => shell.SelectedDiffPath?.EndsWith("AnaVal.udt", StringComparison.OrdinalIgnoreCase) == true
                   && shell.SelectedDiff.Contains("// edited", StringComparison.Ordinal),
             "the type's diff is ready on Raw");
+        Assert.False(Assert.IsType<MemberTable>(shell.RenderedContent).HasChangeSummary);
     }
 
     [Fact]

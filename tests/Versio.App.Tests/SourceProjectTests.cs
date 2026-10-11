@@ -183,10 +183,12 @@ public sealed class SourceProjectTests
         Assert.Equal("PLC_PRG", shown.Table.Name);
         Assert.Equal(["Static", "x"], shown.Table.Members.Select(m => m.Name));
 
-        // Only the code changed, and the code under the table is marked, so the sentence over the
-        // table points there rather than at Raw (the owner, on PLC_PRG, 2026-10-10).
-        await Eventually.Until(() => shell.RenderedContent is InterfaceRender { Table.HasChangeSummary: true }, "the table's summary arrived");
-        Assert.Contains("the code below shows where", ((InterfaceRender)shell.RenderedContent!).Table.ChangeSummary, StringComparison.Ordinal);
+        // Only the code changed: the code under the table is marked, and the table, with no
+        // member changed, carries no note (the owner, 2026-10-11: "no need for that note at all").
+        await Eventually.Until(
+            () => shell.RenderedContent is InterfaceRender { Source: { } s } && s.Rows.OfType<Versio.Core.Iec.SourceRemovedLine>().Any(),
+            "the code under the table is marked");
+        Assert.False(((InterfaceRender)shell.RenderedContent!).Table.HasChangeSummary);
 
         // The code sits under the table, without the declaration repeated above it.
         Assert.Contains(shown.Source!.Rows.OfType<Versio.Core.Iec.SourceCodeLine>(), l => l.Text == "x := FALSE;");

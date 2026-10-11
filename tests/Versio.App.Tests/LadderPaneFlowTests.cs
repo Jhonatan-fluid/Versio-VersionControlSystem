@@ -351,9 +351,10 @@ public sealed class LadderPaneFlowTests
     }
 
     [Fact]
-    public async Task A_function_block_changed_only_in_its_networks_says_so_above_the_diagram()
+    public async Task A_function_block_changed_only_in_its_networks_marks_them_and_puts_no_note_on_the_table()
     {
-        // Not "the difference is on Raw": the networks under the table already show it.
+        // The networks under the table show the change. The table, with no member changed, has
+        // no note: the owner dropped it on 2026-10-11 ("no need for that note at all").
         using var repo = new TempRepo();
         GivenAPortalProjectWithLadder(repo);
         CommitEverything(repo);
@@ -364,11 +365,11 @@ public sealed class LadderPaneFlowTests
         shell.Sync.SelectedNode = await Row(shell, "Conveyor");
 
         await Eventually.Until(
-            () => shell.RenderedContent is InterfaceRender { Table.HasChangeSummary: true, Ladder.Pending: false },
-            "the table and the networks were both compared");
+            () => shell.RenderedContent is InterfaceRender { Ladder.Pending: false },
+            "the networks were compared");
 
         var render = Assert.IsType<InterfaceRender>(shell.RenderedContent);
-        Assert.Contains("networks below", render.Table.ChangeSummary, StringComparison.Ordinal);
+        Assert.False(render.Table.HasChangeSummary);
         Assert.Equal(1, render.Ladder!.Comparison.ChangedCount);
     }
 
