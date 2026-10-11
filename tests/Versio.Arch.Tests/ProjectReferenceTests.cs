@@ -85,6 +85,18 @@ public sealed class ProjectReferenceTests
     }
 
     [Fact]
+    public void Versio_Web_references_only_the_pure_packs()
+    {
+        // The web viewer's composition root (docs/web/PLAN.md Step 5). It parses vendors' files
+        // and drives nothing: an *.Infrastructure pack would bring a toolchain that launches an
+        // IDE, and a .Host is an executable that loads one. Versio.Infrastructure is the
+        // vendor-neutral half (the log file, the clock, the repo.json reader).
+        Assert.Equal(
+            ["Versio.Core", "Versio.Infrastructure", "Versio.Plc.Codesys", "Versio.Plc.TiaPortal", "Versio.Plc.TwinCat"],
+            ReferencesOf("Versio.Web"));
+    }
+
+    [Fact]
     public void The_vendor_pack_depends_on_the_core_and_not_the_other_way_round()
     {
         // The direction that makes the whole split work. If this ever inverts, the compiler

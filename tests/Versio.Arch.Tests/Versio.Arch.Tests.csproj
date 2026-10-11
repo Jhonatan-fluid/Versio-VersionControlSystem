@@ -28,6 +28,7 @@
     <ProjectReference Include="..\..\src\Versio.App\Versio.App.csproj" />
     <ProjectReference Include="..\..\src\Versio.Core\Versio.Core.csproj" />
     <ProjectReference Include="..\..\src\Versio.Infrastructure\Versio.Infrastructure.csproj" />
+    <ProjectReference Include="..\..\src\Versio.Web\Versio.Web.csproj" />
     <ProjectReference Include="..\Versio.TestSupport\Versio.TestSupport.csproj" />
   </ItemGroup>
 
