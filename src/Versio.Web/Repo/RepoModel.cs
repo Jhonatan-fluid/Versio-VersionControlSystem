@@ -22,6 +22,17 @@ public sealed record RepoModel(
     bool Truncated,
     IReadOnlyList<string> Problems)
 {
+    /// <summary>The bound projects as the tree was built from them.</summary>
+    public IReadOnlyList<WorkspaceProject> Projects { get; init; } = [];
+
+    /// <summary>
+    /// Every exported object by path and by name: the index the desktop links member types
+    /// through (<c>ShellViewModel.LinkTypes</c>), built from the same manifests.
+    /// </summary>
+    public ObjectIndex Objects => _objects ??= ObjectIndex.Of(Projects);
+
+    private ObjectIndex? _objects;
+
     /// <summary>
     /// Every file's node, built once per model. An object wins over a plain file row for the same
     /// path, as the desktop opens the object.
@@ -175,7 +186,7 @@ public sealed class RepoModelLoader(IRepoSource source, IMemoryCache cache, IVer
         }
 
         var nodes = RepoExplorerBuilder.Build(files.Keys.OrderBy(p => p, StringComparer.Ordinal).ToList(), projects);
-        var model = new RepoModel(owner, repo, commitSha, files, nodes, isVersio, tree.Value.Truncated, problems);
+        var model = new RepoModel(owner, repo, commitSha, files, nodes, isVersio, tree.Value.Truncated, problems) { Projects = projects };
         cache.Set(key, model, new MemoryCacheEntryOptions { Size = Math.Max(1, files.Count / 100), SlidingExpiration = TimeSpan.FromMinutes(30) });
         log.Info(LogCategory.Web, $"Loaded {owner}/{repo} at {commitSha[..Math.Min(8, commitSha.Length)]}: {files.Count} files, {projects.Count} projects{(problems.Count > 0 ? $", {problems.Count} problems" : "")}");
         return RepoResult<RepoModel>.Of(model);

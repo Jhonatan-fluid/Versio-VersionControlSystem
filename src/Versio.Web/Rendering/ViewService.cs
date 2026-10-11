@@ -61,9 +61,11 @@ public sealed record ViewResult(
 /// a part of the XML the ladder does not draw must not read as an untouched block.
 /// </para>
 /// <para>
-/// <b>Cached by content.</b> A fragment's key is the renderer version, the repository, the view
-/// and every file's blob hash on both sides. Blobs never change, so neither does the fragment;
-/// a renderer change bumps <see cref="RendererVersion"/>. The caller resolved both commits with
+/// <b>Cached by content and commit.</b> A fragment's key is the renderer version, the repository,
+/// the commit or commits, the view and every file's blob hash on both sides. The commit is in it
+/// because a member table's links and "type changed" marks depend on files outside the object:
+/// the same blobs at another commit can link elsewhere. A renderer change bumps
+/// <see cref="RendererVersion"/>. The caller resolved both commits with
 /// this person's credential before anything here runs (security rule 2).
 /// </para>
 /// </remarks>
@@ -74,7 +76,7 @@ public sealed class ViewService(
     IVersioLogger log)
 {
     /// <summary>Bumped whenever any renderer's output changes, so no stale fragment is served.</summary>
-    public const int RendererVersion = 1;
+    public const int RendererVersion = 2;
 
     private WebOptions O => options.Value;
 
@@ -89,10 +91,10 @@ public sealed class ViewService(
 
         var files = await ReadAllAsync(access, model, node, ct).ConfigureAwait(false);
         var shown = Shown(node, path);
-        var key = Key("view", model, view, sideBySide, files, null);
+        var key = Key("view", model, model.CommitSha, view, sideBySide, files, null);
         return await CachedAsync(key, path, () => view == PaneView.Raw
             ? RawSingle(shown, files)
-            : Rendered(node, shown, files), () => Plain(shown, files)).ConfigureAwait(false);
+            : Rendered(model, node, shown, files), () => Plain(shown, files)).ConfigureAwait(false);
     }
 
     /// <summary>One object in two commits: the older one, then the newer.</summary>
@@ -109,10 +111,10 @@ public sealed class ViewService(
         var before = reads[0];
         var after = reads[1];
         var shown = Shown(node, path);
-        var key = Key("compare", newer, view, sideBySide, after, before);
+        var key = Key("compare", newer, older.CommitSha + ".." + newer.CommitSha, view, sideBySide, after, before);
         return await CachedAsync(key, path, () => view == PaneView.Raw
             ? RawCompare(shown, before, after, sideBySide)
-            : RenderedCompare(node, shown, before, after, sideBySide), () => Plain(shown, after.ContainsKey(shown) ? after : before)).ConfigureAwait(false);
+            : RenderedCompare(older, newer, node, shown, before, after, sideBySide), () => Plain(shown, after.ContainsKey(shown) ? after : before)).ConfigureAwait(false);
     }
 
     /// <summary>The paths that differ between two commits, with what happened to each.</summary>
@@ -196,7 +198,7 @@ public sealed class ViewService(
 
     // ---- one version --------------------------------------------------------------------------
 
-    private ViewResult Rendered(ProjectTreeNode node, string shown, IReadOnlyDictionary<string, Layer> files)
+    private ViewResult Rendered(RepoModel model, ProjectTreeNode node, string shown, IReadOnlyDictionary<string, Layer> files)
     {
         if (Unreadable(node, shown, files) is { } refused)
         {
@@ -214,7 +216,7 @@ public sealed class ViewService(
             {
                 if (format.TryParseMemberTable(layer.Path, layer.Text!) is { IsValid: true } table)
                 {
-                    var html = new StringBuilder(MemberTableHtml.Fragment(WebNote(table)));
+                    var html = new StringBuilder(MemberTableHtml.Fragment(WebNote(LinkTypes(table, layer.Path, model, null))));
                     if (table.IsInterface)
                     {
                         AppendInterfaceCode(html, format, node, files, older: null);
@@ -263,7 +265,8 @@ public sealed class ViewService(
     // ---- two versions -------------------------------------------------------------------------
 
     private ViewResult RenderedCompare(
-        ProjectTreeNode node, string shown, IReadOnlyDictionary<string, Layer> before, IReadOnlyDictionary<string, Layer> after, bool sideBySide)
+        RepoModel olderModel, RepoModel newerModel, ProjectTreeNode node, string shown,
+        IReadOnlyDictionary<string, Layer> before, IReadOnlyDictionary<string, Layer> after, bool sideBySide)
     {
         var notices = new List<string>();
         var newer = after.TryGetValue(shown, out var a) ? a : null;
@@ -293,7 +296,15 @@ public sealed class ViewService(
 
                 var baseline = oldTable is { IsValid: true } ? oldTable : new MemberTable { Name = newTable!.Name, IsInterface = newTable.IsInterface, IsDataType = newTable.IsDataType, IsVariableList = newTable.IsVariableList };
                 var current = newTable is { IsValid: true } ? newTable : baseline with { Members = [] };
-                var compared = Reword(MemberTableDiff.Compare(baseline, current));
+                // A member's type that changed between the two versions changes this block's
+                // meaning while its own text may not move: highlighted, and said above the table.
+                var changedPaths = ChangedPaths(olderModel, newerModel).Select(c => c.Path).ToHashSet(StringComparer.Ordinal);
+                var compared = LinkTypes(Reword(MemberTableDiff.Compare(baseline, current)), path, newerModel, changedPaths);
+                if (compared.Members.Any(m => m.ReferenceChanged))
+                {
+                    notices.Add(TypeChangedNotice);
+                }
+
                 var html = new StringBuilder(MemberTableHtml.Fragment(WebNote(compared)));
                 var tableChanged = compared.Members.Any(m => m.Change != MemberChange.None);
                 var codeChanged = false;
@@ -424,6 +435,45 @@ public sealed class ViewService(
     internal const string TooLargeToDrawNotice =
         "This file is too large to draw, so it is shown as plain text.";
 
+    internal const string TypeChangedNotice =
+        "A highlighted member's type changed between these two versions, which changes this block even where its own text did not.";
+
+    /// <summary>
+    /// Each member's type linked to the object it names in the same project, through the index
+    /// the desktop's <c>LinkTypes</c> uses; and, in a comparison, marked when that object's files
+    /// changed between the two versions.
+    /// </summary>
+    /// <remarks>
+    /// The link is the target's file in this repository, so the page opens it in the viewer. A
+    /// library or system type finds nothing and stays text, as on the desktop: a link to nowhere
+    /// is worse than none.
+    /// </remarks>
+    internal static MemberTable LinkTypes(MemberTable table, string sourceFile, RepoModel model, IReadOnlySet<string>? changed)
+    {
+        if (!table.Members.Any(m => m.TypeReference.Length > 0) || model.Objects.Lookup(sourceFile) is not { } owner)
+        {
+            return table;
+        }
+
+        return table with
+        {
+            Members = table.Members.Select(member =>
+            {
+                if (member.TypeReference.Length == 0 || model.Objects.FindByName(owner.Project, member.TypeReference) is not { } target)
+                {
+                    return member;
+                }
+
+                var open = target.Paths.Select(p => model.NodeFor(p)?.PrimaryFile).FirstOrDefault(p => p is not null) ?? target.Paths[0];
+                return member with
+                {
+                    LinkGuid = open,
+                    ReferenceChanged = changed is not null && target.Paths.Any(changed.Contains),
+                };
+            }).ToList(),
+        };
+    }
+
     internal const string OverBudgetNotice =
         "This file took too long to draw, so it is shown as plain text.";
 
@@ -537,14 +587,14 @@ public sealed class ViewService(
         return rows;
     }
 
-    private static string Key(string what, RepoModel model, PaneView view, bool sideBySide,
+    private static string Key(string what, RepoModel model, string commits, PaneView view, bool sideBySide,
         IReadOnlyDictionary<string, Layer> files, IReadOnlyDictionary<string, Layer>? before)
     {
         static string Shas(IReadOnlyDictionary<string, Layer>? f) =>
             f is null ? "-" : string.Join(',', f.Values.OrderBy(l => l.Path, StringComparer.Ordinal).Select(l => l.Path + "=" + l.BlobSha));
 
         return string.Create(CultureInfo.InvariantCulture,
-            $"frag:{RendererVersion}:{what}:{model.Owner.ToLowerInvariant()}/{model.Repo.ToLowerInvariant()}:{view}:{sideBySide}:{Shas(before)}:{Shas(files)}");
+            $"frag:{RendererVersion}:{what}:{model.Owner.ToLowerInvariant()}/{model.Repo.ToLowerInvariant()}:{commits}:{view}:{sideBySide}:{Shas(before)}:{Shas(files)}");
     }
 
     /// <summary>The render, cached by content and held to the budget.</summary>

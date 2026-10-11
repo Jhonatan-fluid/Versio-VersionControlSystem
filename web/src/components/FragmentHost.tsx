@@ -64,6 +64,19 @@ export function FragmentHost({ html, path, onOpenPath, line, onLine }: Props) {
       return;
     }
 
+    // A member's type linked by the server (MemberTableHtml's data-link): the repository path
+    // of the object it names. Opened in the viewer; anything that is not a plain relative path
+    // is ignored, the same rule a Markdown link gets.
+    const typeLink = element.closest<HTMLElement>('[data-link]');
+    if (typeLink) {
+      event.preventDefault();
+      const target = linkTarget(typeLink.dataset.link ?? '', '');
+      if (target?.kind === 'internal') {
+        onOpenPath(target.path);
+      }
+      return;
+    }
+
     const gutter = element.closest<HTMLElement>('.cd-num');
     const row = gutter?.parentElement;
     const number = row?.dataset.line;

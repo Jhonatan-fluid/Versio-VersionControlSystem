@@ -87,6 +87,29 @@ public sealed class ViewServiceTests
     }
 
     [Fact]
+    public async Task A_members_type_links_to_the_object_it_names_and_a_library_type_does_not()
+    {
+        // ST_AlarmSettings.Severity is an E_AlarmSeverity, exported in the same project: linked to
+        // its file. STRING(20) and BOOL are elementary and stay text, as on the desktop.
+        var view = await View(Settings);
+
+        Assert.Contains($"<a class=\"mt-link\" data-link=\"{Severity}\">E_AlarmSeverity</a>", view.Html, StringComparison.Ordinal);
+        Assert.DoesNotContain("data-link=\"\"", view.Html, StringComparison.Ordinal);
+        Assert.DoesNotContain("mt-ref-changed", view.Html, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task A_type_that_changed_between_the_versions_is_highlighted_and_said()
+    {
+        // "next" changes E_AlarmSeverity's file; ST_AlarmSettings' Severity member is of that
+        // type, so the struct's meaning changed even in rows whose text did not.
+        var view = await Compare(Settings);
+
+        Assert.Contains("mt-ref-changed\" data-path=\"Severity\"", view.Html, StringComparison.Ordinal);
+        Assert.Contains(ViewService.TypeChangedNotice, view.Notices);
+    }
+
+    [Fact]
     public async Task A_data_type_is_its_member_table()
     {
         var view = await View(Settings);
@@ -157,7 +180,7 @@ public sealed class ViewServiceTests
         Assert.Contains("<del class=\"mt-was\">TRUE</del> <ins class=\"mt-now\">FALSE</ins>", view.Html, StringComparison.Ordinal);
         Assert.Contains("Since the older version", view.Html, StringComparison.Ordinal);
         Assert.DoesNotContain("Since the last commit", view.Html, StringComparison.Ordinal);
-        Assert.Empty(view.Notices);
+        Assert.Equal([ViewService.TypeChangedNotice], view.Notices);
     }
 
     [Fact]
