@@ -21,6 +21,14 @@ export function sanitize(html: string): string {
   });
 }
 
+/**
+ * The Mermaid blocks in a placed fragment, with their source text. Core writes a ```mermaid
+ * fence as <pre class="mermaid"> holding the escaped source; its text content is the diagram.
+ */
+export function mermaidBlocks(root: ParentNode): { element: HTMLElement; source: string }[] {
+  return Array.from(root.querySelectorAll<HTMLElement>('pre.mermaid')).map((element) => ({ element, source: element.textContent ?? '' }));
+}
+
 /** Whether a placed fragment holds a ladder, whose navigation script must run over it. */
 export function hasLadder(html: string): boolean {
   return html.includes('class="ld-page"');

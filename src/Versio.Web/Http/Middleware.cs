@@ -31,21 +31,59 @@ public sealed class SecurityHeaders(RequestDelegate next)
         + "img-src 'self' data: https://avatars.githubusercontent.com; font-src 'self'; connect-src 'self'; "
         + "object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'";
 
+    /// <summary>The diagram frame's path, the one page with a policy of its own.</summary>
+    public const string MermaidFrame = "/mermaid-frame.html";
+
+    /// <summary>
+    /// The diagram frame's policy. Mermaid writes an inline &lt;style&gt; into every diagram, which
+    /// <see cref="Csp"/> rightly refuses; loosening the page's policy would let any injected CSS
+    /// run there. So diagrams render in a frame the page loads with <c>sandbox="allow-scripts"</c>
+    /// (no same-origin: no cookies, no session, no reach into the page), and only this response
+    /// allows inline styles. It may be framed by this site and no other.
+    /// </summary>
+    /// <remarks>
+    /// <b>The site's origin is named, not <c>'self'</c>.</b> A frame sandboxed without
+    /// allow-same-origin has an opaque origin, and <c>'self'</c> then matches nothing, so the first
+    /// version's frame could not load its own scripts and no diagram ever drew (seen in the
+    /// browser). <c>{0}</c> is the site's origin: the configured public URL, or the request's.
+    /// </remarks>
+    public const string FrameCsp =
+        "default-src 'none'; script-src {0}; style-src {0} 'unsafe-inline'; img-src data:; font-src data:; "
+        + "base-uri 'none'; form-action 'none'; frame-ancestors 'self'";
+
+    /// <summary>The frame's policy for this request's site.</summary>
+    public static string FramePolicy(HttpContext context)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        var configured = context.RequestServices.GetService<Microsoft.Extensions.Options.IOptions<WebOptions>>()?.Value.GitHub.PublicBaseUrl;
+        var origin = Uri.TryCreate(configured, UriKind.Absolute, out var u)
+            ? u.GetLeftPart(UriPartial.Authority)
+            : $"{context.Request.Scheme}://{context.Request.Host}";
+        return string.Format(System.Globalization.CultureInfo.InvariantCulture, FrameCsp, origin);
+    }
+
     public Task InvokeAsync(HttpContext context)
     {
         ArgumentNullException.ThrowIfNull(context);
         context.Response.OnStarting(() =>
         {
             var h = context.Response.Headers;
-            h.ContentSecurityPolicy = Csp;
+            var path = context.Request.Path;
+            var frame = path.Equals(MermaidFrame, StringComparison.OrdinalIgnoreCase);
+            h.ContentSecurityPolicy = frame ? FramePolicy(context) : Csp;
             h.XContentTypeOptions = "nosniff";
-            h.XFrameOptions = "DENY";
+            h.XFrameOptions = frame ? "SAMEORIGIN" : "DENY";
             h["Referrer-Policy"] = "no-referrer";
             h["X-Robots-Tag"] = "noindex, nofollow";
             h["Cross-Origin-Opener-Policy"] = "same-origin";
-            h["Cross-Origin-Resource-Policy"] = "same-origin";
+
+            // The sandboxed frame has an opaque origin, so its script requests look cross-origin;
+            // its two scripts (a public library and the frame's glue) carry nothing private.
+            h["Cross-Origin-Resource-Policy"] =
+                path.Equals("/assets/mermaid.js", StringComparison.OrdinalIgnoreCase) || path.Equals("/mermaid-frame.js", StringComparison.OrdinalIgnoreCase)
+                    ? "cross-origin"
+                    : "same-origin";
             h["Permissions-Policy"] = "camera=(), microphone=(), geolocation=(), payment=()";
-            var path = context.Request.Path;
             if (path.StartsWithSegments("/api") || path.StartsWithSegments("/auth"))
             {
                 h.CacheControl = "private, no-store";

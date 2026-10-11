@@ -36,7 +36,7 @@ public sealed class FixturePreview
 
         var github = new FakeGitHub();
         var repo = github.Add("acme", "plant");
-        var files = FakeGitHub.FromDisk(".versio/repo.json", "README.md", "docs/web/PLAN.md",
+        var files = FakeGitHub.FromDisk(".versio/repo.json", "README.md", "docs/web/PLAN.md", "docs/dev.md",
             "fixtures/projects/MachineWithMembers", "fixtures/projects/RefrigeratorControl", "fixtures/projects/TC3_PlcSample_reStrText/TC3_PlcSample_reStrText");
         github.Commit(repo, "main", files);
 

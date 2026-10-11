@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { hasLadder, linkTarget, sanitize } from './fragment';
+import { hasLadder, linkTarget, mermaidBlocks, sanitize } from './fragment';
 import { blobUrl, compareUrl, parseRange, parseRepoInput } from './routes';
 import { query } from './api';
 
@@ -31,6 +31,16 @@ describe('sanitize: the third wall', () => {
   it('keeps a hidden-character marker as text, never the character', () => {
     const html = '<span class="cd-hidden" data-char="U+202E" title="Right-to-left override">U+202E</span>';
     expect(sanitize(html)).toBe(html);
+  });
+});
+
+describe('Mermaid blocks', () => {
+  it('are found with their source text, which the frame draws', () => {
+    const root = document.createElement('div');
+    root.innerHTML = sanitize('<div class="md-page"><p>x</p><pre class="mermaid">graph TD\n  A --&gt; B</pre></div>');
+    const blocks = mermaidBlocks(root);
+    expect(blocks).toHaveLength(1);
+    expect(blocks[0]!.source).toBe('graph TD\n  A --> B');
   });
 });
 

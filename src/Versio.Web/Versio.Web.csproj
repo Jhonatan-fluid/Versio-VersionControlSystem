@@ -4,6 +4,12 @@
     <RootNamespace>Versio.Web</RootNamespace>
     <AssemblyName>Versio.Web</AssemblyName>
     <InvariantGlobalization>true</InvariantGlobalization>
+    <!-- wwwroot is BUILT (by the BuildWeb target below), so the SDK must not glob it when the
+         project is evaluated: it collected the previous build's hashed file names, Vite then
+         replaced them, and the static-web-assets step failed on names that no longer existed.
+         Found by rebuilding after a page change (2026-10-11). The page's files are added by
+         IncludeBuiltPage once they exist; appsettings.json is listed explicitly below. -->
+    <EnableDefaultContentItems>false</EnableDefaultContentItems>
     <!-- THE WEB VIEWER (docs/web/PLAN.md). A composition root like Versio.App: it renders with
          Versio.Core and the three PURE vendor packs, and references no *.Infrastructure pack and
          no .Host, because nothing here may drive an IDE, start a process or clone. The pure packs
@@ -22,6 +28,15 @@
 
   <ItemGroup>
     <InternalsVisibleTo Include="Versio.Web.Tests" />
+    <Content Include="appsettings.json" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Mermaid, for diagrams in Markdown: the desktop's own vendored copy, LINKED rather than
+         copied, so both products draw diagrams with one file and one version (its licence is
+         beside it in src/Versio.App/Assets/mermaid/). A file, not a project reference: the
+         server still references no desktop code. -->
+    <EmbeddedResource Include="..\Versio.App\Assets\mermaid\mermaid.min.js" LogicalName="Versio.Web.mermaid.min.js" Link="Assets\mermaid.min.js" />
   </ItemGroup>
 
   <!-- ====================================================================================

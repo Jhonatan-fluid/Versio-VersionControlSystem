@@ -204,7 +204,24 @@ public static partial class ApiEndpoints
         app.MapGet("/assets/code.css", (HttpContext h) => Asset(h, CodePageAssets.Css, "text/css"));
         app.MapGet("/assets/ladder.css", (HttpContext h) => Asset(h, LadderPageAssets.Css, "text/css"));
         app.MapGet("/assets/ladder.js", (HttpContext h) => Asset(h, LadderPageAssets.Script, "text/javascript"));
+
+        // Mermaid, the desktop's vendored copy (see the csproj). Only the sandboxed diagram frame
+        // loads it; the page itself never runs it (Http/Middleware.cs, the frame's policy).
+        app.MapGet("/assets/mermaid.js", (HttpContext h) =>
+        {
+            h.Response.Headers.CacheControl = "public, max-age=86400";
+            return Results.Bytes(Mermaid.Value, "text/javascript");
+        });
     }
+
+    private static readonly Lazy<byte[]> Mermaid = new(() =>
+    {
+        using var stream = typeof(ApiEndpoints).Assembly.GetManifestResourceStream("Versio.Web.mermaid.min.js")
+                           ?? throw new InvalidOperationException("mermaid.min.js is not embedded in Versio.Web");
+        using var copy = new MemoryStream();
+        stream.CopyTo(copy);
+        return copy.ToArray();
+    });
 
     private static IResult Asset(HttpContext http, string content, string type)
     {

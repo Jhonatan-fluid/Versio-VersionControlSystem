@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef } from 'react';
-import { hasLadder, linkTarget, sanitize } from '../fragment';
+import { hasLadder, linkTarget, mermaidBlocks, sanitize } from '../fragment';
 
 let ladderRun = 0;
 
@@ -35,6 +35,58 @@ export function FragmentHost({ html, path, onOpenPath, line, onLine }: Props) {
     script.src = `/assets/ladder.js?run=${++ladderRun}`;
     document.body.appendChild(script);
     return () => script.remove();
+  }, [clean]);
+
+  // Mermaid diagrams: each <pre class="mermaid"> stays as readable source until a sandboxed frame
+  // (allow-scripts, never allow-same-origin) has drawn it, then the frame takes its place. The
+  // frame gets the diagram's text and gives back a height; nothing else crosses. Messages are
+  // accepted only from the frame's own window.
+  useEffect(() => {
+    const root = host.current;
+    if (!root) {
+      return;
+    }
+    const dark = window.matchMedia?.('(prefers-color-scheme: dark)').matches ?? false;
+    const frames = new Map<Window, { frame: HTMLIFrameElement; pre: HTMLElement; id: number; source: string }>();
+    mermaidBlocks(root).forEach(({ element, source }, id) => {
+      const frame = document.createElement('iframe');
+      frame.src = '/mermaid-frame.html';
+      frame.setAttribute('sandbox', 'allow-scripts');
+      frame.title = 'Diagram';
+      frame.className = 'mermaid-frame';
+      frame.hidden = true;
+      element.after(frame);
+      if (frame.contentWindow) {
+        frames.set(frame.contentWindow, { frame, pre: element, id, source });
+      }
+    });
+    if (frames.size === 0) {
+      return;
+    }
+
+    function onMessage(event: MessageEvent) {
+      const entry = frames.get(event.source as Window);
+      if (!entry) {
+        return;
+      }
+      const data = event.data as { ready?: boolean; id?: number; height?: number };
+      if (data.ready) {
+        (event.source as Window).postMessage({ id: entry.id, source: entry.source, dark }, '*');
+      } else if (data.id === entry.id && typeof data.height === 'number') {
+        entry.frame.style.height = `${Math.min(Math.max(data.height, 40), 4000)}px`;
+        entry.frame.hidden = false;
+        entry.pre.hidden = true;
+      }
+    }
+
+    window.addEventListener('message', onMessage);
+    return () => {
+      window.removeEventListener('message', onMessage);
+      frames.forEach(({ frame, pre }) => {
+        frame.remove();
+        pre.hidden = false;
+      });
+    };
   }, [clean]);
 
   useEffect(() => {

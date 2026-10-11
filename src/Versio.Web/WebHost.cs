@@ -159,12 +159,16 @@ public static class WebHost
             // Vite names every built asset by its content hash (index-PYcC7phc.js), so a name
             // never points at different bytes: cache it for a year. index.html is the one file
             // whose name stays while its content changes, so it is always revalidated.
+            //
+            // Only Vite's hashed output under /assets is immutable. Every page and every other file
+            // keeps its name across deploys, so it is revalidated: the first rule gave those an
+            // hour, and a browser kept a stale mermaid-frame.html (seen in the browser, 2026-10-11).
             OnPrepareResponse = context =>
             {
                 var headers = context.Context.Response.Headers;
-                headers.CacheControl = context.File.Name.Equals("index.html", StringComparison.OrdinalIgnoreCase)
-                    ? "no-cache"
-                    : context.Context.Request.Path.StartsWithSegments("/assets") ? "public, max-age=31536000, immutable" : "public, max-age=3600";
+                var hashed = context.Context.Request.Path.StartsWithSegments("/assets")
+                             && !context.File.Name.EndsWith(".html", StringComparison.OrdinalIgnoreCase);
+                headers.CacheControl = hashed ? "public, max-age=31536000, immutable" : "no-cache";
             },
         };
         app.UseStaticFiles(staticFiles);

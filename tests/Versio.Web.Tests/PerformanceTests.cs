@@ -101,6 +101,16 @@ public sealed class PerformanceTests
 
         Assert.Equal("public, max-age=31536000, immutable", asset.Headers.CacheControl?.ToString());
         Assert.True(page.Headers.CacheControl?.NoCache, page.Headers.CacheControl?.ToString());
+
+        // An unhashed page or script outside /assets keeps its name across deploys: revalidated.
+        // The first rule cached these for an hour and a browser kept a stale diagram frame.
+        if (!File.Exists(Path.Combine(root, "mermaid-frame.html")))
+        {
+            await File.WriteAllTextAsync(Path.Combine(root, "mermaid-frame.html"), "<!doctype html><title>Diagram</title>");
+        }
+
+        var frame = await host.GetAsync("/mermaid-frame.html");
+        Assert.True(frame.Headers.CacheControl?.NoCache, frame.Headers.CacheControl?.ToString());
         Assert.Equal(TimeSpan.FromMinutes(5), coreCss.Headers.CacheControl?.MaxAge);
     }
 }

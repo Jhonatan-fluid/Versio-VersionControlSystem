@@ -272,6 +272,41 @@ public sealed class SecurityTests
     }
 
     [Fact]
+    public async Task Only_the_diagram_frame_allows_inline_styles_and_only_this_site_may_frame_it()
+    {
+        // Mermaid needs inline <style>; the page's policy must not allow it. The frame page alone
+        // does, may be framed by this site and no other, and its scripts load into an opaque origin.
+        var root = Path.Combine(AppContext.BaseDirectory, "wwwroot");
+        Directory.CreateDirectory(root);
+        // Only when the built page is not there: the first version overwrote the real frame with
+        // this stub, and FixturePreview, which serves from the same folder, then drew nothing.
+        foreach (var (name, stub) in new[] { ("mermaid-frame.html", "<!doctype html><title>Diagram</title>"), ("mermaid-frame.js", "// frame") })
+        {
+            if (!File.Exists(Path.Combine(root, name)))
+            {
+                await File.WriteAllTextAsync(Path.Combine(root, name), stub);
+            }
+        }
+        await using var host = await TestHost.StartAsync(GitHub(out _, out _));
+
+        var frame = await host.GetAsync(SecurityHeaders.MermaidFrame);
+        var page = await host.GetAsync("/acme/plant");
+        var mermaid = await host.GetAsync("/assets/mermaid.js");
+        var glue = await host.GetAsync("/mermaid-frame.js");
+
+        Assert.Equal(string.Format(System.Globalization.CultureInfo.InvariantCulture, SecurityHeaders.FrameCsp, host.Address.GetLeftPart(UriPartial.Authority)), frame.Headers.GetValues("Content-Security-Policy").Single());
+        Assert.DoesNotContain("'self'; style", frame.Headers.GetValues("Content-Security-Policy").Single(), StringComparison.Ordinal);
+        Assert.Equal("SAMEORIGIN", frame.Headers.GetValues("X-Frame-Options").Single());
+        Assert.Contains("frame-ancestors 'none'", page.Headers.GetValues("Content-Security-Policy").Single(), StringComparison.Ordinal);
+        Assert.DoesNotContain("style-src 'self' 'unsafe-inline'", page.Headers.GetValues("Content-Security-Policy").Single(), StringComparison.Ordinal);
+        mermaid.AssertStatus(HttpStatusCode.OK);
+        Assert.True((await mermaid.Content.ReadAsByteArrayAsync()).Length > 1_000_000, "the vendored mermaid.min.js");
+        Assert.Equal("cross-origin", mermaid.Headers.GetValues("Cross-Origin-Resource-Policy").Single());
+        Assert.Equal("cross-origin", glue.Headers.GetValues("Cross-Origin-Resource-Policy").Single());
+        Assert.Equal("same-origin", page.Headers.GetValues("Cross-Origin-Resource-Policy").Single());
+    }
+
+    [Fact]
     public async Task Hygiene_logout_without_the_request_header_is_refused_and_ends_nothing()
     {
         await using var host = await TestHost.StartAsync(GitHub(out _, out _));
