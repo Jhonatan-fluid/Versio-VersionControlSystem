@@ -46,7 +46,11 @@ public static class RepoExplorerBuilder
         var toolchains = ToolchainLabels(
             listed.Concat(projects.Select(p => Normalize(p.ProjectPath))),
             projects,
-            formats ?? PlcFormats.ForPath);
+
+            // A source project is a folder no ForPath lookup claims, so it would get no pill and
+            // read as an ordinary directory beside the projects that have one (the owner,
+            // 2026-10-10, on RefrigeratorControl_FBS).
+            formats ?? (path => PlcFormats.ForPath(path) ?? PlcFormats.ForSourceProject(path)));
 
         var claimed = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var grafts = new List<ProjectTreeNode>();
