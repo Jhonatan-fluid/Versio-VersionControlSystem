@@ -3,7 +3,8 @@
 **What this is.** A map of the read-only web viewer as built on branch `WebViewer`
 (2026-10-11): what each part is, where it lives, how a request travels through it, and which
 code it shares with the desktop app. Why it is built this way, the security rules, and what is
-still open are in [`PLAN.md`](PLAN.md). Where the project stands is in
+still open are in [`PLAN.md`](PLAN.md); the threats and what stops each are in
+[`THREAT-MODEL.md`](THREAT-MODEL.md). Where the project stands is in
 [`../STATUS.md`](../STATUS.md) (item 10).
 
 **In one sentence:** the page draws nothing; a .NET server reads a repository from GitHub and
@@ -68,17 +69,19 @@ the project file, the IL and every vendor reference (section 7).
 | `LfsGuard.cs` | Parses LFS pointers; allows LFS downloads only over https to allowlisted hosts; a connect callback that refuses internal addresses at the moment of connecting; no redirects |
 | **`Auth/`** | |
 | `AccessResolver.cs` | **Decides which credential reads a repository for a request.** Signed in: the person's own token. Anonymous: the App's token, only after GitHub says the repository is public |
-| `SessionStore.cs` | Server-side sessions. The browser holds a random id; tokens are encrypted with ASP.NET Data Protection; idle and absolute limits; an epoch kill switch |
-| `GitHubOAuth.cs` | `GitHubOAuth`: authorize URL with PKCE, code exchange, refresh, user, revoke. `AppTokens` (behind `IInstallationTokens`): a signed JWT, then a read-only installation token per repository |
+| `SessionStore.cs` | Server-side sessions on `IDistributedCache` (in memory, or Redis when `Web:Redis` is set, so instances share them). The browser holds a random id; tokens are encrypted with ASP.NET Data Protection; idle and absolute limits enforced by the cache's expiry; an epoch kill switch; one token renewal per session at a time |
+| `GitHubOAuth.cs` | `GitHubOAuth`: authorize URL with PKCE, code exchange, refresh, user, revoke. `AppTokens` (behind `IInstallationTokens`): a JWT signed through `IAppSigner`, then a read-only installation token per repository |
+| `AppSigner.cs` | `IAppSigner`, the seam a key vault plugs into (rule 15); `PemAppSigner` signs with the configured key until the host is chosen |
 | `AuthEndpoints.cs` | `/auth/login`, `/auth/callback`, `/auth/logout` (needs the `X-Versio-Request` header), `/api/me`. `SafeReturn` keeps the return URL on this site |
 | **`Api/`** | |
 | `ApiEndpoints.cs` | `/api/repos/{owner}/{repo}` plus `/branches`, `/tree`, `/view`, `/compare`, `/compare/view`, `/history`, and the three `/assets/…` routes serving Core's CSS and script. Validates every input, writes an audit line per view, turns failures into status codes. `Loader` does credential → commit → model |
 | **`Repo/`** | |
-| `RepoModel.cs` | `RepoModelLoader` turns one commit into a `RepoModel`: GitHub's file list, `.versio/repo.json`'s bindings, each export's `_manifest.json`, then `RepoExplorerBuilder`. Cached per repository and commit. `NodeFor(path)` finds the object a file belongs to |
+| `RepoModel.cs` | `RepoModelLoader` turns one commit into a `RepoModel`: GitHub's file list, `.versio/repo.json`'s bindings, each export's `_manifest.json`, each project's library, task and device catalogs, any File-Based Storage source project, then `RepoExplorerBuilder`. Cached per repository and commit; concurrent loads of one commit share one; each blob fetched once. `NodeFor(path)` is an index; `Objects` is Core's `ObjectIndex`, for type links |
+| `SingleFlight.cs` | Concurrent requests for the same key share one piece of work (model loads, visibility checks, branch resolution) |
 | **`Rendering/`** | |
 | `ViewService.cs` | **Turns an object into the fragment the page shows**, for one commit or two. Reads every layer of the object, picks the renderer in the desktop's order, applies the size limits and the time budget, adds notices, caches by content |
 | **`Http/`** | |
-| `Middleware.cs` | `SecurityHeaders` (CSP, nosniff, no-referrer, noindex, no-store on the API), `RequestLog` (one line per API request under an operation id, path only), `ConsoleLogSink` |
+| `Middleware.cs` | `SecurityHeaders` (CSP, nosniff, no-referrer, noindex, no-store on the API; the diagram frame's own narrower policy), `RequestLog` (one line per API request under an operation id, path only), `ConsoleLogSink` |
 
 ### The page: `web/` (about 1,300 lines)
 
@@ -93,7 +96,8 @@ the project file, the IL and every vendor reference (section 7).
 | `src/routes.ts` | Builds and parses the page's URLs (every view has its own link) |
 | `src/fragment.ts` | `sanitize` (DOMPurify: HTML and SVG, data-* markers kept, script and handlers removed), `linkTarget` (what a Markdown link may do) |
 | `src/useAsync.ts` | Loads with cancellation, so a slow earlier answer never replaces a newer one |
-| `src/components/FragmentHost.tsx` | Places a sanitised fragment, re-runs the ladder script, scrolls to `#L12`, turns gutter clicks into line links and Markdown clicks into navigation |
+| `src/components/FragmentHost.tsx` | Places a sanitised fragment, re-runs the ladder script, scrolls to `#L12`, turns gutter clicks into line links, Markdown and type-link clicks into navigation, and each Mermaid block into a sandboxed diagram frame |
+| `public/mermaid-frame.html`, `public/mermaid-frame.js` | The diagram frame: draws one diagram with the desktop's vendored Mermaid (strict mode), sandboxed without same-origin; text in, a height out |
 | `src/components/TreePanel.tsx` | The object tree with a filter |
 | `src/components/Pane.tsx` | Title, Rendered / Raw, Unified / Side by side, layer chips, notices, errors with sign-in when it would help |
 | `src/components/Header.tsx` | Repository, branch picker, Code / History / Compare, signed-in user |
@@ -121,10 +125,10 @@ the project file, the IL and every vendor reference (section 7).
 
 | Where | What |
 |---|---|
-| `tests/Versio.Web.Tests/` (87) | `ViewServiceTests` (the desktop's choices over the real fixtures), `SecurityTests` (the rules against the real host on a free port, sign-in end to end, the real executable's startup), `GitHubRepoSourceTests` (the real client against a local server shaped like GitHub), `LfsGuardTests`. `Fakes.cs` is a GitHub in memory serving this repository's own fixtures; `TestHost.cs` runs the real host; `FixturePreview.cs` serves the fixtures on port 5199 to look at (opt-in) |
+| `tests/Versio.Web.Tests/` (101) | `ViewServiceTests` (the desktop's choices over the real fixtures), `SecurityTests` (the rules against the real host on a free port, sign-in end to end, two instances sharing sessions, the real executable's startup), `GitHubRepoSourceTests` (the real client against a local server shaped like GitHub), `PerformanceTests` (each thing fetched once, compression, cache headers), `LfsGuardTests`. `Fakes.cs` is a GitHub in memory serving this repository's own fixtures; `TestHost.cs` runs the real host; `FixturePreview.cs` serves the fixtures on port 5199 to look at (opt-in) |
 | `tests/Versio.Core.Tests/` | `SourceHtmlTests`, `TextDiffHtmlTests`, `UnifiedDiffWriterTests`, `MemberTableHtmlTests`, `SafeXmlTests`, `SyntaxTokenizerCoverageTests`, `RendererAllowlistTests`, `PrimaryFileTests`, and the wording test in `LadderHtmlTests` |
 | `tests/Versio.Arch.Tests/` | `ProjectReferenceTests.Versio_Web_references_only_the_pure_packs`; `PurityRuleTests`: no process or file access in the server, vendors named only in `RegisterFormats`, XML only through `SafeXml` in Core and the packs |
-| `web/src/fragment.test.ts` (11) | The page's pure modules |
+| `web/src/fragment.test.ts` (12) | The page's pure modules |
 
 ---
 
@@ -179,6 +183,10 @@ run the same code. Everything below is **called, not copied**.
 | `Versio.Core.Projects`: `RepoExplorerBuilder`, `ProjectManifest`, `MemberTable`, `MemberTableDiff`, `WorkspaceProject` | The object tree, member tables and their comparison |
 | `Versio.Core.Plc.PlcFormats` and the three pure formats (`CodesysProjectFormat`, `TiaPortalProjectFormat`, `TwinCatProjectFormat`) | Every vendor-specific parse: member tables, ladders, code bodies, sections, syntax |
 | `Versio.Core.Bindings`: `RepoConfig`, `BindingConventions` | Reading `repo.json` and finding manifests |
+| `Versio.Core.Projects`: `LibraryCatalog`, `TaskCatalog`, `DeviceCatalog`, `ExportCoverage` forms | The libraries, tasks and devices grafted into the tree, read as the desktop's `ReadCatalogs` reads them |
+| `Versio.Core.Projects.ObjectIndex` | Member types linked to the objects they name, as the desktop's `LinkTypes` does |
+| `IPlcProjectFormat.DescribeSourceProject` | File-Based Storage projects described from GitHub's file list, as the desktop's explorer does from disk |
+| `src/Versio.App/Assets/mermaid/mermaid.min.js` | Mermaid diagrams: the desktop's vendored file, linked into Versio.Web as an embedded resource, not copied |
 | `Versio.Core.Logging`: `VersioLogger`, `LoggerExtensions`; `Versio.Infrastructure`: `RollingFileSink`, `SystemClock` | The same log format, operation ids and daily file as the desktop (in a `web/` subfolder) |
 
 ### Moved so both share one answer (were desktop-only)
@@ -220,9 +228,10 @@ executables, and the whole WPF app. The viewer only reads.
 | 4 No SSRF | `LfsGuard` (allowlist, connect callback, no redirects); GitHub URLs from configuration only |
 | 5 Markup walls | Escaping in `CodeHtml` and every renderer; `RendererAllowlistTests`; `web/src/fragment.ts` (DOMPurify); the CSP |
 | 6 Headers | `Http/Middleware.cs` |
-| 7 Tokens at rest | `SessionStore` (Data Protection); key ring persistence in `WebHost` (`Web:KeysDirectory`) |
+| 7 Tokens at rest | `SessionStore` (Data Protection, shared through Redis); key ring persistence in `WebHost` (`Web:KeysDirectory`) |
+| 15 App key | `IAppSigner` (`AppSigner.cs`); a vault signer replaces `PemAppSigner` in `WebHost` |
 | 8 Rate limits | `WebHost` (`AddRateLimiter`), `RequireRateLimiting` on every API and auth route |
-| 9 Hidden characters | `CodeHtml.IsHidden`, markers and notice; homoglyphs not yet |
+| 9 Hidden and look-alike characters | `CodeHtml.IsHidden` (markers) and `CodeHtml.MixedScripts` (underlined names), with the notice |
 | 10 Nothing drawn ≠ nothing changed | `ViewService.NothingDrawnChanged` |
 | 11 Visibility re-check | `AccessResolver` (five-minute verdict cache) |
 | 13 Audit, noindex | `ApiEndpoints.Audit`; `X-Robots-Tag` and the page's robots meta |

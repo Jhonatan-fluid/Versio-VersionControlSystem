@@ -58,6 +58,25 @@ not watching:
   before a line number) could never run; they were removed and the tokenizer's coverage became
   a seeded test of its own.
 
+**Later the same day: review, performance and the open items found nine more,** each fixed with
+a test that fails without it:
+- **Random sign-outs about every eight hours.** The page sends four requests at once; near token
+  expiry all four renewed with GitHub's single-use refresh token, three failed, and a failed
+  renewal ends the session. One renewal per session now; across instances, a re-read first.
+- **Layer chips could not show a layer**: an object always opened its primary file.
+- **A pooled-memory leak per GitHub call** (undisposed `JsonDocument`), and network failures
+  during blob reads escaping as 500s.
+- **Resolving a branch downloaded the whole commit** (up to 300 files' patches) to read its SHA.
+- **17 GitHub calls per page load** from simultaneous requests each doing the same work; 9 after
+  coalescing. The test that pins it then found **one blob fetched twice** in a model load.
+- **Rebuilding the page after a change broke the .NET build**: the Web SDK globbed `wwwroot` at
+  evaluation, before Vite replaced the hashed files.
+- **The diagram frame's policy said `script-src 'self'`**, which matches nothing in a sandboxed,
+  opaque origin, so no Mermaid diagram could ever draw.
+- **Unhashed static files cached for an hour**, so a browser kept a stale frame page; and a test
+  overwrote the built frame with a stub that the preview then served.
+- **`NodeFor` walked the whole tree per call**, changed-files times tree-size in a comparison.
+
 **A tooling hazard, for whoever edits next.** Backslash-u escapes typed into the editing tools
 arrived in source as the literal invisible characters: U+2028 broke the build, and the others
 compiled silently, inside the code that guards against hidden characters. The checks are now

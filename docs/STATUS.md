@@ -60,7 +60,7 @@ marking, duplicate-param keys, and the detail-pane lookup. All of them are in
 
 | Project | Tests | Time | Needs |
 |---|---|---|---|
-| `Versio.Core.Tests` | 1,754 | under a second | nothing |
+| `Versio.Core.Tests` | 1,756 | under a second | nothing |
 | `Versio.Integration.Tests` | 171 | ~10 s | real git |
 | `Versio.App.Tests` | 782 | 6 m 35 s on 2026-10-10; 8 m 38 s on 2026-10-05; ~3.6 min on 2026-09-22 | nothing |
 | `Versio.Arch.Tests` | 35 | instant | nothing |
@@ -70,8 +70,8 @@ marking, duplicate-param keys, and the detail-pane lookup. All of them are in
 | `Versio.Plc.TiaPortal.Tests` | 5 | seconds when skipped; minutes when Portal runs the import gate | **real TIA Portal** — skips without Openness membership or LFS content |
 | `Versio.Plc.TwinCat.Pure.Tests` | 23 | instant | nothing |
 | `Versio.Plc.TwinCat.Tests` | 6 | seconds when skipped; ~5 min when XAE runs the import gate | **real TwinCAT XAE** — skips without `TcXaeShell.DTE.17.0` or the fixture |
-| `Versio.Web.Tests` | 87 | a few seconds | nothing — GitHub is faked |
-| `web/` (vitest) | 11 | ~20 s | the pinned Node in `web/.node` |
+| `Versio.Web.Tests` | 101 | a few seconds | nothing — GitHub is faked |
+| `web/` (vitest) | 12 | ~20 s | the pinned Node in `web/.node` |
 | `Versio.Plc.Codesys.Tests` | 55 | **~30 min**; 41 m 14 s, 55/55, on 2026-10-11 on `WebViewer` | **real CODESYS** |
 
 The first ten are the loop to work in — about thirty seconds plus the UI suite. The last is
@@ -341,14 +341,24 @@ One list. Reorder it; do not copy it into another file.
    code. Built: the HTML renderers for source, text diffs and member tables (Outpost's Step 2b,
    shared), SafeXml under every pack parser, the server, sign-in through a GitHub App, the page,
    the Arch rules, and a Dockerfile. Looked at in the built-in browser on the fixtures.
-   **Left, in order:**
-   - **register the GitHub App** (the owner's, on GitHub: read-only Contents and Metadata, a
-     callback at `/auth/callback`) and run sign-in against real GitHub; until then the server
-     runs anonymously on public repositories, which was checked against real GitHub;
+   Later the same day: two review passes (seven defects fixed), a performance pass (17 GitHub
+   calls per page load down to 9, responses compressed 18x, the 33,644-line file on screen in
+   1.4 s, so no paging), and the open code items closed: type links in member tables,
+   catalogs and FBS projects in the tree, look-alike letters, Mermaid in a sandboxed frame,
+   a comparison cap, sessions shareable through Redis, the App key behind a signing seam, a
+   threat model ([`web/THREAT-MODEL.md`](web/THREAT-MODEL.md)).
+   **Left, all needing the owner or a deployment:**
+   - **register the GitHub App** (on GitHub: read-only Contents and Metadata, a callback at
+     `/auth/callback`) and run sign-in against real GitHub; until then the server runs
+     anonymously on public repositories, which was checked against real GitHub;
+   - decide who hosts it (the same question as Outpost §16); that picks the key vault behind
+     `IAppSigner` and the key ring, and Redis if more than one instance;
    - build the Docker image on a host that has Docker (none on the machine that wrote it);
-   - decide who hosts it (the same question as Outpost §16);
-   - type links in member tables, catalogs and FBS projects in the tree, homoglyphs, Mermaid;
-   - the large-file measurement (`content-visibility` on the 33,644-line visualisation).
+   - one look in a normal browser at a Markdown page with a Mermaid diagram (the built-in
+     browser refuses sub-frames, so the page embedding the frame was not observed);
+   - the external penetration test and a cost alarm, once it is deployed;
+   - later, on purpose: the desktop drawing with the shared HTML renderers, and the choice of
+     renderer moved into Core for both (today mirrored, pinned by a test).
 7. **Wait for a specimen, not a build.** C5 (`DELETE_UNREADABLE`) and `native_partial` close when
    reality produces an object nobody has observed. They cannot be manufactured. See
    [`phase1/IMPORT-PLAN.md`](phase1/IMPORT-PLAN.md).

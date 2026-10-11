@@ -81,7 +81,7 @@ exactly that).
 
 | Threat | Mitigation | Proof |
 |---|---|---|
-| Nobody can say who viewed a private program | One audit line per view: login, repository, commit, path; sign-in, refresh and sign-out logged | Log lines seen in the startup and smoke runs; no test asserts the audit line yet |
+| Nobody can say who viewed a private program | One audit line per view: login, repository, commit, path; sign-in, refresh and sign-out logged | `Rule13_a_view_is_audited_and_no_secret_ever_reaches_the_log` (reads the file the host wrote) |
 
 ### Information disclosure
 
@@ -93,7 +93,7 @@ exactly that).
 | A proxy or CDN keeps a private response | `Cache-Control: private, no-store` on the API | `Rule2_api_responses_are_never_stored_by_a_proxy` |
 | A private repository's existence leaks | Every refusal a 404, including GitHub's 403 | `GitHubs_refusals_become_what_the_page_can_say` |
 | URLs naming private paths leak through Referer | `Referrer-Policy: no-referrer` | `Rule6_every_response_carries_the_csp_and_the_privacy_headers` |
-| A token in a log | Logs carry logins and paths, never tokens, codes, verifiers or secrets; request lines carry the path only, never the query (the callback's code) | Code review; no test greps logs for secrets yet |
+| A token in a log | Logs carry logins and paths, never tokens, codes, verifiers or secrets; request lines carry the path only, never the query (the callback's code) | The same test: the log holds no token, refresh token, client secret, one-time code, PKCE verifier or state |
 | Stored tokens readable from a store dump | Encrypted with Data Protection | `Rule7_tokens_are_encrypted_at_rest_in_the_session_store` |
 | **The server fetches its own cloud credentials (SSRF through LFS)** | LFS downloads: https, allowlisted hosts, no redirects, internal addresses refused at connect time | `LfsGuardTests`, `An_LFS_download_pointed_at_the_metadata_service_is_refused_before_any_connection`, `..._that_resolves_internal_is_refused_at_connect` |
 | Compression leaks a secret (BREACH) | No response body carries a secret | Design argument (WebHost); nothing to test |
@@ -134,7 +134,7 @@ exactly that).
 | Sign-in never run against real GitHub | Tested against a local OAuth server | Needs the owner to register the App |
 | The page embedding the Mermaid frame not observed | Frame tested directly; sandbox attributes asserted in code | The built-in browser refuses sub-frames; needs one look in a normal browser |
 | Look-alike detection limited to mixed scripts | Built | A whole name in Cyrillic that looks Latin is not flagged; a confusables table would flag much honest text |
-| No test asserts the audit line or greps logs for secrets | Open | Cheap to add |
+| ~~No test asserts the audit line or greps logs for secrets~~ | **Closed 2026-10-11** | `Rule13_a_view_is_audited_and_no_secret_ever_reaches_the_log` |
 | No outbound network allowlist | Infrastructure | The container's network policy, rule 16 |
 | No external penetration test, no cost alarm | Open | Need a live deployment and a party outside this repository (rule 19) |
 | Cross-instance token renewal race | Mitigated | The in-process gate plus a re-read before signing out; two instances can still both call GitHub once |

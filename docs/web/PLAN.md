@@ -7,7 +7,11 @@ Steps 0 to 5 done and tested, Step 6 written but its image not built (no Docker 
 Each step below says what was built and what changed from the plan. Still to do, in order: the
 owner registers the GitHub App and sign-in is run against real GitHub; the image is built; who
 hosts it is decided. **The map of what was built** (layers, files, one request end to end, what
-is reused from the desktop) is [`ARCHITECTURE.md`](ARCHITECTURE.md).
+is reused from the desktop) is [`ARCHITECTURE.md`](ARCHITECTURE.md); the threats and what stops
+each are [`THREAT-MODEL.md`](THREAT-MODEL.md). The open items listed in the first version of
+this page (type links, catalogs and FBS projects in the tree, look-alike letters, Mermaid, the
+comparison cap, shared sessions, the App key seam, the large-file measurement) were all closed
+the same day; what is left needs the owner or a deployment (STATUS item 10).
 
 | | |
 |---|---|
@@ -167,8 +171,9 @@ removed when a mutation showed nothing could reach them, and the tokenizer's cov
 test of its own instead. `CodeHtml.A` spells hidden characters in attributes, where a marker
 element cannot go. Later the same day, the browser showed desktop wording leaking ("since the
 last commit"); `LadderHtml` took an optional `LadderWording`, the desktop's text by default.
-**Not done:** the large-file measurement on the 33,644-line visualisation; the blocks and
-`content-visibility` are in place, unmeasured.
+**Measured later the same day:** the 33,644-line visualisation's Raw view is on screen 1.4 s
+after navigation in the built-in browser (under 0.1 s of it the 421 KB compressed download, the
+rest DOMPurify and layout over 7.7 MB of HTML in 132 blocks). Paging was not needed.
 
 - `Versio.Core/Diff/TextDiffHtml.cs`: unified and side-by-side, from `UnifiedDiffParser` output,
   with `SyntaxTokenizer` spans and `IntralineEmphasis`. Plus `SourceHtml.cs` for a single file,
@@ -280,17 +285,19 @@ comments on a line; anything that writes.
 The desktop parses the owner's own files. The server parses anyone's repository. The same code now
 faces the internet, and that change is the source of most of what follows.
 
-**Where each rule stands, 2026-10-11.** Built and tested (each test named in `Versio.Web.Tests`,
-`Versio.Core.Tests` or `Versio.Arch.Tests`, most also mutation-checked): 1, 2, 3, 4, 5, 6, 8,
-10, 11, 13, 14, 17. Built as code, with the production half being configuration: 7 (sessions are
-encrypted with Data Protection; protecting the key ring with a vault is deployment), 16 (the
-Dockerfile runs non-root on a read-only root; the outbound allowlist is the network's). Partly:
-9 (bidirectional, zero-width and control characters are marked; homoglyphs are not), 12 (the
-cache is in memory with a 30-minute sliding expiry, so nothing is at rest yet; a shared cache
-must bring encryption and a retention). Open: 15 (the App key is configuration, not signed in
-a vault), 18 (no webhooks or account linking exist yet), 19 (threat model, penetration test,
-cost alarm), and the comparison-size cap in 8 (one file is bounded; the changed-file list of
-two huge commits is not).
+**Where each rule stands, 2026-10-11 (end of day).** Built and tested (each test named in
+`Versio.Web.Tests`, `Versio.Core.Tests` or `Versio.Arch.Tests`, most also mutation-checked):
+1, 2, 3, 4, 5, 6, 8 (including the comparison cap: 2,000 files listed, the rest counted), 9
+(hidden characters as markers, and names mixing Latin with Cyrillic or Greek underlined), 10,
+11, 13 (the audit line, and no secret in the log, read from the file the host wrote), 14, 17.
+Built as code, the production half being configuration: 7 (sessions encrypted with Data
+Protection, shareable across instances through Redis; protecting the key ring with a vault is
+deployment), 15 (the App's JWT signs through `IAppSigner`; a vault signer is one class once the
+host is chosen), 16 (the Dockerfile runs non-root on a read-only root; the outbound allowlist is
+the network's). 12: the rendered-content cache stays in memory per instance (30-minute sliding
+expiry), so nothing is at rest. 18: no webhooks or account linking exist. 19: the threat model is
+written ([`THREAT-MODEL.md`](THREAT-MODEL.md)); the penetration test and the cost alarm need a
+live deployment.
 
 **Must have, before anything goes live**
 1. **The installation token never reads for a signed-in user, and never reads a private repository.**
