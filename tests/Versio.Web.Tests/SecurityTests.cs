@@ -34,7 +34,7 @@ public sealed class SecurityTests
     private static string SignIn(TestHost host, string token = "alice-token", string login = "alice")
     {
         var sessions = host.Services.GetRequiredService<SessionStore>();
-        var session = sessions.Create(42, login, login, "", token, DateTimeOffset.UtcNow.AddHours(8), null, DateTimeOffset.UtcNow.AddMonths(6));
+        var session = sessions.CreateAsync(42, login, login, "", token, DateTimeOffset.UtcNow.AddHours(8), null, DateTimeOffset.UtcNow.AddMonths(6)).GetAwaiter().GetResult();
         return $"{AccessResolver.SessionCookie}={session.Id}";
     }
 
@@ -400,7 +400,7 @@ public sealed class SecurityTests
         await using var host = await TestHost.StartAsync(GitHub(out _, out _));
         var sessions = host.Services.GetRequiredService<SessionStore>();
 
-        var session = sessions.Create(1, "alice", "Alice", "", "ghu_plaintext_token", DateTimeOffset.UtcNow.AddHours(1), "ghr_refresh", DateTimeOffset.UtcNow.AddDays(1));
+        var session = await sessions.CreateAsync(1, "alice", "Alice", "", "ghu_plaintext_token", DateTimeOffset.UtcNow.AddHours(1), "ghr_refresh", DateTimeOffset.UtcNow.AddDays(1));
 
         Assert.DoesNotContain("ghu_plaintext_token", session.ProtectedAccessToken, StringComparison.Ordinal);
         Assert.DoesNotContain("ghr_refresh", session.ProtectedRefreshToken, StringComparison.Ordinal);
@@ -413,7 +413,11 @@ public sealed class SecurityTests
         await using var host = await TestHost.StartAsync(GitHub(out _, out _));
         var sessions = host.Services.GetRequiredService<SessionStore>();
 
-        var ids = Enumerable.Range(0, 20).Select(_ => sessions.Create(1, "a", "a", "", "t", DateTimeOffset.UtcNow.AddHours(1), null, default).Id).ToList();
+        var ids = new List<string>();
+        for (var i = 0; i < 20; i++)
+        {
+            ids.Add((await sessions.CreateAsync(1, "a", "a", "", "t", DateTimeOffset.UtcNow.AddHours(1), null, default)).Id);
+        }
 
         Assert.Equal(20, ids.Distinct(StringComparer.Ordinal).Count());
         Assert.All(ids, id => Assert.True(id.Length >= 43, id));
@@ -480,14 +484,14 @@ public sealed class SecurityTests
         await using var host = await TestHost.StartAsync(GitHub(out _, out _), oauth.Settings());
         oauth.LiveRefreshTokens["alice-refresh"] = true;
         var sessions = host.Services.GetRequiredService<SessionStore>();
-        var session = sessions.Create(42, "alice", "Alice", "", "alice-token", DateTimeOffset.UtcNow.AddMinutes(1), "alice-refresh", DateTimeOffset.UtcNow.AddDays(30));
+        var session = await sessions.CreateAsync(42, "alice", "Alice", "", "alice-token", DateTimeOffset.UtcNow.AddMinutes(1), "alice-refresh", DateTimeOffset.UtcNow.AddDays(30));
         var cookie = $"{AccessResolver.SessionCookie}={session.Id}";
 
         var answers = await Task.WhenAll(Enumerable.Range(0, 4).Select(_ => host.GetAsync("/api/repos/acme/secret/tree", cookie)));
 
         Assert.All(answers, a => a.AssertStatus(HttpStatusCode.OK));
         Assert.Single(oauth.Exchanges, e => e.GetValueOrDefault("grant_type") == "refresh_token");
-        Assert.NotNull(sessions.Peek(session.Id));
+        Assert.NotNull(await sessions.PeekAsync(session.Id));
     }
 
     [Fact]
@@ -503,6 +507,27 @@ public sealed class SecurityTests
         await host.GetAsync($"/auth/callback?code=good&state={Uri.EscapeDataString(state)}", $"{AuthEndpoints.LoginCookie}={loginCookie}; {earlier}");
 
         (await host.GetAsync("/api/repos/acme/secret/tree", earlier)).AssertStatus(HttpStatusCode.NotFound);
+    }
+
+    [Fact]
+    public async Task A_session_made_on_one_instance_works_on_another_sharing_the_store_and_keys()
+    {
+        // Two servers behind one address: the session store (Redis in production, one shared
+        // in-memory store here) and the Data Protection key ring are what they must share, or a
+        // sign-in on one is unknown, or undecryptable, on the other.
+        var store = new Microsoft.Extensions.Caching.Distributed.MemoryDistributedCache(
+            Microsoft.Extensions.Options.Options.Create(new Microsoft.Extensions.Caching.Memory.MemoryDistributedCacheOptions()));
+        var keys = Path.Combine(Path.GetTempPath(), "versio-web-keys", Guid.NewGuid().ToString("N"));
+        var settings = new Dictionary<string, string?> { ["Web:KeysDirectory"] = keys };
+        void Shared(IServiceCollection s) => s.AddSingleton<Microsoft.Extensions.Caching.Distributed.IDistributedCache>(store);
+        var github = GitHub(out _, out _);
+
+        await using var first = await TestHost.StartAsync(github, settings, Shared);
+        await using var second = await TestHost.StartAsync(github, settings, Shared);
+        var cookie = SignIn(first);
+
+        (await second.GetAsync("/api/repos/acme/secret/tree", cookie)).AssertStatus(HttpStatusCode.OK);
+        Assert.Contains("\"login\":\"alice\"", await (await second.GetAsync("/api/me", cookie)).Body(), StringComparison.Ordinal);
     }
 
     [Fact]

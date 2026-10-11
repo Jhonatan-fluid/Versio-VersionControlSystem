@@ -84,10 +84,10 @@ public static class AuthEndpoints
             // server until its idle timeout (found reviewing).
             if (http.Request.Cookies[AccessResolver.SessionCookie] is { Length: > 0 } earlier)
             {
-                sessions.Remove(earlier);
+                await sessions.RemoveAsync(earlier, ct).ConfigureAwait(false);
             }
 
-            var session = sessions.Create(user.Id, user.Login, user.Name, user.AvatarUrl, tokens.AccessToken, tokens.AccessExpires, tokens.RefreshToken, tokens.RefreshExpires);
+            var session = await sessions.CreateAsync(user.Id, user.Login, user.Name, user.AvatarUrl, tokens.AccessToken, tokens.AccessExpires, tokens.RefreshToken, tokens.RefreshExpires, ct).ConfigureAwait(false);
             http.Response.Cookies.Append(AccessResolver.SessionCookie, session.Id, Cookie(options.Value.SessionLifetime));
             log.Info(LogCategory.Auth, $"Signed in {user.Login} (user {user.Id})");
             return Results.Redirect(login.ReturnUrl);
@@ -100,10 +100,10 @@ public static class AuthEndpoints
                 return Results.StatusCode(StatusCodes.Status403Forbidden);
             }
 
-            if (sessions.Find(http.Request.Cookies[AccessResolver.SessionCookie]) is { } session)
+            if (await sessions.FindAsync(http.Request.Cookies[AccessResolver.SessionCookie], ct).ConfigureAwait(false) is { } session)
             {
                 var revoked = await oauth.RevokeAsync(sessions.AccessToken(session), ct).ConfigureAwait(false);
-                sessions.Remove(session.Id);
+                await sessions.RemoveAsync(session.Id, ct).ConfigureAwait(false);
                 log.Info(LogCategory.Auth, $"Signed out {session.Login} (user {session.GitHubUserId}); token {(revoked ? "revoked at GitHub" : "not revoked: GitHub refused, the session is ended here regardless")}");
             }
 

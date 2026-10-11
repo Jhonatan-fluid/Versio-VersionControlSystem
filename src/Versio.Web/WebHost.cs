@@ -91,6 +91,24 @@ public static class WebHost
             .ConfigurePrimaryHttpMessageHandler(LfsGuard.CreateHandler);
 
         builder.Services.AddSingleton<IRepoSource, GitHubRepoSource>();
+        // Sessions live in a distributed cache: Redis when Web:Redis is set, so every instance
+        // sees every session; in memory otherwise, for one instance. The rendered-content cache
+        // stays per instance (AddMemoryCache above): it is keyed by content, so each instance
+        // computes the same answer and nothing about it needs to be shared.
+        var redis = builder.Configuration["Web:Redis"];
+        if (!string.IsNullOrEmpty(redis))
+        {
+            builder.Services.AddStackExchangeRedisCache(o =>
+            {
+                o.Configuration = redis;
+                o.InstanceName = "versio-web:";
+            });
+        }
+        else
+        {
+            builder.Services.AddDistributedMemoryCache();
+        }
+
         builder.Services.AddSingleton<SessionStore>();
         builder.Services.AddSingleton<GitHubOAuth>();
         builder.Services.AddSingleton<IInstallationTokens, AppTokens>();

@@ -27,6 +27,12 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- Sessions shared across instances when Web:Redis is set (SessionStore). Pinned to the
+         installed ASP.NET runtime's own version, so no framework assembly is mixed. -->
+    <PackageReference Include="Microsoft.Extensions.Caching.StackExchangeRedis" Version="9.0.19" />
+  </ItemGroup>
+
+  <ItemGroup>
     <InternalsVisibleTo Include="Versio.Web.Tests" />
     <Content Include="appsettings.json" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
   </ItemGroup>

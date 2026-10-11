@@ -1,6 +1,8 @@
 using System.Collections.Concurrent;
 using System.Security.Cryptography;
+using System.Text.Json;
 using Microsoft.AspNetCore.DataProtection;
+using Microsoft.Extensions.Caching.Distributed;
 using Microsoft.Extensions.Options;
 using Versio.Core.Abstractions;
 
@@ -44,46 +46,38 @@ public sealed record Session
 /// <remarks>
 /// <para>
 /// <b>Server-side, so a session can be ended.</b> A token inside the cookie could not be revoked
-/// short of rotating keys for everyone; here logout deletes the row, and the epoch kill switch
-/// (security rule 17) ends every row at once.
+/// short of rotating keys for everyone; here logout deletes the entry, and the epoch kill switch
+/// (security rule 17) ends every entry at once.
 /// </para>
 /// <para>
 /// <b>Tokens are encrypted at rest</b> with ASP.NET Data Protection (security rule 7), so a dump
-/// of this store, or of whatever replaces it, is not a list of GitHub tokens. In production the
-/// key ring itself is protected by the host's key vault; that is configuration, not code.
+/// of the store is not a list of GitHub tokens. In production the key ring itself is protected by
+/// the host's key vault; that is configuration, not code.
 /// </para>
 /// <para>
-/// <b>In memory for the proof of concept.</b> Sessions end when the process restarts, which
-/// costs a sign-in and nothing else. A second instance needs a shared store (Redis or the
-/// database), behind this same class.
+/// <b>Behind <see cref="IDistributedCache"/>, so more than one instance can share it.</b> The
+/// first version was a dictionary in one process: a second instance did not know a session the
+/// first created, and abandoned sessions stayed until the process ended. In memory by default
+/// (one instance, sessions end on restart); Redis when <c>Web:Redis</c> is set (WebHost). The
+/// cache's own expiry enforces the idle and absolute limits, so nothing has to be swept.
+/// <c>LastSeen</c> is written back at most once a minute, not on every request, because with Redis
+/// every write is a round trip.
 /// </para>
 /// </remarks>
-public sealed class SessionStore(IDataProtectionProvider protection, IClock clock, IOptions<WebOptions> options)
+public sealed class SessionStore(IDistributedCache store, IDataProtectionProvider protection, IClock clock, IOptions<WebOptions> options)
 {
+    private static readonly TimeSpan TouchEvery = TimeSpan.FromMinutes(1);
+
     private readonly IDataProtector _tokens = protection.CreateProtector("Versio.Web.SessionTokens.v1");
-    private readonly ConcurrentDictionary<string, Session> _sessions = new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<string, SemaphoreSlim> _refreshGates = new(StringComparer.Ordinal);
 
     private WebOptions O => options.Value;
 
     /// <summary>A new session with a new random id: never one carried over from before sign-in (security rule 14).</summary>
-    /// <remarks>
-    /// Sweeps expired sessions first. Until then, one was removed only if its cookie came back,
-    /// so every abandoned session stayed in memory for the life of the process (found reviewing).
-    /// </remarks>
-    public Session Create(long userId, string login, string name, string avatar, string accessToken, DateTimeOffset accessExpires,
-        string? refreshToken, DateTimeOffset refreshExpires)
+    public async Task<Session> CreateAsync(long userId, string login, string name, string avatar, string accessToken, DateTimeOffset accessExpires,
+        string? refreshToken, DateTimeOffset refreshExpires, CancellationToken ct = default)
     {
         var now = clock.UtcNow;
-        foreach (var (id, old) in _sessions)
-        {
-            if (Expired(old, now))
-            {
-                _sessions.TryRemove(id, out _);
-                _refreshGates.TryRemove(id, out _);
-            }
-        }
-
         var session = new Session
         {
             Id = NewId(),
@@ -99,33 +93,59 @@ public sealed class SessionStore(IDataProtectionProvider protection, IClock cloc
             LastSeen = now,
             Epoch = O.SessionEpoch,
         };
-        _sessions[session.Id] = session;
+        await WriteAsync(session, ct).ConfigureAwait(false);
         return session;
     }
 
     /// <summary>The live session for <paramref name="id"/>, touched; null when absent, idle, too old or from another epoch.</summary>
-    public Session? Find(string? id)
+    public async Task<Session?> FindAsync(string? id, CancellationToken ct = default)
     {
-        if (string.IsNullOrEmpty(id) || !_sessions.TryGetValue(id, out var session))
+        if (string.IsNullOrEmpty(id) || await PeekAsync(id, ct).ConfigureAwait(false) is not { } session)
         {
             return null;
         }
 
         var now = clock.UtcNow;
-        if (Expired(session, now))
+        if (session.Epoch != O.SessionEpoch || now - session.LastSeen > O.SessionIdle || now - session.Created > O.SessionLifetime)
         {
-            _sessions.TryRemove(id, out _);
-            _refreshGates.TryRemove(id, out _);
+            await RemoveAsync(id, ct).ConfigureAwait(false);
             return null;
         }
 
+        if (now - session.LastSeen < TouchEvery)
+        {
+            return session;
+        }
+
         var touched = session with { LastSeen = now };
-        _sessions[id] = touched;
+        await WriteAsync(touched, ct).ConfigureAwait(false);
         return touched;
     }
 
+    /// <summary>The session as stored now, without touching it; null when gone.</summary>
+    public async Task<Session?> PeekAsync(string id, CancellationToken ct = default)
+    {
+        var bytes = await store.GetAsync(Key(id), ct).ConfigureAwait(false);
+        if (bytes is null)
+        {
+            return null;
+        }
+
+        try
+        {
+            return JsonSerializer.Deserialize<Session>(bytes);
+        }
+        catch (JsonException)
+        {
+            // An entry this version cannot read (written by another version, or damaged): a
+            // sign-in, not an error page.
+            return null;
+        }
+    }
+
     /// <summary>Replaces a session's tokens after a refresh.</summary>
-    public Session UpdateTokens(Session session, string accessToken, DateTimeOffset accessExpires, string? refreshToken, DateTimeOffset refreshExpires)
+    public async Task<Session> UpdateTokensAsync(Session session, string accessToken, DateTimeOffset accessExpires, string? refreshToken,
+        DateTimeOffset refreshExpires, CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(session);
         var updated = session with
@@ -135,7 +155,7 @@ public sealed class SessionStore(IDataProtectionProvider protection, IClock cloc
             ProtectedRefreshToken = string.IsNullOrEmpty(refreshToken) ? session.ProtectedRefreshToken : _tokens.Protect(refreshToken),
             RefreshExpires = string.IsNullOrEmpty(refreshToken) ? session.RefreshExpires : refreshExpires,
         };
-        _sessions[session.Id] = updated;
+        await WriteAsync(updated, ct).ConfigureAwait(false);
         return updated;
     }
 
@@ -144,27 +164,33 @@ public sealed class SessionStore(IDataProtectionProvider protection, IClock cloc
     public string? RefreshToken(Session session) =>
         session.ProtectedRefreshToken.Length == 0 ? null : _tokens.Unprotect(session.ProtectedRefreshToken);
 
-    public void Remove(string id)
+    public async Task RemoveAsync(string id, CancellationToken ct = default)
     {
-        _sessions.TryRemove(id, out _);
+        await store.RemoveAsync(Key(id), ct).ConfigureAwait(false);
         _refreshGates.TryRemove(id, out _);
     }
 
     /// <summary>
-    /// The one gate a session's token renewal goes through. GitHub's refresh tokens are single
-    /// use, and the page sends several requests at once, so without it every request near expiry
-    /// renewed in parallel, all but the first failed, and the failure signed the person out
-    /// (found reviewing). <see cref="AccessResolver.SessionAsync"/> waits here and re-reads.
+    /// The one gate a session's token renewal goes through in this process. GitHub's refresh
+    /// tokens are single use, and the page sends several requests at once, so without it every
+    /// request near expiry renewed in parallel, all but the first failed, and the failure signed
+    /// the person out (found reviewing). <see cref="AccessResolver.SessionAsync"/> waits here and
+    /// re-reads; across instances it re-reads before giving up, since another may have renewed.
     /// </summary>
     public SemaphoreSlim RefreshGate(string id) => _refreshGates.GetOrAdd(id, _ => new SemaphoreSlim(1, 1));
 
-    /// <summary>The session as stored now, without touching it; null when gone.</summary>
-    public Session? Peek(string id) => _sessions.TryGetValue(id, out var s) ? s : null;
+    private Task WriteAsync(Session session, CancellationToken ct)
+    {
+        // The store forgets an entry idle for SessionIdle or older than SessionLifetime by itself.
+        var entry = new DistributedCacheEntryOptions
+        {
+            SlidingExpiration = O.SessionIdle,
+            AbsoluteExpiration = session.Created + O.SessionLifetime,
+        };
+        return store.SetAsync(Key(session.Id), JsonSerializer.SerializeToUtf8Bytes(session), entry, ct);
+    }
 
-    private bool Expired(Session session, DateTimeOffset now) =>
-        session.Epoch != O.SessionEpoch || now - session.LastSeen > O.SessionIdle || now - session.Created > O.SessionLifetime;
-
-    public int Count => _sessions.Count;
+    private static string Key(string id) => "versio-session:" + id;
 
     private static string NewId() => Base64Url(RandomNumberGenerator.GetBytes(32));
 

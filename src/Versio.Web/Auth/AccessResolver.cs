@@ -41,7 +41,7 @@ public sealed class AccessResolver(
     public async Task<Session?> SessionAsync(HttpContext context, CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(context);
-        if (sessions.Find(context.Request.Cookies[SessionCookie]) is not { } session)
+        if (await sessions.FindAsync(context.Request.Cookies[SessionCookie], ct).ConfigureAwait(false) is not { } session)
         {
             return null;
         }
@@ -62,7 +62,7 @@ public sealed class AccessResolver(
         await gate.WaitAsync(ct).ConfigureAwait(false);
         try
         {
-            var current = sessions.Peek(session.Id);
+            var current = await sessions.PeekAsync(session.Id, ct).ConfigureAwait(false);
             if (current is null)
             {
                 return null;
@@ -77,11 +77,20 @@ public sealed class AccessResolver(
                 && await oauth.RefreshAsync(refresh, ct).ConfigureAwait(false) is { } renewed)
             {
                 log.Info(LogCategory.Auth, $"Renewed the token for {current.Login} (user {current.GitHubUserId})");
-                return sessions.UpdateTokens(current, renewed.AccessToken, renewed.AccessExpires, renewed.RefreshToken, renewed.RefreshExpires);
+                return await sessions.UpdateTokensAsync(current, renewed.AccessToken, renewed.AccessExpires, renewed.RefreshToken, renewed.RefreshExpires, ct).ConfigureAwait(false);
+            }
+
+            // The gate holds within one process only. Another instance sharing the store may have
+            // renewed with the same single-use refresh token a moment ago: if the stored session
+            // is fresh now, that is the answer, not a sign-out.
+            if (await sessions.PeekAsync(session.Id, ct).ConfigureAwait(false) is { } after
+                && after.AccessExpires - clock.UtcNow > TimeSpan.FromMinutes(5))
+            {
+                return after;
             }
 
             log.Info(LogCategory.Auth, $"Session for {current.Login} ended: its token expired and could not be renewed");
-            sessions.Remove(current.Id);
+            await sessions.RemoveAsync(current.Id, ct).ConfigureAwait(false);
             return null;
         }
         finally
