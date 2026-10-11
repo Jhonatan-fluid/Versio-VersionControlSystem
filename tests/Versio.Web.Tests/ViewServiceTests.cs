@@ -144,6 +144,19 @@ public sealed class ViewServiceTests
     }
 
     [Fact]
+    public async Task No_view_speaks_of_the_last_commit_or_uncommitted_changes()
+    {
+        // The desktop compares with the last commit; this page shows one commit or two chosen
+        // ones. Seen in the browser: the ladder said "No changes since the last commit" and the
+        // table spoke of uncommitted changes.
+        var pages = new[] { await View(Signals), await View(Settings), await Compare(Settings), await Compare(Simulation) };
+
+        Assert.All(pages, p => Assert.DoesNotContain("last commit", p.Html, StringComparison.OrdinalIgnoreCase));
+        Assert.All(pages, p => Assert.DoesNotContain("uncommitted", p.Html, StringComparison.OrdinalIgnoreCase));
+        Assert.Contains("The block interface.", pages[0].Html, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void The_phrase_reworded_is_still_the_one_Core_writes()
     {
         // If Core rewords its summary, Reword stops matching and the desktop's "last commit"
@@ -154,6 +167,8 @@ public sealed class ViewServiceTests
 
         Assert.StartsWith("Since the last commit", compared.ChangeSummary, StringComparison.Ordinal);
         Assert.StartsWith("Since the older version", ViewService.Reword(compared).ChangeSummary, StringComparison.Ordinal);
+        Assert.StartsWith("At the last commit", compared.Members[0].Was, StringComparison.Ordinal);
+        Assert.StartsWith("In the older version", ViewService.Reword(compared).Members[0].Was, StringComparison.Ordinal);
     }
 
     [Fact]

@@ -209,7 +209,7 @@ public sealed class ViewService(
             {
                 if (format.TryParseMemberTable(layer.Path, layer.Text!) is { IsValid: true } table)
                 {
-                    var html = new StringBuilder(MemberTableHtml.Fragment(table));
+                    var html = new StringBuilder(MemberTableHtml.Fragment(WebNote(table)));
                     if (table.IsInterface)
                     {
                         AppendInterfaceCode(html, format, node, files, older: null);
@@ -227,7 +227,7 @@ public sealed class ViewService(
                 if (format.TryParseLadder(layer.Path, layer.Text!) is { } ladder)
                 {
                     return Result("ladder", node, shown,
-                        LadderHtml.Fragment(LadderDiff.Compare(ladder.Body, ladder.Body), ladder.Style), notices);
+                        LadderHtml.Fragment(LadderDiff.Compare(ladder.Body, ladder.Body), ladder.Style, wording: SingleWording), notices);
                 }
             }
         }
@@ -289,7 +289,7 @@ public sealed class ViewService(
                 var baseline = oldTable is { IsValid: true } ? oldTable : new MemberTable { Name = newTable!.Name, IsInterface = newTable.IsInterface, IsDataType = newTable.IsDataType, IsVariableList = newTable.IsVariableList };
                 var current = newTable is { IsValid: true } ? newTable : baseline with { Members = [] };
                 var compared = Reword(MemberTableDiff.Compare(baseline, current));
-                var html = new StringBuilder(MemberTableHtml.Fragment(compared));
+                var html = new StringBuilder(MemberTableHtml.Fragment(WebNote(compared)));
                 var tableChanged = compared.Members.Any(m => m.Change != MemberChange.None);
                 var codeChanged = false;
                 if (compared.IsInterface)
@@ -326,7 +326,7 @@ public sealed class ViewService(
                 }
 
                 return Result("ladder", node, shown,
-                    LadderHtml.Fragment(comparison, (newLadder ?? oldLadder!).Style, sideBySide ? LadderView.SideBySide : LadderView.Merged), notices);
+                    LadderHtml.Fragment(comparison, (newLadder ?? oldLadder!).Style, sideBySide ? LadderView.SideBySide : LadderView.Merged, CompareWording), notices);
             }
         }
 
@@ -391,7 +391,7 @@ public sealed class ViewService(
                 : ladderNew is null
                     ? LadderDiff.Compare(ladderOld!.Body, new LadderBody(ladderOld.Body.BlockName, []))
                     : LadderDiff.Compare(ladderOld?.Body, ladderNew.Body);
-            html.Append(LadderHtml.Fragment(comparison, (ladderNew ?? ladderOld!).Style, sideBySide ? LadderView.SideBySide : LadderView.Merged));
+            html.Append(LadderHtml.Fragment(comparison, (ladderNew ?? ladderOld!).Style, sideBySide ? LadderView.SideBySide : LadderView.Merged, older is null ? SingleWording : CompareWording));
             return older is not null && comparison.HasChanges;
         }
 
@@ -422,14 +422,45 @@ public sealed class ViewService(
     internal const string OverBudgetNotice =
         "This file took too long to draw, so it is shown as plain text.";
 
+    /// <summary>One version shown: there is nothing it is compared with, so nothing to say about changes.</summary>
+    internal static readonly LadderWording SingleWording = new("", "Every {0} is new.");
+
+    /// <summary>Two versions the reader chose, never "the last commit".</summary>
+    internal static readonly LadderWording CompareWording = new(
+        "No changes between these two versions.", "Not in the older version: every {0} is new.");
+
+    /// <summary>
+    /// The table's note in this page's words. The desktop's note speaks of uncommitted changes and
+    /// write-back, neither of which a browser viewing a commit has. A note a vendor set on purpose
+    /// (a text list, say) is kept.
+    /// </summary>
+    internal static MemberTable WebNote(MemberTable table) => table.Note is not null ? table : table with
+    {
+        Note = (table.IsDataType, table.IsInterface, table.IsVariableList) switch
+        {
+            (true, _, _) => "The data type's members.",
+            (_, true, _) => "The block interface.",
+            (_, _, true) => "The global variables.",
+            _ => "The data block interface.",
+        },
+    };
+
     /// <summary>
     /// The member table's summary in this page's words. <c>MemberTableDiff</c> writes for the
     /// desktop, where the comparison is always against the last commit; here it is between two
     /// commits the reader chose. <c>ViewServiceTests</c> pins the phrase this replaces, so a
     /// rewording in Core fails a test instead of reaching the page unnoticed.
     /// </summary>
-    internal static MemberTable Reword(MemberTable table) =>
-        table with { ChangeSummary = table.ChangeSummary.Replace("Since the last commit", "Since the older version", StringComparison.Ordinal) };
+    internal static MemberTable Reword(MemberTable table) => table with
+    {
+        ChangeSummary = table.ChangeSummary.Replace("Since the last commit", "Since the older version", StringComparison.Ordinal),
+
+        // Each modified row's "was" tooltip too, which the first version missed and the
+        // no-last-commit test caught.
+        Members = table.Members
+            .Select(m => m.Was.Length == 0 ? m : m with { Was = m.Was.Replace("At the last commit", "In the older version", StringComparison.Ordinal) })
+            .ToList(),
+    };
 
     private ViewResult? Unreadable(ProjectTreeNode node, string shown, IReadOnlyDictionary<string, Layer> files, bool allowLarge = false)
     {
