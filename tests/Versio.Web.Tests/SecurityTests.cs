@@ -223,6 +223,39 @@ public sealed class SecurityTests
     }
 
     [Fact]
+    public async Task A_pasted_link_to_a_file_with_an_extension_opens_the_page()
+    {
+        // Found in the browser: the default fallback skips file-like paths, so every link to a
+        // .st or .xml was a 404 on reload. The page is whatever index.html the host serves.
+        var root = Path.Combine(AppContext.BaseDirectory, "wwwroot");
+        Directory.CreateDirectory(root);
+        if (!File.Exists(Path.Combine(root, "index.html")))
+        {
+            await File.WriteAllTextAsync(Path.Combine(root, "index.html"), "<!doctype html><title>Versio</title>");
+        }
+
+        Directory.CreateDirectory(Path.Combine(root, "assets"));
+        await File.WriteAllTextAsync(Path.Combine(root, "assets", "probe-test.js"), "// a built asset");
+
+        await using var host = await TestHost.StartAsync(GitHub(out _, out _));
+
+        var file = await host.GetAsync("/acme/plant/blob/main/Device/Plc%20Logic/Signals.xml");
+        var compare = await host.GetAsync("/acme/plant/compare/main...next?path=a.st");
+        var builtAsset = await host.GetAsync("/assets/probe-test.js");
+        var missingAsset = await host.GetAsync("/assets/nothing.js");
+
+        file.AssertStatus(HttpStatusCode.OK);
+        Assert.Equal("text/html", file.Content.Headers.ContentType?.MediaType);
+        compare.AssertStatus(HttpStatusCode.OK);
+
+        // The page's own script must still be served as itself, not swallowed by a fallback:
+        // the first version of this fix 404'd every built asset and this test did not notice.
+        builtAsset.AssertStatus(HttpStatusCode.OK);
+        Assert.Equal("// a built asset", await builtAsset.Body());
+        missingAsset.AssertStatus(HttpStatusCode.NotFound);
+    }
+
+    [Fact]
     public async Task Hygiene_logout_without_the_request_header_is_refused_and_ends_nothing()
     {
         await using var host = await TestHost.StartAsync(GitHub(out _, out _));

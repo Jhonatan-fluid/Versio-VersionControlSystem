@@ -60,7 +60,10 @@ public static class WebHost
         ConfigureProcess();
         RegisterFormats();
 
-        var builder = WebApplication.CreateBuilder(args);
+        // The content root is the server's own folder, not wherever it was started from: the
+        // built page (wwwroot) and appsettings.json are copied beside the assembly, and a
+        // server started from the repository root would otherwise serve no page at all.
+        var builder = WebApplication.CreateBuilder(new WebApplicationOptions { Args = args, ContentRootPath = AppContext.BaseDirectory });
         var section = builder.Configuration.GetSection(WebOptions.Section);
         builder.Services.Configure<WebOptions>(section);
         var options = section.Get<WebOptions>() ?? new WebOptions();
@@ -129,9 +132,15 @@ public static class WebHost
 
         app.UseMiddleware<SecurityHeaders>();
         app.UseMiddleware<RequestLog>();
-        app.UseRateLimiter();
+
+        // Static files BEFORE routing, explicitly. The static-file middleware stands aside when
+        // routing has already chosen an endpoint, and the page's fallbacks below match
+        // /assets/index-*.js too, so with routing first the page's own script and stylesheet
+        // were 404s (seen in the browser on 2026-10-11, the moment the fallbacks were added).
         app.UseDefaultFiles();
         app.UseStaticFiles();
+        app.UseRouting();
+        app.UseRateLimiter();
 
         ApiEndpoints.Map(app);
         AuthEndpoints.Map(app);
@@ -139,6 +148,14 @@ public static class WebHost
         // An unknown API route is a 404, never the page's index.html with a 200.
         app.MapFallback("/api/{**rest}", () => Results.NotFound());
         app.MapFallback("/auth/{**rest}", () => Results.NotFound());
+        app.MapFallback("/assets/{**rest}", () => Results.NotFound());
+
+        // The page's own URLs end in the file they show (/acme/plant/blob/main/Signals.xml), and
+        // the default fallback skips any path that looks like a file, so a pasted or reloaded
+        // link to almost every PLC file was a 404. Seen in the browser on 2026-10-11; every view
+        // having its own URL is the point of the page (docs/web/PLAN.md). Real static files are
+        // served before routing, so these never shadow one.
+        app.MapFallbackToFile("/{owner}/{repo}/{**rest}", "index.html");
         app.MapFallbackToFile("index.html");
 
         var g = options.GitHub;

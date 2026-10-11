@@ -1,0 +1,19 @@
+<Project>
+  <!-- THE NODE THIS REPOSITORY BUILDS ITS PAGE WITH, pinned by version and by hash.
+
+       The owner asked (2026-10-11) for everything the page needs to come with the repository, so
+       a clone builds it with nothing installed. The binary itself is not committed: a ~80 MB
+       node.exe in git is paid for by every clone forever, LFS or not. What is committed is this
+       pin: Versio.Web's build downloads exactly this archive from nodejs.org into web/.node/
+       (ignored), checks it against the SHA-256 below, which was copied from nodejs.org's own
+       SHASUMS256.txt for this release, and refuses to use it on any mismatch.
+
+       Upgrading Node is editing these lines: version, and the three hashes from
+       https://nodejs.org/dist/v<version>/SHASUMS256.txt. -->
+  <PropertyGroup>
+    <NodeVersion>24.21.0</NodeVersion>
+    <NodeSha256_win_x64>158f7685b44de51f6c0df1d153526cbcd3e1bc739a8dfc607721cef75de9e541</NodeSha256_win_x64>
+    <NodeSha256_linux_x64>6e1db87ef58b8819e5d5402eff1536491b18edd8eb7bee5ef7897876e88dc5ff</NodeSha256_linux_x64>
+    <NodeSha256_linux_arm64>724282c3b43aec998aa9527380465b45d229e021b58035f5f4f63095eabfe5d5</NodeSha256_linux_arm64>
+  </PropertyGroup>
+</Project>
