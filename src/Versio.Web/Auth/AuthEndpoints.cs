@@ -80,6 +80,13 @@ public static class AuthEndpoints
                 return Results.Redirect("/?signin=failed");
             }
 
+            // A sign-in replaces this browser's earlier session rather than leaving it valid on the
+            // server until its idle timeout (found reviewing).
+            if (http.Request.Cookies[AccessResolver.SessionCookie] is { Length: > 0 } earlier)
+            {
+                sessions.Remove(earlier);
+            }
+
             var session = sessions.Create(user.Id, user.Login, user.Name, user.AvatarUrl, tokens.AccessToken, tokens.AccessExpires, tokens.RefreshToken, tokens.RefreshExpires);
             http.Response.Cookies.Append(AccessResolver.SessionCookie, session.Id, Cookie(options.Value.SessionLifetime));
             log.Info(LogCategory.Auth, $"Signed in {user.Login} (user {user.Id})");

@@ -94,6 +94,11 @@ internal sealed class FakeOAuth : IAsyncDisposable
 
     public ConcurrentQueue<string> Revoked { get; } = new();
 
+    /// <summary>Refresh tokens that have not been used yet.</summary>
+    public ConcurrentDictionary<string, bool> LiveRefreshTokens { get; } = new();
+
+    private int _issued;
+
     private FakeOAuth(WebApplication app, Uri address)
     {
         _app = app;
@@ -111,11 +116,25 @@ internal sealed class FakeOAuth : IAsyncDisposable
         {
             var form = (await http.Request.ReadFormAsync()).ToDictionary(kv => kv.Key, kv => kv.Value.ToString());
             self!.Exchanges.Enqueue(form);
-            if (form.GetValueOrDefault("code") != "good" && form.GetValueOrDefault("grant_type") != "refresh_token")
+            if (form.GetValueOrDefault("grant_type") == "refresh_token")
+            {
+                // As GitHub: a refresh token works once, and each renewal issues a new one.
+                if (!self.LiveRefreshTokens.TryRemove(form.GetValueOrDefault("refresh_token") ?? "", out _))
+                {
+                    return Results.Json(new { error = "bad_refresh_token" });
+                }
+
+                var next = $"alice-refresh-{Interlocked.Increment(ref self._issued)}";
+                self.LiveRefreshTokens[next] = true;
+                return Results.Json(new { access_token = "alice-token", expires_in = 28800, refresh_token = next, refresh_token_expires_in = 15897600 });
+            }
+
+            if (form.GetValueOrDefault("code") != "good")
             {
                 return Results.Json(new { error = "bad_verification_code" });
             }
 
+            self.LiveRefreshTokens["alice-refresh"] = true;
             return Results.Json(new { access_token = "alice-token", expires_in = 28800, refresh_token = "alice-refresh", refresh_token_expires_in = 15897600 });
         });
         app.MapGet("/user", (HttpContext http) =>

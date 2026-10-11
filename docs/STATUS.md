@@ -70,7 +70,7 @@ marking, duplicate-param keys, and the detail-pane lookup. All of them are in
 | `Versio.Plc.TiaPortal.Tests` | 5 | seconds when skipped; minutes when Portal runs the import gate | **real TIA Portal** — skips without Openness membership or LFS content |
 | `Versio.Plc.TwinCat.Pure.Tests` | 23 | instant | nothing |
 | `Versio.Plc.TwinCat.Tests` | 6 | seconds when skipped; ~5 min when XAE runs the import gate | **real TwinCAT XAE** — skips without `TcXaeShell.DTE.17.0` or the fixture |
-| `Versio.Web.Tests` | 85 | a few seconds | nothing — GitHub is faked |
+| `Versio.Web.Tests` | 87 | a few seconds | nothing — GitHub is faked |
 | `web/` (vitest) | 11 | ~20 s | the pinned Node in `web/.node` |
 | `Versio.Plc.Codesys.Tests` | 55 | **~30 min**; 41 m 14 s, 55/55, on 2026-10-11 on `WebViewer` | **real CODESYS** |
 

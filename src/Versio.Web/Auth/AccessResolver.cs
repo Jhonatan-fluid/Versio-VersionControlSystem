@@ -53,16 +53,41 @@ public sealed class AccessResolver(
 
         // Close to its eight hours: renew quietly. A refresh that fails ends the session, and the
         // page sends the person to sign in again (the sign-in flow, step 4).
-        if (sessions.RefreshToken(session) is { } refresh && session.RefreshExpires > clock.UtcNow
-            && await oauth.RefreshAsync(refresh, ct).ConfigureAwait(false) is { } renewed)
+        //
+        // One renewal per session at a time, and whoever waited re-reads first: GitHub's refresh
+        // tokens are single use and the page asks for four things at once on every load, so
+        // without the gate the second, third and fourth renewal failed and signed the person out
+        // (found reviewing; SecurityTests pins it).
+        var gate = sessions.RefreshGate(session.Id);
+        await gate.WaitAsync(ct).ConfigureAwait(false);
+        try
         {
-            log.Info(LogCategory.Auth, $"Renewed the token for {session.Login} (user {session.GitHubUserId})");
-            return sessions.UpdateTokens(session, renewed.AccessToken, renewed.AccessExpires, renewed.RefreshToken, renewed.RefreshExpires);
-        }
+            var current = sessions.Peek(session.Id);
+            if (current is null)
+            {
+                return null;
+            }
 
-        log.Info(LogCategory.Auth, $"Session for {session.Login} ended: its token expired and could not be renewed");
-        sessions.Remove(session.Id);
-        return null;
+            if (current.AccessExpires - clock.UtcNow > TimeSpan.FromMinutes(5))
+            {
+                return current;
+            }
+
+            if (sessions.RefreshToken(current) is { } refresh && current.RefreshExpires > clock.UtcNow
+                && await oauth.RefreshAsync(refresh, ct).ConfigureAwait(false) is { } renewed)
+            {
+                log.Info(LogCategory.Auth, $"Renewed the token for {current.Login} (user {current.GitHubUserId})");
+                return sessions.UpdateTokens(current, renewed.AccessToken, renewed.AccessExpires, renewed.RefreshToken, renewed.RefreshExpires);
+            }
+
+            log.Info(LogCategory.Auth, $"Session for {current.Login} ended: its token expired and could not be renewed");
+            sessions.Remove(current.Id);
+            return null;
+        }
+        finally
+        {
+            gate.Release();
+        }
     }
 
     /// <summary>The credential for reading <paramref name="owner"/>/<paramref name="repo"/> in this request.</summary>

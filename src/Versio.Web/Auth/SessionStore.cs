@@ -62,14 +62,28 @@ public sealed class SessionStore(IDataProtectionProvider protection, IClock cloc
 {
     private readonly IDataProtector _tokens = protection.CreateProtector("Versio.Web.SessionTokens.v1");
     private readonly ConcurrentDictionary<string, Session> _sessions = new(StringComparer.Ordinal);
+    private readonly ConcurrentDictionary<string, SemaphoreSlim> _refreshGates = new(StringComparer.Ordinal);
 
     private WebOptions O => options.Value;
 
     /// <summary>A new session with a new random id: never one carried over from before sign-in (security rule 14).</summary>
+    /// <remarks>
+    /// Sweeps expired sessions first. Until then, one was removed only if its cookie came back,
+    /// so every abandoned session stayed in memory for the life of the process (found reviewing).
+    /// </remarks>
     public Session Create(long userId, string login, string name, string avatar, string accessToken, DateTimeOffset accessExpires,
         string? refreshToken, DateTimeOffset refreshExpires)
     {
         var now = clock.UtcNow;
+        foreach (var (id, old) in _sessions)
+        {
+            if (Expired(old, now))
+            {
+                _sessions.TryRemove(id, out _);
+                _refreshGates.TryRemove(id, out _);
+            }
+        }
+
         var session = new Session
         {
             Id = NewId(),
@@ -98,9 +112,10 @@ public sealed class SessionStore(IDataProtectionProvider protection, IClock cloc
         }
 
         var now = clock.UtcNow;
-        if (session.Epoch != O.SessionEpoch || now - session.LastSeen > O.SessionIdle || now - session.Created > O.SessionLifetime)
+        if (Expired(session, now))
         {
             _sessions.TryRemove(id, out _);
+            _refreshGates.TryRemove(id, out _);
             return null;
         }
 
@@ -129,7 +144,25 @@ public sealed class SessionStore(IDataProtectionProvider protection, IClock cloc
     public string? RefreshToken(Session session) =>
         session.ProtectedRefreshToken.Length == 0 ? null : _tokens.Unprotect(session.ProtectedRefreshToken);
 
-    public void Remove(string id) => _sessions.TryRemove(id, out _);
+    public void Remove(string id)
+    {
+        _sessions.TryRemove(id, out _);
+        _refreshGates.TryRemove(id, out _);
+    }
+
+    /// <summary>
+    /// The one gate a session's token renewal goes through. GitHub's refresh tokens are single
+    /// use, and the page sends several requests at once, so without it every request near expiry
+    /// renewed in parallel, all but the first failed, and the failure signed the person out
+    /// (found reviewing). <see cref="AccessResolver.SessionAsync"/> waits here and re-reads.
+    /// </summary>
+    public SemaphoreSlim RefreshGate(string id) => _refreshGates.GetOrAdd(id, _ => new SemaphoreSlim(1, 1));
+
+    /// <summary>The session as stored now, without touching it; null when gone.</summary>
+    public Session? Peek(string id) => _sessions.TryGetValue(id, out var s) ? s : null;
+
+    private bool Expired(Session session, DateTimeOffset now) =>
+        session.Epoch != O.SessionEpoch || now - session.LastSeen > O.SessionIdle || now - session.Created > O.SessionLifetime;
 
     public int Count => _sessions.Count;
 

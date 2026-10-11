@@ -121,7 +121,7 @@ the project file, the IL and every vendor reference (section 7).
 
 | Where | What |
 |---|---|
-| `tests/Versio.Web.Tests/` (85) | `ViewServiceTests` (the desktop's choices over the real fixtures), `SecurityTests` (the rules against the real host on a free port, sign-in end to end, the real executable's startup), `GitHubRepoSourceTests` (the real client against a local server shaped like GitHub), `LfsGuardTests`. `Fakes.cs` is a GitHub in memory serving this repository's own fixtures; `TestHost.cs` runs the real host; `FixturePreview.cs` serves the fixtures on port 5199 to look at (opt-in) |
+| `tests/Versio.Web.Tests/` (87) | `ViewServiceTests` (the desktop's choices over the real fixtures), `SecurityTests` (the rules against the real host on a free port, sign-in end to end, the real executable's startup), `GitHubRepoSourceTests` (the real client against a local server shaped like GitHub), `LfsGuardTests`. `Fakes.cs` is a GitHub in memory serving this repository's own fixtures; `TestHost.cs` runs the real host; `FixturePreview.cs` serves the fixtures on port 5199 to look at (opt-in) |
 | `tests/Versio.Core.Tests/` | `SourceHtmlTests`, `TextDiffHtmlTests`, `UnifiedDiffWriterTests`, `MemberTableHtmlTests`, `SafeXmlTests`, `SyntaxTokenizerCoverageTests`, `RendererAllowlistTests`, `PrimaryFileTests`, and the wording test in `LadderHtmlTests` |
 | `tests/Versio.Arch.Tests/` | `ProjectReferenceTests.Versio_Web_references_only_the_pure_packs`; `PurityRuleTests`: no process or file access in the server, vendors named only in `RegisterFormats`, XML only through `SafeXml` in Core and the packs |
 | `web/src/fragment.test.ts` (11) | The page's pure modules |

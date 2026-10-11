@@ -421,6 +421,40 @@ public sealed class SecurityTests
     }
 
     [Fact]
+    public async Task Four_requests_at_once_near_token_expiry_renew_once_and_nobody_is_signed_out()
+    {
+        // The page asks for four things at once on every load. With a single-use refresh token,
+        // parallel renewals all but the first failed and ended the session (found reviewing).
+        await using var oauth = await FakeOAuth.StartAsync();
+        await using var host = await TestHost.StartAsync(GitHub(out _, out _), oauth.Settings());
+        oauth.LiveRefreshTokens["alice-refresh"] = true;
+        var sessions = host.Services.GetRequiredService<SessionStore>();
+        var session = sessions.Create(42, "alice", "Alice", "", "alice-token", DateTimeOffset.UtcNow.AddMinutes(1), "alice-refresh", DateTimeOffset.UtcNow.AddDays(30));
+        var cookie = $"{AccessResolver.SessionCookie}={session.Id}";
+
+        var answers = await Task.WhenAll(Enumerable.Range(0, 4).Select(_ => host.GetAsync("/api/repos/acme/secret/tree", cookie)));
+
+        Assert.All(answers, a => a.AssertStatus(HttpStatusCode.OK));
+        Assert.Single(oauth.Exchanges, e => e.GetValueOrDefault("grant_type") == "refresh_token");
+        Assert.NotNull(sessions.Peek(session.Id));
+    }
+
+    [Fact]
+    public async Task Signing_in_again_ends_the_browsers_earlier_session()
+    {
+        await using var oauth = await FakeOAuth.StartAsync();
+        await using var host = await TestHost.StartAsync(GitHub(out _, out _), oauth.Settings());
+        var earlier = SignIn(host);
+
+        var login = await host.GetAsync("/auth/login");
+        var state = Microsoft.AspNetCore.WebUtilities.QueryHelpers.ParseQuery(login.Headers.Location!.Query)["state"].ToString();
+        var loginCookie = TestHost.SetCookie(login, AuthEndpoints.LoginCookie);
+        await host.GetAsync($"/auth/callback?code=good&state={Uri.EscapeDataString(state)}", $"{AuthEndpoints.LoginCookie}={loginCookie}; {earlier}");
+
+        (await host.GetAsync("/api/repos/acme/secret/tree", earlier)).AssertStatus(HttpStatusCode.NotFound);
+    }
+
+    [Fact]
     public async Task Sign_in_is_not_offered_when_no_App_is_configured()
     {
         await using var host = await TestHost.StartAsync(GitHub(out _, out _));
