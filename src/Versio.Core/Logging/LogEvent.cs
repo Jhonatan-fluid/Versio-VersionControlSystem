@@ -72,6 +72,15 @@ public static class LogCategory
 
     /// <summary>Process lifetime: startup, shutdown, configuration, unhandled failures.</summary>
     public const string App = "App";
+
+    /// <summary>
+    /// The web viewer's requests: what was asked for, of which repository, by whom, and how it
+    /// ended. Also its audit trail of who viewed what (docs/web/PLAN.md, security rule 13).
+    /// </summary>
+    public const string Web = "Web";
+
+    /// <summary>Signing in and out of the web viewer, token refreshes and refusals. Never a token.</summary>
+    public const string Auth = "Auth";
 }
 
 /// <summary>

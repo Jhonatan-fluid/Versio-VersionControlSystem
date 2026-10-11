@@ -300,32 +300,12 @@ public sealed class TreeRow : ObservableObject
 
     /// <summary>The file the diff pane opens for this node, or null when it opens none.</summary>
     /// <remarks>
-    /// <para>
-    /// The readable layer wins. An object exporting to both <c>.st</c> / <c>.scl</c> and
-    /// <c>.xml</c> opens the Structured Text, because that is the one somebody can review;
-    /// the native XML is there for completeness and reads like a machine wrote it, which
-    /// it did. Matching by suffix rather than sort order is load-bearing for TIA: a data
-    /// block's <c>.scl</c> is the review copy, and falling through to "first file" used
-    /// to open SimaticML whenever the textual suffix was not <c>.st</c>. This is only
-    /// the <i>default</i>: the diff pane's header offers the other layers as chips
-    /// (<see cref="DiffLayerChoice"/>), so the native half stopped being unreachable.
-    /// </para>
-    /// <para>
-    /// Null for a project row. A <c>.project</c> is a binary compound document - git can store
-    /// it and cannot diff it, which is the entire reason this tool exists - so the row reports
-    /// its export instead, and the pane says so rather than showing an empty diff.
-    /// </para>
+    /// The rule and its reasons live on <see cref="ProjectTreeNode.PrimaryFile"/> since
+    /// 2026-10-11, so the web viewer opens the same file for the same node. Only the default:
+    /// the diff pane's header offers the other layers as chips (<see cref="DiffLayerChoice"/>),
+    /// so the native half is never unreachable.
     /// </remarks>
-    public string? PrimaryFile =>
-        IsProject || IsFolder
-            ? null
-            : Node.Files.FirstOrDefault(IsTextualLayer)
-              ?? Node.Files.FirstOrDefault();
-
-    private static bool IsTextualLayer(string path) =>
-        path.EndsWith(".st", StringComparison.OrdinalIgnoreCase)
-        || path.EndsWith(".scl", StringComparison.OrdinalIgnoreCase)
-        || path.EndsWith(".udt", StringComparison.OrdinalIgnoreCase);
+    public string? PrimaryFile => Node.PrimaryFile;
 
     private static string BrushFor(ChangeKind kind) => kind switch
     {

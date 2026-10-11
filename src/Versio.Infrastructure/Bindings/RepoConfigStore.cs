@@ -76,7 +76,7 @@ public sealed class RepoConfigStore(string repositoryRoot, IVersioLogger? logger
         try
         {
             var json = await File.ReadAllTextAsync(Path, Utf8NoBom, ct).ConfigureAwait(false);
-            return JsonSerializer.Deserialize<RepoConfig>(json, Options) ?? new RepoConfig();
+            return Parse(json);
         }
         catch (JsonException ex)
         {
@@ -88,6 +88,18 @@ public sealed class RepoConfigStore(string repositoryRoot, IVersioLogger? logger
             return new RepoConfig();
         }
     }
+
+    /// <summary>
+    /// The configuration in <paramref name="json"/>, read with the same options the store writes
+    /// with. Throws <see cref="JsonException"/> on a corrupt file; the caller decides what that means.
+    /// </summary>
+    /// <remarks>
+    /// Separate from <see cref="LoadAsync"/> so the web viewer, which reads <c>repo.json</c> from
+    /// GitHub rather than disk, reads it exactly as the desktop does. Copying the options would
+    /// be two readers of one committed file, and the enum-by-name rule above is easy to drop.
+    /// </remarks>
+    public static RepoConfig Parse(string json) =>
+        JsonSerializer.Deserialize<RepoConfig>(json, Options) ?? new RepoConfig();
 
     public async Task SaveAsync(RepoConfig config, CancellationToken ct)
     {
