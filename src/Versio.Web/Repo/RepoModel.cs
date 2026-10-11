@@ -3,6 +3,7 @@ using System.Text.Json;
 using Microsoft.Extensions.Caching.Memory;
 using Versio.Core.Bindings;
 using Versio.Core.Logging;
+using Versio.Core.Plc;
 using Versio.Core.Projects;
 using Versio.Infrastructure.Bindings;
 using Versio.Web.Sources;
@@ -136,23 +137,30 @@ public sealed class RepoModelLoader(IRepoSource source, IMemoryCache cache, IVer
         }
 
         var files = tree.Value!.Files.ToDictionary(f => f.Path, StringComparer.Ordinal);
+
+        // Each blob fetched once per load, however many paths share it: identical files (two
+        // projects' identical catalogs) have one blob id, and parallel reads fetched it twice
+        // (found by PerformanceTests' "each thing once").
+        var fetches = new System.Collections.Concurrent.ConcurrentDictionary<string, Task<RepoResult<byte[]>>>(StringComparer.Ordinal);
+        Task<RepoResult<byte[]>> fetch(string sha) => fetches.GetOrAdd(sha, s => source.GetBlobAsync(access, owner, repo, s, MaxConfigBytes, ct));
         var problems = new List<string>();
         var projects = new List<WorkspaceProject>();
         var isVersio = files.TryGetValue(ConfigPath, out var configEntry);
 
         if (isVersio)
         {
-            var config = await ReadConfigAsync(access, owner, repo, configEntry!, problems, ct).ConfigureAwait(false);
+            var config = await ReadConfigAsync(fetch, owner, repo, configEntry!, problems).ConfigureAwait(false);
             // Every manifest at once: one GitHub round trip each, and none depends on another.
             var bindings = config?.Bindings.Where(b => b.Enabled).ToList() ?? [];
             async Task<RepoResult<byte[]>?> ReadManifest(ProjectBinding b) =>
                 files.TryGetValue($"{b.ExportPath.TrimEnd('/')}/{BindingConventions.ManifestFileName}", out var entry)
-                    ? await source.GetBlobAsync(access, owner, repo, entry.BlobSha, MaxConfigBytes, ct).ConfigureAwait(false)
+                    ? await fetch(entry.BlobSha).ConfigureAwait(false)
                     : null;
 
             var reads = bindings.Select(ReadManifest).ToList();
             await Task.WhenAll(reads).ConfigureAwait(false);
 
+            var found = new List<(ProjectBinding Binding, ProjectManifest? Manifest)>();
             for (var i = 0; i < bindings.Count; i++)
             {
                 var binding = bindings[i];
@@ -175,15 +183,29 @@ public sealed class RepoModelLoader(IRepoSource source, IMemoryCache cache, IVer
                     problems.Add($"{binding.ProjectPath} has never been exported here: there is no {manifestPath}.");
                 }
 
+                found.Add((binding, manifest));
+            }
+
+            // Every project's catalogs at once, as the manifests were read.
+            var catalogs = await Task.WhenAll(found.Select(f => ReadCatalogsAsync(fetch, files, f.Manifest, f.Binding.ExportPath))).ConfigureAwait(false);
+            for (var i = 0; i < found.Count; i++)
+            {
+                var (binding, manifest) = found[i];
+                var (libraries, tasks, devices) = catalogs[i];
                 projects.Add(new WorkspaceProject
                 {
                     ProjectPath = binding.ProjectPath,
                     ExportPath = binding.ExportPath,
                     Manifest = manifest,
+                    Libraries = libraries,
+                    Tasks = tasks,
+                    Devices = devices,
                     ExportState = "tracked",
                 });
             }
         }
+
+        projects.AddRange(SourceProjects(files));
 
         var nodes = RepoExplorerBuilder.Build(files.Keys.OrderBy(p => p, StringComparer.Ordinal).ToList(), projects);
         var model = new RepoModel(owner, repo, commitSha, files, nodes, isVersio, tree.Value.Truncated, problems) { Projects = projects };
@@ -192,10 +214,110 @@ public sealed class RepoModelLoader(IRepoSource source, IMemoryCache cache, IVer
         return RepoResult<RepoModel>.Of(model);
     }
 
-    private async Task<RepoConfig?> ReadConfigAsync(
-        RepoAccess access, string owner, string repo, TreeEntry entry, List<string> problems, CancellationToken ct)
+    /// <summary>
+    /// A project's library, task and device catalogs, read as the desktop's <c>ReadCatalogs</c>
+    /// reads them: the manifest names them by form, Core parses them, the tree grafts them.
+    /// </summary>
+    /// <remarks>
+    /// Without them the managers drew with no reference rows (RepoExplorerBuilder treats that as
+    /// a degraded view, never an error), and the first web build left them out; the tree now shows
+    /// a project's libraries, tasks and devices as the desktop's does. No baseline: the viewer
+    /// shows one commit, and marks between two come from the comparison, not the tree.
+    /// </remarks>
+    private async Task<(IReadOnlyList<LibrarySnapshot>, IReadOnlyList<TaskSnapshot>, IReadOnlyList<DeviceSnapshot>)> ReadCatalogsAsync(
+        Func<string, Task<RepoResult<byte[]>>> fetch, IReadOnlyDictionary<string, TreeEntry> files, ProjectManifest? manifest, string exportPath)
     {
-        var bytes = await source.GetBlobAsync(access, owner, repo, entry.BlobSha, MaxConfigBytes, ct).ConfigureAwait(false);
+        if (manifest is null)
+        {
+            return ([], [], []);
+        }
+
+        var root = exportPath.Replace('\\', '/').Trim('/');
+        var wanted = manifest.Objects
+            .Where(o => o.Path.Length > 0 && o.Form is ExportCoverage.LibrariesForm or ExportCoverage.TaskBothForm or ExportCoverage.DevicesForm)
+            .Select(o => (o.Form, Path: $"{root}/{o.Path.Replace('\\', '/')}"))
+            .Where(o => files.ContainsKey(o.Path))
+            .ToList();
+        var reads = await Task.WhenAll(wanted.Select(o => fetch(files[o.Path].BlobSha))).ConfigureAwait(false);
+
+        var libraries = new List<LibrarySnapshot>();
+        var tasks = new List<TaskSnapshot>();
+        var devices = new List<DeviceSnapshot>();
+        for (var i = 0; i < wanted.Count; i++)
+        {
+            if (!reads[i].Ok)
+            {
+                continue;
+            }
+
+            var text = Encoding.UTF8.GetString(reads[i].Value!);
+            var (form, path) = wanted[i];
+            switch (form)
+            {
+                case ExportCoverage.LibrariesForm when LibraryCatalog.Parse(text) is { IsValid: true } l:
+                    libraries.Add(new LibrarySnapshot { Path = path, Current = l });
+                    break;
+                case ExportCoverage.TaskBothForm when TaskCatalog.Parse(text) is { IsValid: true } t:
+                    tasks.Add(new TaskSnapshot { Path = path, Current = t });
+                    break;
+                case ExportCoverage.DevicesForm when DeviceCatalog.Parse(text) is { IsValid: true } d:
+                    devices.Add(new DeviceSnapshot { Path = path, Current = d });
+                    break;
+            }
+        }
+
+        return (libraries, tasks, devices);
+    }
+
+    /// <summary>
+    /// Folders a vendor saves as its own readable source (CODESYS File-Based Storage's
+    /// <c>.fbsproj</c>), described by their format from the file list alone, as the desktop's
+    /// explorer does. Never synced, never adopted: shown and drawn.
+    /// </summary>
+    /// <remarks>
+    /// <c>DescribeSourceProject</c> takes the list, never the disk, which is exactly what GitHub's
+    /// tree gives. The first web build left these out.
+    /// </remarks>
+    private static IEnumerable<WorkspaceProject> SourceProjects(IReadOnlyDictionary<string, TreeEntry> files)
+    {
+        var extensions = PlcFormats.All.SelectMany(f => f.SourceProjectExtensions).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        if (extensions.Count == 0)
+        {
+            yield break;
+        }
+
+        var folders = files.Keys
+            .Select(path =>
+            {
+                var parts = path.Split('/');
+                var at = Array.FindIndex(parts, 0, parts.Length - 1, p => extensions.Contains(Path.GetExtension(p)));
+                return at < 0 ? null : string.Join('/', parts.Take(at + 1));
+            })
+            .OfType<string>()
+            .Distinct(StringComparer.Ordinal);
+
+        foreach (var folder in folders)
+        {
+            if (PlcFormats.ForSourceProject(folder) is not { } format)
+            {
+                continue;
+            }
+
+            var relative = files.Keys.Where(k => k.StartsWith(folder + "/", StringComparison.Ordinal)).Select(k => k[(folder.Length + 1)..]).ToList();
+            yield return new WorkspaceProject
+            {
+                ProjectPath = folder,
+                ExportPath = folder,
+                Manifest = format.DescribeSourceProject(folder, relative),
+                ExportState = "read from its files",
+            };
+        }
+    }
+
+    private async Task<RepoConfig?> ReadConfigAsync(
+        Func<string, Task<RepoResult<byte[]>>> fetch, string owner, string repo, TreeEntry entry, List<string> problems)
+    {
+        var bytes = await fetch(entry.BlobSha).ConfigureAwait(false);
         if (!bytes.Ok)
         {
             problems.Add($"{ConfigPath} could not be read ({bytes.Failure}).");

@@ -7,7 +7,7 @@ interface Props {
   onSelect: (node: TreeNode) => void;
 }
 
-const icon: Record<TreeNode['kind'], string> = { project: 'P', folder: '', object: 'O', file: 'F' };
+const icon: Record<TreeNode['kind'], string> = { project: 'P', folder: '', object: 'O', file: 'F', library: 'L', task: 'T', device: 'D' };
 
 /** Whether this node or any below it matches the filter. */
 function matches(node: TreeNode, filter: string): boolean {
@@ -67,7 +67,9 @@ function Node({ node, depth, filter, selected, onSelect }: { node: TreeNode; dep
 
   const shown = open || filter !== '';
   const isSelected = selected !== null && (node.files.includes(selected) || node.path === selected) && !branch;
-  const opensSomething = node.kind === 'object' || node.kind === 'file';
+  // Anything that stands for files opens one: objects, files, and the library, task and device
+  // rows the catalogs graft in (they open their catalog). Folders and projects only expand.
+  const opensSomething = node.kind !== 'folder' && node.kind !== 'project' && node.files.length > 0;
 
   return (
     <li role="treeitem" aria-expanded={branch ? shown : undefined} aria-selected={isSelected}>

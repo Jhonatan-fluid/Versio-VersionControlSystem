@@ -36,7 +36,7 @@ export interface Branch {
 export interface TreeNode {
   name: string;
   path: string;
-  kind: 'folder' | 'object' | 'project' | 'file';
+  kind: 'folder' | 'object' | 'project' | 'file' | 'library' | 'task' | 'device';
   primary: string | null;
   files: string[];
   children: TreeNode[];

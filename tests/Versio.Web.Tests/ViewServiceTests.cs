@@ -110,6 +110,29 @@ public sealed class ViewServiceTests
     }
 
     [Fact]
+    public async Task The_tree_has_each_projects_libraries_tasks_and_devices_from_its_catalogs()
+    {
+        var (_, models) = Services();
+        var nodes = RepoModel.Flatten((await Model(models, "main")).Nodes).ToList();
+
+        Assert.Contains(nodes, n => n.Kind == ProjectNodeKind.Library);
+        Assert.Contains(nodes, n => n.Kind == ProjectNodeKind.Task);
+        Assert.Contains(nodes, n => n.Kind == ProjectNodeKind.Device);
+    }
+
+    [Fact]
+    public async Task A_file_based_storage_project_is_a_project_with_its_objects()
+    {
+        _github.Commit(_repo, "fbs", FakeGitHub.FromDisk("fixtures/projects/RefrigeratorControl_FBS"));
+        var (_, models) = Services();
+        var model = await Model(models, "fbs");
+
+        var project = Assert.Single(RepoModel.Flatten(model.Nodes), n => n.Kind == ProjectNodeKind.Project);
+        Assert.EndsWith(".fbsproj", project.Path, StringComparison.Ordinal);
+        Assert.Contains(RepoModel.Flatten(project.Children), n => n.Kind == ProjectNodeKind.Object);
+    }
+
+    [Fact]
     public async Task A_data_type_is_its_member_table()
     {
         var view = await View(Settings);

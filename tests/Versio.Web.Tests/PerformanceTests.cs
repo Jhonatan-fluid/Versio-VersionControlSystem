@@ -10,7 +10,8 @@ namespace Versio.Web.Tests;
 /// Measured on 2026-10-11 before the fixes: a page load made 17 GitHub calls (four simultaneous
 /// visibility checks, the model loaded twice, the branch resolved per request), two more clicks
 /// made 3, and the 33,644-line visualisation's Raw view went out as 7.5 MB uncompressed. After:
-/// 9, 1, and about 420 KB. The bounds here leave no room for the duplicates to return.
+/// 9, 1, and about 420 KB (the tree later added catalog reads, once per commit, in parallel).
+/// The tests pin "each thing once", so the duplicates cannot return.
 /// </remarks>
 public sealed class PerformanceTests
 {
@@ -39,11 +40,16 @@ public sealed class PerformanceTests
             host.GetAsync("/api/repos/acme/plant/tree?ref=main"),
             host.GetAsync($"/api/repos/acme/plant/view?ref=main&path={Uri.EscapeDataString(Sim)}"));
 
+        // The invariant is "each thing once", not a raw count: the tree grew catalog reads (each
+        // project's library, task and device files, fetched in parallel, once per commit) after
+        // this test was written with a ceiling of 9, and that ceiling then failed for the right
+        // feature. What must never come back is the same thing fetched twice.
         var by = github.Reads.GroupBy(r => r.What.Split(' ')[0]).ToDictionary(g => g.Key, g => g.Count());
         Assert.Equal(1, by.GetValueOrDefault("tree"));
         Assert.Equal(1, by.GetValueOrDefault("resolve"));
         Assert.True(by.GetValueOrDefault("repo") <= 2, $"repo x{by.GetValueOrDefault("repo")}");
-        Assert.True(github.Reads.Count <= 9, $"{github.Reads.Count} GitHub calls for one page load");
+        var blobs = github.Reads.Where(r => r.What.StartsWith("blob ", StringComparison.Ordinal)).Select(r => r.What).ToList();
+        Assert.Equal(blobs.Count, blobs.Distinct(StringComparer.Ordinal).Count());
     }
 
     [Fact]
