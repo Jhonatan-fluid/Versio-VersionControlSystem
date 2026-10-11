@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <IsPackable>false</IsPackable>
+    <RootNamespace>Versio.Web.Tests</RootNamespace>
+    <!-- The web viewer's tests: its renderers' choices over the real fixture exports, its security
+         rules against a fake GitHub, and its HTTP surface against the real host on a free port.
+         No network: GitHub is a fake served from this repository's own files, or a local Kestrel
+         that answers like GitHub's OAuth and REST endpoints. -->
+  </PropertyGroup>
+
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.11.1" />
+    <PackageReference Include="xunit" Version="2.9.2" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Versio.Web\Versio.Web.csproj" />
+  </ItemGroup>
+
+</Project>

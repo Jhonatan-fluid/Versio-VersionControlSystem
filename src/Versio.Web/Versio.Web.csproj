@@ -1,0 +1,27 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <RootNamespace>Versio.Web</RootNamespace>
+    <AssemblyName>Versio.Web</AssemblyName>
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <!-- THE WEB VIEWER (docs/web/PLAN.md). A composition root like Versio.App: it renders with
+         Versio.Core and the three PURE vendor packs, and references no *.Infrastructure pack and
+         no .Host, because nothing here may drive an IDE, start a process or clone. The pure packs
+         are exactly the part that parses a vendor's files; that is all a viewer needs.
+         Versio.Infrastructure is vendor-neutral and is referenced for the rolling log file, the
+         system clock and the one reader of repo.json. -->
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Versio.Core\Versio.Core.csproj" />
+    <ProjectReference Include="..\Versio.Infrastructure\Versio.Infrastructure.csproj" />
+    <ProjectReference Include="..\Versio.Plc.Codesys\Versio.Plc.Codesys.csproj" />
+    <ProjectReference Include="..\Versio.Plc.TiaPortal\Versio.Plc.TiaPortal.csproj" />
+    <ProjectReference Include="..\Versio.Plc.TwinCat\Versio.Plc.TwinCat.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Versio.Web.Tests" />
+  </ItemGroup>
+
+</Project>
