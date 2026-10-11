@@ -111,6 +111,8 @@ public static class WebHost
 
         builder.Services.AddSingleton<SessionStore>();
         builder.Services.AddSingleton<GitHubOAuth>();
+        // The App key signs here today; a key-vault signer replaces this line (IAppSigner, rule 15).
+        builder.Services.AddSingleton<IAppSigner, PemAppSigner>();
         builder.Services.AddSingleton<IInstallationTokens, AppTokens>();
         builder.Services.AddSingleton<AccessResolver>();
         builder.Services.AddSingleton<RepoModelLoader>();

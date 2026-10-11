@@ -160,7 +160,7 @@ public interface IInstallationTokens
 /// for a key given as configuration.
 /// </para>
 /// </remarks>
-public sealed class AppTokens(IHttpClientFactory clients, IOptions<WebOptions> options, IClock clock) : IInstallationTokens
+public sealed class AppTokens(IHttpClientFactory clients, IOptions<WebOptions> options, IClock clock, IAppSigner signer) : IInstallationTokens
 {
     private readonly Dictionary<string, (string Token, DateTimeOffset Expires)> _cache = new(StringComparer.OrdinalIgnoreCase);
     private readonly SemaphoreSlim _gate = new(1, 1);
@@ -184,7 +184,7 @@ public sealed class AppTokens(IHttpClientFactory clients, IOptions<WebOptions> o
                 return held.Token;
             }
 
-            var jwt = Jwt();
+            var jwt = await JwtAsync(ct).ConfigureAwait(false);
             using var find = App(HttpMethod.Get, $"repos/{E(owner)}/{E(repo)}/installation", jwt);
             using var found = await clients.CreateClient(Sources.GitHubRepoSource.ApiClient).SendAsync(find, ct).ConfigureAwait(false);
             if (!found.IsSuccessStatusCode)
@@ -218,14 +218,12 @@ public sealed class AppTokens(IHttpClientFactory clients, IOptions<WebOptions> o
     }
 
     /// <summary>The App's JWT: RS256, issued a minute in the past for clock drift, valid nine minutes.</summary>
-    internal string Jwt()
+    internal async Task<string> JwtAsync(CancellationToken ct)
     {
         var now = clock.UtcNow.ToUnixTimeSeconds();
         var header = SessionStore.Base64Url(Encoding.UTF8.GetBytes("{\"alg\":\"RS256\",\"typ\":\"JWT\"}"));
         var payload = SessionStore.Base64Url(Encoding.UTF8.GetBytes(JsonSerializer.Serialize(new { iat = now - 60, exp = now + 540, iss = G.AppId })));
-        using var rsa = RSA.Create();
-        rsa.ImportFromPem(G.PrivateKeyPem);
-        var signature = rsa.SignData(Encoding.ASCII.GetBytes($"{header}.{payload}"), HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1);
+        var signature = await signer.SignRs256Async(Encoding.ASCII.GetBytes($"{header}.{payload}"), ct).ConfigureAwait(false);
         return $"{header}.{payload}.{SessionStore.Base64Url(signature)}";
     }
 

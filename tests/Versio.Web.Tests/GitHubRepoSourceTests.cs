@@ -26,6 +26,8 @@ public sealed class GitHubRepoSourceTests : IAsyncLifetime
     private Uri? _address;
     private readonly ConcurrentQueue<(string Path, string? Auth)> _requests = new();
     private string _lfsHref = "https://169.254.169.254/latest/meta-data/";
+    private readonly ConcurrentQueue<string> _appJwts = new();
+    private readonly ConcurrentQueue<string> _mintBodies = new();
 
     public async Task InitializeAsync()
     {
@@ -80,6 +82,17 @@ public sealed class GitHubRepoSourceTests : IAsyncLifetime
             return Results.StatusCode(403);
         });
         app.MapGet("/repos/acme/forbidden", () => Results.StatusCode(403));
+        app.MapGet("/repos/acme/plant/installation", (HttpContext http) =>
+        {
+            _appJwts.Enqueue(http.Request.Headers.Authorization.ToString());
+            return Results.Json(new { id = 77 });
+        });
+        app.MapPost("/app/installations/77/access_tokens", async (HttpContext http) =>
+        {
+            _appJwts.Enqueue(http.Request.Headers.Authorization.ToString());
+            _mintBodies.Enqueue(await new StreamReader(http.Request.Body).ReadToEndAsync());
+            return Results.Json(new { token = "installation-token", expires_at = DateTimeOffset.UtcNow.AddHours(1) });
+        });
 
         await app.StartAsync();
         _api = app;
@@ -198,6 +211,48 @@ public sealed class GitHubRepoSourceTests : IAsyncLifetime
         Assert.Equal(RepoFailure.Upstream, (await source.GetRepoAsync(Alice, "acme", "plant", CancellationToken.None)).Failure);
         Assert.Equal(RepoFailure.Upstream, (await source.GetBlobAsync(Alice, "acme", "plant", new string('a', 40), 100, CancellationToken.None)).Failure);
         Assert.Equal(RepoFailure.Upstream, (await source.ResolveCommitAsync(Alice, "acme", "plant", "main", CancellationToken.None)).Failure);
+    }
+
+    [Fact]
+    public async Task An_installation_token_is_minted_for_one_repository_read_only_with_a_valid_app_jwt()
+    {
+        // Security rule 1's other half: even the App's own credential reads one repository, read
+        // only. And the JWT that asks for it is RS256-signed by the App's key (through IAppSigner,
+        // the seam a key vault plugs into) with this App's id, valid minutes, not hours.
+        using var rsa = System.Security.Cryptography.RSA.Create(2048);
+        var options = Options.Create(new WebOptions
+        {
+            GitHub = new GitHubOptions { ApiBaseUrl = _address!.ToString().TrimEnd('/'), AppId = "123", PrivateKeyPem = rsa.ExportRSAPrivateKeyPem() },
+        });
+        var services = new ServiceCollection();
+        services.AddHttpClient(GitHubRepoSource.ApiClient);
+        var clock = new Versio.Core.Abstractions.FakeClock(DateTimeOffset.UtcNow);
+        var tokens = new Versio.Web.Auth.AppTokens(services.BuildServiceProvider().GetRequiredService<IHttpClientFactory>(), options, clock, new Versio.Web.Auth.PemAppSigner(options));
+
+        var token = await tokens.ForRepositoryAsync("acme", "plant", CancellationToken.None);
+
+        Assert.Equal("installation-token", token);
+        var body = System.Text.Json.JsonDocument.Parse(Assert.Single(_mintBodies)).RootElement;
+        Assert.Equal(["plant"], body.GetProperty("repositories").EnumerateArray().Select(r => r.GetString()));
+        Assert.Equal("read", body.GetProperty("permissions").GetProperty("contents").GetString());
+        Assert.Equal("read", body.GetProperty("permissions").GetProperty("metadata").GetString());
+        Assert.Equal(2, body.GetProperty("permissions").EnumerateObject().Count());
+
+        foreach (var header in _appJwts)
+        {
+            var parts = header["Bearer ".Length..].Split('.');
+            Assert.True(rsa.VerifyData(Encoding.ASCII.GetBytes($"{parts[0]}.{parts[1]}"), FromBase64Url(parts[2]),
+                System.Security.Cryptography.HashAlgorithmName.SHA256, System.Security.Cryptography.RSASignaturePadding.Pkcs1));
+            var claims = System.Text.Json.JsonDocument.Parse(FromBase64Url(parts[1])).RootElement;
+            Assert.Equal("123", claims.GetProperty("iss").GetString());
+            Assert.True(claims.GetProperty("exp").GetInt64() - claims.GetProperty("iat").GetInt64() <= 600);
+        }
+    }
+
+    private static byte[] FromBase64Url(string s)
+    {
+        var padded = s.Replace('-', '+').Replace('_', '/');
+        return Convert.FromBase64String(padded + new string('=', (4 - (padded.Length % 4)) % 4));
     }
 
     [Fact]
