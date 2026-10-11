@@ -128,11 +128,17 @@ public static partial class ApiEndpoints
                 return Refused(newer.Failure, http);
             }
 
-            var changes = ViewService.ChangedPaths(older.Value!.Model, newer.Value!.Model);
+            // Capped (security rule 8): two commits that differ in tens of thousands of files would
+            // otherwise make one unbounded answer. The page says how many were left out.
+            var all = ViewService.ChangedPaths(older.Value!.Model, newer.Value!.Model);
+            var cap = Math.Max(1, http.RequestServices.GetRequiredService<Microsoft.Extensions.Options.IOptions<WebOptions>>().Value.MaxComparedFiles);
+            var changes = all.Take(cap).ToList();
             return Results.Ok(new
             {
                 @base = older.Value.Model.CommitSha,
                 head = newer.Value.Model.CommitSha,
+                total = all.Count,
+                truncated = all.Count > changes.Count,
                 files = changes.Select(c => new
                 {
                     path = c.Path,

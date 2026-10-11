@@ -222,6 +222,28 @@ public sealed class ViewServiceTests
     }
 
     [Fact]
+    public async Task Every_file_finds_the_same_node_through_the_index_as_by_walking_the_tree()
+    {
+        // NodeFor became an index (a comparison asked once per changed file and walked the tree
+        // each time). Same answers as the walk it replaced, for every file in the commit.
+        var (_, models) = Services();
+        var model = await Model(models, "main");
+        var nodes = RepoModel.Flatten(model.Nodes).ToList();
+
+        foreach (var path in model.Files.Keys)
+        {
+            var walked = nodes.FirstOrDefault(n => n.Kind == ProjectNodeKind.Object && n.Files.Contains(path))
+                         ?? nodes.FirstOrDefault(n => n.Files.Contains(path) || (n.Path == path && n.Kind == ProjectNodeKind.File));
+            var indexed = model.NodeFor(path);
+            Assert.NotNull(indexed);
+            if (walked is not null)
+            {
+                Assert.Same(walked, indexed);
+            }
+        }
+    }
+
+    [Fact]
     public async Task Changed_paths_are_exactly_the_edited_files()
     {
         var (_, models) = Services();

@@ -142,6 +142,22 @@ public sealed class SecurityTests
     }
 
     [Fact]
+    public async Task Rule8_a_comparison_lists_at_most_its_cap_and_says_how_many_there_were()
+    {
+        var github = new FakeGitHub();
+        var repo = github.Add("acme", "plant");
+        github.Commit(repo, "main", Enumerable.Range(0, 30).ToDictionary(i => $"f{i}.st", i => Encoding.UTF8.GetBytes($"a{i}")));
+        github.Commit(repo, "next", Enumerable.Range(0, 30).ToDictionary(i => $"f{i}.st", i => Encoding.UTF8.GetBytes($"b{i}")));
+        await using var host = await TestHost.StartAsync(github, new() { ["Web:MaxComparedFiles"] = "10" });
+
+        var body = await (await host.GetAsync("/api/repos/acme/plant/compare?base=main&head=next")).Body();
+
+        Assert.Contains("\"total\":30", body, StringComparison.Ordinal);
+        Assert.Contains("\"truncated\":true", body, StringComparison.Ordinal);
+        Assert.Equal(10, Regex.Matches(body, "\"change\":").Count);
+    }
+
+    [Fact]
     public async Task Rule8_a_client_over_its_rate_is_refused()
     {
         await using var host = await TestHost.StartAsync(GitHub(out _, out _), new() { ["Web:RequestsPerMinute"] = "3" });

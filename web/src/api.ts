@@ -68,6 +68,10 @@ export interface ChangedFile {
 export interface Comparison {
   base: string;
   head: string;
+  /** Every changed file, including any the server did not list. */
+  total: number;
+  /** The server listed only the first files (its cap); the page says so. */
+  truncated: boolean;
   files: ChangedFile[];
 }
 

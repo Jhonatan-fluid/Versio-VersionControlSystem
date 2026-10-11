@@ -72,7 +72,12 @@ export function ComparePage({ me }: { me: Me | null }) {
         {picker(base, (b) => go(b, head, path), 'Older')}
         <span aria-hidden="true">{'→'}</span>
         {picker(head, (h) => go(base, h, path), 'Newer')}
-        {comparison.state === 'ok' && <span className="muted">{comparison.value.files.length === 1 ? '1 file changed' : `${comparison.value.files.length} files changed`}</span>}
+        {comparison.state === 'ok' && (
+          <span className="muted">
+            {comparison.value.total === 1 ? '1 file changed' : `${comparison.value.total} files changed`}
+            {comparison.value.truncated && `, the first ${comparison.value.files.length} listed`}
+          </span>
+        )}
       </div>
       <div className={`workspace${listOpen ? ' tree-open' : ''}`}>
         <aside className="sidebar">

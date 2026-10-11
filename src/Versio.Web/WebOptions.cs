@@ -39,6 +39,9 @@ public sealed class WebOptions
     /// <summary>The largest file parsed and drawn; up to <see cref="MaxBlobBytes"/> it is shown as text.</summary>
     public long MaxDrawBytes { get; set; } = 2L * 1024 * 1024;
 
+    /// <summary>The most changed files one comparison lists; the rest are counted, not listed (security rule 8).</summary>
+    public int MaxComparedFiles { get; set; } = 2000;
+
     /// <summary>A session idle longer than this is ended (security rule 7).</summary>
     public TimeSpan SessionIdle { get; set; } = TimeSpan.FromDays(14);
 

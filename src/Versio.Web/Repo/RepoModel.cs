@@ -22,13 +22,42 @@ public sealed record RepoModel(
     bool Truncated,
     IReadOnlyList<string> Problems)
 {
+    /// <summary>
+    /// Every file's node, built once per model. An object wins over a plain file row for the same
+    /// path, as the desktop opens the object.
+    /// </summary>
+    /// <remarks>
+    /// The first version walked the whole tree on every call. One view is one call, but a
+    /// comparison asks once per changed file, so two large commits in a large repository was
+    /// changed-files times tree-size: ten thousand of each is a hundred million steps.
+    /// </remarks>
+    private Dictionary<string, ProjectTreeNode> ByFile => _byFile ??= Index();
+
+    private Dictionary<string, ProjectTreeNode>? _byFile;
+
+    private Dictionary<string, ProjectTreeNode> Index()
+    {
+        var index = new Dictionary<string, ProjectTreeNode>(StringComparer.Ordinal);
+        foreach (var node in Flatten(Nodes))
+        {
+            var keys = node.Kind == ProjectNodeKind.File ? node.Files.Append(node.Path) : node.Files;
+            foreach (var file in keys)
+            {
+                if (node.Kind == ProjectNodeKind.Object || !index.ContainsKey(file))
+                {
+                    index[file] = node;
+                }
+            }
+        }
+
+        return index;
+    }
+
     /// <summary>The node a file belongs to: the object it is a layer of, or the file itself.</summary>
     public ProjectTreeNode? NodeFor(string path)
     {
         ArgumentNullException.ThrowIfNull(path);
-        var found = Flatten(Nodes).FirstOrDefault(n => n.Kind == ProjectNodeKind.Object && n.Files.Contains(path, StringComparer.Ordinal))
-                    ?? Flatten(Nodes).FirstOrDefault(n => n.Files.Contains(path, StringComparer.Ordinal) || n.Path == path && n.Kind == ProjectNodeKind.File);
-        if (found is not null)
+        if (ByFile.TryGetValue(path, out var found))
         {
             return found;
         }
