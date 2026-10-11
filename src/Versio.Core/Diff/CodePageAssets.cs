@@ -28,7 +28,7 @@ public static class CodePageAssets
     public const string Css = """
         :root {
           --cd-fg: #1f2328; --cd-bg: #ffffff; --cd-muted: #6e7781; --cd-gutter: #8c959f;
-          --cd-border: #d0d7de;
+          --cd-border: #d0d7de; --cd-accent: #0969da;
           --cd-added: #1a7f37; --cd-removed: #cf222e;
           --cd-added-bg: #e6f6ec; --cd-removed-bg: #fceaea;
           --cd-added-word: #bbebcb; --cd-removed-word: #f9cfcf;
@@ -41,7 +41,7 @@ public static class CodePageAssets
         @media (prefers-color-scheme: dark) {
           :root {
             --cd-fg: #e6edf3; --cd-bg: #0d1117; --cd-muted: #8b949e; --cd-gutter: #6e7681;
-            --cd-border: #30363d;
+            --cd-border: #30363d; --cd-accent: #58a6ff;
             --cd-added: #3fb950; --cd-removed: #f85149;
             --cd-added-bg: #12301f; --cd-removed-bg: #331617;
             --cd-added-word: #1b5334; --cd-removed-word: #5c2326;
@@ -78,6 +78,19 @@ public static class CodePageAssets
         .cd-divider::before { content: ""; }
         .cd-hidden { color: var(--cd-hidden); background: var(--cd-hidden-bg); border-radius: 3px;
           padding: 0 2px; font-size: 11px; }
+        .cd-diff .cd-rows { margin-top: 4px; }
+        .cd-drow { display: grid; grid-template-columns: 46px 46px 16px max-content; min-height: 20px; }
+        .cd-marker { text-align: center; user-select: none; }
+        .cd-added > .cd-marker { color: var(--cd-added); }
+        .cd-removed > .cd-marker { color: var(--cd-removed); }
+        .cd-hunk { color: var(--cd-accent); padding-left: 108px; min-height: 20px; }
+        .cd-meta { color: var(--cd-gutter); padding-left: 108px; min-height: 20px; }
+        .cd-file { position: sticky; left: 0; margin: 12px 0 4px; padding: 4px 8px;
+          font: 600 13px var(--cd-ui); border-bottom: 1px solid var(--cd-border); }
+        .cd-file:first-child { margin-top: 0; }
+        .cd-file-path { font-family: var(--cd-mono); }
+        .cd-file-count { color: var(--cd-muted); font-weight: 400; }
+        .cd-empty { color: var(--cd-muted); margin: 8px 0; }
         .cd-t-keyword { color: var(--cd-t-keyword); }
         .cd-t-type { color: var(--cd-t-type); }
         .cd-t-comment { color: var(--cd-t-comment); }

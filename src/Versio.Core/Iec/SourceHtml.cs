@@ -38,8 +38,8 @@ public enum SourceView
 /// </remarks>
 public static class SourceHtml
 {
-    /// <summary>Rows per <c>.cd-block</c>, the unit the browser may skip laying out.</summary>
-    public const int BlockRows = 256;
+    /// <summary>Rows per <c>.cd-block</c>; the one value is <see cref="CodeHtml.BlockRows"/>.</summary>
+    public const int BlockRows = CodeHtml.BlockRows;
 
     /// <summary>The fragment for laid-out (and optionally <see cref="StSourceLayout.Mark"/>ed) rows.</summary>
     public static string Fragment(IReadOnlyList<SourceRow> rows, SyntaxLanguage language, SourceView view = SourceView.Unified)
@@ -61,16 +61,8 @@ public static class SourceHtml
             .Append("\" data-hidden-chars=\"").Append(hidden.ToString(CultureInfo.InvariantCulture))
             .Append("\">\n");
 
-        if (hidden > 0)
-        {
-            // Above the code, not only inside it: one marker in a long file is easy to scroll
-            // past, and the whole point is that the reader is told before trusting what they read.
-            html.Append("<p class=\"cd-notice\">This file contains ")
-                .Append(hidden.ToString(CultureInfo.InvariantCulture))
-                .Append(hidden == 1 ? " hidden character" : " hidden characters")
-                .Append(" that can make code read differently from how it compiles. Each is shown as a U+ marker.</p>\n");
-        }
-
+        // Above the code, worded once for every code renderer (CodeHtml.AppendNotice says why).
+        CodeHtml.AppendNotice(html, hidden);
         html.Append("<div class=\"cd-rows\">\n").Append(body).Append("</div>\n</div>\n");
         return html.ToString();
     }
@@ -78,7 +70,7 @@ public static class SourceHtml
     private static int UnifiedRows(StringBuilder html, IReadOnlyList<SourceRow> rows, SyntaxLanguage language)
     {
         var hidden = 0;
-        var block = new BlockWriter(html);
+        var block = new CodeHtml.Blocks(html);
         foreach (var row in rows)
         {
             block.Next();
@@ -113,7 +105,7 @@ public static class SourceHtml
     private static int SplitRows(StringBuilder html, IReadOnlyList<SourceSplitRow> rows, SyntaxLanguage language)
     {
         var hidden = 0;
-        var block = new BlockWriter(html);
+        var block = new CodeHtml.Blocks(html);
         foreach (var row in rows)
         {
             block.Next();
@@ -163,33 +155,4 @@ public static class SourceHtml
             .Append("\"><span>").Append(CodeHtml.E(divider.Label)).Append("</span></div>\n");
 
     private static string N(int value) => value.ToString(CultureInfo.InvariantCulture);
-
-    /// <summary>Opens a new <c>.cd-block</c> every <see cref="BlockRows"/> rows.</summary>
-    private sealed class BlockWriter(StringBuilder html)
-    {
-        private int _rows;
-
-        public void Next()
-        {
-            if (_rows % BlockRows == 0)
-            {
-                if (_rows > 0)
-                {
-                    html.Append("</div>\n");
-                }
-
-                html.Append("<div class=\"cd-block\">\n");
-            }
-
-            _rows++;
-        }
-
-        public void End()
-        {
-            if (_rows > 0)
-            {
-                html.Append("</div>\n");
-            }
-        }
-    }
 }

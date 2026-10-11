@@ -71,6 +71,66 @@ public static class CodeHtml
         return hidden;
     }
 
+    /// <summary>Rows per <c>.cd-block</c>, the unit the browser may skip laying out.</summary>
+    public const int BlockRows = 256;
+
+    /// <summary>
+    /// The notice above code that holds hidden characters, or nothing when it holds none.
+    /// </summary>
+    /// <remarks>
+    /// Above the code, not only inside it: one marker in a long file is easy to scroll past, and
+    /// the point is that the reader is told before trusting what they read. One wording for every
+    /// code renderer, so the source and the diff of one file cannot describe it differently.
+    /// </remarks>
+    public static void AppendNotice(StringBuilder html, int hidden)
+    {
+        ArgumentNullException.ThrowIfNull(html);
+        if (hidden <= 0)
+        {
+            return;
+        }
+
+        html.Append("<p class=\"cd-notice\">This file contains ")
+            .Append(hidden.ToString(CultureInfo.InvariantCulture))
+            .Append(hidden == 1 ? " hidden character" : " hidden characters")
+            .Append(" that can make code read differently from how it compiles. Each is shown as a U+ marker.</p>\n");
+    }
+
+    /// <summary>Opens a new <c>.cd-block</c> every <see cref="BlockRows"/> rows.</summary>
+    /// <remarks>
+    /// The browser's stand-in for the desktop's virtualisation: <c>content-visibility: auto</c>
+    /// on each block lets it skip laying out the ones nobody can see (<see cref="CodePageAssets"/>).
+    /// </remarks>
+    public sealed class Blocks(StringBuilder html)
+    {
+        private int _rows;
+
+        /// <summary>Call before writing each row.</summary>
+        public void Next()
+        {
+            if (_rows % BlockRows == 0)
+            {
+                if (_rows > 0)
+                {
+                    html.Append("</div>\n");
+                }
+
+                html.Append("<div class=\"cd-block\">\n");
+            }
+
+            _rows++;
+        }
+
+        /// <summary>Closes the last block, if any row was written.</summary>
+        public void End()
+        {
+            if (_rows > 0)
+            {
+                html.Append("</div>\n");
+            }
+        }
+    }
+
     /// <summary>The CSS class a token kind is drawn with, or null for plain text.</summary>
     public static string? TokenClass(TokenKind kind) => kind switch
     {
