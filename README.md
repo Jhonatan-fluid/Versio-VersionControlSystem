@@ -206,13 +206,13 @@ Versio.sln
 ├─ tests/
 │  ├─ Versio.TestSupport/       not a test project: the three helpers more than one suite
 │  │                            needs (TestPaths, TestLogger, VendorSeamScanner, LadderInvariants)
-│  ├─ Versio.Core.Tests/        1,664 unit tests — pure, no IO, under a second
+│  ├─ Versio.Core.Tests/        1,692 unit tests — pure, no IO, under a second
 │  ├─ Versio.Integration.Tests/ 171 tests against real git and the real filesystem, ~10 s.
 │  │                            NO CODESYS: that is a different project now, so this one
 │  │                            needs no filter and cannot accidentally cost half an hour
-│  ├─ Versio.App.Tests/         777 tests that build the real windows and panels against
+│  ├─ Versio.App.Tests/         779 tests that build the real windows and panels against
 │  │                            the real stylesheet on an STA thread — none is ever shown
-│  ├─ Versio.Plc.Codesys.Pure.Tests/ 340 pure vendor tests — the planner, the codecs, the
+│  ├─ Versio.Plc.Codesys.Pure.Tests/ 352 pure vendor tests — the planner, the codecs, the
 │  │                            protocol, the LD/FBD parser, the File-Based Storage layout —
 │  │                            under a second, needing nothing
 │  ├─ Versio.Plc.Codesys.Parity.Tests/ 97 CPython parity tests over the vendor's python,
@@ -223,7 +223,7 @@ Versio.sln
 │  │                            data-block member table, LAD and FBD parser and approved drawings
 │  ├─ Versio.Plc.TiaPortal.Tests/ 5 tests against real TIA Portal; skip with a count when
 │                               Openness membership or the install is missing
-│  ├─ Versio.Plc.TwinCat.Pure.Tests/ 21 pure vendor tests — format, planner, protocol
+│  ├─ Versio.Plc.TwinCat.Pure.Tests/ 23 pure vendor tests — format, planner, protocol
 │  └─ Versio.Plc.TwinCat.Tests/ 6 tests against real TwinCAT XAE; skip with a count when
 │                               TcXaeShell.DTE.17.0 or the fixture is missing
 ├─ tools/                       PowerShell and python harnesses. tools/tia/ is the second
@@ -394,15 +394,15 @@ dotnet test tests/Versio.Core.Tests
 
 | Suite | Tests | Needs | Runs in |
 |---|---|---|---|
-| `Versio.Core.Tests` | 1,664 | nothing — pure, no IO, no clock, no UI | ~0.3 s |
+| `Versio.Core.Tests` | 1,692 | nothing — pure, no IO, no clock, no UI | ~0.3 s |
 | `Versio.Integration.Tests` | 171 | a real `git.exe` and the real filesystem | ~10 s |
 | `Versio.Arch.Tests` | 27 | nothing — it reads assembly metadata, IL, and the project files | instant |
-| `Versio.App.Tests` | 777 | Windows (WPF). Builds the real dialogs against the real stylesheet on an STA thread; **no window is ever shown** | ~3.6–8.6 min |
-| `Versio.Plc.Codesys.Pure.Tests` | 340 | nothing — the vendor's planner, codecs, protocol, LD/FBD parser and File-Based Storage layout, pure | under a second |
+| `Versio.App.Tests` | 779 | Windows (WPF). Builds the real dialogs against the real stylesheet on an STA thread; **no window is ever shown** | ~3.6–8.6 min |
+| `Versio.Plc.Codesys.Pure.Tests` | 352 | nothing — the vendor's planner, codecs, protocol, LD/FBD parser and File-Based Storage layout, pure | under a second |
 | `Versio.Plc.Codesys.Parity.Tests` | 97 | `python` on PATH, no CODESYS — **skips cleanly without python, so check the count** | ~15 s |
 | `Versio.Plc.TiaPortal.Pure.Tests` | 93 | nothing — format, planner, protocol, scrubber, member table, LAD and FBD parser | instant |
 | `Versio.Plc.TiaPortal.Tests` | 5 | **a real TIA Portal**; skips cleanly without Openness membership | seconds when skipped |
-| `Versio.Plc.TwinCat.Pure.Tests` | 21 | nothing — the vendor's planner, format and protocol, pure | instant |
+| `Versio.Plc.TwinCat.Pure.Tests` | 23 | nothing — the vendor's planner, format and protocol, pure | instant |
 | `Versio.Plc.TwinCat.Tests` | 6 | **a real TwinCAT XAE**; skips cleanly without `TcXaeShell.DTE.17.0` | seconds when skipped; ~5 min when XAE runs the import gate |
 | `Versio.Plc.Codesys.Tests` | 55 | **a real CODESYS**, and **skips cleanly** without one | **~30 min** |
 

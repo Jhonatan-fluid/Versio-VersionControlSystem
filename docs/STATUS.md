@@ -60,15 +60,15 @@ marking, duplicate-param keys, and the detail-pane lookup. All of them are in
 
 | Project | Tests | Time | Needs |
 |---|---|---|---|
-| `Versio.Core.Tests` | 1,664 | under a second | nothing |
+| `Versio.Core.Tests` | 1,692 | under a second | nothing |
 | `Versio.Integration.Tests` | 171 | ~10 s | real git |
-| `Versio.App.Tests` | 777 | 6 m 35 s on 2026-10-10; 8 m 38 s on 2026-10-05; ~3.6 min on 2026-09-22 | nothing |
+| `Versio.App.Tests` | 779 | 6 m 35 s on 2026-10-10; 8 m 38 s on 2026-10-05; ~3.6 min on 2026-09-22 | nothing |
 | `Versio.Arch.Tests` | 27 | instant | nothing |
-| `Versio.Plc.Codesys.Pure.Tests` | 340 | under a second | nothing |
+| `Versio.Plc.Codesys.Pure.Tests` | 352 | under a second | nothing |
 | `Versio.Plc.Codesys.Parity.Tests` | 97 | ~15 s | `python` on PATH — skips cleanly without it, so check the count |
 | `Versio.Plc.TiaPortal.Pure.Tests` | 93 | instant | nothing |
 | `Versio.Plc.TiaPortal.Tests` | 5 | seconds when skipped; minutes when Portal runs the import gate | **real TIA Portal** — skips without Openness membership or LFS content |
-| `Versio.Plc.TwinCat.Pure.Tests` | 21 | instant | nothing |
+| `Versio.Plc.TwinCat.Pure.Tests` | 23 | instant | nothing |
 | `Versio.Plc.TwinCat.Tests` | 6 | seconds when skipped; ~5 min when XAE runs the import gate | **real TwinCAT XAE** — skips without `TcXaeShell.DTE.17.0` or the fixture |
 | `Versio.Plc.Codesys.Tests` | 55 | **~30 min** | **real CODESYS** |
 
@@ -316,9 +316,14 @@ One list. Reorder it; do not copy it into another file.
    - ST laid out with its sections (FBS 1.0 has no declaration/body divider), and
      `.gvl`/`.enum`/`.struct` highlighted through the format.
 
+   - **one rendering across vendors** (the owner, 2026-10-10): CODESYS and TwinCAT blocks,
+     types and GVLs as member tables over their code, as TIA's are, through the neutral
+     `StDeclarationTable`;
+   - a changed source file's Rendered tab marks what changed, on every vendor (FINDINGS
+     2026-10-10).
+
    **Left, in order:**
-   - member tables (this needs a neutral IEC variable-block parser; `StDeclarationParser`
-     reads only the header);
+   - TIA tag tables as tables (no real tag-table export to build from yet);
    - "open in CODESYS" from `.sidecars/.~u`;
    - CFC;
    - the owner's eyeball of the drawing (right rail?) and of the row.

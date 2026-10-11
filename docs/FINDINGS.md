@@ -19,6 +19,42 @@ produce a diff touching everything else.
 
 ---
 
+### The Rendered tab drew a changed source file as if it were untouched, on every vendor
+
+**2026-10-10, the owner, with a screenshot of the FBS scratch repository.** `ST_AlarmSettings`
+had its `OnDelayTime` default changed from `T#0S` to `T#2S`. The tree marked it `M`, and Raw
+showed the change. The Rendered tab drew the eleven lines of the struct with nothing marked.
+The same session had already fixed this class of defect for the library, task and device
+tables (the entry below).
+
+**Cause:** `SourceRender` rows were built from the working file and never compared with
+anything. The member tables, the catalogs and the ladder each have a pass that reads HEAD and
+marks; plain source had none. So the gap was not FBS's or CODESYS's. A TIA `.scl`, a classic
+CODESYS or TwinCAT `.st`, and a loose text file all rendered unmarked.
+
+**Fix:**
+- `LineDiff` (Core, pure) compares two texts.
+- `StSourceLayout.Mark` marks the laid-out rows by `FileLine`. New lines are tinted, and
+  removed lines come back struck where they stood, as the merged ladder view does.
+- `MarkSourceChangesAsync` runs in the shell's existing table → source → ladder sequence.
+
+It marks the code under a member table too. The owner's struct now renders as a member table
+anyway (the same day's cross-vendor tables), so `MemberTableDiff` marks it `T#0S → T#2S`.
+
+**Evidence:**
+- `RenderedSourceMarkTests` uses a loose `.st` in a plain repository, so the test asserts the
+  pane's behaviour and no vendor's.
+- With the source pass skipped, `SourceProjectTests`' program test turned red before it was
+  split; the marking test is the one that holds it now.
+
+**Also found while doing it:** four BOM literals were written as the invisible character
+rather than `'\uFEFF'` (c830e7d). They were all this branch's own, introduced by the editing
+tool. A commit subject briefly carried the same character after going through a code page.
+`390be02` on the remote is that version, merged beside the corrected `c830e7d`, with an
+identical tree.
+
+---
+
 ### The library, task and device tables drew the new file under a DIFF header and marked nothing
 
 **2026-10-10, the owner, on `RefrigeratorControl`'s Application Library Manager.** Six

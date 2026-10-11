@@ -226,8 +226,17 @@ Each step is one commit, and each builds and passes on its own.
    Structured Text and XML became public so a format can name them; no CODESYS extension
    entered the catalog. The `DiffView` highlighting call is not under test, so it is on the
    owner's eyeball list.
-6. **Member tables.** Check `StDeclarationParser` first against the header, `{attribute}`
-   lines, `NAMESPACE`, `VAR PERSISTENT` and tab-aligned declarations.
+6. ~~**Member tables.**~~ **Built 2026-10-10 (1ee16bf), and wider than planned.** The owner asked
+   for one rendering across platforms: a block's variables as a table on top and its logic
+   underneath, as TIA renders. So the reader went into Core (`StDeclarationTable`, the
+   standard's syntax), and CODESYS and TwinCAT both use it:
+   - FBS text, the declaration a graphical POU carries in its XML, and Versio's own `.st`;
+   - the code under the table from each format's `CodeBody`;
+   - TIA's section words (Input, Output, InOut, Static, Temp, Constant, Return);
+   - the external-access column left out when no row has it.
+
+   `StDeclarationParser` turned out to read only a declaration's header, which is why this was
+   a new reader. TIA tag tables are still not tabled; the fixture's only one is empty.
 7. **"Open in CODESYS" on the row,** read from `.sidecars/.~u` through the existing
    `ParseOccupancy`. It is shown only and never gates anything.
 8. **CFC.** This needs a new neutral language value, positions on nodes, and a layout that
