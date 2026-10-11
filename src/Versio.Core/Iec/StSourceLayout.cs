@@ -16,7 +16,30 @@ public abstract record SourceRow;
 /// record, and a WPF list holding two equal items selects both when either is clicked —
 /// and a copy pastes both.
 /// </param>
-public sealed record SourceCodeLine(int Number, string Text, int FileLine) : SourceRow;
+public sealed record SourceCodeLine(int Number, string Text, int FileLine) : SourceRow
+{
+    /// <summary>Whether this line is new since the last commit. Set by <see cref="StSourceLayout.Mark"/>.</summary>
+    public SourceChange Change { get; init; }
+}
+
+/// <summary>What happened to a drawn line since the last commit.</summary>
+public enum SourceChange
+{
+    None,
+    Added,
+}
+
+/// <summary>
+/// A line the last commit had and the working file does not, drawn where it stood.
+/// </summary>
+/// <param name="Text">The line as it was.</param>
+/// <param name="OldFileLine">Where it sat in the committed file, from 1.</param>
+/// <remarks>
+/// Drawn in place, struck, the way the merged ladder view keeps a deleted element where it stood.
+/// Leaving it out would make a deletion invisible on the Rendered tab, and a changed line would
+/// read as an addition with nothing replaced.
+/// </remarks>
+public sealed record SourceRemovedLine(string Text, int OldFileLine) : SourceRow;
 
 /// <summary>A drawn boundary between the declaration and the implementation.</summary>
 /// <param name="Label">What the reader is told the section below is.</param>
@@ -145,6 +168,87 @@ public static class StSourceLayout
         rows.Add(new SourceDivider(ImplementationLabel, FileText: null));
         AddSection(rows, lines, declarationEnd, bodyEnd);
         return rows;
+    }
+
+    /// <summary>
+    /// The laid-out rows with what changed since <paramref name="committed"/> marked: new lines as
+    /// <see cref="SourceChange.Added"/>, and every removed line as a <see cref="SourceRemovedLine"/>
+    /// in front of the first drawn line that followed it.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The comparison is of the whole files, by <see cref="SourceCodeLine.FileLine"/>, so it works
+    /// for any layout: Versio's delimiter, a vendor's sections, plain numbering, or a code body
+    /// shown under a member table. A removed line that stood in a part the layout does not draw (a
+    /// vendor's header, a closing keyword) has no drawn line after it in that part, and is shown at
+    /// the end rather than dropped: a reviewer told "modified" must find the modification.
+    /// </para>
+    /// <para>
+    /// A null or empty <paramref name="committed"/> is a new file: every drawn line is added.
+    /// </para>
+    /// </remarks>
+    public static IReadOnlyList<SourceRow> Mark(IReadOnlyList<SourceRow> rows, string? committed, string? current)
+    {
+        ArgumentNullException.ThrowIfNull(rows);
+
+        var oldLines = string.IsNullOrEmpty(committed) ? [] : SplitLines(committed);
+        var newLines = SplitLines(current);
+        var steps = Diff.LineDiff.Compare(oldLines, newLines);
+
+        var added = new HashSet<int>();
+        var removedBefore = new SortedDictionary<int, List<SourceRemovedLine>>();
+        var nextNew = 0;
+        var pending = new List<SourceRemovedLine>();
+        foreach (var step in steps)
+        {
+            switch (step.Op)
+            {
+                case Diff.LineOp.Removed:
+                    pending.Add(new SourceRemovedLine(oldLines[step.OldIndex], step.OldIndex + 1));
+                    continue;
+                case Diff.LineOp.Added:
+                    added.Add(step.NewIndex);
+                    break;
+            }
+
+            nextNew = step.NewIndex + 1;
+            if (pending.Count > 0)
+            {
+                removedBefore[step.NewIndex] = pending;
+                pending = [];
+            }
+        }
+
+        if (pending.Count > 0)
+        {
+            removedBefore[Math.Max(nextNew, newLines.Count)] = pending;
+        }
+
+        var marked = new List<SourceRow>(rows.Count + 4);
+        foreach (var row in rows)
+        {
+            if (row is SourceCodeLine line)
+            {
+                var index = line.FileLine - 1;
+                foreach (var key in removedBefore.Keys.Where(k => k <= index).ToList())
+                {
+                    marked.AddRange(removedBefore[key]);
+                    removedBefore.Remove(key);
+                }
+
+                marked.Add(added.Contains(index) ? line with { Change = SourceChange.Added } : line);
+                continue;
+            }
+
+            marked.Add(row);
+        }
+
+        foreach (var group in removedBefore.Values)
+        {
+            marked.AddRange(group);
+        }
+
+        return marked;
     }
 
     private static List<string> SplitLines(string? content)

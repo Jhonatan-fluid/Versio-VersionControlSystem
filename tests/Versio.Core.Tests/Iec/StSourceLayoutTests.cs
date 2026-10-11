@@ -245,4 +245,57 @@ public class StSourceLayoutTests
         Assert.Equal(["Declaration", "Implementation"], rows.OfType<SourceDivider>().Select(d => d.Label));
         Assert.Empty(rows.OfType<SourceCodeLine>());
     }
+
+    private static IReadOnlyList<string> Marked(IReadOnlyList<SourceRow> rows) =>
+        rows.Select(r => r switch
+        {
+            SourceDivider d => "|" + d.Label,
+            SourceRemovedLine x => "- " + x.Text,
+            SourceCodeLine l => (l.Change == SourceChange.Added ? "+ " : "  ") + l.Text,
+            _ => "?",
+        }).ToList();
+
+    [Fact]
+    public void A_changed_line_reads_as_the_old_one_struck_and_the_new_one_added_where_it_stood()
+    {
+        // The owner's case: an FBS struct whose default value changed, rendered as if untouched.
+        const string Before = "TYPE S :\nSTRUCT\n\tA : TIME := T#0S;\n\tB : BOOL;\nEND_STRUCT\nEND_TYPE";
+        const string After = "TYPE S :\nSTRUCT\n\tA : TIME := T#2S;\n\tB : BOOL;\nEND_STRUCT\nEND_TYPE";
+
+        var rows = StSourceLayout.Mark(StSourceLayout.Lay(After), Before, After);
+
+        Assert.Equal(
+            ["  TYPE S :", "  STRUCT", "- \tA : TIME := T#0S;", "+ \tA : TIME := T#2S;", "  \tB : BOOL;", "  END_STRUCT", "  END_TYPE"],
+            Marked(rows));
+    }
+
+    [Fact]
+    public void Marks_follow_file_lines_through_a_sectioned_layout_and_a_hidden_tail()
+    {
+        const string Before = "(* h\n*)\nPROGRAM P\nVAR x : BOOL; END_VAR\nx := TRUE;\nEND_PROGRAM";
+        const string After = "(* h\n*)\nPROGRAM P\nVAR x : BOOL; END_VAR\nx := NOT x;\ny := x;\nEND_PROGRAM";
+        var sections = new SourceSections(HeaderEnd: 2, DeclarationEnd: 4, BodyEnd: 6);
+
+        var rows = StSourceLayout.Mark(StSourceLayout.Lay(After, sections), Before, After);
+
+        Assert.Equal(
+            ["|Declaration", "  PROGRAM P", "  VAR x : BOOL; END_VAR", "|Implementation", "- x := TRUE;", "+ x := NOT x;", "+ y := x;"],
+            Marked(rows));
+    }
+
+    [Fact]
+    public void A_removed_line_with_no_drawn_line_after_it_is_shown_at_the_end_not_dropped()
+    {
+        var rows = StSourceLayout.Mark(StSourceLayout.Lay("A;"), "A;\nB;", "A;");
+
+        Assert.Equal(["  A;", "- B;"], Marked(rows));
+        Assert.Equal(2, Assert.IsType<SourceRemovedLine>(rows[^1]).OldFileLine);
+    }
+
+    [Fact]
+    public void A_new_file_is_every_line_added_and_an_unchanged_one_is_nothing_marked()
+    {
+        Assert.Equal(["+ A;", "+ B;"], Marked(StSourceLayout.Mark(StSourceLayout.Lay("A;\nB;"), "", "A;\nB;")));
+        Assert.Equal(["  A;", "  B;"], Marked(StSourceLayout.Mark(StSourceLayout.Lay("A;\nB;"), "A;\nB;", "A;\nB;")));
+    }
 }

@@ -7017,11 +7017,17 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
     private async Task MarkChangesAsync(
         (IPlcProjectFormat Format, string File)? table,
         (IPlcProjectFormat Format, string File, LadderDocument Document, bool Pending)? ladder,
-        int generation)
+        int generation,
+        string? source = null)
     {
         if (table is { } t)
         {
             await MarkTableChangesAsync(t.Format, t.File, RenderedContent).ConfigureAwait(true);
+        }
+
+        if (source is not null && generation == _renderGeneration)
+        {
+            await MarkSourceChangesAsync(source, RenderedContent).ConfigureAwait(true);
         }
 
         if (ladder is { } l && generation == _renderGeneration)
@@ -7221,6 +7227,74 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
 
         _logger.Debug(LogCategory.Ui, $"member table {current.Name}: {marked.ChangeSummary}");
         RenderedContent = shown is InterfaceRender render ? render with { Table = marked } : marked;
+    }
+
+    /// <summary>
+    /// Mark the shown source with what changed since the last commit: new lines tinted, removed
+    /// lines drawn struck where they stood.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The owner, 2026-10-10, on an FBS struct whose default value had changed: the tree said M,
+    /// Raw showed it, and the Rendered tab drew the file with nothing marked. That was true of
+    /// every source the Rendered tab draws, on every vendor (a TIA <c>.scl</c>, a CODESYS
+    /// <c>.st</c>); the tables, the catalogs and the ladder had each learned to mark, and plain
+    /// source never had. The same pass as theirs: read the committed copy, compare, replace the
+    /// content only if it is still what was shown.
+    /// </para>
+    /// <para>
+    /// The comparison is of whole files (<see cref="StSourceLayout.Mark"/>), so it marks the code
+    /// under a member table just as it marks a source shown alone.
+    /// </para>
+    /// </remarks>
+    private async Task MarkSourceChangesAsync(string file, object? shown)
+    {
+        if (_git is null || shown is null)
+        {
+            return;
+        }
+
+        if (RepositoryPath is not { } root)
+        {
+            return;
+        }
+
+        string head;
+        string current;
+        try
+        {
+            head = await _git.ShowAtHeadAsync(file, CancellationToken.None).ConfigureAwait(true);
+            current = await File.ReadAllTextAsync(
+                Path.Combine(root, file.Replace('/', Path.DirectorySeparatorChar))).ConfigureAwait(true);
+        }
+        catch (Exception ex)
+        {
+            _logger.Warn(LogCategory.Git, $"could not read {file} to mark its rendered source: {ex.Message}");
+            return;
+        }
+
+        if (!ReferenceEquals(RenderedContent, shown))
+        {
+            return;
+        }
+
+        var source = shown switch
+        {
+            SourceRender s => s,
+            InterfaceRender { Source: { } s } => s,
+            _ => null,
+        };
+
+        if (source is null)
+        {
+            return;
+        }
+
+        var marked = source with { Rows = Versio.Core.Iec.StSourceLayout.Mark(source.Rows, head, current) };
+        var added = marked.Rows.OfType<Versio.Core.Iec.SourceCodeLine>().Count(l => l.Change == Versio.Core.Iec.SourceChange.Added);
+        var removed = marked.Rows.OfType<Versio.Core.Iec.SourceRemovedLine>().Count();
+        _logger.Debug(LogCategory.Ui, $"rendered source {file}: {added} line(s) added, {removed} removed since the last commit");
+        RenderedContent = shown is InterfaceRender render ? render with { Source = marked } : marked;
     }
 
     /// <summary>
@@ -7914,9 +7988,19 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         // A changed object's table and ladder learn what changed once the committed copy is read.
         var tableSource = row.Node.Status != ChangeKind.Unmodified ? _tableSource : null;
         var ladderSource = _ladderSource is { Pending: true } ? _ladderSource : null;
-        if (tableSource is not null || ladderSource is not null)
+
+        // And its source, laid out as text: alone, or as the code under a member table.
+        var sourcePath = row.Node.Status is ChangeKind.Unmodified or ChangeKind.Deleted
+            ? null
+            : RenderedContent switch
+            {
+                SourceRender s => s.Path,
+                InterfaceRender { Source: { } s } => s.Path,
+                _ => null,
+            };
+        if (tableSource is not null || ladderSource is not null || sourcePath is not null)
         {
-            _ = MarkChangesAsync(tableSource, ladderSource, _renderGeneration);
+            _ = MarkChangesAsync(tableSource, ladderSource, _renderGeneration, sourcePath);
         }
 
         // A library, task or device table learns what changed the same way. Every catalog, not

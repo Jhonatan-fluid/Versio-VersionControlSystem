@@ -220,10 +220,10 @@ public class DiffView : ListBox
                         : ReferenceEquals(row.Left, row.Right) ? new[] { row.Left! }
                         : new[] { row.Left, row.Right }.OfType<DiffLine>().ToArray())),
 
-            // A file shown as itself pastes as the file: no markers, because there is no
-            // change to mark, and a divider as the delimiter line it stands for — so an
-            // excerpt spanning both halves still pastes as valid .st. The synthetic
-            // "Declaration" divider stands for no line and pastes nothing.
+            // A file shown as itself pastes as the file: no markers, and a divider as the
+            // delimiter line it stands for — so an excerpt spanning both halves still pastes
+            // as valid .st. The synthetic "Declaration" divider stands for no line and pastes
+            // nothing, and neither does a removed line: it is the committed file's, not this one's.
             IReadOnlyList<SourceRow> source => string.Join(Environment.NewLine,
                 source.Where(SelectedItems.OfType<SourceRow>().ToHashSet().Contains)
                     .Select(row => row switch
@@ -380,6 +380,7 @@ public class DiffView : ListBox
             DiffLine line => BuildRow(line, LanguageFor(line)),
             SideBySideRow row => BuildSplitRow(row, LanguageFor(row.Left ?? row.Right ?? row.Spanning)),
             SourceCodeLine line => BuildSourceRow(line, _language),
+            SourceRemovedLine removed => BuildRemovedSourceRow(removed, _language),
             SourceDivider divider => BuildDivider(divider),
             _ => container.Content,
         };
@@ -394,7 +395,13 @@ public class DiffView : ListBox
     /// </remarks>
     private UIElement BuildSourceRow(SourceCodeLine line, SyntaxLanguage language)
     {
-        var grid = new Grid();
+        // A line new since the last commit carries the diff's own added tint, so the Rendered
+        // tab and Raw agree on what changed (the owner, 2026-10-10: a file marked M rendered as
+        // if untouched).
+        var grid = new Grid
+        {
+            Background = line.Change == SourceChange.Added ? Resolve("Brush.Diff.AddedBg") : Brushes.Transparent,
+        };
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(46) });
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
 
@@ -402,6 +409,31 @@ public class DiffView : ListBox
 
         var content = Highlighted(line.Text, language);
         content.Margin = new Thickness(6, 0, 12, 0);
+        Grid.SetColumn(content, 1);
+        grid.Children.Add(content);
+
+        return grid;
+    }
+
+    /// <summary>
+    /// A line the last commit had and the file no longer does: no number (it has none in this
+    /// file), the diff's removed tint, and struck, where it stood.
+    /// </summary>
+    private UIElement BuildRemovedSourceRow(SourceRemovedLine line, SyntaxLanguage language)
+    {
+        var grid = new Grid { Background = Resolve("Brush.Diff.DeletedBg") };
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(46) });
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+
+        var marker = Mono("\u2212", Resolve("Brush.Status.Deleted"));
+        marker.TextAlignment = TextAlignment.Right;
+        marker.Margin = new Thickness(0, 0, 8, 0);
+        grid.Children.Add(marker);
+
+        var content = Highlighted(line.Text, language);
+        content.Margin = new Thickness(6, 0, 12, 0);
+        content.TextDecorations = TextDecorations.Strikethrough;
+        content.ToolTip = $"Removed since the last commit (was line {line.OldFileLine.ToString(CultureInfo.InvariantCulture)})";
         Grid.SetColumn(content, 1);
         grid.Children.Add(content);
 
