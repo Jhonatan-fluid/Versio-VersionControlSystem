@@ -96,6 +96,7 @@ real toolchain.
 | [`archive/`](archive/) | Phase 2 queue, UX plan, session handoffs, the long STATUS diary they replaced |
 | [`project/PLAN.md`](project/PLAN.md) | Design record for Versio Project — one PLC beside the IDE. Not the live queue |
 | [`outpost/PLAN.md`](outpost/PLAN.md) | Design record for Versio Outpost — plant backup and confirmed restore. Not the live queue |
+| [`web/PLAN.md`](web/PLAN.md) | Design record for Versio Web — a read-only browser view of a repository on GitHub, drawn by the same Core renderers. Its Step 1 is Outpost's Step 2b. Not the live queue |
 | [`fbs/PLAN.md`](fbs/PLAN.md) | Design record for CODESYS File-Based Storage — an `.fbsproj` folder shown and drawn as a project, never synced. What the fixture measured. Not the live queue |
 
 ---
