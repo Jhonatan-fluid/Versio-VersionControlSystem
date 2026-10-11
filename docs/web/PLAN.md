@@ -154,6 +154,13 @@ this branch, and is tracked as its own task. `Versio.App.Tests` (several minutes
 the baseline, because no step here touches the app before Step 1 has its own tests.
 
 **Step 1 — Text, source and member-table renderers to HTML, in Core (= Outpost Step 2b).**
+
+*Progress, 2026-10-11:* the shared line renderer (`CodeHtml`), its stylesheet
+(`CodePageAssets`) and the source renderer (`SourceHtml`) are done, with 12 tests and a tokenizer
+coverage test over 11 languages. Mutation-checked: removing the escaping, the hidden-character
+markers or one stylesheet class each turns a test red. The text diff and member tables are next.
+The large-file measurement waits for a browser to measure in (Step 4).
+
 - `Versio.Core/Diff/TextDiffHtml.cs`: unified and side-by-side, from `UnifiedDiffParser` output,
   with `SyntaxTokenizer` spans and `IntralineEmphasis`. Plus `SourceHtml.cs` for a single file,
   laid out by `StSourceLayout`. Plus `MemberTableHtml.cs` from `MemberTableDiff`. Assets as
@@ -265,8 +272,11 @@ faces the internet, and that change is the source of most of what follows.
 
 **Particular to a code viewer**
 9. **Hidden Unicode (Trojan Source).** Characters that reverse text direction, zero-width
-   characters, and homoglyphs mixed into identifiers are marked by the renderers. In Core, so the
-   desktop gets it too. Test: a file containing U+202E shows a visible marker and a notice.
+   characters and raw control characters are replaced by visible `U+XXXX` markers, with a notice
+   above the code (`CodeHtml`, done 2026-10-11). Test: a file containing U+202E shows a marker and
+   a notice, and the character itself never reaches the page. **Not done yet: homoglyphs** (a
+   Cyrillic letter inside a Latin identifier). That needs a mixed-script check per identifier and
+   is still open. Desktop: not yet, until it draws with these renderers.
 10. **Nothing drawn is not nothing changed.** When the hashes differ but the drawing shows no
     difference, the page says so and offers the Raw diff. A parse that skips something says what
     it skipped. Raw is always one click away. "Changes only" and ignoring whitespace never hide a
@@ -295,8 +305,11 @@ NuGet, with Dependabot.
 
 ## Files
 
-- New: `src/Versio.Core/Diff/TextDiffHtml.cs`, `SourceHtml.cs`, `TextDiffPageAssets.cs`;
-  `src/Versio.Core/Projects/MemberTableHtml.cs`; `src/Versio.Web/` (server); `web/` (React page);
+- New, done: `src/Versio.Core/Diff/CodeHtml.cs` (one line of code: tokens, emphasis, escaping,
+  hidden characters, shared by every code renderer), `src/Versio.Core/Diff/CodePageAssets.cs`
+  (the stylesheet, the desktop palette's colours), and `src/Versio.Core/Iec/SourceHtml.cs`
+  (beside the `StSourceLayout` it draws).
+- New, to come: `src/Versio.Core/Diff/TextDiffHtml.cs`, `src/Versio.Core/Projects/MemberTableHtml.cs`; `src/Versio.Web/` (server); `web/` (React page);
   tests in `tests/Versio.Core.Tests` and `tests/Versio.Arch.Tests`.
 - Reused, unchanged: `LadderHtml`, `LadderPageAssets`, `MarkdownHtml`, `UnifiedDiffParser`,
   `SideBySideDiff`, `IntralineEmphasis`, `SyntaxTokenizer`, `StSourceLayout`, `MemberTableDiff`,
