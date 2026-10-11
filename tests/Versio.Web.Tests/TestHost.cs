@@ -29,6 +29,9 @@ internal sealed class TestHost : IAsyncDisposable
 
     public Uri Address { get; }
 
+    /// <summary>Where this host writes its daily log file.</summary>
+    public string LogDirectory { get; private init; } = string.Empty;
+
     public IServiceProvider Services => _app.Services;
 
     private TestHost(WebApplication app, FakeGitHub github, Uri address)
@@ -52,7 +55,7 @@ internal sealed class TestHost : IAsyncDisposable
         });
         await app.StartAsync();
         var address = app.Services.GetRequiredService<IServer>().Features.Get<IServerAddressesFeature>()!.Addresses.First();
-        return new TestHost(app, github, new Uri(address));
+        return new TestHost(app, github, new Uri(address)) { LogDirectory = logs };
     }
 
     /// <summary>A GET with the given cookie header, or none.</summary>

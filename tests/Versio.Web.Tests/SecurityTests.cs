@@ -531,6 +531,43 @@ public sealed class SecurityTests
     }
 
     [Fact]
+    public async Task Rule13_a_view_is_audited_and_no_secret_ever_reaches_the_log()
+    {
+        // The audit line names who viewed what at which commit; nothing that could become a
+        // credential is ever written: not the token, the refresh token, the client secret, the
+        // one-time code or the PKCE verifier. Read from the file the host actually wrote.
+        await using var oauth = await FakeOAuth.StartAsync();
+        var github = GitHub(out _, out _);
+        await using (var host = await TestHost.StartAsync(github, oauth.Settings()))
+        {
+            var login = await host.GetAsync("/auth/login");
+            var state = Microsoft.AspNetCore.WebUtilities.QueryHelpers.ParseQuery(login.Headers.Location!.Query)["state"].ToString();
+            var callback = await host.GetAsync($"/auth/callback?code=good&state={Uri.EscapeDataString(state)}", $"{AuthEndpoints.LoginCookie}={TestHost.SetCookie(login, AuthEndpoints.LoginCookie)}");
+            var session = $"{AccessResolver.SessionCookie}={TestHost.SetCookie(callback, AccessResolver.SessionCookie)}";
+            (await host.GetAsync($"/api/repos/acme/secret/view?path={Uri.EscapeDataString(Settings)}", session)).AssertStatus(HttpStatusCode.OK);
+            var logout = new HttpRequestMessage(HttpMethod.Post, "/auth/logout");
+            logout.Headers.Add("Cookie", session);
+            logout.Headers.Add(AuthEndpoints.CsrfHeader, "1");
+            await host.Client.SendAsync(logout);
+
+            var verifier = oauth.Exchanges.First(e => e.ContainsKey("code_verifier"))["code_verifier"];
+            var log = string.Concat(Directory.GetFiles(host.LogDirectory).Select(f =>
+            {
+                using var stream = new FileStream(f, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+                return new StreamReader(stream).ReadToEnd();
+            }));
+
+            Assert.Contains("Signed in alice", log, StringComparison.Ordinal);
+            Assert.Contains($"view alice (User) acme/secret@", log, StringComparison.Ordinal);
+            Assert.Contains(Settings, log, StringComparison.Ordinal);
+            foreach (var secret in new[] { "alice-token", "alice-refresh", "client-secret", "code=good", verifier, state })
+            {
+                Assert.DoesNotContain(secret, log, StringComparison.Ordinal);
+            }
+        }
+    }
+
+    [Fact]
     public async Task Sign_in_is_not_offered_when_no_App_is_configured()
     {
         await using var host = await TestHost.StartAsync(GitHub(out _, out _));
