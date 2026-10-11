@@ -1402,7 +1402,7 @@
                                                         <ColumnDefinition Width="Auto" SharedSizeGroup="MemName" MinWidth="160" />
                                                         <ColumnDefinition Width="Auto" SharedSizeGroup="MemType" MinWidth="88" />
                                                         <ColumnDefinition Width="Auto" SharedSizeGroup="MemStart" MinWidth="96" />
-                                                        <ColumnDefinition Width="Auto" SharedSizeGroup="MemAccess" MinWidth="108" />
+                                                        <ColumnDefinition Width="Auto" SharedSizeGroup="MemAccess" />
                                                         <ColumnDefinition Width="*" MinWidth="120" />
                                                     </Grid.ColumnDefinitions>
                                                     <Border Style="{StaticResource MemberTableCell}">
@@ -1414,7 +1414,12 @@
                                                     <Border Grid.Column="2" Style="{StaticResource MemberTableCell}">
                                                         <TextBlock Text="{Binding ValueHeader}" Style="{StaticResource SectionLabel}" />
                                                     </Border>
-                                                    <Border Grid.Column="3" Style="{StaticResource MemberTableCell}">
+                                                    <!-- External access is one vendor's notion (TIA's HMI flags). A
+                                                         table where no row has it (every CODESYS and TwinCAT table)
+                                                         leaves the column out rather than draw it empty. -->
+                                                    <Border Grid.Column="3" Style="{StaticResource MemberTableCell}" MinWidth="108"
+                                                            Visibility="{Binding HasExternalAccess,
+                                                                Converter={StaticResource BoolToVisibility}}">
                                                         <TextBlock Text="EXTERNAL ACCESS" Style="{StaticResource SectionLabel}" />
                                                     </Border>
                                                     <Border Grid.Column="4" Style="{StaticResource MemberTableCellLast}">
@@ -1429,7 +1434,7 @@
                                                                     <ColumnDefinition Width="Auto" SharedSizeGroup="MemName" MinWidth="160" />
                                                                     <ColumnDefinition Width="Auto" SharedSizeGroup="MemType" MinWidth="88" />
                                                                     <ColumnDefinition Width="Auto" SharedSizeGroup="MemStart" MinWidth="96" />
-                                                                    <ColumnDefinition Width="Auto" SharedSizeGroup="MemAccess" MinWidth="108" />
+                                                                    <ColumnDefinition Width="Auto" SharedSizeGroup="MemAccess" />
                                                                     <ColumnDefinition Width="*" MinWidth="120" />
                                                                 </Grid.ColumnDefinitions>
 
@@ -1598,7 +1603,10 @@
                                                                                Foreground="{DynamicResource Brush.Text.Secondary}" />
                                                                     </DockPanel>
                                                                 </Border>
-                                                                <Border Grid.Column="3" Style="{StaticResource MemberTableCell}">
+                                                                <Border Grid.Column="3" Style="{StaticResource MemberTableCell}" MinWidth="108"
+                                                                        Visibility="{Binding DataContext.HasExternalAccess,
+                                                                            RelativeSource={RelativeSource AncestorType=ItemsControl},
+                                                                            Converter={StaticResource BoolToVisibility}}">
                                                                     <DockPanel>
                                                                     <TextBlock DockPanel.Dock="Left" Text="{Binding ExternalAccessBefore}"
                                                                                TextDecorations="Strikethrough"

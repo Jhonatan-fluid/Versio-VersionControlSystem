@@ -183,4 +183,17 @@ public sealed class TwinCatProjectFormat : IPlcProjectFormat
 
     public ObjectTypeName? DisplayNameFor(string type) =>
         TwinCatObjectTypeNames.TryFor(type);
+
+    /// <remarks>
+    /// The mirror's <c>.st</c> is Versio's own format, so its declaration reads into the same
+    /// table a TIA block's interface and a CODESYS block's do, with the code underneath: the
+    /// owner asked for one rendering across platforms (2026-10-10).
+    /// </remarks>
+    public MemberTable? TryParseMemberTable(string relativePath, string content) =>
+        Versio.Core.Iec.StDeclarationTable.FromSource(relativePath, content);
+
+    public (int Start, int End)? CodeBody(string relativePath, string content) =>
+        relativePath.EndsWith(".st", StringComparison.OrdinalIgnoreCase)
+            ? Versio.Core.Iec.StDeclarationTable.SourceCodeBody(content)
+            : null;
 }

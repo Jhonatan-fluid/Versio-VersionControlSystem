@@ -35,7 +35,10 @@ public sealed class ExplorerFlowTests
         var row = FileRow("Simulation", "Simulation.st", ProjectNodeKind.Object);
         shell.ShowTreeRow(row, visualizeOnly: true);
 
-        Assert.IsType<SourceRender>(shell.RenderedContent);
+        // A program reads as a TIA block does: its interface as a table, its code under it.
+        var shown = Assert.IsType<InterfaceRender>(shell.RenderedContent);
+        Assert.Equal("Simulation", shown.Table.Name);
+        Assert.NotNull(shown.Source);
         Assert.StartsWith("@@", shell.SelectedDiff);
         Assert.EndsWith(".st", shell.SelectedDiffPath);
         Assert.False(shell.CanStageHunks);

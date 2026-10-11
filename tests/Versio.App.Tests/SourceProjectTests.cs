@@ -41,7 +41,7 @@ public sealed class SourceProjectTests
         // Written as File-Based Storage 1.0 writes it: a header naming the object, then the
         // declaration and body with no divider, then the closing keyword.
         Write(Program, "(* METADATA\n{\n\t\"v3Meta\": {}\n}\n*)\nPROGRAM PLC_PRG\nVAR\n\tx : BOOL;\nEND_VAR\nx := TRUE;\nEND_PROGRAM\n");
-        Write(Folder + "/Device.device.xml.v3^/Glob_Var.gvl", "VAR_GLOBAL\n\ty : INT;\nEND_VAR\n");
+        Write(Folder + "/Device.device.xml.v3^/Glob_Var.gvl", "(* METADATA\n{}\n*)\nVAR_GLOBAL\n\ty : INT;\nEND_VAR\n");
         Write(Folder + "/.auxiliaries/cache", "not an object");
         Write(Folder + "/Workspace.fbsws", "{}");
 
@@ -162,29 +162,51 @@ public sealed class SourceProjectTests
     }
 
     [Fact]
-    public async Task Selecting_a_program_shows_the_ides_two_panes_not_its_header()
+    public async Task A_program_reads_as_tia_blocks_do_its_variables_as_a_table_over_its_code()
     {
+        // The owner, 2026-10-10: render CODESYS the way a TIA block renders, variables as a table
+        // on top and the logic under it.
         using var repo = new TempRepo(identity: true);
         GivenACommittedSourceProject(repo);
         using var shell = TestShell.Build();
         await OpenAndSettleAsync(repo, shell);
 
-        File.AppendAllText(Path.Combine(repo.Path, Program.Replace('/', Path.DirectorySeparatorChar)), "\n");
+        var file = Path.Combine(repo.Path, Program.Replace('/', Path.DirectorySeparatorChar));
+        File.WriteAllText(file, File.ReadAllText(file).Replace("x := TRUE;", "x := FALSE;", StringComparison.Ordinal));
         await shell.RefreshAsync();
 
         var project = Assert.Single(shell.Sync.Tree, r => r.Node.Kind == ProjectNodeKind.Project);
         var device = Assert.Single(project.Children, r => r.Node.Name == "Device");
         shell.Sync.SelectedNode = Assert.Single(device.Children, r => r.Node.Name == "PLC_PRG");
 
-        var source = Assert.IsType<SourceRender>(shell.RenderedContent);
-        Assert.Equal(
-            ["|Declaration", "1 PROGRAM PLC_PRG", "2 VAR", "3 \tx : BOOL;", "4 END_VAR", "|Implementation", "1 x := TRUE;"],
-            source.Rows.Select(r => r switch
-            {
-                Versio.Core.Iec.SourceDivider d => "|" + d.Label,
-                Versio.Core.Iec.SourceCodeLine l => $"{l.Number} {l.Text}",
-                _ => "?",
-            }));
+        var shown = Assert.IsType<InterfaceRender>(shell.RenderedContent);
+        Assert.Equal("PLC_PRG", shown.Table.Name);
+        Assert.Equal(["Static", "x"], shown.Table.Members.Select(m => m.Name));
+
+        // The code sits under the table, without the declaration repeated above it.
+        Assert.Contains(shown.Source!.Rows.OfType<Versio.Core.Iec.SourceCodeLine>(), l => l.Text == "x := FALSE;");
+        Assert.DoesNotContain(shown.Source.Rows.OfType<Versio.Core.Iec.SourceCodeLine>(), l => l.Text.StartsWith("VAR", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task A_global_list_is_a_table_with_no_access_column()
+    {
+        using var repo = new TempRepo(identity: true);
+        GivenACommittedSourceProject(repo);
+        using var shell = TestShell.Build();
+        await OpenAndSettleAsync(repo, shell);
+
+        File.AppendAllText(Path.Combine(repo.Path, (Folder + "/Device.device.xml.v3^/Glob_Var.gvl").Replace('/', Path.DirectorySeparatorChar)), "\n");
+        await shell.RefreshAsync();
+
+        var project = Assert.Single(shell.Sync.Tree, r => r.Node.Kind == ProjectNodeKind.Project);
+        var device = Assert.Single(project.Children, r => r.Node.Name == "Device");
+        shell.Sync.SelectedNode = Assert.Single(device.Children, r => r.Node.Name == "Glob_Var");
+
+        var table = Assert.IsType<MemberTable>(shell.RenderedContent);
+        Assert.True(table.IsVariableList);
+        Assert.False(table.HasExternalAccess);
+        Assert.Equal("y", Assert.Single(table.Members).Name);
     }
 
     [Fact]

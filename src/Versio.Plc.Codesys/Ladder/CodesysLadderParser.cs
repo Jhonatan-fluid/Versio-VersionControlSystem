@@ -73,6 +73,47 @@ public static class CodesysLadderParser
 
     public static LadderDocument? TryParse(string relativePath, string content)
     {
+        if (ObjectOf(relativePath, content) is not var (owner, name))
+        {
+            return null;
+        }
+
+        var implementation = Named(owner, "Implementation");
+        if (implementation is null || Attr(implementation, "Type") != NetworkListImplementation)
+        {
+            return null;
+        }
+
+        LdLanguage? language = Value(implementation, "DefaultViewMode") switch
+        {
+            "Ld" => LdLanguage.Ladder,
+            "Fbd" => LdLanguage.FunctionBlock,
+            _ => null,
+        };
+
+        var networks = Items(implementation, "NetworkList")
+            .Select((network, i) => Network(network, i + 1, language))
+            .ToList();
+        return new LadderDocument(new LadderBody(name, networks), Style);
+    }
+
+    /// <summary>
+    /// Whether an object's implementation is the LD/FBD network list this file draws.
+    /// </summary>
+    internal static bool IsNetworkList(XElement owner) =>
+        Named(owner, "Implementation") is { } implementation && Attr(implementation, "Type") == NetworkListImplementation;
+
+    /// <summary>
+    /// The object element and its name, from either container: a classic export's root entry,
+    /// or a File-Based Storage file's content after its header. Null for anything that is not
+    /// CODESYS native XML.
+    /// </summary>
+    /// <remarks>
+    /// Shared with the member table, which reads the same object's declaration: two readers of
+    /// "where is the object in this file" would be two answers waiting to disagree.
+    /// </remarks>
+    internal static (XElement Owner, string Name)? ObjectOf(string relativePath, string content)
+    {
         ArgumentNullException.ThrowIfNull(relativePath);
         if (string.IsNullOrWhiteSpace(content))
         {
@@ -113,23 +154,7 @@ public static class CodesysLadderParser
         }
 
         var (owner, name) = fileName is null ? Classic(doc) : (doc.Root, fileName);
-        var implementation = Named(owner, "Implementation");
-        if (implementation is null || Attr(implementation, "Type") != NetworkListImplementation)
-        {
-            return null;
-        }
-
-        LdLanguage? language = Value(implementation, "DefaultViewMode") switch
-        {
-            "Ld" => LdLanguage.Ladder,
-            "Fbd" => LdLanguage.FunctionBlock,
-            _ => null,
-        };
-
-        var networks = Items(implementation, "NetworkList")
-            .Select((network, i) => Network(network, i + 1, language))
-            .ToList();
-        return new LadderDocument(new LadderBody(name, networks), Style);
+        return owner is null ? null : (owner, name);
     }
 
     /// <summary>
@@ -610,7 +635,7 @@ public static class CodesysLadderParser
     }
 
     /// <summary>The child that CODESYS's archive format names: <c>&lt;Single Name="…"&gt;</c>.</summary>
-    private static XElement? Named(XElement? parent, string name) =>
+    internal static XElement? Named(XElement? parent, string name) =>
         parent?.Elements().FirstOrDefault(e => Attr(e, "Name") == name);
 
     private static string Value(XElement? parent, string name) =>

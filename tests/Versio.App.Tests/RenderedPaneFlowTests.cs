@@ -285,7 +285,10 @@ public sealed class RenderedPaneFlowTests
 
         shell.Sync.SelectedNode = await Row(shell, "FB_Motor");
 
-        var source = Assert.IsType<SourceRender>(shell.RenderedContent);
+        // A block reads as TIA's do since 2026-10-10: its interface as a table, its code under it.
+        var shown = Assert.IsType<InterfaceRender>(shell.RenderedContent);
+        Assert.Equal("FB_Motor", shown.Table.Name);
+        var source = Assert.IsType<SourceRender>(shown.Source);
         Assert.True(source.NoChanges);
         Assert.Contains("FUNCTION_BLOCK FB_Motor", source.PseudoDiff);
 

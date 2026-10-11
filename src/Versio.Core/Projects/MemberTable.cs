@@ -222,14 +222,32 @@ public sealed record MemberTable
     /// </remarks>
     public bool IsInterface { get; init; }
 
+    /// <summary>
+    /// A list of global variables (a GVL, a tag table) rather than a data block or a type.
+    /// </summary>
+    /// <remarks>
+    /// The IEC notion again, not a vendor's: storage declared outside any block. It changes the
+    /// note under the title only. Calling a global variable list "the data block interface"
+    /// would name an object that vendor does not have.
+    /// </remarks>
+    public bool IsVariableList { get; init; }
+
+    /// <summary>
+    /// Whether any row says who may reach it from outside (an HMI, OPC). Only some vendors have
+    /// the notion, and a column that is empty on every row of every table of a vendor is noise:
+    /// the pane leaves it out rather than draw it blank.
+    /// </summary>
+    public bool HasExternalAccess => Members.Any(m => m.ExternalAccess.Length > 0);
+
     /// <summary>The value column's header: what the IDE calls it for this kind of object.</summary>
     public string ValueHeader => IsDataType || IsInterface ? "DEFAULT VALUE" : "START VALUE";
 
     /// <summary>The one-line note under the title.</summary>
-    public string ReadOnlyNote => (IsDataType, IsInterface) switch
+    public string ReadOnlyNote => (IsDataType, IsInterface, IsVariableList) switch
     {
-        (true, _) => "Read-only view of the data type's members. This table does not write back.",
-        (_, true) => "Read-only view of the block interface. A linked type opens that object; a highlighted row's type has uncommitted changes.",
+        (true, _, _) => "Read-only view of the data type's members. This table does not write back.",
+        (_, true, _) => "Read-only view of the block interface. A linked type opens that object; a highlighted row's type has uncommitted changes.",
+        (_, _, true) => "Read-only view of the global variables. This table does not write back.",
         _ => "Read-only view of the data block interface. This table does not write back.",
     };
 }

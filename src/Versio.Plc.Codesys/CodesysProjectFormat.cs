@@ -208,7 +208,15 @@ public sealed class CodesysProjectFormat : IPlcProjectFormat
         FileBased.CodesysFileBasedSource.Sections(relativePath, content);
 
     public (int Start, int End)? CodeBody(string relativePath, string content) =>
-        FileBased.CodesysFileBasedSource.CodeBody(relativePath, content);
+        CodesysMemberTable.CodeBody(relativePath, content);
+
+    /// <remarks>
+    /// A program's, block's, function's or method's variables, a structure's or enumeration's
+    /// members, and a global variable list, drawn the way a TIA block's interface is: as a table,
+    /// with the code underneath. See <see cref="CodesysMemberTable"/>.
+    /// </remarks>
+    public Versio.Core.Projects.MemberTable? TryParseMemberTable(string relativePath, string content) =>
+        CodesysMemberTable.TryParse(relativePath, content);
 
     public Versio.Core.Diff.SyntaxLanguage? SyntaxFor(string relativePath) =>
         FileBased.CodesysFileBasedSource.Syntax(relativePath);
