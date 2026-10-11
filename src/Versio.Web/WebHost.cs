@@ -109,6 +109,21 @@ public static class WebHost
             protection.PersistKeysToFileSystem(new DirectoryInfo(keys));
         }
 
+        // Responses compressed. Measured on 2026-10-11: the 33,644-line visualisation's Raw view is
+        // 7.5 MB of HTML, and a comparison of it 18 MB; the markup repeats per line, so it shrinks
+        // by an order of magnitude. Safe over HTTPS here (the BREACH concern) because no response
+        // body carries a secret: tokens stay server-side and logout's guard is a header, not a
+        // token in a page.
+        builder.Services.AddResponseCompression(o =>
+        {
+            o.EnableForHttps = true;
+            o.Providers.Add<Microsoft.AspNetCore.ResponseCompression.BrotliCompressionProvider>();
+            o.Providers.Add<Microsoft.AspNetCore.ResponseCompression.GzipCompressionProvider>();
+            o.MimeTypes = ["application/json", "text/html", "text/css", "text/javascript", "application/javascript", "image/svg+xml"];
+        });
+        builder.Services.Configure<Microsoft.AspNetCore.ResponseCompression.BrotliCompressionProviderOptions>(o => o.Level = System.IO.Compression.CompressionLevel.Fastest);
+        builder.Services.Configure<Microsoft.AspNetCore.ResponseCompression.GzipCompressionProviderOptions>(o => o.Level = System.IO.Compression.CompressionLevel.Fastest);
+
         builder.Services.AddRateLimiter(o =>
         {
             o.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
@@ -137,8 +152,22 @@ public static class WebHost
         // routing has already chosen an endpoint, and the page's fallbacks below match
         // /assets/index-*.js too, so with routing first the page's own script and stylesheet
         // were 404s (seen in the browser on 2026-10-11, the moment the fallbacks were added).
+        app.UseResponseCompression();
         app.UseDefaultFiles();
-        app.UseStaticFiles();
+        var staticFiles = new StaticFileOptions
+        {
+            // Vite names every built asset by its content hash (index-PYcC7phc.js), so a name
+            // never points at different bytes: cache it for a year. index.html is the one file
+            // whose name stays while its content changes, so it is always revalidated.
+            OnPrepareResponse = context =>
+            {
+                var headers = context.Context.Response.Headers;
+                headers.CacheControl = context.File.Name.Equals("index.html", StringComparison.OrdinalIgnoreCase)
+                    ? "no-cache"
+                    : context.Context.Request.Path.StartsWithSegments("/assets") ? "public, max-age=31536000, immutable" : "public, max-age=3600";
+            },
+        };
+        app.UseStaticFiles(staticFiles);
         app.UseRouting();
         app.UseRateLimiter();
 
@@ -155,8 +184,10 @@ public static class WebHost
         // link to almost every PLC file was a 404. Seen in the browser on 2026-10-11; every view
         // having its own URL is the point of the page (docs/web/PLAN.md). Real static files are
         // served before routing, so these never shadow one.
-        app.MapFallbackToFile("/{owner}/{repo}/{**rest}", "index.html");
-        app.MapFallbackToFile("index.html");
+        // The same options, so index.html served at a deep link is revalidated too: a cached old
+        // page after a deploy would ask for script names that no longer exist (found measuring).
+        app.MapFallbackToFile("/{owner}/{repo}/{**rest}", "index.html", staticFiles);
+        app.MapFallbackToFile("index.html", staticFiles);
 
         var g = options.GitHub;
         // The regex state is IN the starting line, not a separate warning after it: a reader (or a

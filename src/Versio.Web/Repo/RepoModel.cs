@@ -69,6 +69,8 @@ public sealed class RepoModelLoader(IRepoSource source, IMemoryCache cache, IVer
     private const string ConfigPath = ".versio/repo.json";
     private const long MaxConfigBytes = 4L * 1024 * 1024;
 
+    private readonly SingleFlight<RepoResult<RepoModel>> _loading = new();
+
     public async Task<RepoResult<RepoModel>> LoadAsync(RepoAccess access, string owner, string repo, string commitSha, CancellationToken ct)
     {
         var key = $"model:{owner.ToLowerInvariant()}/{repo.ToLowerInvariant()}:{commitSha}";
@@ -77,6 +79,16 @@ public sealed class RepoModelLoader(IRepoSource source, IMemoryCache cache, IVer
             return RepoResult<RepoModel>.Of(cached);
         }
 
+        // Concurrent requests for one commit share one load (the page's tree and view arrive
+        // together; measured, they each loaded the model). Every caller here has already resolved
+        // this commit with its own credential, so whichever credential does the reading, each
+        // caller is handed only what it could read. The shared load is not cancelled by one
+        // caller leaving: the others are waiting on it.
+        return await _loading.RunAsync(key, () => BuildAsync(access, owner, repo, commitSha, key, CancellationToken.None)).WaitAsync(ct).ConfigureAwait(false);
+    }
+
+    private async Task<RepoResult<RepoModel>> BuildAsync(RepoAccess access, string owner, string repo, string commitSha, string key, CancellationToken ct)
+    {
         var tree = await source.GetTreeAsync(access, owner, repo, commitSha, ct).ConfigureAwait(false);
         if (!tree.Ok)
         {
@@ -91,13 +103,23 @@ public sealed class RepoModelLoader(IRepoSource source, IMemoryCache cache, IVer
         if (isVersio)
         {
             var config = await ReadConfigAsync(access, owner, repo, configEntry!, problems, ct).ConfigureAwait(false);
-            foreach (var binding in config?.Bindings.Where(b => b.Enabled) ?? [])
+            // Every manifest at once: one GitHub round trip each, and none depends on another.
+            var bindings = config?.Bindings.Where(b => b.Enabled).ToList() ?? [];
+            async Task<RepoResult<byte[]>?> ReadManifest(ProjectBinding b) =>
+                files.TryGetValue($"{b.ExportPath.TrimEnd('/')}/{BindingConventions.ManifestFileName}", out var entry)
+                    ? await source.GetBlobAsync(access, owner, repo, entry.BlobSha, MaxConfigBytes, ct).ConfigureAwait(false)
+                    : null;
+
+            var reads = bindings.Select(ReadManifest).ToList();
+            await Task.WhenAll(reads).ConfigureAwait(false);
+
+            for (var i = 0; i < bindings.Count; i++)
             {
+                var binding = bindings[i];
                 var manifestPath = $"{binding.ExportPath.TrimEnd('/')}/{BindingConventions.ManifestFileName}";
                 ProjectManifest? manifest = null;
-                if (files.TryGetValue(manifestPath, out var manifestEntry))
+                if (reads[i].Result is { } bytes)
                 {
-                    var bytes = await source.GetBlobAsync(access, owner, repo, manifestEntry.BlobSha, MaxConfigBytes, ct).ConfigureAwait(false);
                     if (bytes.Ok)
                     {
                         manifest = ProjectManifest.Parse(Encoding.UTF8.GetString(bytes.Value!), out var manifestProblems);

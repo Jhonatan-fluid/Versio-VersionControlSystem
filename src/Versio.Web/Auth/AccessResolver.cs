@@ -115,20 +115,28 @@ public sealed class AccessResolver(
             return RepoResult<RepoAccess>.Of(access);
         }
 
-        var info = await source.GetRepoAsync(access, owner, repo, ct).ConfigureAwait(false);
-        if (!info.Ok)
+        // The page's simultaneous requests share one check (measured: four at once, each asking).
+        var verdict = await _checking.RunAsync(key, async () =>
         {
-            return info.As<RepoAccess>();
-        }
+            var info = await source.GetRepoAsync(access, owner, repo, CancellationToken.None).ConfigureAwait(false);
+            if (!info.Ok)
+            {
+                return info.As<bool>();
+            }
 
-        if (info.Value!.Private)
-        {
-            // The App can see it; an anonymous visitor may not. Not found, as GitHub would say.
-            log.Info(LogCategory.Web, $"Anonymous request for private {owner}/{repo} refused as not found (security rule 1)");
-            return RepoResult<RepoAccess>.Fail(RepoFailure.NotFound);
-        }
+            if (info.Value!.Private)
+            {
+                // The App can see it; an anonymous visitor may not. Not found, as GitHub would say.
+                log.Info(LogCategory.Web, $"Anonymous request for private {owner}/{repo} refused as not found (security rule 1)");
+                return RepoResult<bool>.Fail(RepoFailure.NotFound);
+            }
 
-        cache.Set(key, true, new MemoryCacheEntryOptions { Size = 1, AbsoluteExpirationRelativeToNow = VisibilityRecheck });
-        return RepoResult<RepoAccess>.Of(access);
+            cache.Set(key, true, new MemoryCacheEntryOptions { Size = 1, AbsoluteExpirationRelativeToNow = VisibilityRecheck });
+            return RepoResult<bool>.Of(true);
+        }).WaitAsync(ct).ConfigureAwait(false);
+
+        return verdict.Ok ? RepoResult<RepoAccess>.Of(access) : verdict.As<RepoAccess>();
     }
+
+    private readonly SingleFlight<RepoResult<bool>> _checking = new();
 }

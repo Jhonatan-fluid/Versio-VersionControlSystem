@@ -105,8 +105,9 @@ public sealed class ViewService(
             return RepoResult<ViewResult>.Fail(RepoFailure.NotFound);
         }
 
-        var before = await ReadAllAsync(access, older, node, ct).ConfigureAwait(false);
-        var after = await ReadAllAsync(access, newer, node, ct).ConfigureAwait(false);
+        var reads = await Task.WhenAll(ReadAllAsync(access, older, node, ct), ReadAllAsync(access, newer, node, ct)).ConfigureAwait(false);
+        var before = reads[0];
+        var after = reads[1];
         var shown = Shown(node, path);
         var key = Key("compare", newer, view, sideBySide, after, before);
         return await CachedAsync(key, path, () => view == PaneView.Raw
@@ -141,41 +142,42 @@ public sealed class ViewService(
     /// <summary>One layer of an object as fetched: its text, or why there is none.</summary>
     private sealed record Layer(string Path, string BlobSha, string? Text, RepoFailure Failure, bool TooLargeToDraw, bool Binary);
 
+    /// <remarks>
+    /// Every layer at once: an object is often two or three files (.st and .xml), each a GitHub
+    /// round trip, and none waits on another.
+    /// </remarks>
     private async Task<IReadOnlyDictionary<string, Layer>> ReadAllAsync(RepoAccess access, RepoModel model, ProjectTreeNode node, CancellationToken ct)
     {
-        var layers = new Dictionary<string, Layer>(StringComparer.Ordinal);
-        foreach (var file in node.Files.Distinct(StringComparer.Ordinal))
+        var reads = node.Files.Distinct(StringComparer.Ordinal)
+            .Where(model.Files.ContainsKey)
+            .Select(file => ReadLayerAsync(access, model, file, model.Files[file], ct))
+            .ToList();
+        var layers = await Task.WhenAll(reads).ConfigureAwait(false);
+        return layers.ToDictionary(l => l.Path, StringComparer.Ordinal);
+    }
+
+    private async Task<Layer> ReadLayerAsync(RepoAccess access, RepoModel model, string file, TreeEntry entry, CancellationToken ct)
+    {
+        if (entry.Size > O.MaxBlobBytes)
         {
-            if (!model.Files.TryGetValue(file, out var entry))
-            {
-                continue;
-            }
-
-            if (entry.Size > O.MaxBlobBytes)
-            {
-                layers[file] = new Layer(file, entry.BlobSha, null, RepoFailure.TooLarge, true, false);
-                continue;
-            }
-
-            var key = $"blob:{model.Owner.ToLowerInvariant()}/{model.Repo.ToLowerInvariant()}:{entry.BlobSha}";
-            if (!cache.TryGetValue(key, out byte[]? bytes) || bytes is null)
-            {
-                var read = await source.GetBlobAsync(access, model.Owner, model.Repo, entry.BlobSha, O.MaxBlobBytes, ct).ConfigureAwait(false);
-                if (!read.Ok)
-                {
-                    layers[file] = new Layer(file, entry.BlobSha, null, read.Failure, read.Failure == RepoFailure.TooLarge, false);
-                    continue;
-                }
-
-                bytes = read.Value!;
-                cache.Set(key, bytes, new MemoryCacheEntryOptions { Size = Math.Max(1, bytes.Length / 1024), SlidingExpiration = TimeSpan.FromMinutes(30) });
-            }
-
-            var binary = Array.IndexOf(bytes, (byte)0) >= 0;
-            layers[file] = new Layer(file, entry.BlobSha, binary ? null : Decode(bytes), RepoFailure.None, bytes.Length > O.MaxDrawBytes, binary);
+            return new Layer(file, entry.BlobSha, null, RepoFailure.TooLarge, true, false);
         }
 
-        return layers;
+        var key = $"blob:{model.Owner.ToLowerInvariant()}/{model.Repo.ToLowerInvariant()}:{entry.BlobSha}";
+        if (!cache.TryGetValue(key, out byte[]? bytes) || bytes is null)
+        {
+            var read = await source.GetBlobAsync(access, model.Owner, model.Repo, entry.BlobSha, O.MaxBlobBytes, ct).ConfigureAwait(false);
+            if (!read.Ok)
+            {
+                return new Layer(file, entry.BlobSha, null, read.Failure, read.Failure == RepoFailure.TooLarge, false);
+            }
+
+            bytes = read.Value!;
+            cache.Set(key, bytes, new MemoryCacheEntryOptions { Size = Math.Max(1, bytes.Length / 1024), SlidingExpiration = TimeSpan.FromMinutes(30) });
+        }
+
+        var binary = Array.IndexOf(bytes, (byte)0) >= 0;
+        return new Layer(file, entry.BlobSha, binary ? null : Decode(bytes), RepoFailure.None, bytes.Length > O.MaxDrawBytes, binary);
     }
 
     /// <summary>UTF-8, with a byte-order mark removed as File.ReadAllText removes it on the desktop.</summary>

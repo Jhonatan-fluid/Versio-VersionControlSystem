@@ -1,4 +1,5 @@
 using System.Text.RegularExpressions;
+using Microsoft.Extensions.Caching.Memory;
 using Versio.Core.Diff;
 using Versio.Core.Iec.Ladder;
 using Versio.Core.Logging;
@@ -193,14 +194,63 @@ public static partial class ApiEndpoints
 
         // The renderers' stylesheets and script, from the constants in Core, so the page and the
         // desktop draw with the same CSS. Served, never inlined, for the CSP (script from 'self').
-        app.MapGet("/assets/code.css", () => Results.Text(CodePageAssets.Css, "text/css"));
-        app.MapGet("/assets/ladder.css", () => Results.Text(LadderPageAssets.Css, "text/css"));
-        app.MapGet("/assets/ladder.js", () => Results.Text(LadderPageAssets.Script, "text/javascript"));
+        // Five minutes, not a year: these names stay the same when a deploy changes their content.
+        app.MapGet("/assets/code.css", (HttpContext h) => Asset(h, CodePageAssets.Css, "text/css"));
+        app.MapGet("/assets/ladder.css", (HttpContext h) => Asset(h, LadderPageAssets.Css, "text/css"));
+        app.MapGet("/assets/ladder.js", (HttpContext h) => Asset(h, LadderPageAssets.Script, "text/javascript"));
+    }
+
+    private static IResult Asset(HttpContext http, string content, string type)
+    {
+        http.Response.Headers.CacheControl = "public, max-age=300";
+        return Results.Text(content, type);
     }
 
     /// <summary>Resolves a credential, then a commit, then the model: in that order, every time.</summary>
-    public sealed class Loader(AccessResolver access, IRepoSource source, RepoModelLoader models)
+    public sealed class Loader(AccessResolver access, IRepoSource source, RepoModelLoader models, IMemoryCache cache)
     {
+        /// <summary>How long a branch name keeps resolving to the commit it resolved to.</summary>
+        public static readonly TimeSpan ResolutionLifetime = TimeSpan.FromSeconds(30);
+
+        private readonly SingleFlight<RepoResult<string>> _resolving = new();
+
+        /// <summary>
+        /// A reference resolved to its commit with this credential, remembered for
+        /// <see cref="ResolutionLifetime"/>.
+        /// </summary>
+        /// <remarks>
+        /// <para>
+        /// Measured on 2026-10-11: every API call resolved its branch again, two per page load and
+        /// two more per click. Remembering the answer briefly saves those round trips; a push shows
+        /// within half a minute, and a commit SHA in the URL never changes at all.
+        /// </para>
+        /// <para>
+        /// <b>Keyed by the credential, so it shares nothing across people</b> (security rule 2):
+        /// the resolution is what proves this caller can see this repository, and an answer proven
+        /// with someone else's access must never stand in for it. The key holds a hash of the
+        /// token, never the token.
+        /// </para>
+        /// </remarks>
+        private async Task<RepoResult<string>> ResolveAsync(RepoAccess who, string owner, string repo, string reference, CancellationToken ct)
+        {
+            var credential = who.Token is null
+                ? "anonymous"
+                : Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(who.Token)));
+            var key = $"resolve:{credential}:{owner.ToLowerInvariant()}/{repo.ToLowerInvariant()}:{reference}";
+            if (cache.TryGetValue(key, out string? known) && known is not null)
+            {
+                return RepoResult<string>.Of(known);
+            }
+
+            var result = await _resolving.RunAsync(key, () => source.ResolveCommitAsync(who, owner, repo, reference, CancellationToken.None)).WaitAsync(ct).ConfigureAwait(false);
+            if (result.Ok)
+            {
+                cache.Set(key, result.Value!, new MemoryCacheEntryOptions { Size = 1, AbsoluteExpirationRelativeToNow = ResolutionLifetime });
+            }
+
+            return result;
+        }
+
         public async Task<RepoResult<(RepoAccess Access, RepoModel Model)>> ModelAsync(
             HttpContext http, string owner, string repo, string? reference, CancellationToken ct)
         {
@@ -227,7 +277,7 @@ public static partial class ApiEndpoints
                 target = info.Value!.DefaultBranch;
             }
 
-            var commit = await source.ResolveCommitAsync(who.Value!, owner, repo, target, ct).ConfigureAwait(false);
+            var commit = await ResolveAsync(who.Value!, owner, repo, target, ct).ConfigureAwait(false);
             if (!commit.Ok)
             {
                 return commit.As<(RepoAccess, RepoModel)>();
