@@ -119,6 +119,23 @@ public sealed class ViewServiceTests
     }
 
     [Fact]
+    public async Task A_layer_chip_shows_that_layer_and_the_tree_opens_the_readable_one()
+    {
+        // An object with two layers. Asking for the native .xml must show the .xml, which the
+        // first version never did; asking for the object opens its readable .st, as the desktop does.
+        const string Gvl = "fixtures/projects/MachineWithMembers/Device/Plc Logic/Application/Glob_Var.gvl";
+
+        var xml = await View(Gvl + ".xml", PaneView.Raw);
+        var st = await View(Gvl + ".st", PaneView.Raw);
+
+        Assert.Equal(Gvl + ".xml", xml.Path);
+        Assert.Contains("&lt;", xml.Html, StringComparison.Ordinal);
+        Assert.Equal(Gvl + ".st", st.Path);
+        Assert.Contains(Gvl + ".st", xml.Layers);
+        Assert.Contains(Gvl + ".xml", xml.Layers);
+    }
+
+    [Fact]
     public async Task A_readme_is_a_page_and_raw_is_the_file()
     {
         var rendered = await View("README.md");

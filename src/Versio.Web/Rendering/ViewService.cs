@@ -184,10 +184,13 @@ public sealed class ViewService(
             ? Encoding.UTF8.GetString(bytes, 3, bytes.Length - 3)
             : Encoding.UTF8.GetString(bytes);
 
+    /// <summary>
+    /// The file a request shows: the one asked for when it is a layer of the object, otherwise the
+    /// object's primary file. The first version always took the primary file for an object, so
+    /// the page's layer chips could never show the native .xml beside an .st (found reviewing).
+    /// </summary>
     private static string Shown(ProjectTreeNode node, string path) =>
-        node.Files.Contains(path, StringComparer.Ordinal) && node.Kind != ProjectNodeKind.Object
-            ? path
-            : node.PrimaryFile ?? path;
+        node.Files.Contains(path, StringComparer.Ordinal) ? path : node.PrimaryFile ?? path;
 
     // ---- one version --------------------------------------------------------------------------
 

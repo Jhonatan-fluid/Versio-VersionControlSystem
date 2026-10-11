@@ -78,14 +78,18 @@ public sealed class AccessResolver(
             return RepoResult<RepoAccess>.Fail(RepoFailure.Unauthorized, "anonymous access is switched off");
         }
 
-        var key = $"visibility:{owner.ToLowerInvariant()}/{repo.ToLowerInvariant()}";
-        if (cache.TryGetValue(key, out RepoAccess? known) && known is not null)
-        {
-            return RepoResult<RepoAccess>.Of(known);
-        }
-
+        // The token is asked for on every request (AppTokens keeps it, and renews it with five
+        // minutes to spare); only the verdict "public" is cached here. The first version cached
+        // the access itself, token included, for five minutes, so a token minted with five
+        // minutes left could be served after it expired (found reviewing).
         var token = await appTokens.ForRepositoryAsync(owner, repo, ct).ConfigureAwait(false);
         var access = token is null ? RepoAccess.Anonymous : new RepoAccess(AccessKind.Installation, token, "anonymous");
+        var key = $"public:{owner.ToLowerInvariant()}/{repo.ToLowerInvariant()}";
+        if (cache.TryGetValue(key, out bool isPublic) && isPublic)
+        {
+            return RepoResult<RepoAccess>.Of(access);
+        }
+
         var info = await source.GetRepoAsync(access, owner, repo, ct).ConfigureAwait(false);
         if (!info.Ok)
         {
@@ -99,7 +103,7 @@ public sealed class AccessResolver(
             return RepoResult<RepoAccess>.Fail(RepoFailure.NotFound);
         }
 
-        cache.Set(key, access, new MemoryCacheEntryOptions { Size = 1, AbsoluteExpirationRelativeToNow = VisibilityRecheck });
+        cache.Set(key, true, new MemoryCacheEntryOptions { Size = 1, AbsoluteExpirationRelativeToNow = VisibilityRecheck });
         return RepoResult<RepoAccess>.Of(access);
     }
 }

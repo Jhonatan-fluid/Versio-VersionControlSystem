@@ -36,63 +36,51 @@ public sealed class GitHubRepoSource(
 
     private GitHubOptions GitHub => options.Value.GitHub;
 
-    public async Task<RepoResult<RepoInfo>> GetRepoAsync(RepoAccess access, string owner, string repo, CancellationToken ct)
-    {
-        var json = await GetJsonAsync(access, $"repos/{E(owner)}/{E(repo)}", ct).ConfigureAwait(false);
-        if (!json.Ok)
-        {
-            return json.As<RepoInfo>();
-        }
-
-        var root = json.Value!.RootElement;
-        return RepoResult<RepoInfo>.Of(new RepoInfo(
+    public Task<RepoResult<RepoInfo>> GetRepoAsync(RepoAccess access, string owner, string repo, CancellationToken ct) =>
+        GetJsonAsync(access, $"repos/{E(owner)}/{E(repo)}", root => new RepoInfo(
             root.GetProperty("owner").GetProperty("login").GetString() ?? owner,
             root.GetProperty("name").GetString() ?? repo,
             root.GetProperty("private").GetBoolean(),
-            root.GetProperty("default_branch").GetString() ?? "main"));
-    }
+            root.GetProperty("default_branch").GetString() ?? "main"), ct);
 
-    public async Task<RepoResult<IReadOnlyList<BranchInfo>>> GetBranchesAsync(RepoAccess access, string owner, string repo, CancellationToken ct)
-    {
-        var json = await GetJsonAsync(access, $"repos/{E(owner)}/{E(repo)}/branches?per_page=100", ct).ConfigureAwait(false);
-        if (!json.Ok)
-        {
-            return json.As<IReadOnlyList<BranchInfo>>();
-        }
-
-        var branches = json.Value!.RootElement.EnumerateArray()
+    public Task<RepoResult<IReadOnlyList<BranchInfo>>> GetBranchesAsync(RepoAccess access, string owner, string repo, CancellationToken ct) =>
+        GetJsonAsync<IReadOnlyList<BranchInfo>>(access, $"repos/{E(owner)}/{E(repo)}/branches?per_page=100", root => root.EnumerateArray()
             .Select(b => new BranchInfo(b.GetProperty("name").GetString() ?? "", b.GetProperty("commit").GetProperty("sha").GetString() ?? ""))
-            .ToList();
-        return RepoResult<IReadOnlyList<BranchInfo>>.Of(branches);
-    }
+            .ToList(), ct);
 
+    /// <remarks>
+    /// Asks for <c>application/vnd.github.sha</c>, which answers with the forty characters and
+    /// nothing else. The first version fetched the commit as JSON, which carries up to 300 files'
+    /// patches, on every page load, to read one field (found reviewing).
+    /// </remarks>
     public async Task<RepoResult<string>> ResolveCommitAsync(RepoAccess access, string owner, string repo, string reference, CancellationToken ct)
     {
-        var json = await GetJsonAsync(access, $"repos/{E(owner)}/{E(repo)}/commits/{E(reference)}", ct).ConfigureAwait(false);
-        return json.Ok && json.Value!.RootElement.GetProperty("sha").GetString() is { Length: 40 } sha
-            ? RepoResult<string>.Of(sha)
-            : json.As<string>();
-    }
-
-    public async Task<RepoResult<TreeSnapshot>> GetTreeAsync(RepoAccess access, string owner, string repo, string commitSha, CancellationToken ct)
-    {
-        var json = await GetJsonAsync(access, $"repos/{E(owner)}/{E(repo)}/git/trees/{E(commitSha)}?recursive=1", ct).ConfigureAwait(false);
-        if (!json.Ok)
+        using var request = Request(access, HttpMethod.Get, Api($"repos/{E(owner)}/{E(repo)}/commits/{E(reference)}"));
+        request.Headers.Accept.Clear();
+        request.Headers.Accept.ParseAdd("application/vnd.github.sha");
+        var bytes = await SendForBytesAsync(clients.CreateClient(ApiClient), request, 1024, ct).ConfigureAwait(false);
+        if (!bytes.Ok)
         {
-            return json.As<TreeSnapshot>();
+            return bytes.As<string>();
         }
 
-        var root = json.Value!.RootElement;
-        var files = root.GetProperty("tree").EnumerateArray()
-            .Where(e => e.GetProperty("type").GetString() == "blob")
-            .Select(e => new TreeEntry(
-                e.GetProperty("path").GetString() ?? "",
-                e.GetProperty("sha").GetString() ?? "",
-                e.TryGetProperty("size", out var size) ? size.GetInt64() : 0))
-            .ToList();
-        var truncated = root.TryGetProperty("truncated", out var t) && t.GetBoolean();
-        return RepoResult<TreeSnapshot>.Of(new TreeSnapshot(commitSha, files, truncated));
+        var sha = Encoding.ASCII.GetString(bytes.Value!).Trim();
+        return sha.Length == 40 && sha.All(Uri.IsHexDigit)
+            ? RepoResult<string>.Of(sha.ToLowerInvariant())
+            : RepoResult<string>.Fail(RepoFailure.Upstream, "not a commit id");
     }
+
+    public Task<RepoResult<TreeSnapshot>> GetTreeAsync(RepoAccess access, string owner, string repo, string commitSha, CancellationToken ct) =>
+        GetJsonAsync(access, $"repos/{E(owner)}/{E(repo)}/git/trees/{E(commitSha)}?recursive=1", root => new TreeSnapshot(
+            commitSha,
+            root.GetProperty("tree").EnumerateArray()
+                .Where(e => e.GetProperty("type").GetString() == "blob")
+                .Select(e => new TreeEntry(
+                    e.GetProperty("path").GetString() ?? "",
+                    e.GetProperty("sha").GetString() ?? "",
+                    e.TryGetProperty("size", out var size) ? size.GetInt64() : 0))
+                .ToList(),
+            root.TryGetProperty("truncated", out var t) && t.GetBoolean()), ct);
 
     public async Task<RepoResult<byte[]>> GetBlobAsync(RepoAccess access, string owner, string repo, string blobSha, long maxBytes, CancellationToken ct)
     {
@@ -111,7 +99,16 @@ public sealed class GitHubRepoSource(
             return RepoResult<byte[]>.Fail(RepoFailure.TooLarge, $"LFS object of {pointer.Size} bytes");
         }
 
-        return await GetLfsObjectAsync(access, owner, repo, pointer, maxBytes, ct).ConfigureAwait(false);
+        try
+        {
+            return await GetLfsObjectAsync(access, owner, repo, pointer, maxBytes, ct).ConfigureAwait(false);
+        }
+        catch (Exception e) when (e is HttpRequestException or JsonException or KeyNotFoundException or InvalidOperationException or IndexOutOfRangeException)
+        {
+            // The batch call itself failing, or answering in a shape LFS does not document.
+            log.Warn(LogCategory.Web, $"LFS batch for {owner}/{repo} failed: {e.GetType().Name}");
+            return RepoResult<byte[]>.Fail(RepoFailure.Upstream, "LFS batch failed");
+        }
     }
 
     public async Task<RepoResult<IReadOnlyList<CommitInfo>>> GetCommitsAsync(
@@ -119,13 +116,7 @@ public sealed class GitHubRepoSource(
     {
         var query = $"repos/{E(owner)}/{E(repo)}/commits?sha={E(reference)}&per_page={Math.Clamp(limit, 1, 100).ToString(CultureInfo.InvariantCulture)}"
                     + (string.IsNullOrEmpty(path) ? "" : "&path=" + E(path));
-        var json = await GetJsonAsync(access, query, ct).ConfigureAwait(false);
-        if (!json.Ok)
-        {
-            return json.As<IReadOnlyList<CommitInfo>>();
-        }
-
-        var commits = json.Value!.RootElement.EnumerateArray().Select(c =>
+        return await GetJsonAsync<IReadOnlyList<CommitInfo>>(access, query, root => root.EnumerateArray().Select(c =>
         {
             var commit = c.GetProperty("commit");
             var author = commit.GetProperty("author");
@@ -134,8 +125,7 @@ public sealed class GitHubRepoSource(
                 commit.GetProperty("message").GetString() ?? "",
                 author.GetProperty("name").GetString() ?? "",
                 author.GetProperty("date").GetDateTimeOffset());
-        }).ToList();
-        return RepoResult<IReadOnlyList<CommitInfo>>.Of(commits);
+        }).ToList(), ct).ConfigureAwait(false);
     }
 
     private async Task<RepoResult<byte[]>> GetLfsObjectAsync(
@@ -192,44 +182,66 @@ public sealed class GitHubRepoSource(
             }
         }
 
-        try
-        {
-            return await SendForBytesAsync(clients.CreateClient(LfsClient), get, maxBytes, ct).ConfigureAwait(false);
-        }
-        catch (HttpRequestException e)
-        {
-            log.Warn(LogCategory.Web, $"LFS download for {owner}/{repo} refused or failed: {e.Message}");
-            return RepoResult<byte[]>.Fail(RepoFailure.Upstream, "LFS download failed");
-        }
+        // A refused connect (an internal address) or a failure is logged and reported as upstream
+        // inside SendForBytesAsync.
+        return await SendForBytesAsync(clients.CreateClient(LfsClient), get, maxBytes, ct).ConfigureAwait(false);
     }
 
-    private async Task<RepoResult<JsonDocument>> GetJsonAsync(RepoAccess access, string relative, CancellationToken ct)
+    /// <summary>A GET that reads its answer with <paramref name="read"/> and disposes the document.</summary>
+    /// <remarks>
+    /// <para>
+    /// <b>The document never leaves this method.</b> A <see cref="JsonDocument"/> rents pooled
+    /// memory until it is disposed; the first version returned it to callers that never disposed
+    /// it (found reviewing). Handing in the reader makes forgetting impossible.
+    /// </para>
+    /// <para>
+    /// <b>An answer that is not the shape GitHub documents is "upstream"</b>, the same as an
+    /// unreachable GitHub: a missing property must be a 502 the page can word, never a 500.
+    /// </para>
+    /// </remarks>
+    private async Task<RepoResult<T>> GetJsonAsync<T>(RepoAccess access, string relative, Func<JsonElement, T> read, CancellationToken ct)
     {
         using var request = Request(access, HttpMethod.Get, Api(relative));
-        HttpResponseMessage response;
         try
         {
-            response = await clients.CreateClient(ApiClient).SendAsync(request, ct).ConfigureAwait(false);
+            using var response = await clients.CreateClient(ApiClient).SendAsync(request, ct).ConfigureAwait(false);
+            if (Failure(response) is { } failed)
+            {
+                return RepoResult<T>.Fail(failed, Redact(relative));
+            }
+
+            await using var stream = await response.Content.ReadAsStreamAsync(ct).ConfigureAwait(false);
+            using var document = await JsonDocument.ParseAsync(stream, cancellationToken: ct).ConfigureAwait(false);
+            return RepoResult<T>.Of(read(document.RootElement));
         }
         catch (HttpRequestException e)
         {
             log.Warn(LogCategory.Web, $"GitHub unreachable for {Redact(relative)}: {e.Message}");
-            return RepoResult<JsonDocument>.Fail(RepoFailure.Upstream);
+            return RepoResult<T>.Fail(RepoFailure.Upstream);
         }
-
-        using (response)
+        catch (Exception e) when (e is JsonException or KeyNotFoundException or InvalidOperationException or FormatException)
         {
-            if (Failure(response) is { } failed)
-            {
-                return RepoResult<JsonDocument>.Fail(failed, Redact(relative));
-            }
-
-            var stream = await response.Content.ReadAsStreamAsync(ct).ConfigureAwait(false);
-            return RepoResult<JsonDocument>.Of(await JsonDocument.ParseAsync(stream, cancellationToken: ct).ConfigureAwait(false));
+            log.Warn(LogCategory.Web, $"GitHub answered {Redact(relative)} in an unexpected shape: {e.GetType().Name}");
+            return RepoResult<T>.Fail(RepoFailure.Upstream);
         }
     }
 
-    private static async Task<RepoResult<byte[]>> SendForBytesAsync(HttpClient client, HttpRequestMessage request, long maxBytes, CancellationToken ct)
+    private async Task<RepoResult<byte[]>> SendForBytesAsync(HttpClient client, HttpRequestMessage request, long maxBytes, CancellationToken ct)
+    {
+        try
+        {
+            return await ReadBytesAsync(client, request, maxBytes, ct).ConfigureAwait(false);
+        }
+        catch (HttpRequestException e)
+        {
+            // Unreachable GitHub, or an LFS host the connect callback refused: a 502 the page can
+            // word, never a 500. The first version let this escape from blob reads (found reviewing).
+            log.Warn(LogCategory.Web, $"Fetching {request.RequestUri?.Host} failed: {e.Message}");
+            return RepoResult<byte[]>.Fail(RepoFailure.Upstream);
+        }
+    }
+
+    private static async Task<RepoResult<byte[]>> ReadBytesAsync(HttpClient client, HttpRequestMessage request, long maxBytes, CancellationToken ct)
     {
         using var response = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct).ConfigureAwait(false);
         if (Failure(response) is { } failed)

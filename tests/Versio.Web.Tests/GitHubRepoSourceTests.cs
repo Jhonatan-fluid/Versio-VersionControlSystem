@@ -39,7 +39,12 @@ public sealed class GitHubRepoSourceTests : IAsyncLifetime
         });
 
         app.MapGet("/repos/acme/plant", () => Results.Json(new { name = "plant", @private = false, default_branch = "main", owner = new { login = "acme" } }));
-        app.MapGet("/repos/acme/plant/commits/main", () => Results.Json(new { sha = new string('c', 40) }));
+        app.MapGet("/repos/acme/plant/commits/main", (HttpContext http) =>
+            // GitHub's SHA-only answer: forty characters, no JSON, no patches.
+            http.Request.Headers.Accept.ToString() == "application/vnd.github.sha"
+                ? Results.Text(new string('c', 40), "application/vnd.github.sha")
+                : Results.StatusCode(415));
+        app.MapGet("/repos/acme/broken", () => Results.Json(new { unexpected = true }));
         app.MapGet("/repos/acme/plant/git/trees/{sha}", (string sha) => Results.Json(new
         {
             sha,
@@ -171,6 +176,28 @@ public sealed class GitHubRepoSourceTests : IAsyncLifetime
         var result = await Source().GetRepoAsync(Alice, "acme", repo, CancellationToken.None);
 
         Assert.Equal(expected, result.Failure);
+    }
+
+    [Fact]
+    public async Task An_answer_in_the_wrong_shape_is_upstream_not_an_exception()
+    {
+        var result = await Source().GetRepoAsync(Alice, "acme", "broken", CancellationToken.None);
+
+        Assert.Equal(RepoFailure.Upstream, result.Failure);
+    }
+
+    [Fact]
+    public async Task An_unreachable_GitHub_is_upstream_for_json_and_for_blobs()
+    {
+        var services = new ServiceCollection();
+        services.AddHttpClient(GitHubRepoSource.ApiClient);
+        services.AddHttpClient(GitHubRepoSource.LfsClient);
+        var options = Options.Create(new WebOptions { GitHub = new GitHubOptions { ApiBaseUrl = "http://127.0.0.1:1", WebBaseUrl = "http://127.0.0.1:1" } });
+        var source = new GitHubRepoSource(services.BuildServiceProvider().GetRequiredService<IHttpClientFactory>(), options, NullLogger.Instance);
+
+        Assert.Equal(RepoFailure.Upstream, (await source.GetRepoAsync(Alice, "acme", "plant", CancellationToken.None)).Failure);
+        Assert.Equal(RepoFailure.Upstream, (await source.GetBlobAsync(Alice, "acme", "plant", new string('a', 40), 100, CancellationToken.None)).Failure);
+        Assert.Equal(RepoFailure.Upstream, (await source.ResolveCommitAsync(Alice, "acme", "plant", "main", CancellationToken.None)).Failure);
     }
 
     [Fact]
