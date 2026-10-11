@@ -1400,15 +1400,20 @@
                                                 <Grid Background="{DynamicResource Brush.Surface.Raised}">
                                                     <Grid.ColumnDefinitions>
                                                         <ColumnDefinition Width="Auto" SharedSizeGroup="MemName" MinWidth="160" />
-                                                        <ColumnDefinition Width="Auto" SharedSizeGroup="MemType" MinWidth="88" />
+                                                        <ColumnDefinition Width="Auto" SharedSizeGroup="MemType" />
                                                         <ColumnDefinition Width="Auto" SharedSizeGroup="MemStart" MinWidth="96" />
                                                         <ColumnDefinition Width="Auto" SharedSizeGroup="MemAccess" />
                                                         <ColumnDefinition Width="*" MinWidth="120" />
                                                     </Grid.ColumnDefinitions>
+                                                    <!-- The table names its own columns: "TEXT ID" over a text list,
+                                                         "SETTING" over project settings. A list with no types leaves
+                                                         the type column out, as the access column does. -->
                                                     <Border Style="{StaticResource MemberTableCell}">
-                                                        <TextBlock Text="NAME" Style="{StaticResource SectionLabel}" />
+                                                        <TextBlock Text="{Binding NameHeader}" Style="{StaticResource SectionLabel}" />
                                                     </Border>
-                                                    <Border Grid.Column="1" Style="{StaticResource MemberTableCell}">
+                                                    <Border Grid.Column="1" Style="{StaticResource MemberTableCell}" MinWidth="88"
+                                                            Visibility="{Binding HasDatatype,
+                                                                Converter={StaticResource BoolToVisibility}}">
                                                         <TextBlock Text="TYPE" Style="{StaticResource SectionLabel}" />
                                                     </Border>
                                                     <Border Grid.Column="2" Style="{StaticResource MemberTableCell}">
@@ -1432,7 +1437,7 @@
                                                             <Grid>
                                                                 <Grid.ColumnDefinitions>
                                                                     <ColumnDefinition Width="Auto" SharedSizeGroup="MemName" MinWidth="160" />
-                                                                    <ColumnDefinition Width="Auto" SharedSizeGroup="MemType" MinWidth="88" />
+                                                                    <ColumnDefinition Width="Auto" SharedSizeGroup="MemType" />
                                                                     <ColumnDefinition Width="Auto" SharedSizeGroup="MemStart" MinWidth="96" />
                                                                     <ColumnDefinition Width="Auto" SharedSizeGroup="MemAccess" />
                                                                     <ColumnDefinition Width="*" MinWidth="120" />
@@ -1518,7 +1523,10 @@
                                                                     </TextBlock>
                                                                     </DockPanel>
                                                                 </Border>
-                                                                <Border Grid.Column="1" Style="{StaticResource MemberTableCell}">
+                                                                <Border Grid.Column="1" Style="{StaticResource MemberTableCell}" MinWidth="88"
+                                                                        Visibility="{Binding DataContext.HasDatatype,
+                                                                            RelativeSource={RelativeSource AncestorType=ItemsControl},
+                                                                            Converter={StaticResource BoolToVisibility}}">
                                                                     <DockPanel>
                                                                     <!-- Old → new, in this cell only when this field moved.
                                                                          The same three pieces repeat in each value cell below. -->

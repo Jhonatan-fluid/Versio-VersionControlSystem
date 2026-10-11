@@ -6998,7 +6998,25 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
     /// committed copy can be compared once git has read it. Reset on every build, like
     /// <see cref="_tableSource"/>.
     /// </summary>
-    private string? _catalogSource;
+    private CatalogSource? _catalogSource;
+
+    /// <summary>
+    /// The files a shown library, task or device table was read from, and how to read their
+    /// committed copies the same way.
+    /// </summary>
+    /// <remarks>
+    /// A file and a parser rather than a YAML path since 2026-10-10. A source project's tables are
+    /// read by its vendor's format, not by the YAML readers, and a task configuration's table there
+    /// comes from one file per task. Comparing such a table with HEAD has to read HEAD the same
+    /// way, or the marks would compare two different readers' answers.
+    /// </remarks>
+    private sealed record CatalogSource(IReadOnlyList<string> Files, Func<IReadOnlyList<string>, object?> ParseHead);
+
+    /// <summary>A Versio YAML catalog, read back by the reader its suffix names.</summary>
+    private static CatalogSource YamlSource(string file) => new([file], heads =>
+        file.EndsWith(LibraryCatalog.FileSuffix, StringComparison.OrdinalIgnoreCase) ? LibraryCatalog.Parse(heads[0])
+        : file.EndsWith(TaskCatalog.FileSuffix, StringComparison.OrdinalIgnoreCase) ? TaskCatalog.Parse(heads[0])
+        : DeviceCatalog.Parse(heads[0]));
 
     /// <summary>
     /// Counts builds of the rendered half. A late git read compares it with the count it started
@@ -7316,19 +7334,23 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
     /// nothing marked under a DIFF header.
     /// </para>
     /// </remarks>
-    private async Task MarkCatalogChangesAsync(string file, object shown)
+    private async Task MarkCatalogChangesAsync(CatalogSource source, object shown)
     {
         if (_git is null || RepositoryPath is not { } root)
         {
             return;
         }
 
-        string head;
-        string now;
+        var file = string.Join(", ", source.Files);
+        var heads = new List<string>(source.Files.Count);
+        var nows = new List<string>(source.Files.Count);
         try
         {
-            head = await _git.ShowAtHeadAsync(file, CancellationToken.None).ConfigureAwait(true);
-            now = File.ReadAllText(Path.Combine(root, file.Replace('/', Path.DirectorySeparatorChar)));
+            foreach (var each in source.Files)
+            {
+                heads.Add(await _git.ShowAtHeadAsync(each, CancellationToken.None).ConfigureAwait(true));
+                nows.Add(File.ReadAllText(Path.Combine(root, each.Replace('/', Path.DirectorySeparatorChar))));
+            }
         }
         catch (Exception ex)
         {
@@ -7337,21 +7359,19 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         }
 
         if (!ReferenceEquals(RenderedContent, shown)
-            || string.Equals(head.Replace("\r\n", "\n"), now.Replace("\r\n", "\n"), StringComparison.Ordinal))
+            || heads.Zip(nows).All(p => string.Equals(p.First.Replace("\r\n", "\n"), p.Second.Replace("\r\n", "\n"), StringComparison.Ordinal)))
         {
             return;
         }
 
         // An empty HEAD is a file never committed, and every row is added. A HEAD the reader
         // refuses is the same answer: there is no old side, and inventing one would be worse.
+        var old = heads.All(h => h.Length == 0) ? null : source.ParseHead(heads);
         var marked = shown switch
         {
-            LibraryCatalog libraries => (object)CatalogDiff.Compare(
-                LibraryCatalog.Parse(head) is { IsValid: true } l ? l : null, libraries),
-            TaskCatalog tasks => CatalogDiff.Compare(
-                TaskCatalog.Parse(head) is { IsValid: true } t ? t : null, tasks),
-            DeviceCatalog devices => CatalogDiff.Compare(
-                DeviceCatalog.Parse(head) is { IsValid: true } d ? d : null, devices),
+            LibraryCatalog libraries => (object)CatalogDiff.Compare(old is LibraryCatalog { IsValid: true } l ? l : null, libraries),
+            TaskCatalog tasks => CatalogDiff.Compare(old is TaskCatalog { IsValid: true } t ? t : null, tasks),
+            DeviceCatalog devices => CatalogDiff.Compare(old is DeviceCatalog { IsValid: true } d ? d : null, devices),
             _ => null,
         };
 
@@ -7444,7 +7464,7 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
                 when CatalogFile(LibraryCatalog.FileSuffix) is { } yaml
                      && ReadOrNull(yaml) is { } text
                      && LibraryCatalog.Parse(text) is { IsValid: true } catalog:
-                _catalogSource = yaml;
+                _catalogSource = YamlSource(yaml);
                 return catalog;
 
             case ProjectNodeKind.Task
@@ -7465,7 +7485,7 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
                     && ReadOrNull(libraries) is { } libText
                     && LibraryCatalog.Parse(libText) is { IsValid: true } libCatalog)
                 {
-                    _catalogSource = libraries;
+                    _catalogSource = YamlSource(libraries);
                     return libCatalog;
                 }
 
@@ -7473,7 +7493,7 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
                     && ReadOrNull(tasks) is { } taskText
                     && TaskCatalog.Parse(taskText) is { IsValid: true } taskCatalog)
                 {
-                    _catalogSource = tasks;
+                    _catalogSource = YamlSource(tasks);
                     return taskCatalog;
                 }
 
@@ -7481,8 +7501,17 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
                     && ReadOrNull(devices) is { } devicesText
                     && DeviceCatalog.Parse(devicesText) is { IsValid: true } devicesCatalog)
                 {
-                    _catalogSource = devices;
+                    _catalogSource = YamlSource(devices);
                     return devicesCatalog;
+                }
+
+                // A vendor's own files for the same three things: a source project has no
+                // Versio YAML, and before this its library manager, devices and tasks drew as
+                // raw source (the owner, 2026-10-10). The committed copy is read by the same
+                // format, so the marks compare like with like.
+                if (VendorCatalog(node) is { } vendorCatalog)
+                {
+                    return vendorCatalog;
                 }
 
                 // Every registered format, every layer of this object. The readable
@@ -7597,6 +7626,84 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
     /// subscription. The Object/File <c>*.devices.yaml</c> arm is a second door: selecting
     /// the device itself must still open the table.
     /// </remarks>
+    /// <summary>
+    /// A library manager, device or task read by a vendor's format from its own file, or a task
+    /// configuration whose child objects are tasks; null when no format reads any of them.
+    /// </summary>
+    private object? VendorCatalog(Versio.Core.Projects.ProjectTreeNode node)
+    {
+        string? Read(string file)
+        {
+            try
+            {
+                return RepositoryPath is { } root
+                    ? File.ReadAllText(Path.Combine(root, file.Replace('/', Path.DirectorySeparatorChar)))
+                    : null;
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                return null;
+            }
+        }
+
+        foreach (var format in PlcFormats.All)
+        {
+            foreach (var file in node.Files)
+            {
+                if (Read(file) is not { } text)
+                {
+                    continue;
+                }
+
+                if (format.TryParseLibraryCatalog(file, text) is { IsValid: true } libraries)
+                {
+                    _catalogSource = new CatalogSource([file], heads => format.TryParseLibraryCatalog(file, heads[0]));
+                    return libraries;
+                }
+
+                if (format.TryParseDeviceCatalog(file, text) is { IsValid: true } device)
+                {
+                    _catalogSource = new CatalogSource([file], heads => format.TryParseDeviceCatalog(file, heads[0]));
+                    return device;
+                }
+
+                if (format.TryParseTask(file, text) is { } task)
+                {
+                    return new TaskDetailRender { Task = task };
+                }
+            }
+
+            // A configuration saved as one file per task: its table is its children's tasks,
+            // in the order the tree has them.
+            var children = node.Children
+                .Where(c => c.Files.Count > 0)
+                .Select(c => (File: c.Files[0], Text: Read(c.Files[0])))
+                .Where(c => c.Text is not null)
+                .Select(c => (c.File, Task: format.TryParseTask(c.File, c.Text!)))
+                .Where(c => c.Task is not null)
+                .ToList();
+            if (children.Count > 0)
+            {
+                var files = children.Select(c => c.File).ToList();
+                _catalogSource = new CatalogSource(files, heads => new TaskCatalog
+                {
+                    Schema = 1,
+                    Configuration = node.Name,
+                    Tasks = heads.Select((head, i) => head.Length == 0 ? null : format.TryParseTask(files[i], head)).OfType<TaskRecord>().ToList(),
+                });
+                return new TaskCatalog
+                {
+                    Schema = 1,
+                    Configuration = node.Name,
+                    Path = node.Path,
+                    Tasks = children.Select(c => c.Task!).ToList(),
+                };
+            }
+        }
+
+        return null;
+    }
+
     private static DeviceDetailRender DeviceDetail(
         Versio.Core.Projects.DeviceCatalog catalog,
         Versio.Core.Projects.ProjectTreeNode node)

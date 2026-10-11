@@ -218,6 +218,19 @@ public sealed class CodesysProjectFormat : IPlcProjectFormat
     public Versio.Core.Projects.MemberTable? TryParseMemberTable(string relativePath, string content) =>
         CodesysMemberTable.TryParse(relativePath, content);
 
+    /// <remarks>
+    /// File-Based Storage's <c>Libraries.json</c>, tasks and devices, as the same records the
+    /// classic mirror's YAML gives. See <see cref="CodesysCatalogs"/>.
+    /// </remarks>
+    public Versio.Core.Projects.LibraryCatalog? TryParseLibraryCatalog(string relativePath, string content) =>
+        CodesysCatalogs.Libraries(relativePath, content);
+
+    public Versio.Core.Projects.TaskRecord? TryParseTask(string relativePath, string content) =>
+        CodesysCatalogs.Task(relativePath, content);
+
+    public Versio.Core.Projects.DeviceCatalog? TryParseDeviceCatalog(string relativePath, string content) =>
+        CodesysCatalogs.Device(relativePath, content);
+
     public Versio.Core.Diff.SyntaxLanguage? SyntaxFor(string relativePath) =>
         FileBased.CodesysFileBasedSource.Syntax(relativePath);
 

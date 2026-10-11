@@ -47,6 +47,12 @@ public static class CodesysMemberTable
         if (relativePath.EndsWith(".xml", StringComparison.OrdinalIgnoreCase)
             || relativePath.EndsWith(CodesysV3File.Extension, StringComparison.OrdinalIgnoreCase))
         {
+            // Not declarations, but lists a reviewer reads as a table all the same.
+            if ((CodesysCatalogs.TextList(relativePath, content) ?? CodesysCatalogs.ProjectSettings(relativePath, content)) is { } list)
+            {
+                return list;
+            }
+
             if (CodesysLadderParser.ObjectOf(relativePath, content) is not var (owner, name)
                 || !CodesysLadderParser.IsNetworkList(owner))
             {

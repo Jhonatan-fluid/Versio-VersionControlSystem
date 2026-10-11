@@ -361,6 +361,35 @@ public interface IPlcProjectFormat
     Diff.SyntaxLanguage? SyntaxFor(string relativePath) => null;
 
     /// <summary>
+    /// A library manager read from this vendor's own file, or null when the file is not one.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The library, task and device views were built for the YAML catalogs Versio's own export
+    /// writes (<see cref="Projects.LibraryCatalog.FileSuffix"/> and its siblings). A source project
+    /// (<see cref="SourceProjectExtensions"/>) has no such files: its vendor saved the same facts
+    /// in its own format, and those views drew raw source instead (the owner, 2026-10-10,
+    /// "libraries, devices, task configuration ... not rendering at all").
+    /// </para>
+    /// <para>
+    /// These three hooks let the vendor hand the same neutral records over, so the same tables
+    /// draw, and the committed copy is read the same way to mark what changed. Default null,
+    /// like the other render hooks: a vendor with nothing to say costs nothing.
+    /// </para>
+    /// </remarks>
+    Projects.LibraryCatalog? TryParseLibraryCatalog(string relativePath, string content) => null;
+
+    /// <summary>One task read from this vendor's own file, or null when the file is not one.</summary>
+    /// <remarks>
+    /// One task, not a configuration: a vendor that saves a file per task (CODESYS File-Based
+    /// Storage does) has its configuration's table built from its child tasks by the host.
+    /// </remarks>
+    Projects.TaskRecord? TryParseTask(string relativePath, string content) => null;
+
+    /// <summary>A device's connectors and parameters read from this vendor's own file, or null.</summary>
+    Projects.DeviceCatalog? TryParseDeviceCatalog(string relativePath, string content) => null;
+
+    /// <summary>
     /// The zero-based lines of a block's code body in its readable source - from the first
     /// line after the declaration to the line before the block's closing keyword (end
     /// exclusive) - or null when the format cannot say.

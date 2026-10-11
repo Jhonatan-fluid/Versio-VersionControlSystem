@@ -239,11 +239,32 @@ public sealed record MemberTable
     /// </summary>
     public bool HasExternalAccess => Members.Any(m => m.ExternalAccess.Length > 0);
 
+    /// <summary>
+    /// Whether any row has a type. A list that is not declarations (a text list, a settings
+    /// list) has none, and the pane leaves the column out rather than draw it empty.
+    /// </summary>
+    public bool HasDatatype => Members.Any(m => !m.IsSectionHeading && m.Datatype.Length > 0);
+
+    /// <summary>
+    /// The name column's header, when the rows are not variables: "TEXT ID" for a text list.
+    /// Null for the default.
+    /// </summary>
+    public string? NameLabel { get; init; }
+
+    /// <summary>The value column's header when the IDE calls it something of its own. Null for the default.</summary>
+    public string? ValueLabel { get; init; }
+
+    /// <summary>The note under the title when none of the kinds above says it right. Null for the default.</summary>
+    public string? Note { get; init; }
+
+    /// <summary>The name column's header.</summary>
+    public string NameHeader => NameLabel ?? "NAME";
+
     /// <summary>The value column's header: what the IDE calls it for this kind of object.</summary>
-    public string ValueHeader => IsDataType || IsInterface ? "DEFAULT VALUE" : "START VALUE";
+    public string ValueHeader => ValueLabel ?? (IsDataType || IsInterface ? "DEFAULT VALUE" : "START VALUE");
 
     /// <summary>The one-line note under the title.</summary>
-    public string ReadOnlyNote => (IsDataType, IsInterface, IsVariableList) switch
+    public string ReadOnlyNote => Note ?? (IsDataType, IsInterface, IsVariableList) switch
     {
         (true, _, _) => "Read-only view of the data type's members. This table does not write back.",
         (_, true, _) => "Read-only view of the block interface. A linked type opens that object; a highlighted row's type has uncommitted changes.",
