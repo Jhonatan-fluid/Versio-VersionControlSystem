@@ -91,6 +91,32 @@ public static class CodePageAssets
         .cd-file-path { font-family: var(--cd-mono); }
         .cd-file-count { color: var(--cd-muted); font-weight: 400; }
         .cd-empty { color: var(--cd-muted); margin: 8px 0; }
+        .mt-page { color: var(--cd-fg); font: 13px var(--cd-ui); }
+        .mt-head { display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: baseline; }
+        .mt-title { font: 600 15px var(--cd-mono); }
+        .mt-caption { color: var(--cd-muted); }
+        .mt-note { color: var(--cd-muted); margin: 2px 0 8px; font-size: 12px; }
+        .mt-summary { margin: 0 0 8px; }
+        .mt-table { border-collapse: collapse; width: 100%; font: 13px/20px var(--cd-mono); }
+        .mt-table th { text-align: left; font: 600 11px var(--cd-ui); color: var(--cd-muted);
+          padding: 4px 8px; border-bottom: 1px solid var(--cd-border); }
+        .mt-table td { padding: 1px 8px; vertical-align: top; }
+        .mt-mark { width: 16px; text-align: center; font-weight: 600; }
+        .mt-section td { padding-top: 10px; font: 600 11px var(--cd-ui); color: var(--cd-muted);
+          text-transform: uppercase; }
+        .mt-indent { display: inline-block; width: 16px; }
+        .mt-added { background: var(--cd-added-bg); }
+        .mt-added .mt-mark { color: var(--cd-added); }
+        .mt-removed { background: var(--cd-removed-bg); }
+        .mt-removed .mt-mark { color: var(--cd-removed); }
+        .mt-removed td:not(.mt-mark) { text-decoration: line-through; }
+        .mt-modified .mt-mark { color: var(--cd-hidden); }
+        .mt-was { color: var(--cd-removed); }
+        .mt-now { color: var(--cd-added); text-decoration: none; }
+        .mt-ref-changed .mt-type { background: var(--cd-hidden-bg); }
+        .mt-link { color: var(--cd-accent); cursor: pointer; text-decoration: underline; }
+        .mt-row:hover { outline: 1px solid var(--cd-border); }
+        .mt-type, .mt-value, .mt-access, .mt-comment, .mt-name { white-space: pre-wrap; }
         .cd-t-keyword { color: var(--cd-t-keyword); }
         .cd-t-type { color: var(--cd-t-type); }
         .cd-t-comment { color: var(--cd-t-comment); }

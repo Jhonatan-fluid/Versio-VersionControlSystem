@@ -168,6 +168,37 @@ public static class CodeHtml
     /// <summary>Escapes text for an HTML attribute or element; the one escaping rule here.</summary>
     public static string E(string? text) => WebUtility.HtmlEncode(text ?? "");
 
+    /// <summary>
+    /// Text from a file for an attribute (a tooltip, a <c>data-path</c>): escaped, and each hidden
+    /// character spelled as <c>U+XXXX</c>, since an attribute cannot hold a marker element.
+    /// </summary>
+    /// <remarks>
+    /// The rule for elements holds here too: a hidden character from a file is never handed to
+    /// the browser as itself, even where it would only show on hover or reach a script.
+    /// </remarks>
+    public static string A(string? text)
+    {
+        if (string.IsNullOrEmpty(text) || !text.Any(IsHidden))
+        {
+            return E(text);
+        }
+
+        var spelled = new StringBuilder(text.Length + 16);
+        foreach (var c in text)
+        {
+            if (IsHidden(c))
+            {
+                spelled.Append("U+").Append(((int)c).ToString("X4", CultureInfo.InvariantCulture));
+            }
+            else
+            {
+                spelled.Append(c);
+            }
+        }
+
+        return E(spelled.ToString());
+    }
+
     private static int AppendToken(
         StringBuilder html, string text, int start, int length, TokenKind kind, IReadOnlyList<TextSpan>? emphasis)
     {

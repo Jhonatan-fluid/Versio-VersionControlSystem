@@ -155,7 +155,7 @@ public static class TextDiffHtml
                 html.Append("</code></div>\n");
                 return true;
             case DiffLineKind.FileTitle when line.Title is { } title:
-                html.Append("<div class=\"cd-file\" data-path=\"").Append(CodeHtml.E(title.Path))
+                html.Append("<div class=\"cd-file\" data-path=\"").Append(CodeHtml.A(title.Path))
                     .Append("\" data-change=\"").Append(title.Change.ToString().ToLowerInvariant())
                     .Append("\"><span class=\"cd-file-path\">");
                 hidden += CodeHtml.AppendLine(html, title.OldPath is null ? title.Path : $"{title.OldPath} -> {title.Path}", SyntaxLanguage.PlainText);
