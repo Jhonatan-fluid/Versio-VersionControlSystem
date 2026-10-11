@@ -237,6 +237,14 @@ Each step is one commit, and each builds and passes on its own.
 
    `StDeclarationParser` turned out to read only a declaration's header, which is why this was
    a new reader. TIA tag tables are still not tabled; the fixture's only one is empty.
+6a. **Libraries, tasks, devices, text list, project settings — built 2026-10-10 (5f64ad3).**
+   The owner found them all drawing as raw source: the views read only Versio's YAML. Three new
+   neutral hooks (`TryParseLibraryCatalog`, `TryParseTask`, `TryParseDeviceCatalog`) and member
+   tables with their own column words. `CodesysCatalogTests` holds each reader to the classic
+   mirror's YAML, and the differences that cannot be closed (device parameter names the
+   ScriptEngine takes from the installed description) are written up in
+   `vendors/codesys/DRIVING.md` §15. Not done: library references and device connectors as
+   rows in the tree.
 7. **"Open in CODESYS" on the row,** read from `.sidecars/.~u` through the existing
    `ParseOccupancy`. It is shown only and never gates anything.
 8. **CFC.** This needs a new neutral language value, positions on nodes, and a layout that

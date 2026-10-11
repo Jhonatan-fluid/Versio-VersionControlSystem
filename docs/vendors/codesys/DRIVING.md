@@ -1603,3 +1603,10 @@ export produces for a classic project. The design and its reasons are in
 | Escapes | `__3cEmpty__3e 0` is `<Empty> 0` |
 | Occupancy | `.sidecars/.~u`, the same four lines `ParseOccupancy` reads beside a `.project` |
 | External edits | CODESYS does not notice them. A full project reload is needed, so Versio never writes into the folder |
+| Libraries | `Libraries.json`: `references` (key = namespace), `v3SystemLibraries`, `placeholderOverrides` (the classic YAML's redirection), `libraryParameters` keyed `#placeholder`. **`allowUnqualifiedAccess` is written only when true**: absent means qualified-only |
+| Tasks | One `*.task.xml.v3` per task under the configuration's `^` folder. The classic YAML's `coreBinding` is `Core2`, not `Core` |
+| Devices | Connectors in `ConnectorList/InnerList`, **not** the empty top-level `Connectors` list. A parameter's name is its `VisibleName` fallback text: the ScriptEngine names it from the installed device description instead, so "Clear Statistics" there is "Clear statistics" here, and a description's own spelling (`ShpwDCStatistik`) is not in the file at all. Values agree. An enumerated element keeps its value only on its `BaseType` |
+| Project settings | One base64 `OptionData` blob of UTF-16 XML: a key tree, many keys named by GUID, holding name/value pairs |
+
+The readers are `CodesysCatalogs` and `CodesysMemberTable`; `CodesysCatalogTests` holds each to the
+classic mirror's YAML for the same machine.

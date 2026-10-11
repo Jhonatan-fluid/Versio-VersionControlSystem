@@ -62,9 +62,9 @@ marking, duplicate-param keys, and the detail-pane lookup. All of them are in
 |---|---|---|---|
 | `Versio.Core.Tests` | 1,692 | under a second | nothing |
 | `Versio.Integration.Tests` | 171 | ~10 s | real git |
-| `Versio.App.Tests` | 779 | 6 m 35 s on 2026-10-10; 8 m 38 s on 2026-10-05; ~3.6 min on 2026-09-22 | nothing |
+| `Versio.App.Tests` | 780 | 6 m 35 s on 2026-10-10; 8 m 38 s on 2026-10-05; ~3.6 min on 2026-09-22 | nothing |
 | `Versio.Arch.Tests` | 27 | instant | nothing |
-| `Versio.Plc.Codesys.Pure.Tests` | 352 | under a second | nothing |
+| `Versio.Plc.Codesys.Pure.Tests` | 365 | under a second | nothing |
 | `Versio.Plc.Codesys.Parity.Tests` | 97 | ~15 s | `python` on PATH — skips cleanly without it, so check the count |
 | `Versio.Plc.TiaPortal.Pure.Tests` | 93 | instant | nothing |
 | `Versio.Plc.TiaPortal.Tests` | 5 | seconds when skipped; minutes when Portal runs the import gate | **real TIA Portal** — skips without Openness membership or LFS content |
@@ -320,7 +320,10 @@ One list. Reorder it; do not copy it into another file.
      types and GVLs as member tables over their code, as TIA's are, through the neutral
      `StDeclarationTable`;
    - a changed source file's Rendered tab marks what changed, on every vendor (FINDINGS
-     2026-10-10).
+     2026-10-10);
+   - an FBS project's libraries, task configuration and tasks, devices, global text list and
+     project settings drawn as tables, held to the classic mirror's YAML for the same machine,
+     and the explorer's vendor pill.
 
    **Left, in order:**
    - TIA tag tables as tables (no real tag-table export to build from yet);
