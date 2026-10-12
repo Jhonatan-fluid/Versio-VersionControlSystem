@@ -78,6 +78,42 @@ public sealed class SessionStoreTests
         Assert.Equal("new-refresh", store.RefreshToken(stored!));
     }
 
+    private sealed class CountingLogger : IVersioLogger
+    {
+        public int Warnings { get; private set; }
+
+        public string? CurrentOperationId => null;
+
+        public void Log(LogLevel level, string category, string message, Exception? exception = null, bool isHeartbeat = false)
+        {
+            if (level == LogLevel.Warning)
+            {
+                Warnings++;
+            }
+        }
+
+        public IDisposable BeginOperation(string operationId) => new MemoryStream();
+    }
+
+    [Fact]
+    public async Task A_session_from_another_key_ring_is_warned_about_once_not_on_every_request()
+    {
+        // Found in review: the browser keeps sending the cookie, and the warning came every time.
+        var clock = new FakeClock(DateTimeOffset.UtcNow);
+        var cache = new MemoryDistributedCache(Options.Create(new MemoryDistributedCacheOptions()));
+        var first = new SessionStore(cache, new EphemeralDataProtectionProvider(), clock, Options.Create(new WebOptions()), NullLogger.Instance);
+        var log = new CountingLogger();
+        var second = new SessionStore(cache, new EphemeralDataProtectionProvider(), clock, Options.Create(new WebOptions()), log);
+        var session = await first.CreateAsync(1, "alice", "Alice", "", "token", clock.UtcNow.AddHours(8), "refresh", clock.UtcNow.AddDays(30));
+
+        for (var i = 0; i < 3; i++)
+        {
+            Assert.Null(await second.FindAsync(session.Id));
+        }
+
+        Assert.Equal(1, log.Warnings);
+    }
+
     [Fact]
     public async Task A_session_sealed_under_another_key_ring_is_signed_out_not_an_error()
     {

@@ -103,6 +103,9 @@ internal sealed class FakeOAuth : IAsyncDisposable
     /// <summary>Answer the code exchange as an App with token expiry turned off does.</summary>
     public bool NonExpiring { get; set; }
 
+    /// <summary>When set, a renewal is answered 502: GitHub not answering, rather than refusing.</summary>
+    public bool RefreshUnavailable { get; set; }
+
     /// <summary>When set, a renewal waits for it before answering: GitHub mid-reply.</summary>
     public TaskCompletionSource? HoldRefresh { get; set; }
 
@@ -130,6 +133,11 @@ internal sealed class FakeOAuth : IAsyncDisposable
                 if (self.HoldRefresh is { } hold)
                 {
                     await hold.Task;
+                }
+
+                if (self.RefreshUnavailable)
+                {
+                    return Results.StatusCode(502);
                 }
 
                 // As GitHub: a refresh token works once, and each renewal issues a new one.

@@ -10,6 +10,14 @@ namespace Versio.Web.Auth;
 /// <summary>Tokens GitHub issued for a user.</summary>
 public sealed record UserTokens(string AccessToken, DateTimeOffset AccessExpires, string? RefreshToken, DateTimeOffset RefreshExpires);
 
+/// <summary>What a token request came to: tokens, or GitHub's refusal, or no answer.</summary>
+public sealed record Renewal(UserTokens? Tokens, bool Refused)
+{
+    public static readonly Renewal Denied = new(null, true);
+
+    public static readonly Renewal Unavailable = new(null, false);
+}
+
 /// <summary>Who a token belongs to.</summary>
 public sealed record GitHubUser(long Id, string Login, string Name, string AvatarUrl);
 
@@ -42,17 +50,23 @@ public sealed class GitHubOAuth(IHttpClientFactory clients, IOptions<WebOptions>
         new($"{G.WebBaseUrl.TrimEnd('/')}/login/oauth/authorize?client_id={E(G.ClientId)}&redirect_uri={E(redirect)}"
             + $"&state={E(state)}&code_challenge={E(challenge)}&code_challenge_method=S256&allow_signup=false");
 
-    public Task<UserTokens?> ExchangeAsync(string code, string verifier, string redirect, CancellationToken ct) =>
-        TokenAsync(new Dictionary<string, string>
+    public async Task<UserTokens?> ExchangeAsync(string code, string verifier, string redirect, CancellationToken ct) =>
+        (await TokenAsync(new Dictionary<string, string>
         {
             ["client_id"] = G.ClientId,
             ["client_secret"] = G.ClientSecret,
             ["code"] = code,
             ["redirect_uri"] = redirect,
             ["code_verifier"] = verifier,
-        }, ct);
+        }, ct).ConfigureAwait(false)).Tokens;
 
-    public Task<UserTokens?> RefreshAsync(string refreshToken, CancellationToken ct) =>
+    /// <summary>A renewal: new tokens, or whether GitHub refused it (the refresh token is spent or revoked) rather than failing to answer.</summary>
+    /// <remarks>
+    /// The caller ends a session GitHub refused and keeps one GitHub could not be asked about: a
+    /// refusal is final, an outage is not. Both were one null at first, and a network error was
+    /// not caught at all, so it reached the reader as a 500 (found in review).
+    /// </remarks>
+    public Task<Renewal> RefreshAsync(string refreshToken, CancellationToken ct) =>
         TokenAsync(new Dictionary<string, string>
         {
             ["client_id"] = G.ClientId,
@@ -97,7 +111,7 @@ public sealed class GitHubOAuth(IHttpClientFactory clients, IOptions<WebOptions>
         return response.IsSuccessStatusCode;
     }
 
-    private async Task<UserTokens?> TokenAsync(Dictionary<string, string> form, CancellationToken ct)
+    private async Task<Renewal> TokenAsync(Dictionary<string, string> form, CancellationToken ct)
     {
         using var request = new HttpRequestMessage(HttpMethod.Post, $"{G.WebBaseUrl.TrimEnd('/')}/login/oauth/access_token")
         {
@@ -105,19 +119,40 @@ public sealed class GitHubOAuth(IHttpClientFactory clients, IOptions<WebOptions>
         };
         request.Headers.Accept.ParseAdd("application/json");
         request.Headers.UserAgent.ParseAdd("Versio-Web");
-        using var response = await clients.CreateClient(Sources.GitHubRepoSource.ApiClient).SendAsync(request, ct).ConfigureAwait(false);
-        if (!response.IsSuccessStatusCode)
+        HttpResponseMessage response;
+        try
         {
-            return null;
+            response = await clients.CreateClient(Sources.GitHubRepoSource.ApiClient).SendAsync(request, ct).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is HttpRequestException || (ex is TaskCanceledException && !ct.IsCancellationRequested))
+        {
+            return Renewal.Unavailable;
         }
 
-        using var doc = await JsonDocument.ParseAsync(await response.Content.ReadAsStreamAsync(ct).ConfigureAwait(false), cancellationToken: ct).ConfigureAwait(false);
+        using var answered = response;
+        if (!response.IsSuccessStatusCode)
+        {
+            // A 4xx is GitHub saying no; a 5xx is GitHub not answering.
+            return (int)response.StatusCode >= 500 ? Renewal.Unavailable : Renewal.Denied;
+        }
+
+        JsonDocument doc;
+        try
+        {
+            doc = await JsonDocument.ParseAsync(await response.Content.ReadAsStreamAsync(ct).ConfigureAwait(false), cancellationToken: ct).ConfigureAwait(false);
+        }
+        catch (JsonException)
+        {
+            return Renewal.Unavailable;
+        }
+
+        using var parsed = doc;
         var r = doc.RootElement;
 
         // GitHub reports a bad code with 200 and an "error" field, not a status.
         if (r.TryGetProperty("error", out _) || !r.TryGetProperty("access_token", out var token) || token.GetString() is not { Length: > 0 } access)
         {
-            return null;
+            return Renewal.Denied;
         }
 
         var now = clock.UtcNow;
@@ -128,7 +163,7 @@ public sealed class GitHubOAuth(IHttpClientFactory clients, IOptions<WebOptions>
         var expires = r.TryGetProperty("expires_in", out var e) && e.TryGetInt64(out var es) ? now.AddSeconds(es) : DateTimeOffset.MaxValue;
         var refresh = r.TryGetProperty("refresh_token", out var rt) ? rt.GetString() : null;
         var refreshExpires = r.TryGetProperty("refresh_token_expires_in", out var re) && re.TryGetInt64(out var res) ? now.AddSeconds(res) : now.AddMonths(6);
-        return new UserTokens(access, expires, refresh, refreshExpires);
+        return new Renewal(new UserTokens(access, expires, refresh, refreshExpires), false);
     }
 
     private static string E(string value) => Uri.EscapeDataString(value);

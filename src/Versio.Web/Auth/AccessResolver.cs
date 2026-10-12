@@ -42,6 +42,11 @@ public sealed class AccessResolver(
 
     internal static readonly TimeSpan RenewalLookEvery = TimeSpan.FromMilliseconds(200);
 
+    /// <summary>How long a renewal GitHub could not be asked about is not tried again, per session.</summary>
+    internal static readonly TimeSpan UnavailableFor = TimeSpan.FromMinutes(1);
+
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<string, DateTimeOffset> _unavailable = new(StringComparer.Ordinal);
+
     /// <summary>The signed-in session for this request, or null; refreshed when its token is close to expiry.</summary>
     public async Task<Session?> SessionAsync(HttpContext context, CancellationToken ct)
     {
@@ -78,9 +83,32 @@ public sealed class AccessResolver(
                 return current;
             }
 
-            if (sessions.RefreshToken(current) is { } refresh && current.RefreshExpires > clock.UtcNow
-                && await oauth.RefreshAsync(refresh, ct).ConfigureAwait(false) is { } renewed)
+            var now = clock.UtcNow;
+
+            // Nothing can renew it: no refresh token, or a spent one. No instance can renew such a
+            // session, so there is no race to wait out, and it ends at once. Kept, it re-entered
+            // this path on every request carrying its cookie, its idle expiry slid with each, and
+            // on a public repository the request fell back to anonymous and succeeded slowly, so
+            // nobody noticed (found in review). The common case: a refresh token that expired.
+            if (sessions.RefreshToken(current) is not { } refresh || current.RefreshExpires <= now)
             {
+                log.Info(LogCategory.Auth, $"Session for {current.Login} ended: its token expired and nothing can renew it");
+                await sessions.RemoveAsync(current.Id, ct).ConfigureAwait(false);
+                return null;
+            }
+
+            // GitHub could not be asked a moment ago: not again for a minute. The requests queued
+            // on this gate, and the next visits, are answered signed out at once rather than each
+            // calling GitHub and waiting its own turn.
+            if (_unavailable.TryGetValue(current.Id, out var failedAt) && now - failedAt < UnavailableFor)
+            {
+                return null;
+            }
+
+            var renewal = await oauth.RefreshAsync(refresh, ct).ConfigureAwait(false);
+            if (renewal.Tokens is { } renewed)
+            {
+                _unavailable.TryRemove(current.Id, out _);
                 // Signed out while GitHub was answering: nobody holds this id any more, and writing
                 // the session back would leave a live, unrevoked token in the store until it
                 // expired (found in review). There is no compare-and-swap, so this narrows the
@@ -96,17 +124,32 @@ public sealed class AccessResolver(
                 return await sessions.UpdateTokensAsync(current, renewed.AccessToken, renewed.AccessExpires, renewed.RefreshToken, renewed.RefreshExpires, ct).ConfigureAwait(false);
             }
 
-            // The gate holds within one process only. Another instance sharing the store may have
-            // renewed with the same single-use refresh token, so this refusal may be that renewal
-            // winning, and its write may land a moment after this one's refusal: look for it for a
-            // second before answering.
+            if (!renewal.Refused)
+            {
+                // GitHub did not answer. The refresh token was not spent, so the session is kept
+                // for a later try, and the next minute's requests do not ask again (above).
+                foreach (var (id, at) in _unavailable)
+                {
+                    if (now - at >= UnavailableFor)
+                    {
+                        _unavailable.TryRemove(id, out _);
+                    }
+                }
+
+                _unavailable[current.Id] = now;
+                log.Info(LogCategory.Auth, $"Could not reach GitHub to renew {current.Login}'s token; answered signed out, tried again in a minute");
+                return null;
+            }
+
+            // Refused. The gate holds within one process only, and another instance sharing the
+            // store may have renewed with the same single-use refresh token: this refusal may be
+            // that renewal winning, with its write landing a moment later. Look for it for a second.
             //
-            // And never delete the session here. The first version removed it after one look, and
-            // when the winner's write landed between that look and the remove, the remove deleted
-            // the renewal and the next request was signed out (found in review; it needs two
-            // instances, Web:Redis). Deleting bought nothing: this request is answered as signed
-            // out either way, a new sign-in replaces the browser's session, and a renewal that
-            // failed because GitHub was down no longer signs anyone out for good.
+            // Then end the session. The first version deleted after a single look, and a winner's
+            // write landing between the look and the delete was deleted with it (found in review).
+            // The next version deleted nothing, and the dead session then cost every later request
+            // a doomed call and a second's wait, for up to thirty days (found in the next review).
+            // A second of looking first makes the first race need a write slower than that.
             for (var look = 0; look < RenewalLooks; look++)
             {
                 if (await sessions.PeekAsync(session.Id, ct).ConfigureAwait(false) is { } after
@@ -118,7 +161,8 @@ public sealed class AccessResolver(
                 await Task.Delay(RenewalLookEvery, ct).ConfigureAwait(false);
             }
 
-            log.Info(LogCategory.Auth, $"Session for {current.Login} not used: its token expired and could not be renewed");
+            log.Info(LogCategory.Auth, $"Session for {current.Login} ended: GitHub refused to renew its token");
+            await sessions.RemoveAsync(current.Id, ct).ConfigureAwait(false);
             return null;
         }
         finally

@@ -78,6 +78,7 @@ public sealed class SessionStore(IDistributedCache store, IDataProtectionProvide
     private readonly IDataProtector _tokens = protection.CreateProtector("Versio.Web.SessionTokens.v1");
     private readonly ConcurrentDictionary<string, SemaphoreSlim> _refreshGates = new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<string, DateTimeOffset> _touched = new(StringComparer.Ordinal);
+    private readonly ConcurrentDictionary<string, DateTimeOffset> _unreadable = new(StringComparer.Ordinal);
 
     private WebOptions O => options.Value;
 
@@ -95,6 +96,14 @@ public sealed class SessionStore(IDistributedCache store, IDataProtectionProvide
             {
                 _touched.TryRemove(id, out _);
                 _refreshGates.TryRemove(id, out _);
+            }
+        }
+
+        foreach (var (id, seen) in _unreadable)
+        {
+            if (now - seen > O.SessionIdle)
+            {
+                _unreadable.TryRemove(id, out _);
             }
         }
 
@@ -174,7 +183,13 @@ public sealed class SessionStore(IDistributedCache store, IDataProtectionProvide
         // Not removed: another instance's ring may still read it. WebHost warns at startup.
         if (session is not null && !Readable(session))
         {
-            log.Warn(LogCategory.Auth, $"Session for {session.Login} sealed under another key ring; treated as signed out (share Web:KeysDirectory between instances)");
+            // Once per session, not per request: the browser keeps sending the cookie, and a
+            // warning on every request is noise that buries the first (found in review).
+            if (_unreadable.TryAdd(id, clock.UtcNow))
+            {
+                log.Warn(LogCategory.Auth, $"Session for {session.Login} sealed under another key ring; treated as signed out (share Web:KeysDirectory between instances)");
+            }
+
             return null;
         }
 
