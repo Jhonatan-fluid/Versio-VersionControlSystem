@@ -33,6 +33,7 @@ public sealed record Session
 
     public required DateTimeOffset Created { get; init; }
 
+    /// <summary>When the session was made. Activity since is the store's sliding expiry, not this field, which is never rewritten.</summary>
     public required DateTimeOffset LastSeen { get; init; }
 
     /// <summary>The <see cref="WebOptions.SessionEpoch"/> it was created under; a different epoch ends it.</summary>
@@ -60,8 +61,11 @@ public sealed record Session
 /// first created, and abandoned sessions stayed until the process ended. In memory by default
 /// (one instance, sessions end on restart); Redis when <c>Web:Redis</c> is set (WebHost). The
 /// cache's own expiry enforces the idle and absolute limits, so nothing has to be swept.
-/// <c>LastSeen</c> is written back at most once a minute, not on every request, because with Redis
-/// every write is a round trip.
+/// </para>
+/// <para>
+/// <b>After sign-in, only a token renewal writes a session.</b> Reads refresh the store's sliding
+/// expiry and never write the entry back, so no request can overwrite a renewal with the snapshot
+/// it read before it (see <see cref="FindAsync"/>).
 /// </para>
 /// </remarks>
 public sealed class SessionStore(IDistributedCache store, IDataProtectionProvider protection, IClock clock, IOptions<WebOptions> options)
@@ -70,6 +74,7 @@ public sealed class SessionStore(IDistributedCache store, IDataProtectionProvide
 
     private readonly IDataProtector _tokens = protection.CreateProtector("Versio.Web.SessionTokens.v1");
     private readonly ConcurrentDictionary<string, SemaphoreSlim> _refreshGates = new(StringComparer.Ordinal);
+    private readonly ConcurrentDictionary<string, DateTimeOffset> _touched = new(StringComparer.Ordinal);
 
     private WebOptions O => options.Value;
 
@@ -78,6 +83,18 @@ public sealed class SessionStore(IDistributedCache store, IDataProtectionProvide
         string? refreshToken, DateTimeOffset refreshExpires, CancellationToken ct = default)
     {
         var now = clock.UtcNow;
+
+        // This instance's touch times for sessions idle past the limit: the store has dropped those
+        // entries itself, and the times must not accumulate either.
+        foreach (var (id, last) in _touched)
+        {
+            if (now - last > O.SessionIdle)
+            {
+                _touched.TryRemove(id, out _);
+                _refreshGates.TryRemove(id, out _);
+            }
+        }
+
         var session = new Session
         {
             Id = NewId(),
@@ -106,20 +123,25 @@ public sealed class SessionStore(IDistributedCache store, IDataProtectionProvide
         }
 
         var now = clock.UtcNow;
-        if (session.Epoch != O.SessionEpoch || now - session.LastSeen > O.SessionIdle || now - session.Created > O.SessionLifetime)
+        if (session.Epoch != O.SessionEpoch || now - session.Created > O.SessionLifetime)
         {
             await RemoveAsync(id, ct).ConfigureAwait(false);
             return null;
         }
 
-        if (now - session.LastSeen < TouchEvery)
+        // A read never writes the session back. The first versions wrote "last seen" by replacing
+        // the whole entry, and a request that had read the session before a token renewal could
+        // land its write after it, restoring the consumed refresh token; the next renewal then
+        // failed and signed the person out (found in review). Idleness is the store's sliding
+        // expiry instead, kept alive with Refresh, which resets the clock without touching the
+        // data; at most once a minute per instance, since with Redis it is a round trip.
+        if (!_touched.TryGetValue(id, out var last) || now - last >= TouchEvery)
         {
-            return session;
+            _touched[id] = now;
+            await store.RefreshAsync(Key(id), ct).ConfigureAwait(false);
         }
 
-        var touched = session with { LastSeen = now };
-        await WriteAsync(touched, ct).ConfigureAwait(false);
-        return touched;
+        return session;
     }
 
     /// <summary>The session as stored now, without touching it; null when gone.</summary>
@@ -168,6 +190,7 @@ public sealed class SessionStore(IDistributedCache store, IDataProtectionProvide
     {
         await store.RemoveAsync(Key(id), ct).ConfigureAwait(false);
         _refreshGates.TryRemove(id, out _);
+        _touched.TryRemove(id, out _);
     }
 
     /// <summary>
