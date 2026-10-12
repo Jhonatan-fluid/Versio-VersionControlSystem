@@ -46,6 +46,12 @@ public sealed class GitHubRepoSourceTests : IAsyncLifetime
             http.Request.Headers.Accept.ToString() == "application/vnd.github.sha"
                 ? Results.Text(new string('c', 40), "application/vnd.github.sha")
                 : Results.StatusCode(415));
+        app.MapGet("/repos/acme/plant/branches", (int per_page, int page) =>
+            // 250 branches, in GitHub's pages.
+            Results.Json(Enumerable.Range(0, 250).Skip((page - 1) * per_page).Take(per_page)
+                .Select(i => new { name = $"b{i}", commit = new { sha = new string('f', 40) } })));
+        app.MapGet("/repos/acme/endless/branches", (int per_page, int page) =>
+            Results.Json(Enumerable.Range(0, per_page).Select(i => new { name = $"p{page}-{i}", commit = new { sha = new string('f', 40) } })));
         app.MapGet("/repos/acme/broken", () => Results.Json(new { unexpected = true }));
         app.MapGet("/repos/acme/plant/git/trees/{sha}", (string sha) => Results.Json(new
         {
@@ -133,6 +139,22 @@ public sealed class GitHubRepoSourceTests : IAsyncLifetime
         Assert.Equal(["src/Main.st", "big.bin", "lfs.xml"], tree.Value!.Files.Select(f => f.Path));
         Assert.Equal(13, tree.Value.Files[0].Size);
         Assert.All(_requests, r => Assert.Equal("Bearer alice-token", r.Auth));
+    }
+
+    [Fact]
+    public async Task Every_branch_is_listed_across_GitHubs_pages_up_to_the_cap()
+    {
+        // Found in review: one page of 100 was read, so branches past it were missing.
+        var source = Source();
+
+        var some = await source.GetBranchesAsync(Alice, "acme", "plant", CancellationToken.None);
+        var endless = await source.GetBranchesAsync(Alice, "acme", "endless", CancellationToken.None);
+
+        Assert.Equal(250, some.Value!.Count);
+        Assert.Equal("b249", some.Value[^1].Name);
+        Assert.Equal(3, _requests.Count(r => r.Path.StartsWith("/repos/acme/plant/branches", StringComparison.Ordinal)));
+        Assert.Equal(GitHubRepoSource.BranchPages * GitHubRepoSource.BranchPageSize, endless.Value!.Count);
+        Assert.Equal(GitHubRepoSource.BranchPages, _requests.Count(r => r.Path.StartsWith("/repos/acme/endless/branches", StringComparison.Ordinal)));
     }
 
     [Fact]

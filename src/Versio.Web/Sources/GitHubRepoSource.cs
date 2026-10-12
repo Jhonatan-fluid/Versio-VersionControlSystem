@@ -43,10 +43,39 @@ public sealed class GitHubRepoSource(
             root.GetProperty("private").GetBoolean(),
             root.GetProperty("default_branch").GetString() ?? "main"), ct);
 
-    public Task<RepoResult<IReadOnlyList<BranchInfo>>> GetBranchesAsync(RepoAccess access, string owner, string repo, CancellationToken ct) =>
-        GetJsonAsync<IReadOnlyList<BranchInfo>>(access, $"repos/{E(owner)}/{E(repo)}/branches?per_page=100", root => root.EnumerateArray()
-            .Select(b => new BranchInfo(b.GetProperty("name").GetString() ?? "", b.GetProperty("commit").GetProperty("sha").GetString() ?? ""))
-            .ToList(), ct);
+    /// <remarks>
+    /// Page by page, until a short page or <see cref="BranchPages"/>. The first version read one
+    /// page of 100, so in a repository with more branches the rest were missing from the picker
+    /// (found in review). The cap keeps a repository with thousands of branches from costing
+    /// thousands of calls on every load; a ref past it still opens from its URL.
+    /// </remarks>
+    public async Task<RepoResult<IReadOnlyList<BranchInfo>>> GetBranchesAsync(RepoAccess access, string owner, string repo, CancellationToken ct)
+    {
+        var all = new List<BranchInfo>();
+        for (var page = 1; page <= BranchPages; page++)
+        {
+            var one = await GetJsonAsync<IReadOnlyList<BranchInfo>>(access,
+                $"repos/{E(owner)}/{E(repo)}/branches?per_page={BranchPageSize}&page={page.ToString(CultureInfo.InvariantCulture)}", root => root.EnumerateArray()
+                    .Select(b => new BranchInfo(b.GetProperty("name").GetString() ?? "", b.GetProperty("commit").GetProperty("sha").GetString() ?? ""))
+                    .ToList(), ct).ConfigureAwait(false);
+            if (!one.Ok)
+            {
+                return one;
+            }
+
+            all.AddRange(one.Value!);
+            if (one.Value!.Count < BranchPageSize)
+            {
+                break;
+            }
+        }
+
+        return RepoResult<IReadOnlyList<BranchInfo>>.Of(all);
+    }
+
+    internal const int BranchPageSize = 100;
+
+    internal const int BranchPages = 10;
 
     /// <remarks>
     /// Asks for <c>application/vnd.github.sha</c>, which answers with the forty characters and
