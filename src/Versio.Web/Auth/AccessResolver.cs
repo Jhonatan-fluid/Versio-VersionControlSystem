@@ -47,6 +47,9 @@ public sealed class AccessResolver(
 
     private readonly System.Collections.Concurrent.ConcurrentDictionary<string, DateTimeOffset> _unavailable = new(StringComparer.Ordinal);
 
+    /// <summary>The session while its access token has not expired, else null.</summary>
+    private static Session? StillValid(Session session, DateTimeOffset now) => session.AccessExpires > now ? session : null;
+
     /// <summary>The signed-in session for this request, or null; refreshed when its token is close to expiry.</summary>
     public async Task<Session?> SessionAsync(HttpContext context, CancellationToken ct)
     {
@@ -98,11 +101,11 @@ public sealed class AccessResolver(
             }
 
             // GitHub could not be asked a moment ago: not again for a minute. The requests queued
-            // on this gate, and the next visits, are answered signed out at once rather than each
-            // calling GitHub and waiting its own turn.
+            // on this gate, and the next visits, are answered at once rather than each calling
+            // GitHub and waiting its own turn: with the current token while it still works.
             if (_unavailable.TryGetValue(current.Id, out var failedAt) && now - failedAt < UnavailableFor)
             {
-                return null;
+                return StillValid(current, now);
             }
 
             var renewal = await oauth.RefreshAsync(refresh, ct).ConfigureAwait(false);
@@ -136,9 +139,19 @@ public sealed class AccessResolver(
                     }
                 }
 
-                _unavailable[current.Id] = now;
-                log.Info(LogCategory.Auth, $"Could not reach GitHub to renew {current.Login}'s token; answered signed out, tried again in a minute");
-                return null;
+                // Stamped when GitHub gave up, not when it was asked: the client waits up to
+                // thirty seconds, and a stamp from before the call made the minute half that long
+                // while the log said a minute (found in review).
+                var answeredAt = clock.UtcNow;
+                _unavailable[current.Id] = answeredAt;
+
+                // Renewal starts five minutes early. In an outage the current token still works for
+                // those minutes, and answering signed out sent people to sign in for nothing
+                // (found in review).
+                var still = StillValid(current, answeredAt);
+                log.Info(LogCategory.Auth, $"Could not reach GitHub to renew {current.Login}'s token; "
+                    + (still is null ? "answered signed out" : "the current token is used until it expires") + ", tried again in a minute");
+                return still;
             }
 
             // Refused. The gate holds within one process only, and another instance sharing the

@@ -661,23 +661,32 @@ public sealed class SecurityTests
         Assert.Null(await sessions.PeekAsync(session.Id));
     }
 
-    [Fact]
-    public async Task A_renewal_GitHub_could_not_answer_keeps_the_session_and_is_not_asked_again_for_a_minute()
+    [Theory]
+    [InlineData(502, true)]
+    [InlineData(429, true)]
+    [InlineData(408, true)]
+    [InlineData(502, false)]
+    public async Task A_renewal_GitHub_could_not_answer_keeps_the_session_and_is_not_asked_again_for_a_minute(int status, bool tokenStillValid)
     {
         // An outage is not a refusal: the refresh token was not spent, so the session is kept for
-        // a later try. Until then the requests carrying it do not each call GitHub and wait.
+        // a later try, and the requests carrying it do not each call GitHub and wait. A rate limit
+        // and a timeout are outages too; called refusals, they ended the session (found in
+        // review). While the current token still works, it is used (renewal starts five minutes
+        // early); signing out then sent people to sign in for nothing (found in review).
         await using var oauth = await FakeOAuth.StartAsync();
         oauth.LiveRefreshTokens["alice-refresh"] = true;
-        oauth.RefreshUnavailable = true;
+        oauth.RefreshStatus = status;
         await using var host = await TestHost.StartAsync(GitHub(out _, out _), oauth.Settings());
         var sessions = host.Services.GetRequiredService<SessionStore>();
-        var session = await sessions.CreateAsync(42, "alice", "Alice", "", "alice-token", DateTimeOffset.UtcNow.AddMinutes(1), "alice-refresh", DateTimeOffset.UtcNow.AddDays(30));
+        var session = await sessions.CreateAsync(42, "alice", "Alice", "", "alice-token",
+            DateTimeOffset.UtcNow.AddMinutes(tokenStillValid ? 1 : -1), "alice-refresh", DateTimeOffset.UtcNow.AddDays(30));
         var cookie = $"{AccessResolver.SessionCookie}={session.Id}";
+        var expected = tokenStillValid ? HttpStatusCode.OK : HttpStatusCode.NotFound;
 
         var answers = await Task.WhenAll(Enumerable.Range(0, 4).Select(_ => host.GetAsync("/api/repos/acme/secret/tree", cookie)));
-        (await host.GetAsync("/api/repos/acme/secret/tree", cookie)).AssertStatus(HttpStatusCode.NotFound);
+        (await host.GetAsync("/api/repos/acme/secret/tree", cookie)).AssertStatus(expected);
 
-        Assert.All(answers, a => a.AssertStatus(HttpStatusCode.NotFound));
+        Assert.All(answers, a => a.AssertStatus(expected));
         Assert.Single(oauth.Exchanges, e => e.GetValueOrDefault("grant_type") == "refresh_token");
         Assert.NotNull(await sessions.PeekAsync(session.Id));
     }

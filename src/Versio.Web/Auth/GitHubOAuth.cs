@@ -132,8 +132,12 @@ public sealed class GitHubOAuth(IHttpClientFactory clients, IOptions<WebOptions>
         using var answered = response;
         if (!response.IsSuccessStatusCode)
         {
-            // A 4xx is GitHub saying no; a 5xx is GitHub not answering.
-            return (int)response.StatusCode >= 500 ? Renewal.Unavailable : Renewal.Denied;
+            // A 5xx is GitHub not answering, and so are a rate limit (429) and a request timeout
+            // (408): the refresh token was not spent, and the same request may succeed later.
+            // The first version called every status under 500 a refusal, and a refusal ends the
+            // session, so a rate-limited renewal signed the person out (found in review).
+            var status = (int)response.StatusCode;
+            return status >= 500 || status is 408 or 429 ? Renewal.Unavailable : Renewal.Denied;
         }
 
         JsonDocument doc;
