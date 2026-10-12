@@ -216,7 +216,14 @@ public sealed class ViewServiceTests
 
         Assert.DoesNotContain("data-change=\"added\"", result.Html, StringComparison.Ordinal);
         Assert.NotEqual("missing", result.Kind);
-        Assert.Contains(string.Format(System.Globalization.CultureInfo.InvariantCulture, ViewService.LeftOutNotice, "UDT_MTP_AnaMon.xml"), result.Notices);
+        // Each limit says what is true of it (found in review): a fetched layer's Raw tab shows
+        // the difference, an unfetched one's shows nothing; the change is said, and is not
+        // "nothing this view draws changed", whose Raw tab is the unchanged .udt on screen.
+        var notice = string.Format(System.Globalization.CultureInfo.InvariantCulture, overTheDrawLimit ? ViewService.LeftOutNotice : ViewService.LeftOutUnfetchedNotice, "UDT_MTP_AnaMon.xml")
+            + " " + string.Format(System.Globalization.CultureInfo.InvariantCulture, ViewService.LeftOutChangedNotice, "UDT_MTP_AnaMon.xml");
+        Assert.Contains(notice, result.Notices);
+        Assert.DoesNotContain(ViewService.NothingDrawnChanged, result.Notices);
+        Assert.Equal(overTheDrawLimit, notice.Contains("Raw", StringComparison.Ordinal));
     }
 
     [Fact]

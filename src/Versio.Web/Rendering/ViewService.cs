@@ -289,7 +289,7 @@ public sealed class ViewService(
             return RawCompare(shown, before, after, sideBySide);
         }
 
-        var changedFiles = node.Files.Any(f => (before.TryGetValue(f, out var x) ? x.BlobSha : null) != (after.TryGetValue(f, out var y) ? y.BlobSha : null));
+        bool Differs(string f) => (before.TryGetValue(f, out var x) ? x.BlobSha : null) != (after.TryGetValue(f, out var y) ? y.BlobSha : null);
 
         // Another layer too large to draw, on either side, is left out of BOTH sides and said.
         // Two reviews pulled opposite ways here. Left out of one side only, a native .xml over the
@@ -298,12 +298,26 @@ public sealed class ViewService(
         // Refused outright, as the first fix for unreadable sides did with "too large", it threw
         // away the .st diff beside it that could be drawn. Out of both, the rest still compares
         // and nothing reads as new; the shown file's own size is handled above.
+        //
+        // The notice says what is true for each limit (found in review): a layer over the draw
+        // limit was fetched, and its own Raw tab shows the difference; one over the fetch limit was
+        // never fetched, so nothing here can show it, and pointing at Raw sent the reader to "too
+        // large to compare". A left-out layer that changed says so itself, and does not count
+        // toward "nothing this view draws changed", whose Raw tab is the file on screen and holds
+        // no such change.
         var tooLarge = node.Files.Where(f => f != shown && (TooLarge(before, f) || TooLarge(after, f))).ToList();
+        foreach (var f in tooLarge)
+        {
+            var fetched = !Unfetched(before, f) && !Unfetched(after, f);
+            notices.Add(string.Format(CultureInfo.InvariantCulture, fetched ? LeftOutNotice : LeftOutUnfetchedNotice, Name(f))
+                + (Differs(f) ? " " + string.Format(CultureInfo.InvariantCulture, LeftOutChangedNotice, Name(f)) : ""));
+        }
+
+        var changedFiles = node.Files.Except(tooLarge).Any(Differs);
         if (tooLarge.Count > 0)
         {
             before = Without(before, tooLarge);
             after = Without(after, tooLarge);
-            notices.AddRange(tooLarge.Select(f => string.Format(CultureInfo.InvariantCulture, LeftOutNotice, Name(f))));
         }
 
         // The object's other layers too: a table or a ladder can come from the .xml beside an .st.
@@ -533,7 +547,12 @@ public sealed class ViewService(
         "This file took too long to draw, so it is shown as plain text.";
 
     internal const string LeftOutNotice =
-        "{0} is too large to draw in one of these versions, so this comparison leaves it out on both sides; its Raw tab shows it.";
+        "{0} is too large to draw in one of these versions, so this comparison leaves it out on both sides; open {0} and its Raw tab shows the difference.";
+
+    internal const string LeftOutUnfetchedNotice =
+        "{0} is too large to fetch in one of these versions, so this comparison leaves it out on both sides and cannot show what changed in it.";
+
+    internal const string LeftOutChangedNotice = "{0} differs between these versions.";
 
     internal const string ParserFailedNotice =
         "This file could not be drawn, so it is shown as plain text.";
@@ -614,6 +633,9 @@ public sealed class ViewService(
 
     private static bool TooLarge(IReadOnlyDictionary<string, Layer> layers, string file) =>
         layers.TryGetValue(file, out var layer) && (layer.TooLargeToDraw || layer.Failure == RepoFailure.TooLarge);
+
+    private static bool Unfetched(IReadOnlyDictionary<string, Layer> layers, string file) =>
+        layers.TryGetValue(file, out var layer) && layer.Failure == RepoFailure.TooLarge;
 
     private static IReadOnlyDictionary<string, Layer> Without(IReadOnlyDictionary<string, Layer> layers, IReadOnlyCollection<string> files) =>
         layers.Where(l => !files.Contains(l.Key)).ToDictionary(l => l.Key, l => l.Value, StringComparer.Ordinal);
