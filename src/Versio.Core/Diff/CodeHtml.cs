@@ -177,11 +177,24 @@ public static class CodeHtml
     /// The rule for elements holds here too: a hidden character from a file is never handed to
     /// the browser as itself, even where it would only show on hover or reach a script.
     /// </remarks>
-    public static string A(string? text)
+    public static string A(string? text) => E(Spelled(text));
+
+    /// <summary>
+    /// Text with each hidden character spelled as <c>U+XXXX</c> and nothing else changed: for a
+    /// name or message shown as plain text by something that escapes it itself (the web page's
+    /// tree, titles, commit messages).
+    /// </summary>
+    /// <remarks>
+    /// Security rule 9 was applied to file contents only. Git allows a right-to-left override in
+    /// a file or branch name, and a commit message is anyone's text, so a tree row could read as
+    /// one name and be another (found in review, 2026-10-12). One spelling for both uses, so the
+    /// list of hidden characters stays <see cref="IsHidden"/>'s alone.
+    /// </remarks>
+    public static string Spelled(string? text)
     {
         if (string.IsNullOrEmpty(text) || !text.Any(IsHidden))
         {
-            return E(text);
+            return text ?? "";
         }
 
         var spelled = new StringBuilder(text.Length + 16);
@@ -197,7 +210,7 @@ public static class CodeHtml
             }
         }
 
-        return E(spelled.ToString());
+        return spelled.ToString();
     }
 
     /// <summary>

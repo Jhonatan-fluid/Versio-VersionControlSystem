@@ -12,7 +12,10 @@ using Versio.Web.Sources;
 namespace Versio.Web.Api;
 
 /// <summary>A tree row as the page draws it.</summary>
-public sealed record TreeNodeDto(string Name, string Path, string Kind, string? Primary, IReadOnlyList<string> Files, IReadOnlyList<TreeNodeDto> Children);
+/// <param name="Name">For display: hidden characters spelled (security rule 9).</param>
+/// <param name="Path">For navigation: exactly the file's path, which is what the API is asked for.</param>
+/// <param name="Label">The path for display, spelled.</param>
+public sealed record TreeNodeDto(string Name, string Path, string Label, string Kind, string? Primary, IReadOnlyList<string> Files, IReadOnlyList<TreeNodeDto> Children);
 
 /// <summary>
 /// The JSON API the page calls (docs/web/PLAN.md Step 2). Every route resolves its credential
@@ -73,7 +76,7 @@ public static partial class ApiEndpoints
 
             var branches = await source.GetBranchesAsync(who.Value!, owner, repo, ct).ConfigureAwait(false);
             return branches.Ok
-                ? Results.Ok(new { branches = branches.Value!.Branches.Select(b => new { name = b.Name, commit = b.CommitSha }), truncated = branches.Value.Truncated })
+                ? Results.Ok(new { branches = branches.Value!.Branches.Select(b => new { name = b.Name, label = CodeHtml.Spelled(b.Name), commit = b.CommitSha }), truncated = branches.Value.Truncated })
                 : Refused(branches.Failure, http);
         });
 
@@ -91,7 +94,7 @@ public static partial class ApiEndpoints
                 commit = m.CommitSha,
                 isVersio = m.IsVersio,
                 truncated = m.Truncated,
-                problems = m.Problems,
+                problems = m.Problems.Select(CodeHtml.Spelled),
                 nodes = m.Nodes.Select(Dto),
             });
         });
@@ -144,8 +147,9 @@ public static partial class ApiEndpoints
                 files = changes.Select(c => new
                 {
                     path = c.Path,
+                    label = CodeHtml.Spelled(c.Path),
                     change = c.Change,
-                    @object = (newer.Value.Model.NodeFor(c.Path) ?? older.Value.Model.NodeFor(c.Path)) is { Kind: ProjectNodeKind.Object } n ? n.Name : null,
+                    @object = (newer.Value.Model.NodeFor(c.Path) ?? older.Value.Model.NodeFor(c.Path)) is { Kind: ProjectNodeKind.Object } n ? CodeHtml.Spelled(n.Name) : null,
                 }),
             });
         });
@@ -201,7 +205,7 @@ public static partial class ApiEndpoints
             // changed" link. The page's HistoryLimit is the 50; change both together.
             var commits = await source.GetCommitsAsync(who.Value!, owner, repo, @ref ?? info.Value!.DefaultBranch, path, 51, ct).ConfigureAwait(false);
             return commits.Ok
-                ? Results.Ok(commits.Value!.Select(c => new { sha = c.Sha, message = c.Message, author = c.Author, when = c.When }))
+                ? Results.Ok(commits.Value!.Select(c => new { sha = c.Sha, message = CodeHtml.Spelled(c.Message), author = CodeHtml.Spelled(c.Author), when = c.When }))
                 : Refused(commits.Failure, http);
         });
 
@@ -350,7 +354,7 @@ public static partial class ApiEndpoints
         log.Info(LogCategory.Web, $"view {access} {model.Owner}/{model.Repo}@{model.CommitSha[..Math.Min(8, model.CommitSha.Length)]} {path} {view ?? "rendered"}");
 
     private static TreeNodeDto Dto(ProjectTreeNode node) =>
-        new(node.Name, node.Path, node.Kind.ToString().ToLowerInvariant(), node.PrimaryFile, node.Files, node.Children.Select(Dto).ToList());
+        new(CodeHtml.Spelled(node.Name), node.Path, CodeHtml.Spelled(node.Path), node.Kind.ToString().ToLowerInvariant(), node.PrimaryFile, node.Files, node.Children.Select(Dto).ToList());
 
     [GeneratedRegex("^[A-Za-z0-9_.-]{1,100}$")]
     private static partial Regex Name();

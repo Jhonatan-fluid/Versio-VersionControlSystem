@@ -30,6 +30,8 @@ export interface RepoInfo {
 
 export interface Branch {
   name: string;
+  /** The name for display: hidden characters spelled by the server (security rule 9). */
+  label: string;
   commit: string;
 }
 
@@ -40,8 +42,12 @@ export interface BranchList {
 }
 
 export interface TreeNode {
+  /** For display, spelled by the server. */
   name: string;
+  /** For navigation: the exact path. */
   path: string;
+  /** The path for display, spelled. */
+  label: string;
   kind: 'folder' | 'object' | 'project' | 'file' | 'library' | 'task' | 'device';
   primary: string | null;
   files: string[];
@@ -63,10 +69,14 @@ export interface View {
   html: string;
   notices: string[];
   layers: string[];
+  /** Each layer's path for display, spelled; the chips show these and ask for `layers`. */
+  layerLabels: string[];
 }
 
 export interface ChangedFile {
   path: string;
+  /** The path for display, spelled. */
+  label: string;
   change: 'added' | 'modified' | 'deleted';
   object: string | null;
 }

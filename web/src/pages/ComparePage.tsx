@@ -88,9 +88,9 @@ export function ComparePage({ me }: { me: Me | null }) {
               {comparison.value.files.length === 0 && <li className="muted pad">These two versions are the same.</li>}
               {comparison.value.files.map((f) => (
                 <li key={f.path}>
-                  <button type="button" className={`tree-row${f.path === path ? ' is-selected' : ''}`} onClick={() => go(base, head, f.path)} title={f.path}>
+                  <button type="button" className={`tree-row${f.path === path ? ' is-selected' : ''}`} onClick={() => go(base, head, f.path)} title={f.label}>
                     <span className={`change change-${f.change}`}>{mark[f.change]}</span>
-                    <span className="tree-name">{f.object ?? f.path.slice(f.path.lastIndexOf('/') + 1)}</span>
+                    <span className="tree-name">{f.object ?? f.label.slice(f.label.lastIndexOf('/') + 1)}</span>
                   </button>
                 </li>
               ))}

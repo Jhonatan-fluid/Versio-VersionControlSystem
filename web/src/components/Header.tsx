@@ -29,7 +29,7 @@ export function Header({ me, repo, onToggleTree }: Props) {
             <select value={repo.ref} onChange={(e) => repo.onRef(e.target.value)}>
               {!repo.branches.some((b) => b.name === repo.ref) && <option value={repo.ref}>{repo.ref.length === 40 ? repo.ref.slice(0, 8) : repo.ref}</option>}
               {repo.branches.map((b) => (
-                <option key={b.name} value={b.name}>{b.name}</option>
+                <option key={b.name} value={b.name}>{b.label}</option>
               ))}
               {repo.branchesTruncated && (
                 <option disabled value="">

@@ -26,13 +26,19 @@ public enum PaneView
 /// <param name="Kind">source, table, ladder, markdown, diff, binary, too-large or missing.</param>
 /// <param name="Html">Built by the Core renderers, escaped there; the page places it and draws nothing.</param>
 /// <param name="Layers">Every file of the object, for the layer chips, with the one shown first.</param>
+/// <param name="Title">For display, hidden characters spelled (security rule 9), as are <paramref name="Notices"/>.</param>
+/// <param name="Path">For navigation: the file's exact path. <paramref name="Layers"/> likewise.</param>
 public sealed record ViewResult(
     string Kind,
     string Title,
     string Path,
     string Html,
     IReadOnlyList<string> Notices,
-    IReadOnlyList<string> Layers);
+    IReadOnlyList<string> Layers)
+{
+    /// <summary>Each layer's path for display, spelled; the page's chips show these, and ask for <see cref="Layers"/>.</summary>
+    public IReadOnlyList<string> LayerLabels => Layers.Select(CodeHtml.Spelled).ToList();
+}
 
 /// <summary>
 /// Turns an object of a commit, or the same object in two commits, into the fragment the page
@@ -680,7 +686,7 @@ public sealed class ViewService(
         Result("missing", node, shown, "<p class=\"cd-empty\">This file is not in this version.</p>", []);
 
     private static ViewResult Result(string kind, ProjectTreeNode node, string shown, string html, IReadOnlyList<string> notices) =>
-        new(kind, node.Kind == ProjectNodeKind.Object ? node.Name : Name(shown), shown, html, notices,
+        new(kind, CodeHtml.Spelled(node.Kind == ProjectNodeKind.Object ? node.Name : Name(shown)), shown, html, notices.Select(CodeHtml.Spelled).ToList(),
             node.Files.OrderByDescending(f => f == shown).ToList());
 
     private static string? Text(IReadOnlyDictionary<string, Layer> files, string path) =>

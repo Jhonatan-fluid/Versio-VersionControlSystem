@@ -18,7 +18,7 @@ function answer(url: string): unknown {
     return Array.from({ length: commitCount }, (_, i) => ({ sha: `${i}`.padStart(40, '0'), message: `c${i}`, author: 'a', when: '2026-10-01T00:00:00Z' }));
   }
   if (url.endsWith('/branches')) {
-    return { branches: [{ name: 'develop', commit: 'x' }, { name: 'feature', commit: 'y' }], truncated: truncatedBranches };
+    return { branches: [{ name: 'develop', label: 'develop', commit: 'x' }, { name: 'feature', label: 'feature', commit: 'y' }], truncated: truncatedBranches };
   }
   return { owner: 'acme', name: 'plant', private: false, defaultBranch: 'develop' };
 }

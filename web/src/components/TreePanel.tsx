@@ -85,7 +85,7 @@ function Node({ node, depth, filter, selected, onSelect }: { node: TreeNode; dep
             onSelect(node);
           }
         }}
-        title={node.path}
+        title={node.label}
       >
         <span className="tree-caret" aria-hidden="true">{branch ? (shown ? '▾' : '▸') : ''}</span>
         {icon[node.kind] && <span className={`tree-kind kind-${node.kind}`} aria-hidden="true">{icon[node.kind]}</span>}

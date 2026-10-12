@@ -62,11 +62,14 @@ export function Pane({ result, view, layout, onView, onLayout, onLayer, onOpenPa
       </header>
       {v.layers.length > 1 && (
         <div className="layers" aria-label="Files of this object">
-          {v.layers.map((layer) => (
-            <button key={layer} type="button" className={`chip${layer === v.path ? ' is-on' : ''}`} onClick={() => onLayer(layer)} title={layer}>
-              {layer.slice(layer.lastIndexOf('/') + 1)}
-            </button>
-          ))}
+          {v.layers.map((layer, i) => {
+            const label = v.layerLabels[i] ?? layer;
+            return (
+              <button key={layer} type="button" className={`chip${layer === v.path ? ' is-on' : ''}`} onClick={() => onLayer(layer)} title={label}>
+                {label.slice(label.lastIndexOf('/') + 1)}
+              </button>
+            );
+          })}
         </div>
       )}
       {v.notices.map((n) => (

@@ -30,6 +30,51 @@ public sealed class SecurityTests
         return github;
     }
 
+    [Fact]
+    public async Task Rule9_a_hidden_character_in_a_name_is_spelled_wherever_the_page_shows_it()
+    {
+        // Found in review: rule 9 was applied to file contents only. Git allows a right-to-left
+        // override in a file or branch name, so a tree row could read as one name and be another.
+        // Every string the page shows is spelled; every path it navigates with stays exact.
+        var rlo = ((char)0x202E).ToString();
+        var github = new FakeGitHub();
+        var repo = github.Add("acme", "names");
+        var file = $"plc/Main{rlo}ts.st";
+        var branch = $"fix{rlo}main";
+        var main = github.Commit(repo, "main", new Dictionary<string, byte[]> { ["README.md"] = "x\n"u8.ToArray() });
+        var head = github.Commit(repo, branch, new Dictionary<string, byte[]> { ["README.md"] = "x\n"u8.ToArray(), [file] = "PROGRAM Main\n"u8.ToArray() });
+        await using var host = await TestHost.StartAsync(github);
+        var api = "/api/repos/acme/names";
+
+        static System.Text.Json.JsonElement Json(string body) => System.Text.Json.JsonDocument.Parse(body).RootElement;
+        var tree = Json(await (await host.GetAsync($"{api}/tree?ref={Uri.EscapeDataString(head)}")).Body());
+        var node = tree.GetProperty("nodes").EnumerateArray().SelectMany(n => n.GetProperty("children").EnumerateArray().Prepend(n)).Single(n => n.GetProperty("path").GetString() == file);
+        var branches = Json(await (await host.GetAsync($"{api}/branches")).Body()).GetProperty("branches").EnumerateArray().ToList();
+        var history = Json(await (await host.GetAsync($"{api}/history?ref={Uri.EscapeDataString(head)}")).Body()).EnumerateArray().ToList();
+        var compared = Json(await (await host.GetAsync($"{api}/compare?base={main}&head={head}")).Body()).GetProperty("files").EnumerateArray().Single();
+        var view = await host.GetAsync($"{api}/view?ref={Uri.EscapeDataString(head)}&path={Uri.EscapeDataString(file)}");
+        view.AssertStatus(HttpStatusCode.OK);
+        var shown = Json(await view.Body());
+
+        var displayed = new[]
+        {
+            node.GetProperty("name").GetString(), node.GetProperty("label").GetString(),
+            compared.GetProperty("label").GetString(), shown.GetProperty("title").GetString(),
+        }
+            .Concat(shown.GetProperty("layerLabels").EnumerateArray().Select(l => l.GetString()))
+            .Concat(branches.Select(b => b.GetProperty("label").GetString()))
+            .Concat(history.Select(c => c.GetProperty("message").GetString()))
+            .ToList();
+        Assert.All(displayed, text => Assert.DoesNotContain(rlo, text!, StringComparison.Ordinal));
+        Assert.Contains(displayed, text => text!.Contains("MainU+202Ets.st", StringComparison.Ordinal));
+        Assert.Contains(displayed, text => text!.Contains("fixU+202Emain", StringComparison.Ordinal));
+
+        // Navigation keeps the exact name: the path and the branch the page asks with.
+        Assert.Equal(file, node.GetProperty("path").GetString());
+        Assert.Equal(file, compared.GetProperty("path").GetString());
+        Assert.Contains(branches, b => b.GetProperty("name").GetString() == branch);
+    }
+
     /// <summary>Signs alice in directly, through the store the callback uses, and returns her cookie.</summary>
     private static string SignIn(TestHost host, string token = "alice-token", string login = "alice")
     {
