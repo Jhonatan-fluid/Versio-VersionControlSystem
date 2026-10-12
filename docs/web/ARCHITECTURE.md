@@ -65,11 +65,11 @@ the project file, the IL and every vendor reference (section 7).
 | `Dockerfile` | Multi-stage container: Release publish (builds the page), then a non-root ASP.NET runtime. **Written, not built** (no Docker where it was written) |
 | **`Sources/`** | |
 | `IRepoSource.cs` | The seam for "where repositories come from": `RepoAccess` (whose credential), `RepoResult<T>` (a value or why not), the tree, blob and commit records. GitLab or Azure DevOps would be new implementations of this |
-| `GitHubRepoSource.cs` | The GitHub implementation: repo, branches, commit SHA, recursive tree, raw blobs, commits; follows Git LFS pointers. Maps GitHub's refusals to what the page can say (a bare 403 is "not found") |
+| `GitHubRepoSource.cs` | The GitHub implementation: repo, branches (every page, up to 1,000), commit SHA, recursive tree, raw blobs, commits; follows Git LFS pointers. Maps GitHub's refusals to what the page can say (a bare 403 is "not found") |
 | `LfsGuard.cs` | Parses LFS pointers; allows LFS downloads only over https to allowlisted hosts; a connect callback that refuses internal addresses at the moment of connecting; no redirects |
 | **`Auth/`** | |
 | `AccessResolver.cs` | **Decides which credential reads a repository for a request.** Signed in: the person's own token. Anonymous: the App's token, only after GitHub says the repository is public |
-| `SessionStore.cs` | Server-side sessions on `IDistributedCache` (in memory, or Redis when `Web:Redis` is set, so instances share them). The browser holds a random id; tokens are encrypted with ASP.NET Data Protection; idle and absolute limits enforced by the cache's expiry; an epoch kill switch; one token renewal per session at a time |
+| `SessionStore.cs` | Server-side sessions on `IDistributedCache` (in memory, or Redis when `Web:Redis` is set, so instances share them). The browser holds a random id; tokens are encrypted with ASP.NET Data Protection; idle and absolute limits enforced by the cache's expiry (a read refreshes the sliding expiry and never writes the entry, so after sign-in only a token renewal writes a session); an epoch kill switch; one token renewal per session at a time |
 | `GitHubOAuth.cs` | `GitHubOAuth`: authorize URL with PKCE, code exchange, refresh, user, revoke. `AppTokens` (behind `IInstallationTokens`): a JWT signed through `IAppSigner`, then a read-only installation token per repository |
 | `AppSigner.cs` | `IAppSigner`, the seam a key vault plugs into (rule 15); `PemAppSigner` signs with the configured key until the host is chosen |
 | `AuthEndpoints.cs` | `/auth/login`, `/auth/callback`, `/auth/logout` (needs the `X-Versio-Request` header), `/api/me`. `SafeReturn` keeps the return URL on this site |
@@ -103,7 +103,9 @@ the project file, the IL and every vendor reference (section 7).
 | `src/components/Header.tsx` | Repository, branch picker, Code / History / Compare, signed-in user |
 | `src/pages/*.tsx` | Home (open a repository), RepoPage (tree and pane), ComparePage (changed files and their diffs), HistoryPage (commits, each openable and comparable) |
 | `src/styles/app.css` | The page around the fragments, light and dark, a drawer under 760 px. Markdown's styles live here because Core emits plain elements for it |
-| `src/fragment.test.ts` | 11 vitest tests: the sanitiser, link rules, URL building |
+| `src/fragment.test.ts` | 13 vitest tests: the sanitiser (the ladder's checkbox kept, every other input removed), link rules, URL building |
+| `src/ladderScript.test.ts` | 5: Core's ladder script, read from `LadderPageAssets.cs` itself (Vite `?raw`), run fragment after fragment into one document, counting the listeners it leaves |
+| `src/pages/HistoryPage.test.tsx` | 2: the first page-component test; renders History over a stubbed fetch and reads the Compare link it built |
 
 ### Added to Core for the web, and usable by the desktop
 
@@ -125,7 +127,7 @@ the project file, the IL and every vendor reference (section 7).
 
 | Where | What |
 |---|---|
-| `tests/Versio.Web.Tests/` (101) | `ViewServiceTests` (the desktop's choices over the real fixtures), `SecurityTests` (the rules against the real host on a free port, sign-in end to end, two instances sharing sessions, the real executable's startup), `GitHubRepoSourceTests` (the real client against a local server shaped like GitHub), `PerformanceTests` (each thing fetched once, compression, cache headers), `LfsGuardTests`. `Fakes.cs` is a GitHub in memory serving this repository's own fixtures; `TestHost.cs` runs the real host; `FixturePreview.cs` serves the fixtures on port 5199 to look at (opt-in) |
+| `tests/Versio.Web.Tests/` (111) | `ViewServiceTests` (the desktop's choices over the real fixtures), `SecurityTests` (the rules against the real host on a free port, sign-in end to end, two instances sharing sessions, the real executable's startup), `GitHubRepoSourceTests` (the real client against a local server shaped like GitHub), `PerformanceTests` (each thing fetched once, compression, cache headers), `LfsGuardTests`. `Fakes.cs` is a GitHub in memory serving this repository's own fixtures; `TestHost.cs` runs the real host; `FixturePreview.cs` serves the fixtures on port 5199 to look at (opt-in) |
 | `tests/Versio.Core.Tests/` | `SourceHtmlTests`, `TextDiffHtmlTests`, `UnifiedDiffWriterTests`, `MemberTableHtmlTests`, `SafeXmlTests`, `SyntaxTokenizerCoverageTests`, `RendererAllowlistTests`, `PrimaryFileTests`, and the wording test in `LadderHtmlTests` |
 | `tests/Versio.Arch.Tests/` | `ProjectReferenceTests.Versio_Web_references_only_the_pure_packs`; `PurityRuleTests`: no process or file access in the server, vendors named only in `RegisterFormats`, XML only through `SafeXml` in Core and the packs |
 | `web/src/fragment.test.ts` (12) | The page's pure modules |
@@ -141,7 +143,8 @@ Opening `/acme/plant/blob/main/Device/Plc%20Logic/Application/Signals.xml`:
    React reads the route and asks `/api/repos/acme/plant`, `/branches`, `/tree?ref=main` and
    `/view?ref=main&path=…Signals.xml`.
 2. **Middleware.** `SecurityHeaders` adds the CSP and the rest; `RequestLog` opens an operation
-   id; the rate limiter counts the client.
+   id; the rate limiter counts the client: the connection, or behind a proxy named in
+   `Web:TrustedProxies` the address it forwarded (nobody else's `X-Forwarded-For` counts).
 3. **Credential.** `ApiEndpoints.Loader` validates owner, repo and ref, then
    `AccessResolver.ResolveAsync`: the session cookie → `SessionStore` → the person's token
    (refreshed if close to expiry), or, anonymously, an installation token after GitHub says the
@@ -230,7 +233,7 @@ executables, and the whole WPF app. The viewer only reads.
 | 6 Headers | `Http/Middleware.cs` |
 | 7 Tokens at rest | `SessionStore` (Data Protection, shared through Redis); key ring persistence in `WebHost` (`Web:KeysDirectory`) |
 | 15 App key | `IAppSigner` (`AppSigner.cs`); a vault signer replaces `PemAppSigner` in `WebHost` |
-| 8 Rate limits | `WebHost` (`AddRateLimiter`), `RequireRateLimiting` on every API and auth route |
+| 8 Rate limits | `WebHost` (`AddRateLimiter`, and `ForwardedFrom` for `Web:TrustedProxies`), `RequireRateLimiting` on every API and auth route |
 | 9 Hidden and look-alike characters | `CodeHtml.IsHidden` (markers) and `CodeHtml.MixedScripts` (underlined names), with the notice |
 | 10 Nothing drawn ≠ nothing changed | `ViewService.NothingDrawnChanged` |
 | 11 Visibility re-check | `AccessResolver` (five-minute verdict cache) |
@@ -253,6 +256,7 @@ executables, and the whole WPF app. The viewer only reads.
 | Develop the page with hot reload | run the server on port 5099, then `npm run dev` in `web/` |
 | Configure sign-in | `Web__GitHub__ClientId`, `ClientSecret`, `AppId`, `PrivateKeyPem`, `AppSlug`, `PublicBaseUrl` from the host's secret store |
 | Ship | `dotnet publish src/Versio.Web -c Release`, or the `Dockerfile` |
+| Run behind a load balancer or CDN | `Web__TrustedProxies__0=10.0.0.0/8` (addresses or CIDR, one per index), or the rate limit counts the balancer as one client; a malformed entry stops startup |
 
 Logs: one daily file in `%LOCALAPPDATA%\VersioUser\logs\web\` (or `Web:LogDirectory`), and the
 same lines on standard output.

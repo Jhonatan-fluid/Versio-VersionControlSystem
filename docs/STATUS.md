@@ -70,8 +70,8 @@ marking, duplicate-param keys, and the detail-pane lookup. All of them are in
 | `Versio.Plc.TiaPortal.Tests` | 5 | seconds when skipped; minutes when Portal runs the import gate | **real TIA Portal** — skips without Openness membership or LFS content |
 | `Versio.Plc.TwinCat.Pure.Tests` | 23 | instant | nothing |
 | `Versio.Plc.TwinCat.Tests` | 6 | seconds when skipped; ~5 min when XAE runs the import gate | **real TwinCAT XAE** — skips without `TcXaeShell.DTE.17.0` or the fixture |
-| `Versio.Web.Tests` | 101 | a few seconds | nothing — GitHub is faked |
-| `web/` (vitest) | 12 | ~20 s | the pinned Node in `web/.node` |
+| `Versio.Web.Tests` | 111 | a few seconds | nothing — GitHub is faked |
+| `web/` (vitest) | 20 | ~20 s | the pinned Node in `web/.node` |
 | `Versio.Plc.Codesys.Tests` | 55 | **~30 min**; 41 m 14 s, 55/55, on 2026-10-11 on `WebViewer` | **real CODESYS** |
 
 The first ten are the loop to work in — about thirty seconds plus the UI suite. The last is
@@ -346,7 +346,10 @@ One list. Reorder it; do not copy it into another file.
    1.4 s, so no paging), and the open code items closed: type links in member tables,
    catalogs and FBS projects in the tree, look-alike letters, Mermaid in a sandboxed frame,
    a comparison cap, sessions shareable through Redis, the App key behind a signing seam, a
-   threat model ([`web/THREAT-MODEL.md`](web/THREAT-MODEL.md)).
+   threat model ([`web/THREAT-MODEL.md`](web/THREAT-MODEL.md)). Then an external review's eight
+   findings, all real and all fixed (FINDINGS 2026-10-11), among them a session read that could
+   undo a token renewal and a per-address rate limit that was one bucket behind a load balancer;
+   a deployment behind one sets `Web:TrustedProxies`.
    **Left, all needing the owner or a deployment:**
    - **register the GitHub App** (on GitHub: read-only Contents and Metadata, a callback at
      `/auth/callback`) and run sign-in against real GitHub; until then the server runs

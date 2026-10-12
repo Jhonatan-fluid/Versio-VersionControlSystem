@@ -19,6 +19,52 @@ produce a diff touching everything else.
 
 ---
 
+### Versio Web: an external review's eight findings, all real, two smaller or larger than stated
+
+**2026-10-11, branch `WebViewer`.** A review of the branch was pasted in with eight findings. Each
+was checked against the code before anything changed; all eight held. Each fix has its own commit
+and a test that fails with the fix reverted.
+
+1. **A layer chip showed the first layer asked for.** `ViewService` keyed a fragment by every
+   layer's blob hash, which one object's layers share, so with the server's one process-wide cache
+   the second layer got the first's answer. The earlier chip test built a new service, so a new
+   cache, per call, and could never see a warm entry. The key carries the file shown.
+2. **A read could put a consumed refresh token back.** `SessionStore.FindAsync` wrote "last seen"
+   by replacing the whole entry; a request that read before a renewal and wrote after it restored
+   the old token, and the next renewal signed the person out. The four-requests renewal test could
+   not see it, because every read in it finished before the renewal. There is no compare-and-swap
+   on `IDistributedCache`, so reads stopped writing: idleness is the store's sliding expiry, kept
+   alive with `Refresh`. `LastSeen` then had no reader and went, with a test that an entry stored
+   with it still reads.
+3. **A token GitHub gave no expiry was given eight hours.** With expiry turned off on the App there
+   is no `expires_in` and no refresh token, so the session ended at the guess while GitHub still
+   honoured the token.
+4. **The ladder's "Changes only" checkbox was stripped.** DOMPurify forbade every `input`. A
+   checkbox is now kept and every other input removed. Rejected on the way: also forbidding
+   `button`, since the ladder's previous and next controls are buttons.
+5. **The ladder script was not safe to run twice in one document — smaller than stated.** The web
+   page runs it per fragment; each run added a document F7 listener holding its page. The review
+   said one press then moved two changes. It does not: each set of handlers keeps its own position
+   and they agree. The cost was a listener and a dead page per file viewed. **The first test checked
+   the screen and passed against both mutations**, which is how the overstatement showed; the test
+   that went in counts registrations, running the script read from `LadderPageAssets.cs` itself.
+6. **History's Compare compared the ref with itself.** Now the default branch against the ref. The
+   accompanying paging request was declined: the latest 50 is deliberate, and the page now says so
+   when the list is full. This is the page's first component test.
+7. **Branches past the first 100 were missing.** Now every page, to a cap of ten.
+8. **Behind a load balancer the rate limit was one bucket for everyone — and the obvious fix was
+   worse.** `Web:TrustedProxies` names the proxies whose forwarded address is believed. **ASP.NET's
+   forwarded-headers middleware treats empty known-proxy lists as "trust every sender"**: the first
+   version cleared both lists and ran it, and the test sending `X-Forwarded-For` from an untrusted
+   client got a fresh bucket per request, which would have let any one client evade the limit
+   entirely. With nothing configured the middleware does not run.
+
+**What it says about the tests.** Three of the eight sat behind a test that looked like coverage:
+a chip test with a cold cache, a renewal test whose reads all finished first, and (until rewritten)
+a ladder test that watched the screen. Each was green for a reason unrelated to the defect.
+
+---
+
 ### Versio Web: what the browser, the audit and the mutations found while it was built
 
 **2026-10-11, branch `WebViewer`** (docs/web/PLAN.md). Seven defects, each caught by something

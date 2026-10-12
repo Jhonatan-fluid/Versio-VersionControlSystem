@@ -106,7 +106,7 @@ exactly that).
 | A crafted line for a slow regular expression | A 2-second process-wide regex timeout, set before anything | `Rule3_the_real_server_starts_with_the_regex_timeout_in_force` |
 | A huge file or a slow render | Over 2 MB plain text; over 10 MB never fetched; 5-second render budget with a plain-text fallback; LineDiff's cell cap | `ViewServiceTests` (draw limit, fetch limit, budget) |
 | A comparison of two enormous commits | 2,000 files listed, the rest counted | `Rule8_a_comparison_lists_at_most_its_cap_and_says_how_many_there_were` |
-| Request floods, or spending the App's GitHub quota | Per-client rate limit; anonymous access can be switched off | `Rule8_a_client_over_its_rate_is_refused`, `Rule17_anonymous_access_switched_off_asks_everyone_to_sign_in` |
+| Request floods, or spending the App's GitHub quota | Per-client rate limit; behind a load balancer the client is what a proxy in `Web:TrustedProxies` forwarded, and a forwarded header from anyone else is ignored (with none configured the forwarding middleware does not run at all, because ASP.NET's empty lists mean "trust everyone"); anonymous access can be switched off | `Rule8_a_client_over_its_rate_is_refused`, `Rule8_behind_a_trusted_proxy_each_client_has_its_own_rate`, `Rule8_a_forwarded_header_from_anyone_not_trusted_chooses_nothing`, `Rule17_anonymous_access_switched_off_asks_everyone_to_sign_in` |
 
 ### Elevation of privilege
 
@@ -138,3 +138,4 @@ exactly that).
 | No outbound network allowlist | Infrastructure | The container's network policy, rule 16 |
 | No external penetration test, no cost alarm | Open | Need a live deployment and a party outside this repository (rule 19) |
 | Cross-instance token renewal race | Mitigated | The in-process gate plus a re-read before signing out; two instances can still both call GitHub once |
+| ~~A request that read the session before a renewal writes the old token back~~ | **Closed 2026-10-11** | Reads never write the session (`SessionStoreTests`); found by an external review |
