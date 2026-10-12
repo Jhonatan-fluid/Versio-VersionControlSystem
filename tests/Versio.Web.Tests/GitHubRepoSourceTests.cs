@@ -22,6 +22,18 @@ public sealed class GitHubRepoSourceTests : IAsyncLifetime
 {
     private const string Oid = "1111111111111111111111111111111111111111111111111111111111111111";
 
+    /// <summary>A real LFS object: its content, and the pointer's oid for it.</summary>
+    private static readonly byte[] LfsContent = Encoding.UTF8.GetBytes("<Document>the real file</Document>\n");
+
+    private static readonly string RealOid = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(LfsContent)).ToLowerInvariant();
+
+    /// <summary>The LFS download host, answered in memory: the guard requires https on 443.</summary>
+    private sealed class LfsStore(byte[] answer) : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken) =>
+            Task.FromResult(new HttpResponseMessage(System.Net.HttpStatusCode.OK) { Content = new ByteArrayContent(answer) });
+    }
+
     private WebApplication? _api;
     private Uri? _address;
     private readonly ConcurrentQueue<(string Path, string? Auth)> _requests = new();
@@ -72,6 +84,7 @@ public sealed class GitHubRepoSourceTests : IAsyncLifetime
             {
                 'a' => Results.Text("PROGRAM Main\n", "application/vnd.github.raw"),
                 'e' => Results.Text($"version https://git-lfs.github.com/spec/v1\noid sha256:{Oid}\nsize 20\n", "application/vnd.github.raw"),
+                'f' => Results.Text($"version https://git-lfs.github.com/spec/v1\noid sha256:{RealOid}\nsize {LfsContent.Length}\n", "application/vnd.github.raw"),
                 _ => Results.Text(new string('x', 99), "application/vnd.github.raw"),
             };
         });
@@ -202,6 +215,36 @@ public sealed class GitHubRepoSourceTests : IAsyncLifetime
         var result = await source.GetBlobAsync(Alice, "acme", "plant", new string('e', 40), 1000, CancellationToken.None);
 
         Assert.Equal(RepoFailure.Upstream, result.Failure);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task An_LFS_download_is_the_file_only_when_it_matches_its_pointer(bool tampered)
+    {
+        // Found in review: the downloaded bytes were never checked against the pointer's SHA-256,
+        // so whatever the download host answered was drawn as this commit's file.
+        _lfsHref = "https://lfs.example/media/x";
+        var answer = tampered ? Encoding.UTF8.GetBytes("<Document>the fake file</Document>\n") : LfsContent;
+        var services = new ServiceCollection();
+        services.AddHttpClient(GitHubRepoSource.ApiClient);
+        services.AddHttpClient(GitHubRepoSource.LfsClient).ConfigurePrimaryHttpMessageHandler(() => new LfsStore(answer));
+        var options = Options.Create(new WebOptions
+        {
+            GitHub = new GitHubOptions { ApiBaseUrl = _address!.ToString().TrimEnd('/'), WebBaseUrl = _address.ToString().TrimEnd('/'), LfsHosts = ["lfs.example"] },
+        });
+        var source = new GitHubRepoSource(services.BuildServiceProvider().GetRequiredService<IHttpClientFactory>(), options, NullLogger.Instance);
+
+        var result = await source.GetBlobAsync(Alice, "acme", "plant", new string('f', 40), 1000, CancellationToken.None);
+
+        if (tampered)
+        {
+            Assert.Equal(RepoFailure.Upstream, result.Failure);
+        }
+        else
+        {
+            Assert.Equal(LfsContent, result.Value);
+        }
     }
 
     [Theory]

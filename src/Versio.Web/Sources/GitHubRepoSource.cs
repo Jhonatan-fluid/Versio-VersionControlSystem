@@ -220,7 +220,24 @@ public sealed class GitHubRepoSource(
 
         // A refused connect (an internal address) or a failure is logged and reported as upstream
         // inside SendForBytesAsync.
-        return await SendForBytesAsync(clients.CreateClient(LfsClient), get, maxBytes, ct).ConfigureAwait(false);
+        var content = await SendForBytesAsync(clients.CreateClient(LfsClient), get, maxBytes, ct).ConfigureAwait(false);
+        if (!content.Ok)
+        {
+            return content;
+        }
+
+        // The pointer names its content by SHA-256 and size, and the pointer is what the commit
+        // holds; the download comes from a host the LFS server chose. Bytes that do not match are
+        // not this commit's file, whatever the reason (a cache, a proxy, a tampered store), and
+        // were drawn as if they were until 2026-10-11 (found in review).
+        var hash = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(content.Value!));
+        if (content.Value!.LongLength != pointer.Size || !hash.Equals(pointer.Oid, StringComparison.OrdinalIgnoreCase))
+        {
+            log.Warn(LogCategory.Web, $"LFS download for {owner}/{repo} does not match its pointer (oid {pointer.Oid[..12]}); refused");
+            return RepoResult<byte[]>.Fail(RepoFailure.Upstream, "LFS content does not match its pointer");
+        }
+
+        return content;
     }
 
     /// <summary>A GET that reads its answer with <paramref name="read"/> and disposes the document.</summary>
