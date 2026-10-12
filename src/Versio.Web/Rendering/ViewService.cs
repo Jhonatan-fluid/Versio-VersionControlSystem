@@ -314,9 +314,7 @@ public sealed class ViewService(
         var tooLarge = node.Files.Where(f => f != shown && (TooLarge(before, f) || TooLarge(after, f))).ToList();
         foreach (var f in tooLarge)
         {
-            var fetched = !Unfetched(before, f) && !Unfetched(after, f);
-            notices.Add(string.Format(CultureInfo.InvariantCulture, fetched ? LeftOutNotice : LeftOutUnfetchedNotice, Name(f))
-                + (Differs(f) ? " " + string.Format(CultureInfo.InvariantCulture, LeftOutChangedNotice, Name(f)) : ""));
+            notices.Add(LeftOut(Name(f), TooLarge(before, f) && TooLarge(after, f), !Unfetched(before, f) && !Unfetched(after, f), Differs(f)));
         }
 
         var changedFiles = node.Files.Except(tooLarge).Any(Differs);
@@ -552,13 +550,20 @@ public sealed class ViewService(
     internal const string OverBudgetNotice =
         "This file took too long to draw, so it is shown as plain text.";
 
-    internal const string LeftOutNotice =
-        "{0} is too large to draw in one of these versions, so this comparison leaves it out on both sides; open {0} and its Raw tab shows the difference.";
-
-    internal const string LeftOutUnfetchedNotice =
-        "{0} is too large to fetch in one of these versions, so this comparison leaves it out on both sides and cannot show what changed in it.";
-
-    internal const string LeftOutChangedNotice = "{0} differs between these versions.";
+    /// <summary>
+    /// What is true of a left-out layer, said in one sentence each: which limit, in one version or
+    /// both, and whether it differs. The first wording promised "its Raw tab shows the difference"
+    /// whenever the layer had been fetched, including when it was the same in both versions, and
+    /// said "in one of these versions" when both were over the limit (found in review).
+    /// </summary>
+    internal static string LeftOut(string name, bool inBoth, bool fetched, bool differs) =>
+        $"{name} is too large to {(fetched ? "draw" : "fetch")} in {(inBoth ? "both versions" : "one of these versions")}, "
+        + "so this comparison leaves it out on both sides. "
+        + (!differs
+            ? "It is the same in both."
+            : fetched
+                ? $"It differs between them; open {name} and its Raw tab shows how."
+                : "It differs between them, and that cannot be shown here.");
 
     internal const string ParserFailedNotice =
         "This file could not be drawn, so it is shown as plain text.";

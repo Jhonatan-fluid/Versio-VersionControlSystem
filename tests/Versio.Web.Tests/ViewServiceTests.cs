@@ -187,20 +187,23 @@ public sealed class ViewServiceTests
     }
 
     [Theory]
-    [InlineData(true)]
-    [InlineData(false)]
-    public async Task A_layer_too_large_in_one_version_is_left_out_of_both_and_said(bool overTheDrawLimit)
+    [InlineData(true, false)]
+    [InlineData(false, false)]
+    [InlineData(true, true)]
+    [InlineData(false, true)]
+    public async Task A_layer_too_large_is_left_out_of_both_sides_and_its_notice_says_what_is_true(bool overTheDrawLimit, bool sameInBoth)
     {
         // Two reviews, opposite failures, on an object whose table lives in the native .xml beside
         // the text layer that opens (a TIA data type: the .udt opens, the .xml holds the members).
         // Over the draw limit in the older version only, the .xml dropped out of that side alone
         // and every member read as added, and was cached. Over the fetch limit, the whole
-        // comparison was refused, losing the .udt diff beside it.
+        // comparison was refused, losing the .udt diff beside it. And then the notice: one wording
+        // pointed at Raw for a layer never fetched, and promised a difference for one unchanged.
         const string Udt = "fixtures/projects/CleaningStation_V20_V21/CleaningStation_V20_V21/ET 200SP station_2/CleaningStation/PLC data types/Connector - data types/UDT_MTP_AnaMon";
         var files = FakeGitHub.FromDisk(".versio/repo.json", "fixtures/projects/CleaningStation_V20_V21/CleaningStation_V20_V21");
         var normal = files[Udt + ".xml"].Length;
-        _github.Commit(_repo, "tia", files);
         var padded = new Dictionary<string, byte[]>(files, StringComparer.Ordinal) { [Udt + ".xml"] = [.. files[Udt + ".xml"], .. Encoding.UTF8.GetBytes(new string(' ', 4000))] };
+        _github.Commit(_repo, "tia", sameInBoth ? padded : files);
         _github.Commit(_repo, "tiabig", padded);
         if (overTheDrawLimit)
         {
@@ -216,14 +219,11 @@ public sealed class ViewServiceTests
 
         Assert.DoesNotContain("data-change=\"added\"", result.Html, StringComparison.Ordinal);
         Assert.NotEqual("missing", result.Kind);
-        // Each limit says what is true of it (found in review): a fetched layer's Raw tab shows
-        // the difference, an unfetched one's shows nothing; the change is said, and is not
-        // "nothing this view draws changed", whose Raw tab is the unchanged .udt on screen.
-        var notice = string.Format(System.Globalization.CultureInfo.InvariantCulture, overTheDrawLimit ? ViewService.LeftOutNotice : ViewService.LeftOutUnfetchedNotice, "UDT_MTP_AnaMon.xml")
-            + " " + string.Format(System.Globalization.CultureInfo.InvariantCulture, ViewService.LeftOutChangedNotice, "UDT_MTP_AnaMon.xml");
-        Assert.Contains(notice, result.Notices);
+        var notice = Assert.Single(result.Notices, n => n.StartsWith("UDT_MTP_AnaMon.xml is too large", StringComparison.Ordinal));
+        Assert.Equal(ViewService.LeftOut("UDT_MTP_AnaMon.xml", sameInBoth, overTheDrawLimit, !sameInBoth), notice);
+        Assert.Contains(sameInBoth ? "in both versions" : "in one of these versions", notice, StringComparison.Ordinal);
+        Assert.Equal(overTheDrawLimit && !sameInBoth, notice.Contains("Raw", StringComparison.Ordinal));
         Assert.DoesNotContain(ViewService.NothingDrawnChanged, result.Notices);
-        Assert.Equal(overTheDrawLimit, notice.Contains("Raw", StringComparison.Ordinal));
     }
 
     [Fact]
