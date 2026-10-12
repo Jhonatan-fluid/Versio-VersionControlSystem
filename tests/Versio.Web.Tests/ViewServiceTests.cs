@@ -186,6 +186,59 @@ public sealed class ViewServiceTests
         }
     }
 
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task A_layer_too_large_in_one_version_is_left_out_of_both_and_said(bool overTheDrawLimit)
+    {
+        // Two reviews, opposite failures, on an object whose table lives in the native .xml beside
+        // the text layer that opens (a TIA data type: the .udt opens, the .xml holds the members).
+        // Over the draw limit in the older version only, the .xml dropped out of that side alone
+        // and every member read as added, and was cached. Over the fetch limit, the whole
+        // comparison was refused, losing the .udt diff beside it.
+        const string Udt = "fixtures/projects/CleaningStation_V20_V21/CleaningStation_V20_V21/ET 200SP station_2/CleaningStation/PLC data types/Connector - data types/UDT_MTP_AnaMon";
+        var files = FakeGitHub.FromDisk(".versio/repo.json", "fixtures/projects/CleaningStation_V20_V21/CleaningStation_V20_V21");
+        var normal = files[Udt + ".xml"].Length;
+        _github.Commit(_repo, "tia", files);
+        var padded = new Dictionary<string, byte[]>(files, StringComparer.Ordinal) { [Udt + ".xml"] = [.. files[Udt + ".xml"], .. Encoding.UTF8.GetBytes(new string(' ', 4000))] };
+        _github.Commit(_repo, "tiabig", padded);
+        if (overTheDrawLimit)
+        {
+            _options.MaxDrawBytes = normal + 100;
+        }
+        else
+        {
+            _options.MaxBlobBytes = normal + 100;
+        }
+
+        var (views, models) = Services();
+        var result = (await views.CompareAsync(RepoAccess.Anonymous, await Model(models, "tiabig"), await Model(models, "tia"), Udt + ".udt", PaneView.Rendered, false, CancellationToken.None)).Value!;
+
+        Assert.DoesNotContain("data-change=\"added\"", result.Html, StringComparison.Ordinal);
+        Assert.NotEqual("missing", result.Kind);
+        Assert.Contains(string.Format(System.Globalization.CultureInfo.InvariantCulture, ViewService.LeftOutNotice, "UDT_MTP_AnaMon.xml"), result.Notices);
+    }
+
+    [Fact]
+    public async Task A_view_drawn_from_a_model_missing_a_manifest_is_not_remembered()
+    {
+        // Found in review: a model with a failed read is not cached, but the views drawn from it
+        // were. With RefrigeratorControl's manifest rate-limited, ST_AlarmSettings is not an
+        // object and its type does not link; that answer stayed for half an hour.
+        const string Manifest = "fixtures/projects/RefrigeratorControl/_manifest.json";
+        _github.FailingBlobs[FakeGitHub.BlobSha(_github.CommitFiles(_repo, "main")[Manifest])] = RepoFailure.RateLimited;
+        var (views, models) = Services();
+        var partial = await Model(models, "main");
+        var during = (await views.ViewAsync(RepoAccess.Anonymous, partial, Settings, PaneView.Rendered, false, CancellationToken.None)).Value!;
+
+        _github.FailingBlobs.Clear();
+        var after = (await views.ViewAsync(RepoAccess.Anonymous, await Model(models, "main"), Settings, PaneView.Rendered, false, CancellationToken.None)).Value!;
+
+        Assert.True(partial.Partial);
+        Assert.DoesNotContain("data-link=", during.Html, StringComparison.Ordinal);
+        Assert.Contains($"data-link=\"{Severity}\"", after.Html, StringComparison.Ordinal);
+    }
+
     [Fact]
     public async Task A_read_that_failed_is_not_remembered_once_GitHub_answers_again()
     {

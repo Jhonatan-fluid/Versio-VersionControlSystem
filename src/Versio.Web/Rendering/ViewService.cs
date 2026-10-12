@@ -97,7 +97,7 @@ public sealed class ViewService(
         var key = Key("view", model, model.CommitSha + ":" + shown, view, sideBySide, files, null);
         return await CachedAsync(key, path, () => view == PaneView.Raw
             ? RawSingle(shown, files)
-            : Rendered(model, node, shown, files), notice => Plain(shown, files, notice), Lasting(files.Values)).ConfigureAwait(false);
+            : Rendered(model, node, shown, files), notice => Plain(shown, files, notice), Lasting(files.Values) && !model.Partial).ConfigureAwait(false);
     }
 
     /// <summary>One object in two commits: the older one, then the newer.</summary>
@@ -118,7 +118,7 @@ public sealed class ViewService(
         return await CachedAsync(key, path, () => view == PaneView.Raw
             ? RawCompare(shown, before, after, sideBySide)
             : RenderedCompare(older, newer, node, shown, before, after, sideBySide), notice => Plain(shown, after.ContainsKey(shown) ? after : before, notice),
-            Lasting(before.Values.Concat(after.Values))).ConfigureAwait(false);
+            Lasting(before.Values.Concat(after.Values)) && !older.Partial && !newer.Partial).ConfigureAwait(false);
     }
 
     /// <summary>The paths that differ between two commits, with what happened to each.</summary>
@@ -289,13 +289,28 @@ public sealed class ViewService(
             return RawCompare(shown, before, after, sideBySide);
         }
 
+        var changedFiles = node.Files.Any(f => (before.TryGetValue(f, out var x) ? x.BlobSha : null) != (after.TryGetValue(f, out var y) ? y.BlobSha : null));
+
+        // Another layer too large to draw, on either side, is left out of BOTH sides and said.
+        // Two reviews pulled opposite ways here. Left out of one side only, a native .xml over the
+        // draw limit in the older version and under it in the newer drew every member as added,
+        // and was cached (a draw-limit layer has no Failure, so the unreadable check passed it).
+        // Refused outright, as the first fix for unreadable sides did with "too large", it threw
+        // away the .st diff beside it that could be drawn. Out of both, the rest still compares
+        // and nothing reads as new; the shown file's own size is handled above.
+        var tooLarge = node.Files.Where(f => f != shown && (TooLarge(before, f) || TooLarge(after, f))).ToList();
+        if (tooLarge.Count > 0)
+        {
+            before = Without(before, tooLarge);
+            after = Without(after, tooLarge);
+            notices.AddRange(tooLarge.Select(f => string.Format(CultureInfo.InvariantCulture, LeftOutNotice, Name(f))));
+        }
+
         // The object's other layers too: a table or a ladder can come from the .xml beside an .st.
         if (CouldNotRead(node, shown, node.Files, before, after) is { } refused)
         {
             return refused;
         }
-
-        var changedFiles = node.Files.Any(f => (before.TryGetValue(f, out var x) ? x.BlobSha : null) != (after.TryGetValue(f, out var y) ? y.BlobSha : null));
 
         foreach (var format in PlcFormats.All)
         {
@@ -517,6 +532,9 @@ public sealed class ViewService(
     internal const string OverBudgetNotice =
         "This file took too long to draw, so it is shown as plain text.";
 
+    internal const string LeftOutNotice =
+        "{0} is too large to draw in one of these versions, so this comparison leaves it out on both sides; its Raw tab shows it.";
+
     internal const string ParserFailedNotice =
         "This file could not be drawn, so it is shown as plain text.";
 
@@ -593,6 +611,12 @@ public sealed class ViewService(
     /// <summary>Whether an answer drawn from these layers holds as long as their blobs do.</summary>
     private static bool Lasting(IEnumerable<Layer> layers) =>
         layers.All(l => l.Failure is RepoFailure.None or RepoFailure.TooLarge);
+
+    private static bool TooLarge(IReadOnlyDictionary<string, Layer> layers, string file) =>
+        layers.TryGetValue(file, out var layer) && (layer.TooLargeToDraw || layer.Failure == RepoFailure.TooLarge);
+
+    private static IReadOnlyDictionary<string, Layer> Without(IReadOnlyDictionary<string, Layer> layers, IReadOnlyCollection<string> files) =>
+        layers.Where(l => !files.Contains(l.Key)).ToDictionary(l => l.Key, l => l.Value, StringComparer.Ordinal);
 
     private static bool Undrawable(Layer? layer) =>
         layer is not null && (layer.Binary || layer.Failure != RepoFailure.None || layer.TooLargeToDraw);
@@ -681,7 +705,9 @@ public sealed class ViewService(
     /// False when a layer's read failed for a reason of the moment (a rate limit, an outage): the
     /// answer says "could not be read", and cached under the blobs' key it went on saying so for
     /// half an hour after GitHub answered again (found in review). Too large is about the file,
-    /// so it lasts.
+    /// so it lasts. False too when the model the view was drawn from is Partial: a manifest
+    /// that could not be read takes type links and object rows with it, and the view kept that
+    /// for half an hour after the model itself was read again (found in review).
     /// </param>
     private async Task<RepoResult<ViewResult>> CachedAsync(string key, string path, Func<ViewResult> render, Func<string, ViewResult> fallback, bool remember)
     {
