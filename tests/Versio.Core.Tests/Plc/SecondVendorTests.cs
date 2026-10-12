@@ -71,6 +71,10 @@ public sealed class SecondVendorTests
 
         public bool NeedsTextToPlan(string relativePath) => false;
 
+        // A Structured Text extension of its own, which no neutral list knows (.tcst is made up).
+        public Versio.Core.Diff.SyntaxLanguage? SyntaxFor(string relativePath) =>
+            relativePath.EndsWith(".tcst", StringComparison.OrdinalIgnoreCase) ? Versio.Core.Diff.LanguageCatalog.StructuredText : null;
+
         // An empty plan means "touch no file", which is the honest answer from a vendor that
         // declares TextualImport = false. Nothing here drives an import; the point of this
         // stand-in is that it can be SEEN, and a format is allowed to be registered without
@@ -93,6 +97,26 @@ public sealed class SecondVendorTests
             string.Equals(type, "PLC_LOGIC", StringComparison.OrdinalIgnoreCase)
                 ? new Versio.Core.Projects.ObjectTypeName("Runtime", "runtime", "runtimes")
                 : null;
+    }
+
+    [Fact]
+    public void A_vendors_own_text_extension_is_the_layer_an_object_opens_and_only_while_it_is_registered()
+    {
+        // The tree learns which layer is code from the vendor, not from a list in Core: the list
+        // that was there held two Siemens extensions in a namespace that may name no vendor.
+        var node = new ProjectTreeNode { Name = "X", Path = "X", Kind = ProjectNodeKind.Object, Files = ["Blocks/X.xml", "Blocks/X.tcst"] };
+        Assert.Equal("Blocks/X.xml", node.PrimaryFile);
+        try
+        {
+            PlcFormats.Register(new FakeTwinCatFormat());
+
+            Assert.Equal("Blocks/X.tcst", node.PrimaryFile);
+            Assert.Same(Versio.Core.Diff.LanguageCatalog.StructuredText, PlcFormats.LanguageFor("Blocks/X.tcst"));
+        }
+        finally
+        {
+            PlcFormats.Unregister(PlcVendor.TwinCat);
+        }
     }
 
     [Fact]

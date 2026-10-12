@@ -245,6 +245,15 @@ public sealed class TiaPortalProjectFormat : IPlcProjectFormat
     public Versio.Core.Iec.Ladder.LadderDocument? TryParseLadder(string relativePath, string content) =>
         Ladder.TiaPortalLadderParser.TryParse(relativePath, content);
 
+    /// <summary>How to highlight this vendor's text files.</summary>
+    /// <remarks>
+    /// The files the import planner reads as text (<c>.scl</c>, <c>.s7dcl</c>, <c>.udt</c>) are
+    /// Structured Text. Named here, by this vendor, since 2026-10-11; before, Core's language
+    /// catalog and its tree each kept the list.
+    /// </remarks>
+    public Versio.Core.Diff.SyntaxLanguage? SyntaxFor(string relativePath) =>
+        TiaPortalImportPlanner.NeedsText(relativePath) ? Versio.Core.Diff.LanguageCatalog.StructuredText : null;
+
     /// <summary>
     /// An SCL block's body: the lines after <c>BEGIN</c> up to the block's closing keyword
     /// (<c>END_FUNCTION_BLOCK</c>, <c>END_FUNCTION</c>, <c>END_ORGANIZATION_BLOCK</c>).

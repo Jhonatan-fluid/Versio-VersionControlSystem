@@ -130,6 +130,14 @@ public static class PlcFormats
     public static Diff.SyntaxLanguage? SyntaxFor(string relativePath) =>
         All.Select(f => f.SyntaxFor(relativePath)).FirstOrDefault(s => s is not null);
 
+    /// <summary>
+    /// How to highlight a file: its vendor's word when one claims it, else the neutral catalog's.
+    /// The one place the two are combined, so the desktop, the web viewer and the tree's choice of
+    /// readable layer cannot disagree about which files are code.
+    /// </summary>
+    public static Diff.SyntaxLanguage LanguageFor(string? relativePath) =>
+        (relativePath is null ? null : SyntaxFor(relativePath)) ?? Diff.LanguageCatalog.ForPath(relativePath);
+
     /// <summary>The format for a vendor, or null when none is registered.</summary>
     public static IPlcProjectFormat? ForVendor(PlcVendor vendor) =>
         All.FirstOrDefault(f => f.Vendor == vendor);

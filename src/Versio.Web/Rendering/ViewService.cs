@@ -623,7 +623,7 @@ public sealed class ViewService(
         path.EndsWith(".md", StringComparison.OrdinalIgnoreCase) || path.EndsWith(".markdown", StringComparison.OrdinalIgnoreCase);
 
     /// <summary>A vendor names its own extensions (a .gvl is Structured Text); the catalog the rest, as the desktop does.</summary>
-    private static SyntaxLanguage LanguageFor(string path) => PlcFormats.SyntaxFor(path) ?? LanguageCatalog.ForPath(path);
+    private static SyntaxLanguage LanguageFor(string path) => PlcFormats.LanguageFor(path);
 
     /// <summary>The file as itself: every line, numbered as the file numbers it.</summary>
     internal static IReadOnlyList<SourceRow> FileRows(string text)

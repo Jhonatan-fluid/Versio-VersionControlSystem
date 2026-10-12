@@ -126,6 +126,26 @@ public sealed class VendorSeamTests
         Assert.Empty(found);
     }
 
+    /// <summary>
+    /// File extensions only one vendor uses. Listed by hand because a test that asked the packs
+    /// would need every pack registered, and this assembly registers one on purpose.
+    /// </summary>
+    private static readonly string[] VendorExtensions =
+        [".scl", ".s7dcl", ".udt", ".gvl", ".TcPOU", ".TcDUT", ".TcGVL", ".tsproj", ".plcproj"];
+
+    [Fact]
+    public void A_neutral_namespace_holds_no_vendors_file_extension()
+    {
+        // The brand check above could not see this: ProjectTreeNode.PrimaryFile and the language
+        // catalog listed .scl and .udt with no vendor named (found in review, 2026-10-11).
+        var found = VendorSeamScanner
+            .Literals(Core, NeutralNamespaces, text => VendorExtensions.Any(e => text.Equals(e, StringComparison.OrdinalIgnoreCase)))
+            .Distinct(StringComparer.Ordinal)
+            .ToList();
+
+        Assert.Empty(found);
+    }
+
     [Fact]
     public void The_seam_names_the_four_well_known_vendors_and_no_others()
     {

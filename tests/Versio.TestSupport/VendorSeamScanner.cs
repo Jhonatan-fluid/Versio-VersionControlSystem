@@ -150,7 +150,17 @@ public static class VendorSeamScanner
     /// </para>
     /// </remarks>
     public static IEnumerable<string> VendorNamingLiterals(
-        Assembly assembly, IReadOnlyCollection<string> namespaces)
+        Assembly assembly, IReadOnlyCollection<string> namespaces) =>
+        Literals(assembly, namespaces, NamesAVendor);
+
+    /// <summary>
+    /// Every string literal in <paramref name="namespaces"/> that <paramref name="matches"/>, with
+    /// where it is. The same walk as <see cref="VendorNamingLiterals"/>, for a rule that is not
+    /// about brand names: a vendor's file extension names it just as surely (found in review,
+    /// 2026-10-11: two Siemens extensions in Core's tree, which no brand check could see).
+    /// </summary>
+    public static IEnumerable<string> Literals(
+        Assembly assembly, IReadOnlyCollection<string> namespaces, Func<string, bool> matches)
     {
         foreach (var type in TypesIn(assembly, namespaces))
         {
@@ -158,7 +168,7 @@ public static class VendorSeamScanner
             {
                 foreach (var text in LiteralsIn(method, assembly.ManifestModule))
                 {
-                    if (NamesAVendor(text))
+                    if (matches(text))
                     {
                         yield return $"{Describe(type, method)}: \"{text}\"";
                     }

@@ -185,10 +185,14 @@ public sealed record ProjectTreeNode
             ? null
             : Files.FirstOrDefault(IsTextualLayer) ?? Files.FirstOrDefault();
 
+    /// <remarks>
+    /// Structured Text by whoever claims the file: the standard's <c>.st</c> from the catalog, a
+    /// vendor's own extensions from its format. This listed <c>.st</c>, <c>.scl</c> and
+    /// <c>.udt</c> by name until 2026-10-11, two of them Siemens', in a namespace that may not
+    /// learn a vendor (found in review; the seam tests looked for brand names and saw none).
+    /// </remarks>
     private static bool IsTextualLayer(string path) =>
-        path.EndsWith(".st", StringComparison.OrdinalIgnoreCase)
-        || path.EndsWith(".scl", StringComparison.OrdinalIgnoreCase)
-        || path.EndsWith(".udt", StringComparison.OrdinalIgnoreCase);
+        Plc.PlcFormats.LanguageFor(path) == Diff.LanguageCatalog.StructuredText;
 }
 
 /// <summary>

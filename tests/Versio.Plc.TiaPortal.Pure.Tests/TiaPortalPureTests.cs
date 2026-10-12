@@ -18,6 +18,18 @@ public sealed class TiaPortalFormatTests
         Assert.True(format.IsTemplate(@"plc\Line.al21"));
     }
 
+    [Theory]
+    [InlineData("PLC_1/Program blocks/FB_Valve.scl")]
+    [InlineData("PLC_1/PLC data types/UDT_Valve.udt")]
+    [InlineData("PLC_1/Program blocks/DB_Recipe.s7dcl")]
+    public void Its_text_files_are_Structured_Text_by_its_own_word(string path)
+    {
+        // Core's language catalog and its tree each listed these until 2026-10-11 (a vendor's
+        // file names in neutral code, found in review); the vendor names them now.
+        Assert.Same(Versio.Core.Diff.LanguageCatalog.StructuredText, TiaPortalProjectFormat.Instance.SyntaxFor(path));
+        Assert.Null(TiaPortalProjectFormat.Instance.SyntaxFor("PLC_1/Program blocks/FB_Valve.xml"));
+    }
+
     [Fact]
     public void The_explorer_pill_names_the_release_the_extension_opens_in()
     {

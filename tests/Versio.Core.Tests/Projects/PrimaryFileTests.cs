@@ -12,13 +12,14 @@ public sealed class PrimaryFileTests
     private static ProjectTreeNode Node(ProjectNodeKind kind, params string[] files) =>
         new() { Name = "X", Path = "X", Kind = kind, Files = files };
 
+    // A vendor's own text extensions (.scl, .udt) win through its format: SecondVendorTests here,
+    // TiaPortalFormatTests for the real ones. Only the standard's .st is Core's to know.
     [Theory]
     [InlineData("Program/Main.xml", "Program/Main.st", "Program/Main.st")]
-    [InlineData("Blocks/DB_Recipe.xml", "Blocks/DB_Recipe.scl", "Blocks/DB_Recipe.scl")]
-    [InlineData("Types/UDT_Valve.xml", "Types/UDT_Valve.udt", "Types/UDT_Valve.udt")]
-    public void The_readable_layer_wins_over_the_native_one(string native, string readable, string expected)
+    [InlineData("Program/Main.st", "Program/Main.xml", "Program/Main.st")]
+    public void The_readable_layer_wins_over_the_native_one(string first, string second, string expected)
     {
-        Assert.Equal(expected, Node(ProjectNodeKind.Object, native, readable).PrimaryFile);
+        Assert.Equal(expected, Node(ProjectNodeKind.Object, first, second).PrimaryFile);
     }
 
     [Fact]
