@@ -152,12 +152,12 @@ internal sealed class FakeGitHub : IRepoSource
         return Task.FromResult(r.Ok ? RepoResult<RepoInfo>.Of(new RepoInfo(r.Value!.Owner, r.Value.Name, r.Value.Private, r.Value.DefaultBranch)) : r.As<RepoInfo>());
     }
 
-    public Task<RepoResult<IReadOnlyList<BranchInfo>>> GetBranchesAsync(RepoAccess access, string owner, string repo, CancellationToken ct)
+    public Task<RepoResult<BranchList>> GetBranchesAsync(RepoAccess access, string owner, string repo, CancellationToken ct)
     {
         var r = See(access, owner, repo, "branches");
         return Task.FromResult(r.Ok
-            ? RepoResult<IReadOnlyList<BranchInfo>>.Of(r.Value!.Refs.Select(kv => new BranchInfo(kv.Key, kv.Value)).ToList())
-            : r.As<IReadOnlyList<BranchInfo>>());
+            ? RepoResult<BranchList>.Of(new BranchList(r.Value!.Refs.Select(kv => new BranchInfo(kv.Key, kv.Value)).ToList(), false))
+            : r.As<BranchList>());
     }
 
     public Task<RepoResult<string>> ResolveCommitAsync(RepoAccess access, string owner, string repo, string reference, CancellationToken ct)

@@ -150,11 +150,14 @@ public sealed class GitHubRepoSourceTests : IAsyncLifetime
         var some = await source.GetBranchesAsync(Alice, "acme", "plant", CancellationToken.None);
         var endless = await source.GetBranchesAsync(Alice, "acme", "endless", CancellationToken.None);
 
-        Assert.Equal(250, some.Value!.Count);
-        Assert.Equal("b249", some.Value[^1].Name);
+        Assert.Equal(250, some.Value!.Branches.Count);
+        Assert.Equal("b249", some.Value.Branches[^1].Name);
+        Assert.False(some.Value.Truncated);
         Assert.Equal(3, _requests.Count(r => r.Path.StartsWith("/repos/acme/plant/branches", StringComparison.Ordinal)));
-        Assert.Equal(GitHubRepoSource.BranchPages * GitHubRepoSource.BranchPageSize, endless.Value!.Count);
-        Assert.Equal(GitHubRepoSource.BranchPages, _requests.Count(r => r.Path.StartsWith("/repos/acme/endless/branches", StringComparison.Ordinal)));
+        Assert.Equal(GitHubRepoSource.BranchPages * GitHubRepoSource.BranchPageSize, endless.Value!.Branches.Count);
+        Assert.True(endless.Value.Truncated);
+        // The cap's pages, and one past it to learn whether the list was cut.
+        Assert.Equal(GitHubRepoSource.BranchPages + 1, _requests.Count(r => r.Path.StartsWith("/repos/acme/endless/branches", StringComparison.Ordinal)));
     }
 
     [Fact]

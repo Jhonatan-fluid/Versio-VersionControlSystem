@@ -32,7 +32,7 @@ export function ComparePage({ me }: { me: Me | null }) {
   );
 
   const signIn = me?.signInAvailable && !me.signedIn ? api.signInUrl(location.pathname + location.search) : null;
-  const names = branches.state === 'ok' ? branches.value.map((b) => b.name) : [];
+  const names = branches.state === 'ok' ? branches.value.branches.map((b) => b.name) : [];
 
   function go(nextBase: string, nextHead: string, nextPath: string | null) {
     navigate(compareUrl(owner, repo, nextBase, nextHead, nextPath ?? undefined, search));
@@ -66,7 +66,7 @@ export function ComparePage({ me }: { me: Me | null }) {
       <Header
         me={me}
         onToggleTree={() => setListOpen(!listOpen)}
-        repo={{ owner, name: repo, ref: head || 'main', branches: branches.state === 'ok' ? branches.value : [], onRef: (r) => go(base, r, path), compareHref: location.pathname + location.search }}
+        repo={{ owner, name: repo, ref: head || 'main', branches: branches.state === 'ok' ? branches.value.branches : [], branchesTruncated: branches.state === 'ok' && branches.value.truncated, onRef: (r) => go(base, r, path), compareHref: location.pathname + location.search }}
       />
       <div className="comparebar">
         {picker(base, (b) => go(b, head, path), 'Older')}

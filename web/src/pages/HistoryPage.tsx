@@ -6,7 +6,10 @@ import { ErrorPanel } from '../components/Pane';
 import { blobUrl, compareUrl, historyUrl, treeUrl } from '../routes';
 import { useAsync } from '../useAsync';
 
-/** What the server's history endpoint returns at most (ApiEndpoints), so a full page says it may be cut. */
+/**
+ * The commits shown. The server sends one more (ApiEndpoints): its presence is what says the list
+ * was cut, and it is the "older" the last shown commit compares with.
+ */
 const HistoryLimit = 50;
 
 /** /owner/repo/history/ref[/path]: the commits, each openable and comparable with the one before it. */
@@ -26,7 +29,7 @@ export function HistoryPage({ me }: { me: Me | null }) {
     <div className="app">
       <Header
         me={me}
-        repo={{ owner, name: repo, ref, branches: branches.state === 'ok' ? branches.value : [], onRef: (r) => navigate(historyUrl(owner, repo, r, path)), compareHref: compareUrl(owner, repo, defaultBranch, ref) }}
+        repo={{ owner, name: repo, ref, branches: branches.state === 'ok' ? branches.value.branches : [], branchesTruncated: branches.state === 'ok' && branches.value.truncated, onRef: (r) => navigate(historyUrl(owner, repo, r, path)), compareHref: compareUrl(owner, repo, defaultBranch, ref) }}
       />
       <main className="history">
         <h1>History{path ? ` of ${path.slice(path.lastIndexOf('/') + 1)}` : ''}</h1>
@@ -34,7 +37,7 @@ export function HistoryPage({ me }: { me: Me | null }) {
         {commits.state === 'error' && <ErrorPanel error={commits.error} signInUrl={signIn} />}
         {commits.state === 'ok' && (
           <ol className="commits">
-            {commits.value.map((c, i) => {
+            {commits.value.slice(0, HistoryLimit).map((c, i) => {
               const older = commits.value[i + 1];
               const [subject] = c.message.split('\n');
               return (
@@ -52,7 +55,7 @@ export function HistoryPage({ me }: { me: Me | null }) {
             })}
           </ol>
         )}
-        {commits.state === 'ok' && commits.value.length >= HistoryLimit && (
+        {commits.state === 'ok' && commits.value.length > HistoryLimit && (
           <p className="muted">The latest {HistoryLimit} commits. Older ones are on GitHub.</p>
         )}
       </main>

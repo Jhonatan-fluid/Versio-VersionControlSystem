@@ -84,7 +84,7 @@ export function RepoPage({ me }: { me: Me | null }) {
                 owner,
                 name: repo,
                 ref,
-                branches: branches.state === 'ok' ? branches.value : [],
+                branches: branches.state === 'ok' ? branches.value.branches : [], branchesTruncated: branches.state === 'ok' && branches.value.truncated,
                 onRef: (r) => navigate(path ? blobUrl(owner, repo, r, path, search) : `/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/tree/${encodeURIComponent(r)}`),
                 compareHref: compareUrl(owner, repo, defaultBranch, ref),
               }

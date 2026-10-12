@@ -47,9 +47,11 @@ public sealed class GitHubRepoSource(
     /// Page by page, until a short page or <see cref="BranchPages"/>. The first version read one
     /// page of 100, so in a repository with more branches the rest were missing from the picker
     /// (found in review). The cap keeps a repository with thousands of branches from costing
-    /// thousands of calls on every load; a ref past it still opens from its URL.
+    /// thousands of calls on every load; a ref past it still opens from its URL. A cut list says
+    /// so (<see cref="BranchList.Truncated"/>): the first version stopped at the cap in silence, so
+    /// a repository with more branches looked complete in the picker (found in review).
     /// </remarks>
-    public async Task<RepoResult<IReadOnlyList<BranchInfo>>> GetBranchesAsync(RepoAccess access, string owner, string repo, CancellationToken ct)
+    public async Task<RepoResult<BranchList>> GetBranchesAsync(RepoAccess access, string owner, string repo, CancellationToken ct)
     {
         var all = new List<BranchInfo>();
         for (var page = 1; page <= BranchPages; page++)
@@ -60,17 +62,22 @@ public sealed class GitHubRepoSource(
                     .ToList(), ct).ConfigureAwait(false);
             if (!one.Ok)
             {
-                return one;
+                return one.As<BranchList>();
             }
 
             all.AddRange(one.Value!);
             if (one.Value!.Count < BranchPageSize)
             {
-                break;
+                return RepoResult<BranchList>.Of(new BranchList(all, false));
             }
         }
 
-        return RepoResult<IReadOnlyList<BranchInfo>>.Of(all);
+        // Every page full, up to the cap: there may be more, or exactly this many. One more page
+        // decides, and is paid only by a repository this large.
+        var past = await GetJsonAsync(access,
+            $"repos/{E(owner)}/{E(repo)}/branches?per_page={BranchPageSize}&page={(BranchPages + 1).ToString(CultureInfo.InvariantCulture)}",
+            root => root.GetArrayLength(), ct).ConfigureAwait(false);
+        return RepoResult<BranchList>.Of(new BranchList(all, !past.Ok || past.Value > 0));
     }
 
     internal const int BranchPageSize = 100;

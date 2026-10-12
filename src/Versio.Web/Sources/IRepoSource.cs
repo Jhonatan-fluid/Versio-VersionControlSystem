@@ -62,6 +62,9 @@ public sealed record RepoInfo(string Owner, string Name, bool Private, string De
 
 public sealed record BranchInfo(string Name, string CommitSha);
 
+/// <summary>A repository's branches, and whether there were more than were listed.</summary>
+public sealed record BranchList(IReadOnlyList<BranchInfo> Branches, bool Truncated);
+
 /// <summary>One file in a tree: its path, its blob, its size.</summary>
 public sealed record TreeEntry(string Path, string BlobSha, long Size);
 
@@ -85,7 +88,7 @@ public interface IRepoSource
 {
     Task<RepoResult<RepoInfo>> GetRepoAsync(RepoAccess access, string owner, string repo, CancellationToken ct);
 
-    Task<RepoResult<IReadOnlyList<BranchInfo>>> GetBranchesAsync(RepoAccess access, string owner, string repo, CancellationToken ct);
+    Task<RepoResult<BranchList>> GetBranchesAsync(RepoAccess access, string owner, string repo, CancellationToken ct);
 
     /// <summary>The commit a branch, tag or SHA names, as this credential sees it.</summary>
     Task<RepoResult<string>> ResolveCommitAsync(RepoAccess access, string owner, string repo, string reference, CancellationToken ct);

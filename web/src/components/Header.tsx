@@ -5,7 +5,7 @@ import { historyUrl, repoUrl, treeUrl } from '../routes';
 
 interface Props {
   me: Me | null;
-  repo?: { owner: string; name: string; ref: string; branches: Branch[]; onRef: (ref: string) => void; compareHref: string };
+  repo?: { owner: string; name: string; ref: string; branches: Branch[]; branchesTruncated?: boolean; onRef: (ref: string) => void; compareHref: string };
   onToggleTree?: () => void;
 }
 
@@ -31,6 +31,11 @@ export function Header({ me, repo, onToggleTree }: Props) {
               {repo.branches.map((b) => (
                 <option key={b.name} value={b.name}>{b.name}</option>
               ))}
+              {repo.branchesTruncated && (
+                <option disabled value="">
+                  {`Only the first ${repo.branches.length} branches are listed`}
+                </option>
+              )}
             </select>
           </label>
           <nav className="topnav" aria-label="Repository">

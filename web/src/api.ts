@@ -33,6 +33,12 @@ export interface Branch {
   commit: string;
 }
 
+/** The branches, and whether the server listed only the first of them (its cap). */
+export interface BranchList {
+  branches: Branch[];
+  truncated: boolean;
+}
+
 export interface TreeNode {
   name: string;
   path: string;
@@ -116,7 +122,7 @@ async function get<T>(url: string, signal?: AbortSignal): Promise<T> {
 export const api = {
   me: (signal?: AbortSignal) => get<Me>('/api/me', signal),
   repo: (owner: string, repo: string, signal?: AbortSignal) => get<RepoInfo>(repoBase(owner, repo), signal),
-  branches: (owner: string, repo: string, signal?: AbortSignal) => get<Branch[]>(`${repoBase(owner, repo)}/branches`, signal),
+  branches: (owner: string, repo: string, signal?: AbortSignal) => get<BranchList>(`${repoBase(owner, repo)}/branches`, signal),
   tree: (owner: string, repo: string, ref: string, signal?: AbortSignal) =>
     get<Tree>(`${repoBase(owner, repo)}/tree${query({ ref })}`, signal),
   view: (owner: string, repo: string, ref: string, path: string, view: PaneView, layout: Layout, signal?: AbortSignal) =>
