@@ -19,6 +19,26 @@ produce a diff touching everything else.
 
 ---
 
+### Versio Web: rule 9 never covered names; a rate limit was a refusal
+
+**2026-10-12, branch `WebViewer`.** Two reviews; every point held.
+
+**Hidden characters in names reached the page.** Rule 9 (Trojan Source) was built for file contents:
+markers in code, tooltips and attributes. Names and messages went into React text as they were:
+tree rows, titles, notices, layer chips, the compare list, branch names, commit messages. React
+escapes HTML, so nothing could be injected, but git allows a right-to-left override in a file or
+branch name, so a row could read as one name and be another. Every earlier review missed it,
+mine included, because the rule was stated about code. Fixed on the server with Core's one list
+(`CodeHtml.Spelled`), keeping navigation exact: paths and branch names stay as they are, with a
+spelled label beside each for the page to show.
+
+**Session renewal, three edges of the previous fix:** a 429 or 408 counted as GitHub refusing, which
+ends the session; the minute's pause was stamped before a call that can take thirty seconds; and
+in an outage a token with minutes left was answered as signed out. And the left-out-layer notice
+promised a difference for a layer that was the same in both versions.
+
+---
+
 ### Versio Web: my fix for one race made every page slow, and a notice pointed at nothing
 
 **2026-10-12, branch `WebViewer`.** Two reviews of the previous round's fixes; every point held.
