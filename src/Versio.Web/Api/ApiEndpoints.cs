@@ -192,6 +192,9 @@ public static partial class ApiEndpoints
                 return Refused(info.Failure, http);
             }
 
+            // The latest 50, one GitHub page, on purpose: history here is for finding a recent change,
+            // and older ones are on GitHub. The page's HistoryLimit says so when the list is full;
+            // change both together.
             var commits = await source.GetCommitsAsync(who.Value!, owner, repo, @ref ?? info.Value!.DefaultBranch, path, 50, ct).ConfigureAwait(false);
             return commits.Ok
                 ? Results.Ok(commits.Value!.Select(c => new { sha = c.Sha, message = c.Message, author = c.Author, when = c.When }))
