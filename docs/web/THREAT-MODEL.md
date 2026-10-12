@@ -134,6 +134,7 @@ exactly that).
 |---|---|---|
 | App key in configuration, not a vault | **Seam built** (`IAppSigner`) | Which vault follows from where it is hosted: the owner's decision |
 | Data Protection key ring not vault-protected | Configuration | Same; ASP.NET supports vault protection of the ring |
+| Sessions shared through Redis, key rings not shared | Configuration, warned | A session sealed under another ring reads as signed out (it was a 500 for every signed-in call, found in review); startup warns when `Web:Redis` is set without `Web:KeysDirectory`. People are still signed out at random until every instance shares one ring |
 | Sign-in never run against real GitHub | Tested against a local OAuth server | Needs the owner to register the App |
 | The page embedding the Mermaid frame not observed | Frame tested directly; sandbox attributes asserted in code | The built-in browser refuses sub-frames; needs one look in a normal browser |
 | Look-alike detection limited to mixed scripts | Built | A whole name in Cyrillic that looks Latin is not flagged; a confusables table would flag much honest text |

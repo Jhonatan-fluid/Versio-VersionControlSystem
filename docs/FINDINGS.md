@@ -19,6 +19,32 @@ produce a diff touching everything else.
 
 ---
 
+### Versio Web: two more reviews, four findings, and two that were already fixed
+
+**2026-10-11, branch `WebViewer`.** Two more reviews, pasted one after the other.
+
+**Two "still open" items were already fixed**, in `95af1a6` (a refused renewal deleting the
+winner's write) and `ab76d7c` (a type highlight beside "nothing drawn"; a deleted type never
+highlighted). The reviewer read the pushed branch, and none of the session's commits were pushed.
+Worth remembering when a review disagrees with the code: check which revision it read.
+
+**Two of the findings pulled opposite ways, both real.** A layer over the draw limit in one version
+only has no `Failure`, so the unreadable-side check passed it, and a table living in it drew every
+member as added, then was cached. And my own fix for unreadable sides counted "too large" as
+unreadable for every layer, so an `.xml` over the fetch limit refused a whole comparison whose
+`.st` diff could be drawn. One rule answers both: another layer too large on either side is left
+out of both sides and said. **The first test for it proved less than it looked**: a CODESYS GVL's
+table comes from its `.st`, so the mutant failed only on the missing notice and never drew a
+member as added. On a TIA data type, whose members live in the `.xml` beside the `.udt`, the
+mutant reproduces both defects exactly.
+
+**The other two:** views drawn from a model with a failed read were still cached, though the model
+no longer was; and with Redis but no shared key ring, a token sealed by another instance threw on
+decryption, a 500 for every signed-in call and every sign-out. It now reads as signed out, and
+startup warns, since only a shared ring stops the random sign-outs.
+
+---
+
 ### Versio Web: the first review's open items and a second review, fourteen findings, one vendor leak
 
 **2026-10-11, branch `WebViewer`.** The first review's items still open, then a second review
