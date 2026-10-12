@@ -19,6 +19,30 @@ produce a diff touching everything else.
 
 ---
 
+### Versio Web: my fix for one race made every page slow, and a notice pointed at nothing
+
+**2026-10-12, branch `WebViewer`.** Two reviews of the previous round's fixes; every point held.
+
+**Not deleting a session whose renewal failed** (`95af1a6`, to stop deleting another instance's
+renewal) left the dead session alive: every request carrying its cookie made a doomed call to
+GitHub and waited a second, one after another on the gate, so a page took four seconds; its idle
+expiry slid with each request, so it lasted a month; and on a public repository the request fell
+back to anonymous and succeeded, so the only symptom was a slow site. The mutant reproduces it:
+four requests, four seconds. The answer splits what were one case: nothing can renew (no refresh
+token, or a spent one: no race, end at once), GitHub refused (look a second, then end), GitHub did
+not answer (keep it, and do not ask again for a minute). The last two were one `null` from
+`RefreshAsync`, and a network error was not caught at all.
+
+**The left-out-layer notice pointed at Raw for both limits.** A layer over the fetch limit was never
+fetched, and its Raw tab says "too large to compare"; and a change only in a left-out layer also
+raised "nothing this view draws changed", whose Raw tab is the unchanged file on screen. The test
+had asserted the notice for both limits without ever opening the layer it pointed at.
+
+**Lesson, twice in two days:** a fix that stops an action (deleting, refusing) needs the question
+"and then what happens to the thing it would have acted on?"
+
+---
+
 ### Versio Web: two more reviews, four findings, and two that were already fixed
 
 **2026-10-11, branch `WebViewer`.** Two more reviews, pasted one after the other.
