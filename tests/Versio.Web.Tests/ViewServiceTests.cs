@@ -210,6 +210,53 @@ public sealed class ViewServiceTests
     }
 
     [Fact]
+    public async Task A_catalog_that_could_not_be_read_is_said_and_the_model_is_read_again_next_time()
+    {
+        // Found in review: a catalog read failure dropped its rows with nothing said. And the
+        // model went into the cache by commit, so the failure outlived the rate limit.
+        const string Library = "fixtures/projects/RefrigeratorControl/Device/Plc Logic/Application/Library Manager.libraries.yaml";
+        _github.FailingBlobs[FakeGitHub.BlobSha(_github.CommitFiles(_repo, "main")[Library])] = RepoFailure.RateLimited;
+        var (_, models) = Services();
+
+        var during = await Model(models, "main");
+        _github.FailingBlobs.Clear();
+        var after = await Model(models, "main");
+
+        Assert.Contains(during.Problems, p => p.Contains(Library, StringComparison.Ordinal) && p.Contains("RateLimited", StringComparison.Ordinal));
+        Assert.True(during.Partial);
+        Assert.DoesNotContain(after.Problems, p => p.Contains("could not be read", StringComparison.Ordinal) || p.Contains("not a catalog", StringComparison.Ordinal));
+        Assert.Contains(RepoModel.Flatten(after.Nodes), n => n.Kind == ProjectNodeKind.Library);
+    }
+
+    [Fact]
+    public async Task A_load_that_failed_for_one_credential_is_not_the_answer_for_another_that_joined_it()
+    {
+        // Found in review: concurrent loads of one commit shared one answer, failure included. An
+        // anonymous request on GitHub's unauthenticated limit started the load; a signed-in one
+        // joined it and got the rate limit, though its own token would have read the commit.
+        var release = new TaskCompletionSource();
+        _github.BeforeTree = async access =>
+        {
+            if (access.Kind != AccessKind.Anonymous)
+            {
+                return RepoFailure.None;
+            }
+
+            await release.Task;
+            return RepoFailure.RateLimited;
+        };
+        var (_, models) = Services();
+        var alice = new RepoAccess(AccessKind.User, "alice-token", "alice");
+
+        var anonymous = models.LoadAsync(RepoAccess.Anonymous, "acme", "plant", _repo.Refs["main"], CancellationToken.None);
+        var signedIn = models.LoadAsync(alice, "acme", "plant", _repo.Refs["main"], CancellationToken.None);
+        release.SetResult();
+
+        Assert.Equal(RepoFailure.RateLimited, (await anonymous).Failure);
+        Assert.True((await signedIn).Ok);
+    }
+
+    [Fact]
     public async Task The_tree_has_each_projects_libraries_tasks_and_devices_from_its_catalogs()
     {
         var (_, models) = Services();

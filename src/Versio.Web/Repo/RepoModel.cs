@@ -23,6 +23,12 @@ public sealed record RepoModel(
     bool Truncated,
     IReadOnlyList<string> Problems)
 {
+    /// <summary>
+    /// Whether a read failed for a reason of the moment (a rate limit, an outage) while this was
+    /// built: its problems then say so, and it is not cached, so the next request reads again.
+    /// </summary>
+    public bool Partial { get; init; }
+
     /// <summary>The bound projects as the tree was built from them.</summary>
     public IReadOnlyList<WorkspaceProject> Projects { get; init; } = [];
 
@@ -99,10 +105,15 @@ public sealed record RepoModel(
 /// so one repository's entry can never answer for another (security rule 2).
 /// </para>
 /// <para>
-/// <b>Library, task and device catalogs are not read yet</b>: the managers draw without their
-/// reference rows, which RepoExplorerBuilder already treats as a degraded view and never an
-/// error. File-Based Storage source projects are not grafted either. Both are listed as later
-/// in docs/web/PLAN.md.
+/// <b>A model built while a read failed is not cached.</b> A manifest or catalog that could not be
+/// read for a reason of the moment (a rate limit, an outage) becomes a problem the page shows, and
+/// the model is <see cref="RepoModel.Partial"/>; cached by commit, it went on showing that problem
+/// for half an hour after GitHub answered again (found reviewing a review, 2026-10-11).
+/// </para>
+/// <para>
+/// Catalogs (<see cref="ReadCatalogsAsync"/>) and File-Based Storage projects
+/// (<see cref="SourceProjects"/>) are read. This remark said they were not until 2026-10-11, long
+/// after both were built, and it is the paragraph a later edit would have trusted (found in review).
 /// </para>
 /// </remarks>
 public sealed class RepoModelLoader(IRepoSource source, IMemoryCache cache, IVersioLogger log)
@@ -110,7 +121,7 @@ public sealed class RepoModelLoader(IRepoSource source, IMemoryCache cache, IVer
     private const string ConfigPath = ".versio/repo.json";
     private const long MaxConfigBytes = 4L * 1024 * 1024;
 
-    private readonly SingleFlight<RepoResult<RepoModel>> _loading = new();
+    private readonly SingleFlight<(RepoResult<RepoModel> Result, RepoAccess By)> _loading = new();
 
     public async Task<RepoResult<RepoModel>> LoadAsync(RepoAccess access, string owner, string repo, string commitSha, CancellationToken ct)
     {
@@ -125,8 +136,24 @@ public sealed class RepoModelLoader(IRepoSource source, IMemoryCache cache, IVer
         // this commit with its own credential, so whichever credential does the reading, each
         // caller is handed only what it could read. The shared load is not cancelled by one
         // caller leaving: the others are waiting on it.
-        return await _loading.RunAsync(key, () => BuildAsync(access, owner, repo, commitSha, key, CancellationToken.None)).WaitAsync(ct).ConfigureAwait(false);
+        //
+        // A failure is not shared, though. The credential that did the reading is the one that
+        // was refused or rate-limited: an anonymous load on GitHub's unauthenticated limit used to
+        // hand its failure to a signed-in request that joined it, whose own token would have read
+        // the commit (found in review). A caller who brought another credential and got a failed
+        // or partial answer reads again with its own, coalesced with others holding the same one.
+        var shared = await _loading.RunAsync(key, () => Attributed(access, owner, repo, commitSha, key)).WaitAsync(ct).ConfigureAwait(false);
+        if ((shared.Result.Ok && !shared.Result.Value!.Partial) || shared.By == access)
+        {
+            return shared.Result;
+        }
+
+        var own = await _loading.RunAsync($"{key}:{access.Kind}:{access.Who}", () => Attributed(access, owner, repo, commitSha, key)).WaitAsync(ct).ConfigureAwait(false);
+        return own.Result;
     }
+
+    private async Task<(RepoResult<RepoModel>, RepoAccess)> Attributed(RepoAccess access, string owner, string repo, string commitSha, string key) =>
+        (await BuildAsync(access, owner, repo, commitSha, key, CancellationToken.None).ConfigureAwait(false), access);
 
     private async Task<RepoResult<RepoModel>> BuildAsync(RepoAccess access, string owner, string repo, string commitSha, string key, CancellationToken ct)
     {
@@ -142,7 +169,17 @@ public sealed class RepoModelLoader(IRepoSource source, IMemoryCache cache, IVer
         // projects' identical catalogs) have one blob id, and parallel reads fetched it twice
         // (found by PerformanceTests' "each thing once").
         var fetches = new System.Collections.Concurrent.ConcurrentDictionary<string, Task<RepoResult<byte[]>>>(StringComparer.Ordinal);
-        Task<RepoResult<byte[]>> fetch(string sha) => fetches.GetOrAdd(sha, s => source.GetBlobAsync(access, owner, repo, s, MaxConfigBytes, ct));
+        var partial = false;
+        Task<RepoResult<byte[]>> fetch(string sha) => fetches.GetOrAdd(sha, async s =>
+        {
+            var read = await source.GetBlobAsync(access, owner, repo, s, MaxConfigBytes, ct).ConfigureAwait(false);
+            if (read.Failure is not (RepoFailure.None or RepoFailure.TooLarge))
+            {
+                partial = true;
+            }
+
+            return read;
+        });
         var problems = new List<string>();
         var projects = new List<WorkspaceProject>();
         var isVersio = files.TryGetValue(ConfigPath, out var configEntry);
@@ -187,7 +224,7 @@ public sealed class RepoModelLoader(IRepoSource source, IMemoryCache cache, IVer
             }
 
             // Every project's catalogs at once, as the manifests were read.
-            var catalogs = await Task.WhenAll(found.Select(f => ReadCatalogsAsync(fetch, files, f.Manifest, f.Binding.ExportPath))).ConfigureAwait(false);
+            var catalogs = await Task.WhenAll(found.Select(f => ReadCatalogsAsync(fetch, files, f.Manifest, f.Binding.ExportPath, problems))).ConfigureAwait(false);
             for (var i = 0; i < found.Count; i++)
             {
                 var (binding, manifest) = found[i];
@@ -208,9 +245,14 @@ public sealed class RepoModelLoader(IRepoSource source, IMemoryCache cache, IVer
         projects.AddRange(SourceProjects(files));
 
         var nodes = RepoExplorerBuilder.Build(files.Keys.OrderBy(p => p, StringComparer.Ordinal).ToList(), projects);
-        var model = new RepoModel(owner, repo, commitSha, files, nodes, isVersio, tree.Value.Truncated, problems) { Projects = projects };
-        cache.Set(key, model, new MemoryCacheEntryOptions { Size = Math.Max(1, files.Count / 100), SlidingExpiration = TimeSpan.FromMinutes(30) });
-        log.Info(LogCategory.Web, $"Loaded {owner}/{repo} at {commitSha[..Math.Min(8, commitSha.Length)]}: {files.Count} files, {projects.Count} projects{(problems.Count > 0 ? $", {problems.Count} problems" : "")}");
+        var model = new RepoModel(owner, repo, commitSha, files, nodes, isVersio, tree.Value.Truncated, problems) { Projects = projects, Partial = partial };
+        if (!partial)
+        {
+            cache.Set(key, model, new MemoryCacheEntryOptions { Size = Math.Max(1, files.Count / 100), SlidingExpiration = TimeSpan.FromMinutes(30) });
+        }
+
+        log.Info(LogCategory.Web, $"Loaded {owner}/{repo} at {commitSha[..Math.Min(8, commitSha.Length)]}: {files.Count} files, {projects.Count} projects"
+            + $"{(problems.Count > 0 ? $", {problems.Count} problems" : "")}{(partial ? ", a read failed so not cached" : "")}");
         return RepoResult<RepoModel>.Of(model);
     }
 
@@ -225,7 +267,7 @@ public sealed class RepoModelLoader(IRepoSource source, IMemoryCache cache, IVer
     /// shows one commit, and marks between two come from the comparison, not the tree.
     /// </remarks>
     private async Task<(IReadOnlyList<LibrarySnapshot>, IReadOnlyList<TaskSnapshot>, IReadOnlyList<DeviceSnapshot>)> ReadCatalogsAsync(
-        Func<string, Task<RepoResult<byte[]>>> fetch, IReadOnlyDictionary<string, TreeEntry> files, ProjectManifest? manifest, string exportPath)
+        Func<string, Task<RepoResult<byte[]>>> fetch, IReadOnlyDictionary<string, TreeEntry> files, ProjectManifest? manifest, string exportPath, List<string> problems)
     {
         if (manifest is null)
         {
@@ -245,24 +287,44 @@ public sealed class RepoModelLoader(IRepoSource source, IMemoryCache cache, IVer
         var devices = new List<DeviceSnapshot>();
         for (var i = 0; i < wanted.Count; i++)
         {
+            // A catalog that could not be read, or read as nothing, is said: its rows used to
+            // vanish silently while an unreadable manifest beside it was a problem on the page
+            // (found in review). The tree still draws, without that catalog's rows.
+            var (form, path) = wanted[i];
             if (!reads[i].Ok)
             {
+                lock (problems)
+                {
+                    problems.Add($"{path} could not be read ({reads[i].Failure}).");
+                }
+
                 continue;
             }
 
             var text = Encoding.UTF8.GetString(reads[i].Value!);
-            var (form, path) = wanted[i];
+            var parsed = false;
             switch (form)
             {
                 case ExportCoverage.LibrariesForm when LibraryCatalog.Parse(text) is { IsValid: true } l:
                     libraries.Add(new LibrarySnapshot { Path = path, Current = l });
+                    parsed = true;
                     break;
                 case ExportCoverage.TaskBothForm when TaskCatalog.Parse(text) is { IsValid: true } t:
                     tasks.Add(new TaskSnapshot { Path = path, Current = t });
+                    parsed = true;
                     break;
                 case ExportCoverage.DevicesForm when DeviceCatalog.Parse(text) is { IsValid: true } d:
                     devices.Add(new DeviceSnapshot { Path = path, Current = d });
+                    parsed = true;
                     break;
+            }
+
+            if (!parsed)
+            {
+                lock (problems)
+                {
+                    problems.Add($"{path} is not a catalog this version can read; its rows are not shown.");
+                }
             }
         }
 

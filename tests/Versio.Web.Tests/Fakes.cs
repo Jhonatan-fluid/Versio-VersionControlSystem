@@ -172,16 +172,24 @@ internal sealed class FakeGitHub : IRepoSource
         return Task.FromResult(sha is null ? RepoResult<string>.Fail(RepoFailure.NotFound) : RepoResult<string>.Of(sha));
     }
 
-    public Task<RepoResult<TreeSnapshot>> GetTreeAsync(RepoAccess access, string owner, string repo, string commitSha, CancellationToken ct)
+    /// <summary>Runs before a tree is read, with the credential reading it: may hold the read, or fail it.</summary>
+    public Func<RepoAccess, Task<RepoFailure>>? BeforeTree { get; set; }
+
+    public async Task<RepoResult<TreeSnapshot>> GetTreeAsync(RepoAccess access, string owner, string repo, string commitSha, CancellationToken ct)
     {
         var r = See(access, owner, repo, "tree " + commitSha);
         if (!r.Ok || !r.Value!.Commits.TryGetValue(commitSha, out var files))
         {
-            return Task.FromResult(RepoResult<TreeSnapshot>.Fail(RepoFailure.NotFound));
+            return RepoResult<TreeSnapshot>.Fail(RepoFailure.NotFound);
         }
 
-        return Task.FromResult(RepoResult<TreeSnapshot>.Of(new TreeSnapshot(
-            commitSha, files.Select(f => new TreeEntry(f.Key, BlobSha(f.Value), f.Value.Length)).ToList(), false)));
+        if (BeforeTree is { } before && await before(access) is var failure and not RepoFailure.None)
+        {
+            return RepoResult<TreeSnapshot>.Fail(failure);
+        }
+
+        return RepoResult<TreeSnapshot>.Of(new TreeSnapshot(
+            commitSha, files.Select(f => new TreeEntry(f.Key, BlobSha(f.Value), f.Value.Length)).ToList(), false));
     }
 
     public Task<RepoResult<byte[]>> GetBlobAsync(RepoAccess access, string owner, string repo, string blobSha, long maxBytes, CancellationToken ct)

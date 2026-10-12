@@ -17,7 +17,10 @@ namespace Versio.Web;
 /// <b>It shares work, never access.</b> Callers pass keys that already carry everything the
 /// answer depends on (the repository, the commit, the credential where it matters), so a caller
 /// is only ever handed what it would have computed itself. The entry is removed when the work
-/// ends, success or failure, so a failure is not served to the next caller.
+/// ends, success or failure, so a failure is not served to the next caller. A key that leaves
+/// the credential out (the repository model: any caller who resolved the commit may read it) does
+/// not share a failure either: the caller who brought another credential reads again with its own
+/// (<c>RepoModelLoader.LoadAsync</c>; found in review).
 /// </para>
 /// </remarks>
 public sealed class SingleFlight<T>
