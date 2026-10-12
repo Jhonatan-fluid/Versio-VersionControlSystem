@@ -65,7 +65,7 @@ the project file, the IL and every vendor reference (section 7).
 | `Dockerfile` | Multi-stage container: Release publish (builds the page), then a non-root ASP.NET runtime. **Written, not built** (no Docker where it was written) |
 | **`Sources/`** | |
 | `IRepoSource.cs` | The seam for "where repositories come from": `RepoAccess` (whose credential), `RepoResult<T>` (a value or why not), the tree, blob and commit records. GitLab or Azure DevOps would be new implementations of this |
-| `GitHubRepoSource.cs` | The GitHub implementation: repo, branches (every page, up to 1,000), commit SHA, recursive tree, raw blobs, commits; follows Git LFS pointers. Maps GitHub's refusals to what the page can say (a bare 403 is "not found") |
+| `GitHubRepoSource.cs` | The GitHub implementation: repo, branches (every page, up to 1,000, and says when it was cut), downloads checked against the LFS pointer's hash, commit SHA, recursive tree, raw blobs, commits; follows Git LFS pointers. Maps GitHub's refusals to what the page can say (a bare 403 is "not found") |
 | `LfsGuard.cs` | Parses LFS pointers; allows LFS downloads only over https to allowlisted hosts; a connect callback that refuses internal addresses at the moment of connecting; no redirects |
 | **`Auth/`** | |
 | `AccessResolver.cs` | **Decides which credential reads a repository for a request.** Signed in: the person's own token. Anonymous: the App's token, only after GitHub says the repository is public |
@@ -105,7 +105,7 @@ the project file, the IL and every vendor reference (section 7).
 | `src/styles/app.css` | The page around the fragments, light and dark, a drawer under 760 px. Markdown's styles live here because Core emits plain elements for it |
 | `src/fragment.test.ts` | 13 vitest tests: the sanitiser (the ladder's checkbox kept, every other input removed), link rules, URL building |
 | `src/ladderScript.test.ts` | 5: Core's ladder script, read from `LadderPageAssets.cs` itself (Vite `?raw`), run fragment after fragment into one document, counting the listeners it leaves |
-| `src/pages/HistoryPage.test.tsx` | 2: the first page-component test; renders History over a stubbed fetch and reads the Compare link it built |
+| `src/pages/HistoryPage.test.tsx` | 4: the first page-component tests; render History over a stubbed fetch: the Compare link, the "latest 50" note only when a 51st commit came, the cut-branch-list note |
 
 ### Added to Core for the web, and usable by the desktop
 
@@ -119,7 +119,8 @@ the project file, the IL and every vendor reference (section 7).
 | `src/Versio.Core/Projects/MemberTableHtml.cs` | A member table as HTML, old then new in changed cells |
 | `src/Versio.Core/Text/SafeXml.cs` | The one XML parser every pure pack uses: no DTD, no resolver, a size cap |
 | `src/Versio.Core/Iec/Ladder/LadderHtml.cs` (changed) | Takes an optional `LadderWording`; the desktop's text by default |
-| `src/Versio.Core/Projects/ProjectTreeBuilder.cs` (changed) | `ProjectTreeNode.PrimaryFile`, moved from the desktop's `TreeRow` |
+| `src/Versio.Core/Projects/ProjectTreeBuilder.cs` (changed) | `ProjectTreeNode.PrimaryFile`, moved from the desktop's `TreeRow`; which layer is code comes from `PlcFormats.LanguageFor`, never a list of extensions (the list held Siemens' `.scl` and `.udt` until a review found them) |
+| `src/Versio.Core/Plc/PlcFormats.cs` (changed) | `LanguageFor`: a vendor's `SyntaxFor`, else the neutral catalog. The desktop's highlighter, its layer labels, the tree and the web viewer all ask it |
 | `src/Versio.Infrastructure/Bindings/RepoConfigStore.cs` (changed) | `Parse(string)`, the store's own reader of `repo.json` |
 | `src/Versio.Core/Logging/LogEvent.cs` (changed) | `LogCategory.Web` and `LogCategory.Auth` |
 
@@ -127,10 +128,10 @@ the project file, the IL and every vendor reference (section 7).
 
 | Where | What |
 |---|---|
-| `tests/Versio.Web.Tests/` (111) | `ViewServiceTests` (the desktop's choices over the real fixtures), `SecurityTests` (the rules against the real host on a free port, sign-in end to end, two instances sharing sessions, the real executable's startup), `GitHubRepoSourceTests` (the real client against a local server shaped like GitHub), `PerformanceTests` (each thing fetched once, compression, cache headers), `LfsGuardTests`. `Fakes.cs` is a GitHub in memory serving this repository's own fixtures; `TestHost.cs` runs the real host; `FixturePreview.cs` serves the fixtures on port 5199 to look at (opt-in) |
+| `tests/Versio.Web.Tests/` (126) | `ViewServiceTests` (the desktop's choices over the real fixtures), `SecurityTests` (the rules against the real host on a free port, sign-in end to end, two instances sharing sessions, the real executable's startup), `GitHubRepoSourceTests` (the real client against a local server shaped like GitHub), `PerformanceTests` (each thing fetched once, compression, cache headers), `LfsGuardTests`. `Fakes.cs` is a GitHub in memory serving this repository's own fixtures; `TestHost.cs` runs the real host; `FixturePreview.cs` serves the fixtures on port 5199 to look at (opt-in) |
 | `tests/Versio.Core.Tests/` | `SourceHtmlTests`, `TextDiffHtmlTests`, `UnifiedDiffWriterTests`, `MemberTableHtmlTests`, `SafeXmlTests`, `SyntaxTokenizerCoverageTests`, `RendererAllowlistTests`, `PrimaryFileTests`, and the wording test in `LadderHtmlTests` |
 | `tests/Versio.Arch.Tests/` | `ProjectReferenceTests.Versio_Web_references_only_the_pure_packs`; `PurityRuleTests`: no process or file access in the server, vendors named only in `RegisterFormats`, XML only through `SafeXml` in Core and the packs |
-| `web/src/fragment.test.ts` (12) | The page's pure modules |
+| `web/src/` vitest (22) | The page: its pure modules, the ladder script as Core writes it, and History rendered |
 
 ---
 

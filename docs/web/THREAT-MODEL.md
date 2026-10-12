@@ -96,6 +96,7 @@ exactly that).
 | A token in a log | Logs carry logins and paths, never tokens, codes, verifiers or secrets; request lines carry the path only, never the query (the callback's code) | The same test: the log holds no token, refresh token, client secret, one-time code, PKCE verifier or state |
 | Stored tokens readable from a store dump | Encrypted with Data Protection | `Rule7_tokens_are_encrypted_at_rest_in_the_session_store` |
 | **The server fetches its own cloud credentials (SSRF through LFS)** | LFS downloads: https, allowlisted hosts, no redirects, internal addresses refused at connect time | `LfsGuardTests`, `An_LFS_download_pointed_at_the_metadata_service_is_refused_before_any_connection`, `..._that_resolves_internal_is_refused_at_connect` |
+| An LFS download host answers with other bytes than the commit's file | The download must match the pointer's SHA-256 and size, or it is refused | `An_LFS_download_is_the_file_only_when_it_matches_its_pointer` |
 | Compression leaks a secret (BREACH) | No response body carries a secret | Design argument (WebHost); nothing to test |
 
 ### Denial of service
@@ -105,6 +106,8 @@ exactly that).
 | A crafted XML file (billion laughs) | `SafeXml` refuses any DTD; documents capped | `SafeXmlTests`, the Arch rule that every pack parses through it |
 | A crafted line for a slow regular expression | A 2-second process-wide regex timeout, set before anything | `Rule3_the_real_server_starts_with_the_regex_timeout_in_force` |
 | A huge file or a slow render | Over 2 MB plain text; over 10 MB never fetched; 5-second render budget with a plain-text fallback; LineDiff's cell cap | `ViewServiceTests` (draw limit, fetch limit, budget) |
+| A file that makes a vendor parser throw | The same plain-text fallback, its own notice, uncached; the log names the exception's type, never its message (it can quote the file) | `A_parser_that_throws_gives_the_plain_text_not_an_error` |
+| A rate-limited reader hides a change | A side that could not be read is said, never drawn as everything new; an answer built from a failed read is not cached; a failure stays with the credential that received it | `A_compare_whose_older_copy_could_not_be_read_says_so_...`, `A_read_that_failed_is_not_remembered_...`, `A_load_that_failed_for_one_credential_...` |
 | A comparison of two enormous commits | 2,000 files listed, the rest counted | `Rule8_a_comparison_lists_at_most_its_cap_and_says_how_many_there_were` |
 | Request floods, or spending the App's GitHub quota | Per-client rate limit; behind a load balancer the client is what a proxy in `Web:TrustedProxies` forwarded, and a forwarded header from anyone else is ignored (with none configured the forwarding middleware does not run at all, because ASP.NET's empty lists mean "trust everyone"); anonymous access can be switched off | `Rule8_a_client_over_its_rate_is_refused`, `Rule8_behind_a_trusted_proxy_each_client_has_its_own_rate`, `Rule8_a_forwarded_header_from_anyone_not_trusted_chooses_nothing`, `Rule17_anonymous_access_switched_off_asks_everyone_to_sign_in` |
 
@@ -137,5 +140,6 @@ exactly that).
 | ~~No test asserts the audit line or greps logs for secrets~~ | **Closed 2026-10-11** | `Rule13_a_view_is_audited_and_no_secret_ever_reaches_the_log` |
 | No outbound network allowlist | Infrastructure | The container's network policy, rule 16 |
 | No external penetration test, no cost alarm | Open | Need a live deployment and a party outside this repository (rule 19) |
-| Cross-instance token renewal race | Mitigated | The in-process gate plus a re-read before signing out; two instances can still both call GitHub once |
+| Cross-instance token renewal race | Mitigated | The in-process gate; a refused renewal looks for another instance's for a second and **deletes nothing** (it used to delete the winner's write when that landed between its look and its delete, found in review). Two instances can still both call GitHub once, and the loser's request can still be answered signed out if the winner's write takes longer than a second |
+| Sign-out while a renewal is talking to GitHub | Mitigated | The renewal looks before writing; if the session is gone it revokes the new token and writes nothing. No compare-and-swap on `IDistributedCache`, so a sign-out landing between that look and the write still leaves an unrevoked token in the store until the entry expires (`A_sign_out_during_a_renewal_...`) |
 | ~~A request that read the session before a renewal writes the old token back~~ | **Closed 2026-10-11** | Reads never write the session (`SessionStoreTests`); found by an external review |

@@ -60,18 +60,18 @@ marking, duplicate-param keys, and the detail-pane lookup. All of them are in
 
 | Project | Tests | Time | Needs |
 |---|---|---|---|
-| `Versio.Core.Tests` | 1,756 | under a second | nothing |
+| `Versio.Core.Tests` | 1,757 | under a second | nothing |
 | `Versio.Integration.Tests` | 171 | ~10 s | real git |
 | `Versio.App.Tests` | 782 | 6 m 35 s on 2026-10-10; 8 m 38 s on 2026-10-05; ~3.6 min on 2026-09-22 | nothing |
 | `Versio.Arch.Tests` | 35 | instant | nothing |
 | `Versio.Plc.Codesys.Pure.Tests` | 365 | under a second | nothing |
 | `Versio.Plc.Codesys.Parity.Tests` | 97 | ~15 s | `python` on PATH — skips cleanly without it, so check the count |
-| `Versio.Plc.TiaPortal.Pure.Tests` | 93 | instant | nothing |
+| `Versio.Plc.TiaPortal.Pure.Tests` | 96 | instant | nothing |
 | `Versio.Plc.TiaPortal.Tests` | 5 | seconds when skipped; minutes when Portal runs the import gate | **real TIA Portal** — skips without Openness membership or LFS content |
 | `Versio.Plc.TwinCat.Pure.Tests` | 23 | instant | nothing |
 | `Versio.Plc.TwinCat.Tests` | 6 | seconds when skipped; ~5 min when XAE runs the import gate | **real TwinCAT XAE** — skips without `TcXaeShell.DTE.17.0` or the fixture |
-| `Versio.Web.Tests` | 111 | a few seconds | nothing — GitHub is faked |
-| `web/` (vitest) | 20 | ~20 s | the pinned Node in `web/.node` |
+| `Versio.Web.Tests` | 126 | a few seconds | nothing — GitHub is faked |
+| `web/` (vitest) | 22 | ~20 s | the pinned Node in `web/.node` |
 | `Versio.Plc.Codesys.Tests` | 55 | **~30 min**; 41 m 14 s, 55/55, on 2026-10-11 on `WebViewer` | **real CODESYS** |
 
 The first ten are the loop to work in — about thirty seconds plus the UI suite. The last is
@@ -349,7 +349,10 @@ One list. Reorder it; do not copy it into another file.
    threat model ([`web/THREAT-MODEL.md`](web/THREAT-MODEL.md)). Then an external review's eight
    findings, all real and all fixed (FINDINGS 2026-10-11), among them a session read that could
    undo a token renewal and a per-address rate limit that was one bucket behind a load balancer;
-   a deployment behind one sets `Web:TrustedProxies`.
+   a deployment behind one sets `Web:TrustedProxies`. Then that review's open items and a second
+   review, fourteen more, all fixed (FINDINGS 2026-10-11): among them a vendor leak (Siemens
+   extensions in Core, now behind `PlcFormats.LanguageFor` and refused by `VendorSeamTests`), and
+   answers built from failed reads that were drawn as "everything new" or cached.
    **Left, all needing the owner or a deployment:**
    - **register the GitHub App** (on GitHub: read-only Contents and Metadata, a callback at
      `/auth/callback`) and run sign-in against real GitHub; until then the server runs

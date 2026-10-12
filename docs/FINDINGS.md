@@ -19,6 +19,49 @@ produce a diff touching everything else.
 
 ---
 
+### Versio Web: the first review's open items and a second review, fourteen findings, one vendor leak
+
+**2026-10-11, branch `WebViewer`.** The first review's items still open, then a second review
+pasted mid-way; two items were in both. Each checked against the code first; all held. Each fix
+has a commit and a test that fails with it reverted.
+
+**The vendor leak, wider than reported.** `ProjectTreeNode.PrimaryFile` listed `.st`, `.scl`
+and `.udt`: two Siemens extensions in a namespace that may learn no vendor. The seam tests look
+for brand names and saw none. A second copy the review did not name sat in Core's
+`LanguageCatalog`, kept there on purpose by a comment arguing no vendor was named, which the later
+`SyntaxFor` seam's own remarks contradict; the desktop's `DiffLayerChoice` held a third. TIA's
+format names its text files now, `PlcFormats.LanguageFor` is the one place vendor and catalog
+meet, and `VendorSeamTests` refuses vendor-only extensions as literals in neutral namespaces.
+On the desktop, a File-Based Storage object's text layer now opens first and is labelled ST.
+
+**Answers built from a failed read, three ways.** (1) A comparison checked only the side it found
+first, so a rate-limited older copy drew every member as added and Raw diffed against null. (2)
+Every rendered answer, failures included, was cached for half an hour by blob, so "could not be
+read" outlived the rate limit; the repository model had the same defect for manifests and
+catalogs, found by reading the loader for another item. (3) Concurrent loads of one commit shared
+one answer, so an anonymous load's rate limit was handed to a signed-in request that joined it.
+
+**Sessions across instances.** The loser of a renewal peeked once and deleted the session; a
+winner's write landing between the two was deleted with it. Deleting bought nothing, so it is
+gone. A sign-out during a renewal now revokes the new token rather than writing it back; without
+compare-and-swap both are narrowed, not closed, and THREAT-MODEL says what is left.
+
+**Smaller, each real:** a parser that throws was a 500, now the plain-text fallback; "nothing this
+view draws changed" ignored a type highlight, and a deleted type was never highlighted; an
+unreadable catalog dropped its rows silently; the loader's remark said catalogs and File-Based
+Storage were unread, weeks after both were built; LFS downloads were never checked against the
+pointer's hash, and there was no test of a successful LFS download at all; one lock serialised all
+App token minting; the branch picker stopped at 1,000 in silence; "the latest 50" appeared for
+exactly 50 commits.
+
+**What the mutations caught in the tests themselves.** Two mutation checks first printed nothing:
+`if (true)` made the following code unreachable, which this build treats as an error, so the
+mutant never compiled. An empty mutation report is not a pass; each was redone with a mutation
+that compiles. And the first tampered-LFS test changed the length, so the size check alone caught
+it and the hash comparison was untested; the tamper is now the same length.
+
+---
+
 ### Versio Web: an external review's eight findings, all real, two smaller or larger than stated
 
 **2026-10-11, branch `WebViewer`.** A review of the branch was pasted in with eight findings. Each
