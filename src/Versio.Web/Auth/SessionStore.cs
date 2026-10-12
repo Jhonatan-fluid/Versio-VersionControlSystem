@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.DataProtection;
 using Microsoft.Extensions.Caching.Distributed;
 using Microsoft.Extensions.Options;
 using Versio.Core.Abstractions;
+using Versio.Core.Logging;
 
 namespace Versio.Web.Auth;
 
@@ -70,7 +71,7 @@ public sealed record Session
 /// it read before it (see <see cref="FindAsync"/>).
 /// </para>
 /// </remarks>
-public sealed class SessionStore(IDistributedCache store, IDataProtectionProvider protection, IClock clock, IOptions<WebOptions> options)
+public sealed class SessionStore(IDistributedCache store, IDataProtectionProvider protection, IClock clock, IOptions<WebOptions> options, IVersioLogger log)
 {
     private static readonly TimeSpan TouchEvery = TimeSpan.FromMinutes(1);
 
@@ -154,15 +155,47 @@ public sealed class SessionStore(IDistributedCache store, IDataProtectionProvide
             return null;
         }
 
+        Session? session;
         try
         {
-            return JsonSerializer.Deserialize<Session>(bytes);
+            session = JsonSerializer.Deserialize<Session>(bytes);
         }
         catch (JsonException)
         {
             // An entry this version cannot read (written by another version, or damaged): a
             // sign-in, not an error page.
             return null;
+        }
+
+        // Tokens this instance cannot decrypt: sealed under another key ring. With Web:Redis set
+        // and no shared Web:KeysDirectory, every restart (and every second instance) has its own
+        // ring, and AccessToken threw for every signed-in request and every sign-out, a 500
+        // each (found in review). A sign-in instead, as for an entry this version cannot parse.
+        // Not removed: another instance's ring may still read it. WebHost warns at startup.
+        if (session is not null && !Readable(session))
+        {
+            log.Warn(LogCategory.Auth, $"Session for {session.Login} sealed under another key ring; treated as signed out (share Web:KeysDirectory between instances)");
+            return null;
+        }
+
+        return session;
+    }
+
+    private bool Readable(Session session)
+    {
+        try
+        {
+            _tokens.Unprotect(session.ProtectedAccessToken);
+            if (session.ProtectedRefreshToken.Length > 0)
+            {
+                _tokens.Unprotect(session.ProtectedRefreshToken);
+            }
+
+            return true;
+        }
+        catch (System.Security.Cryptography.CryptographicException)
+        {
+            return false;
         }
     }
 

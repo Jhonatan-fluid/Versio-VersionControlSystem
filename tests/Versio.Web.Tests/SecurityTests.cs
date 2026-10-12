@@ -613,6 +613,32 @@ public sealed class SecurityTests
         Assert.Single(oauth.Revoked);
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Shared_sessions_without_a_shared_key_ring_are_warned_about_at_startup(bool keys)
+    {
+        // Found in review: Redis without Web:KeysDirectory shares sessions but not the keys that
+        // seal them, so people are signed out at random. Startup says so; with a ring, it does not.
+        var settings = new Dictionary<string, string?> { ["Web:Redis"] = "127.0.0.1:1" };
+        if (keys)
+        {
+            settings["Web:KeysDirectory"] = Path.Combine(Path.GetTempPath(), "versio-web-keys", Guid.NewGuid().ToString("N"));
+        }
+
+        string log;
+        await using (var host = await TestHost.StartAsync(GitHub(out _, out _), settings))
+        {
+            log = string.Concat(Directory.GetFiles(host.LogDirectory).Select(f =>
+            {
+                using var stream = new FileStream(f, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+                return new StreamReader(stream).ReadToEnd();
+            }));
+        }
+
+        Assert.Equal(!keys, log.Contains("Web:Redis is set but Web:KeysDirectory is not", StringComparison.Ordinal));
+    }
+
     [Fact]
     public async Task A_token_GitHub_gave_no_expiry_is_not_given_one()
     {

@@ -3,6 +3,7 @@ using Microsoft.Extensions.Caching.Distributed;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Options;
 using Versio.Core.Abstractions;
+using Versio.Core.Logging;
 using Versio.Web.Auth;
 using Xunit;
 
@@ -59,7 +60,7 @@ public sealed class SessionStoreTests
         // refresh token. The next renewal failed and signed the person out.
         var clock = new FakeClock(DateTimeOffset.UtcNow);
         var cache = new StaleReadCache(new MemoryDistributedCache(Options.Create(new MemoryDistributedCacheOptions())));
-        var store = new SessionStore(cache, new EphemeralDataProtectionProvider(), clock, Options.Create(new WebOptions()));
+        var store = new SessionStore(cache, new EphemeralDataProtectionProvider(), clock, Options.Create(new WebOptions()), NullLogger.Instance);
         var session = await store.CreateAsync(1, "alice", "Alice", "", "old-token", clock.UtcNow.AddMinutes(2), "old-refresh", clock.UtcNow.AddDays(30));
         var before = await cache.GetAsync("versio-session:" + session.Id);
 
@@ -78,13 +79,28 @@ public sealed class SessionStoreTests
     }
 
     [Fact]
+    public async Task A_session_sealed_under_another_key_ring_is_signed_out_not_an_error()
+    {
+        // Found in review: Redis shared the session, but each instance (or each restart) had its
+        // own key ring, and decrypting the token threw for every signed-in request: a 500.
+        var clock = new FakeClock(DateTimeOffset.UtcNow);
+        var cache = new MemoryDistributedCache(Options.Create(new MemoryDistributedCacheOptions()));
+        var first = new SessionStore(cache, new EphemeralDataProtectionProvider(), clock, Options.Create(new WebOptions()), NullLogger.Instance);
+        var second = new SessionStore(cache, new EphemeralDataProtectionProvider(), clock, Options.Create(new WebOptions()), NullLogger.Instance);
+        var session = await first.CreateAsync(1, "alice", "Alice", "", "token", clock.UtcNow.AddHours(8), "refresh", clock.UtcNow.AddDays(30));
+
+        Assert.Null(await second.FindAsync(session.Id));
+        Assert.NotNull(await first.FindAsync(session.Id));
+    }
+
+    [Fact]
     public async Task A_session_stored_before_last_seen_was_dropped_still_reads()
     {
         // Sessions outlive a deploy in Redis. The field went with the fix above; an entry written
         // by the version before must not become a sign-out.
         var clock = new FakeClock(DateTimeOffset.UtcNow);
         var cache = new MemoryDistributedCache(Options.Create(new MemoryDistributedCacheOptions()));
-        var store = new SessionStore(cache, new EphemeralDataProtectionProvider(), clock, Options.Create(new WebOptions()));
+        var store = new SessionStore(cache, new EphemeralDataProtectionProvider(), clock, Options.Create(new WebOptions()), NullLogger.Instance);
         var session = await store.CreateAsync(1, "alice", "Alice", "", "token", clock.UtcNow.AddHours(8), null, default);
         var json = System.Text.Json.Nodes.JsonNode.Parse(await cache.GetAsync("versio-session:" + session.Id))!.AsObject();
         json["LastSeen"] = clock.UtcNow;

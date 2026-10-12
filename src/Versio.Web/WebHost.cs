@@ -228,6 +228,16 @@ public static class WebHost
         app.MapFallbackToFile("/{owner}/{repo}/{**rest}", "index.html", staticFiles);
         app.MapFallbackToFile("index.html", staticFiles);
 
+        if (!string.IsNullOrEmpty(redis) && string.IsNullOrEmpty(keys))
+        {
+            // Shared sessions, private keys: each instance, and each restart, has its own key
+            // ring, so a session another instance sealed cannot be decrypted here. SessionStore
+            // treats that as signed out rather than failing, but everyone is still signed out at
+            // random. Said once, loudly, at startup (found in review).
+            logger.Warn(LogCategory.App,
+                "Web:Redis is set but Web:KeysDirectory is not: sessions are shared, the keys that seal them are not, so people will be signed out at random; give every instance one key ring");
+        }
+
         var g = options.GitHub;
         // The regex state is IN the starting line, not a separate warning after it: a reader (or a
         // test) that stops at "starting" must still see it. The first version logged it after,
