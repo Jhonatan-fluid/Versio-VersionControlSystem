@@ -182,6 +182,27 @@ public sealed class ViewServiceTests
     }
 
     [Fact]
+    public async Task A_warm_cache_still_answers_each_layer_with_that_layer()
+    {
+        // One service, one cache, as the server runs: the first layer's answer must not be handed
+        // back for the second. The chip test above built a fresh cache per call and could not see it.
+        const string Gvl = "fixtures/projects/MachineWithMembers/Device/Plc Logic/Application/Glob_Var.gvl";
+        var (views, models) = Services();
+        var model = await Model(models, "main");
+
+        var xml = (await views.ViewAsync(RepoAccess.Anonymous, model, Gvl + ".xml", PaneView.Raw, false, CancellationToken.None)).Value!;
+        var st = (await views.ViewAsync(RepoAccess.Anonymous, model, Gvl + ".st", PaneView.Raw, false, CancellationToken.None)).Value!;
+        var compareXml = (await views.CompareAsync(RepoAccess.Anonymous, model, model, Gvl + ".xml", PaneView.Raw, false, CancellationToken.None)).Value!;
+        var compareSt = (await views.CompareAsync(RepoAccess.Anonymous, model, model, Gvl + ".st", PaneView.Raw, false, CancellationToken.None)).Value!;
+
+        Assert.Equal(Gvl + ".xml", xml.Path);
+        Assert.Equal(Gvl + ".st", st.Path);
+        Assert.NotEqual(xml.Html, st.Html);
+        Assert.Equal(Gvl + ".xml", compareXml.Path);
+        Assert.Equal(Gvl + ".st", compareSt.Path);
+    }
+
+    [Fact]
     public async Task A_readme_is_a_page_and_raw_is_the_file()
     {
         var rendered = await View("README.md");

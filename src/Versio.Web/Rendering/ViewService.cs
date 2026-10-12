@@ -61,8 +61,11 @@ public sealed record ViewResult(
 /// a part of the XML the ladder does not draw must not read as an untouched block.
 /// </para>
 /// <para>
-/// <b>Cached by content and commit.</b> A fragment's key is the renderer version, the repository,
-/// the commit or commits, the view and every file's blob hash on both sides. The commit is in it
+/// <b>Cached by content, commit and the file shown.</b> A fragment's key is the renderer version,
+/// the repository, the commit or commits, the file being shown, the view and every file's blob
+/// hash on both sides. The file shown is in it because one object's layers share every blob hash:
+/// without it, a layer chip got the first layer's cached answer back (found in review; the first
+/// test of the chips built a new cache per call and never saw a warm entry). The commit is in it
 /// because a member table's links and "type changed" marks depend on files outside the object:
 /// the same blobs at another commit can link elsewhere. A renderer change bumps
 /// <see cref="RendererVersion"/>. The caller resolved both commits with
@@ -91,7 +94,7 @@ public sealed class ViewService(
 
         var files = await ReadAllAsync(access, model, node, ct).ConfigureAwait(false);
         var shown = Shown(node, path);
-        var key = Key("view", model, model.CommitSha, view, sideBySide, files, null);
+        var key = Key("view", model, model.CommitSha + ":" + shown, view, sideBySide, files, null);
         return await CachedAsync(key, path, () => view == PaneView.Raw
             ? RawSingle(shown, files)
             : Rendered(model, node, shown, files), () => Plain(shown, files)).ConfigureAwait(false);
@@ -111,7 +114,7 @@ public sealed class ViewService(
         var before = reads[0];
         var after = reads[1];
         var shown = Shown(node, path);
-        var key = Key("compare", newer, older.CommitSha + ".." + newer.CommitSha, view, sideBySide, after, before);
+        var key = Key("compare", newer, older.CommitSha + ".." + newer.CommitSha + ":" + shown, view, sideBySide, after, before);
         return await CachedAsync(key, path, () => view == PaneView.Raw
             ? RawCompare(shown, before, after, sideBySide)
             : RenderedCompare(older, newer, node, shown, before, after, sideBySide), () => Plain(shown, after.ContainsKey(shown) ? after : before)).ConfigureAwait(false);
