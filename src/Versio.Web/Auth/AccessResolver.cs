@@ -37,6 +37,11 @@ public sealed class AccessResolver(
 
     private static readonly TimeSpan VisibilityRecheck = TimeSpan.FromMinutes(5);
 
+    /// <summary>How long a refused renewal waits for another instance's, in looks.</summary>
+    internal const int RenewalLooks = 5;
+
+    internal static readonly TimeSpan RenewalLookEvery = TimeSpan.FromMilliseconds(200);
+
     /// <summary>The signed-in session for this request, or null; refreshed when its token is close to expiry.</summary>
     public async Task<Session?> SessionAsync(HttpContext context, CancellationToken ct)
     {
@@ -76,21 +81,44 @@ public sealed class AccessResolver(
             if (sessions.RefreshToken(current) is { } refresh && current.RefreshExpires > clock.UtcNow
                 && await oauth.RefreshAsync(refresh, ct).ConfigureAwait(false) is { } renewed)
             {
+                // Signed out while GitHub was answering: nobody holds this id any more, and writing
+                // the session back would leave a live, unrevoked token in the store until it
+                // expired (found in review). There is no compare-and-swap, so this narrows the
+                // window rather than closing it; THREAT-MODEL records the rest.
+                if (await sessions.PeekAsync(current.Id, ct).ConfigureAwait(false) is null)
+                {
+                    await oauth.RevokeAsync(renewed.AccessToken, ct).ConfigureAwait(false);
+                    log.Info(LogCategory.Auth, $"Renewed token for {current.Login} revoked: the session ended while it was being renewed");
+                    return null;
+                }
+
                 log.Info(LogCategory.Auth, $"Renewed the token for {current.Login} (user {current.GitHubUserId})");
                 return await sessions.UpdateTokensAsync(current, renewed.AccessToken, renewed.AccessExpires, renewed.RefreshToken, renewed.RefreshExpires, ct).ConfigureAwait(false);
             }
 
             // The gate holds within one process only. Another instance sharing the store may have
-            // renewed with the same single-use refresh token a moment ago: if the stored session
-            // is fresh now, that is the answer, not a sign-out.
-            if (await sessions.PeekAsync(session.Id, ct).ConfigureAwait(false) is { } after
-                && after.AccessExpires - clock.UtcNow > TimeSpan.FromMinutes(5))
+            // renewed with the same single-use refresh token, so this refusal may be that renewal
+            // winning, and its write may land a moment after this one's refusal: look for it for a
+            // second before answering.
+            //
+            // And never delete the session here. The first version removed it after one look, and
+            // when the winner's write landed between that look and the remove, the remove deleted
+            // the renewal and the next request was signed out (found in review; it needs two
+            // instances, Web:Redis). Deleting bought nothing: this request is answered as signed
+            // out either way, a new sign-in replaces the browser's session, and a renewal that
+            // failed because GitHub was down no longer signs anyone out for good.
+            for (var look = 0; look < RenewalLooks; look++)
             {
-                return after;
+                if (await sessions.PeekAsync(session.Id, ct).ConfigureAwait(false) is { } after
+                    && after.AccessExpires - clock.UtcNow > TimeSpan.FromMinutes(5))
+                {
+                    return after;
+                }
+
+                await Task.Delay(RenewalLookEvery, ct).ConfigureAwait(false);
             }
 
-            log.Info(LogCategory.Auth, $"Session for {current.Login} ended: its token expired and could not be renewed");
-            await sessions.RemoveAsync(current.Id, ct).ConfigureAwait(false);
+            log.Info(LogCategory.Auth, $"Session for {current.Login} not used: its token expired and could not be renewed");
             return null;
         }
         finally

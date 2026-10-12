@@ -554,6 +554,66 @@ public sealed class SecurityTests
     }
 
     [Fact]
+    public async Task A_renewal_refused_because_another_instance_won_finds_that_instances_write()
+    {
+        // Found in review: across instances, the loser of a renewal peeked once and then deleted
+        // the session; when the winner's write landed between the two, the delete removed the
+        // renewal. Here the refresh token was already spent elsewhere, and "the other instance"
+        // writes its renewal a moment after this one is refused.
+        await using var oauth = await FakeOAuth.StartAsync();
+        await using var host = await TestHost.StartAsync(GitHub(out _, out _), oauth.Settings());
+        var sessions = host.Services.GetRequiredService<SessionStore>();
+        var session = await sessions.CreateAsync(42, "alice", "Alice", "", "alice-token", DateTimeOffset.UtcNow.AddMinutes(1), "spent-refresh", DateTimeOffset.UtcNow.AddDays(30));
+
+        var request = host.GetAsync("/api/repos/acme/secret/tree", $"{AccessResolver.SessionCookie}={session.Id}");
+        await Task.Delay(AccessResolver.RenewalLookEvery * 2);
+        await sessions.UpdateTokensAsync(session, "alice-token", DateTimeOffset.UtcNow.AddHours(8), "fresh-refresh", DateTimeOffset.UtcNow.AddDays(30));
+
+        (await request).AssertStatus(HttpStatusCode.OK);
+        Assert.Equal("fresh-refresh", sessions.RefreshToken((await sessions.PeekAsync(session.Id))!));
+    }
+
+    [Fact]
+    public async Task A_renewal_nobody_won_answers_signed_out_and_deletes_nothing()
+    {
+        // Deleting bought nothing and cost a renewal (above); a refused renewal now leaves the
+        // entry, which a new sign-in replaces and the store's own expiry ends.
+        await using var oauth = await FakeOAuth.StartAsync();
+        await using var host = await TestHost.StartAsync(GitHub(out _, out _), oauth.Settings());
+        var sessions = host.Services.GetRequiredService<SessionStore>();
+        var session = await sessions.CreateAsync(42, "alice", "Alice", "", "alice-token", DateTimeOffset.UtcNow.AddMinutes(1), "spent-refresh", DateTimeOffset.UtcNow.AddDays(30));
+
+        (await host.GetAsync("/api/repos/acme/secret/tree", $"{AccessResolver.SessionCookie}={session.Id}")).AssertStatus(HttpStatusCode.NotFound);
+        Assert.NotNull(await sessions.PeekAsync(session.Id));
+    }
+
+    [Fact]
+    public async Task A_sign_out_during_a_renewal_revokes_the_new_token_and_writes_nothing_back()
+    {
+        // Found in review: a renewal already talking to GitHub when the person signed out wrote
+        // the session back with fresh tokens nobody held and nobody would revoke.
+        await using var oauth = await FakeOAuth.StartAsync();
+        oauth.LiveRefreshTokens["alice-refresh"] = true;
+        oauth.HoldRefresh = new TaskCompletionSource();
+        await using var host = await TestHost.StartAsync(GitHub(out _, out _), oauth.Settings());
+        var sessions = host.Services.GetRequiredService<SessionStore>();
+        var session = await sessions.CreateAsync(42, "alice", "Alice", "", "alice-token", DateTimeOffset.UtcNow.AddMinutes(1), "alice-refresh", DateTimeOffset.UtcNow.AddDays(30));
+
+        var request = host.GetAsync("/api/repos/acme/secret/tree", $"{AccessResolver.SessionCookie}={session.Id}");
+        for (var i = 0; i < 100 && !oauth.Exchanges.Any(e => e.GetValueOrDefault("grant_type") == "refresh_token"); i++)
+        {
+            await Task.Delay(20);
+        }
+
+        await sessions.RemoveAsync(session.Id);
+        oauth.HoldRefresh.SetResult();
+
+        (await request).AssertStatus(HttpStatusCode.NotFound);
+        Assert.Null(await sessions.PeekAsync(session.Id));
+        Assert.Single(oauth.Revoked);
+    }
+
+    [Fact]
     public async Task A_token_GitHub_gave_no_expiry_is_not_given_one()
     {
         // An App with expiry turned off answers with no expires_in and no refresh token. The first
