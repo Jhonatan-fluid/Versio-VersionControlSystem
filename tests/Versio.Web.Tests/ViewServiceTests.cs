@@ -126,6 +126,66 @@ public sealed class ViewServiceTests
         Assert.DoesNotContain("added", result.Html, StringComparison.OrdinalIgnoreCase);
     }
 
+    /// <summary>A vendor whose parser throws on one made-up extension, as a parser might on a hostile file.</summary>
+    private sealed class ThrowingFormat : Versio.Core.Plc.IPlcProjectFormat
+    {
+        public Versio.Core.Plc.PlcVendor Vendor => Versio.Core.Plc.PlcVendor.Studio5000;
+
+        public string DisplayName => "throws (stand-in)";
+
+        public Versio.Core.Plc.PlcCapabilities Capabilities => new() { TextualExport = true, TypicalStartupCost = TimeSpan.Zero };
+
+        public IReadOnlyList<string> ProjectExtensions => [".boomproj"];
+
+        public bool IsTemplate(string path) => false;
+
+        public string ConventionalExportPath(string projectPath) => projectPath;
+
+        public string? OccupancyMarkerFor(string projectPath) => null;
+
+        public IReadOnlyList<string> TransientPatternsFor(string projectPath) => [];
+
+        public Versio.Core.Plc.ProjectOccupancy ParseOccupancy(string markerContents) => Versio.Core.Plc.ProjectOccupancy.Free;
+
+        public bool NeedsTextToPlan(string relativePath) => false;
+
+        public Versio.Core.Plc.ImportPlan PlanImport(ProjectManifest? manifest, IReadOnlyList<Versio.Core.Plc.MirrorFile> mirror, IReadOnlyDictionary<string, string> departed) =>
+            new() { Files = [] };
+
+        public ObjectTypeName? DisplayNameFor(string type) => null;
+
+        public MemberTable? TryParseMemberTable(string relativePath, string content) =>
+            relativePath.EndsWith(".boom", StringComparison.Ordinal) ? throw new InvalidOperationException("parser fell over") : null;
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task A_parser_that_throws_gives_the_plain_text_not_an_error(bool compare)
+    {
+        // Found in review: CachedAsync caught only timeouts, so a vendor parser throwing on a
+        // hostile file was a 500 for the reader instead of the plain-text fallback.
+        var files = new Dictionary<string, byte[]>(_github.CommitFiles(_repo, "main"), StringComparer.Ordinal) { ["notes.boom"] = Encoding.UTF8.GetBytes("<x/>\n") };
+        _github.Commit(_repo, "boom", files);
+        var (views, models) = Services();
+        var model = await Model(models, "boom");
+        Versio.Core.Plc.PlcFormats.Register(new ThrowingFormat());
+        try
+        {
+            var result = compare
+                ? await views.CompareAsync(RepoAccess.Anonymous, model, model, "notes.boom", PaneView.Rendered, false, CancellationToken.None)
+                : await views.ViewAsync(RepoAccess.Anonymous, model, "notes.boom", PaneView.Rendered, false, CancellationToken.None);
+
+            Assert.True(result.Ok);
+            Assert.Contains("&lt;x/&gt;", result.Value!.Html, StringComparison.Ordinal);
+            Assert.Contains(ViewService.ParserFailedNotice, result.Value.Notices);
+        }
+        finally
+        {
+            Versio.Core.Plc.PlcFormats.Unregister(Versio.Core.Plc.PlcVendor.Studio5000);
+        }
+    }
+
     [Fact]
     public async Task A_read_that_failed_is_not_remembered_once_GitHub_answers_again()
     {

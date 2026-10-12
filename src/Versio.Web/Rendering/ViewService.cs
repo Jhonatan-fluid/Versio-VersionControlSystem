@@ -97,7 +97,7 @@ public sealed class ViewService(
         var key = Key("view", model, model.CommitSha + ":" + shown, view, sideBySide, files, null);
         return await CachedAsync(key, path, () => view == PaneView.Raw
             ? RawSingle(shown, files)
-            : Rendered(model, node, shown, files), () => Plain(shown, files), Lasting(files.Values)).ConfigureAwait(false);
+            : Rendered(model, node, shown, files), notice => Plain(shown, files, notice), Lasting(files.Values)).ConfigureAwait(false);
     }
 
     /// <summary>One object in two commits: the older one, then the newer.</summary>
@@ -117,7 +117,7 @@ public sealed class ViewService(
         var key = Key("compare", newer, older.CommitSha + ".." + newer.CommitSha + ":" + shown, view, sideBySide, after, before);
         return await CachedAsync(key, path, () => view == PaneView.Raw
             ? RawCompare(shown, before, after, sideBySide)
-            : RenderedCompare(older, newer, node, shown, before, after, sideBySide), () => Plain(shown, after.ContainsKey(shown) ? after : before),
+            : RenderedCompare(older, newer, node, shown, before, after, sideBySide), notice => Plain(shown, after.ContainsKey(shown) ? after : before, notice),
             Lasting(before.Values.Concat(after.Values))).ConfigureAwait(false);
     }
 
@@ -497,6 +497,9 @@ public sealed class ViewService(
     internal const string OverBudgetNotice =
         "This file took too long to draw, so it is shown as plain text.";
 
+    internal const string ParserFailedNotice =
+        "This file could not be drawn, so it is shown as plain text.";
+
     /// <summary>One version shown: there is nothing it is compared with, so nothing to say about changes.</summary>
     internal static readonly LadderWording SingleWording = new("", "Every {0} is new.");
 
@@ -599,12 +602,12 @@ public sealed class ViewService(
         return null;
     }
 
-    private static ViewResult Plain(string shown, IReadOnlyDictionary<string, Layer> files)
+    private static ViewResult Plain(string shown, IReadOnlyDictionary<string, Layer> files, string notice)
     {
         var node = new ProjectTreeNode { Name = Name(shown), Path = shown, Kind = ProjectNodeKind.File, Files = [shown] };
         return files.TryGetValue(shown, out var layer) && layer.Text is { } text
-            ? Result("source", node, shown, SourceHtml.Fragment(FileRows(text), SyntaxLanguage.PlainText), [OverBudgetNotice])
-            : Result("missing", node, shown, "<p class=\"cd-empty\">" + CodeHtml.E(OverBudgetNotice) + "</p>", [OverBudgetNotice]);
+            ? Result("source", node, shown, SourceHtml.Fragment(FileRows(text), SyntaxLanguage.PlainText), [notice])
+            : Result("missing", node, shown, "<p class=\"cd-empty\">" + CodeHtml.E(notice) + "</p>", [notice]);
     }
 
     private static ViewResult Missing(ProjectTreeNode node, string shown) =>
@@ -660,7 +663,7 @@ public sealed class ViewService(
     /// half an hour after GitHub answered again (found in review). Too large is about the file,
     /// so it lasts.
     /// </param>
-    private async Task<RepoResult<ViewResult>> CachedAsync(string key, string path, Func<ViewResult> render, Func<ViewResult> fallback, bool remember)
+    private async Task<RepoResult<ViewResult>> CachedAsync(string key, string path, Func<ViewResult> render, Func<string, ViewResult> fallback, bool remember)
     {
         if (cache.TryGetValue(key, out ViewResult? hit) && hit is not null)
         {
@@ -677,14 +680,25 @@ public sealed class ViewService(
         {
             // Before TimeoutException, which it derives from.
             log.Warn(LogCategory.Web, $"A pattern timed out rendering {path}; shown as plain text (security rule 3)");
-            return RepoResult<ViewResult>.Of(fallback());
+            return RepoResult<ViewResult>.Of(fallback(OverBudgetNotice));
         }
         catch (TimeoutException)
         {
             // The render keeps running to its own bounds; the reader is not kept waiting for it.
             // Not cached: a slow render on a busy machine may be quick on an idle one.
             log.Warn(LogCategory.Web, $"Rendering {path} exceeded {O.RenderBudget.TotalSeconds:0.#} s; shown as plain text (security rule 3)");
-            return RepoResult<ViewResult>.Of(fallback());
+            return RepoResult<ViewResult>.Of(fallback(OverBudgetNotice));
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            // A parser that throws on a hostile file. Only the two timeouts above were caught at
+            // first, so this was a 500 for the reader instead of the file as text (found in
+            // review). The exception's type and where it was thrown are logged, not its message:
+            // a parser's message can quote the file, and file contents never reach the log. Not
+            // cached, so a fixed parser is picked up without waiting out the entry.
+            log.Error(LogCategory.Web,
+                $"Rendering {path} threw {ex.GetType().Name} in {ex.TargetSite?.DeclaringType?.FullName}.{ex.TargetSite?.Name}; shown as plain text (security rule 3)");
+            return RepoResult<ViewResult>.Of(fallback(ParserFailedNotice));
         }
 
         if (!remember)
