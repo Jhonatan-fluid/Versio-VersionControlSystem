@@ -75,6 +75,9 @@ internal sealed class FakeGitHub : IRepoSource
 
     public ConcurrentQueue<(string Repo, string What, RepoAccess Access)> Reads { get; } = new();
 
+    /// <summary>Blobs whose read fails, and how: a rate limit, an outage, for as long as they stay listed.</summary>
+    public ConcurrentDictionary<string, RepoFailure> FailingBlobs { get; } = new(StringComparer.Ordinal);
+
     public FakeRepo Add(string owner, string name, bool isPrivate = false)
     {
         var repo = new FakeRepo { Owner = owner, Name = name, Private = isPrivate };
@@ -95,6 +98,9 @@ internal sealed class FakeGitHub : IRepoSource
 
         return sha;
     }
+
+    /// <summary>The files of the commit <paramref name="branch"/> points at.</summary>
+    public Dictionary<string, byte[]> CommitFiles(FakeRepo repo, string branch) => repo.Commits[repo.Refs[branch]];
 
     /// <summary>The files of this repository under the given folders, as on disk.</summary>
     public static Dictionary<string, byte[]> FromDisk(params string[] folders)
@@ -184,6 +190,11 @@ internal sealed class FakeGitHub : IRepoSource
         if (!r.Ok)
         {
             return Task.FromResult(r.As<byte[]>());
+        }
+
+        if (FailingBlobs.TryGetValue(blobSha, out var failure))
+        {
+            return Task.FromResult(RepoResult<byte[]>.Fail(failure));
         }
 
         // Only a blob that is in one of THIS repository's commits: a blob id is not a key to

@@ -97,7 +97,7 @@ public sealed class ViewService(
         var key = Key("view", model, model.CommitSha + ":" + shown, view, sideBySide, files, null);
         return await CachedAsync(key, path, () => view == PaneView.Raw
             ? RawSingle(shown, files)
-            : Rendered(model, node, shown, files), () => Plain(shown, files)).ConfigureAwait(false);
+            : Rendered(model, node, shown, files), () => Plain(shown, files), Lasting(files.Values)).ConfigureAwait(false);
     }
 
     /// <summary>One object in two commits: the older one, then the newer.</summary>
@@ -117,7 +117,8 @@ public sealed class ViewService(
         var key = Key("compare", newer, older.CommitSha + ".." + newer.CommitSha + ":" + shown, view, sideBySide, after, before);
         return await CachedAsync(key, path, () => view == PaneView.Raw
             ? RawCompare(shown, before, after, sideBySide)
-            : RenderedCompare(older, newer, node, shown, before, after, sideBySide), () => Plain(shown, after.ContainsKey(shown) ? after : before)).ConfigureAwait(false);
+            : RenderedCompare(older, newer, node, shown, before, after, sideBySide), () => Plain(shown, after.ContainsKey(shown) ? after : before),
+            Lasting(before.Values.Concat(after.Values))).ConfigureAwait(false);
     }
 
     /// <summary>The paths that differ between two commits, with what happened to each.</summary>
@@ -274,14 +275,24 @@ public sealed class ViewService(
         var notices = new List<string>();
         var newer = after.TryGetValue(shown, out var a) ? a : null;
         var older = before.TryGetValue(shown, out var b) ? b : null;
-        if ((newer ?? older) is not { } any)
+        if (newer is null && older is null)
         {
             return Missing(node, shown);
         }
 
-        if (any.Binary || any.Failure != RepoFailure.None || any.TooLargeToDraw)
+        // Both sides, not whichever is found first. A side that could not be read has no text,
+        // and no text is how "added" and "removed" are spelt below: the first version checked
+        // only the newer copy, so a rate-limited older one drew every member as added and said
+        // nothing (found in review). RawCompare says what could not be read.
+        if (Undrawable(newer) || Undrawable(older))
         {
             return RawCompare(shown, before, after, sideBySide);
+        }
+
+        // The object's other layers too: a table or a ladder can come from the .xml beside an .st.
+        if (CouldNotRead(node, shown, node.Files, before, after) is { } refused)
+        {
+            return refused;
         }
 
         var changedFiles = node.Files.Any(f => (before.TryGetValue(f, out var x) ? x.BlobSha : null) != (after.TryGetValue(f, out var y) ? y.BlobSha : null));
@@ -377,6 +388,12 @@ public sealed class ViewService(
         if (older?.Failure is RepoFailure.TooLarge || newer?.Failure is RepoFailure.TooLarge)
         {
             return Result("too-large", node, shown, "<p class=\"cd-empty\">This file is too large to compare here.</p>", []);
+        }
+
+        // Diffed against null, an unread side reads as a file added or deleted outright.
+        if (CouldNotRead(node, shown, [shown], before, after) is { } refused)
+        {
+            return refused;
         }
 
         var large = older?.TooLargeToDraw == true || newer?.TooLargeToDraw == true;
@@ -550,6 +567,38 @@ public sealed class ViewService(
         return null;
     }
 
+    /// <summary>Whether an answer drawn from these layers holds as long as their blobs do.</summary>
+    private static bool Lasting(IEnumerable<Layer> layers) =>
+        layers.All(l => l.Failure is RepoFailure.None or RepoFailure.TooLarge);
+
+    private static bool Undrawable(Layer? layer) =>
+        layer is not null && (layer.Binary || layer.Failure != RepoFailure.None || layer.TooLargeToDraw);
+
+    /// <summary>
+    /// The first of <paramref name="files"/> that is in a version but could not be read from it,
+    /// said as such; null when every one that exists was read. A file that is simply not in a
+    /// version is a real addition or deletion and is drawn as one.
+    /// </summary>
+    private static ViewResult? CouldNotRead(ProjectTreeNode node, string shown, IEnumerable<string> files,
+        IReadOnlyDictionary<string, Layer> before, IReadOnlyDictionary<string, Layer> after)
+    {
+        foreach (var file in files)
+        {
+            foreach (var (side, layers) in new[] { ("older", before), ("newer", after) })
+            {
+                if (layers.TryGetValue(file, out var layer) && layer.Failure != RepoFailure.None)
+                {
+                    var what = file == shown ? "this file" : CodeHtml.E(Name(file));
+                    return Result("missing", node, shown,
+                        $"<p class=\"cd-empty\">The {side} version of {what} could not be read ({CodeHtml.E(layer.Failure.ToString())}), "
+                        + "so it is not compared: drawn without it, everything in it would read as new or gone.</p>", []);
+                }
+            }
+        }
+
+        return null;
+    }
+
     private static ViewResult Plain(string shown, IReadOnlyDictionary<string, Layer> files)
     {
         var node = new ProjectTreeNode { Name = Name(shown), Path = shown, Kind = ProjectNodeKind.File, Files = [shown] };
@@ -605,7 +654,13 @@ public sealed class ViewService(
     /// The file as escaped plain text, for a render that ran out of time. Escaping and
     /// hidden-character marking only: no tokenizer, no parser, nothing that can be slow.
     /// </param>
-    private async Task<RepoResult<ViewResult>> CachedAsync(string key, string path, Func<ViewResult> render, Func<ViewResult> fallback)
+    /// <param name="remember">
+    /// False when a layer's read failed for a reason of the moment (a rate limit, an outage): the
+    /// answer says "could not be read", and cached under the blobs' key it went on saying so for
+    /// half an hour after GitHub answered again (found in review). Too large is about the file,
+    /// so it lasts.
+    /// </param>
+    private async Task<RepoResult<ViewResult>> CachedAsync(string key, string path, Func<ViewResult> render, Func<ViewResult> fallback, bool remember)
     {
         if (cache.TryGetValue(key, out ViewResult? hit) && hit is not null)
         {
@@ -630,6 +685,11 @@ public sealed class ViewService(
             // Not cached: a slow render on a busy machine may be quick on an idle one.
             log.Warn(LogCategory.Web, $"Rendering {path} exceeded {O.RenderBudget.TotalSeconds:0.#} s; shown as plain text (security rule 3)");
             return RepoResult<ViewResult>.Of(fallback());
+        }
+
+        if (!remember)
+        {
+            return RepoResult<ViewResult>.Of(result);
         }
 
         cache.Set(key, result, new MemoryCacheEntryOptions { Size = Math.Max(1, result.Html.Length / 1024), SlidingExpiration = TimeSpan.FromMinutes(30) });

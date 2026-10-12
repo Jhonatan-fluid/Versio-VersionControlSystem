@@ -109,6 +109,46 @@ public sealed class ViewServiceTests
         Assert.Contains(ViewService.TypeChangedNotice, view.Notices);
     }
 
+    [Theory]
+    [InlineData(PaneView.Rendered)]
+    [InlineData(PaneView.Raw)]
+    public async Task A_compare_whose_older_copy_could_not_be_read_says_so_and_draws_nothing_as_added(PaneView view)
+    {
+        // Found in review: only the side found first was checked, so a rate-limited older copy
+        // read as no file at all and every member was drawn as added; Raw diffed against nothing.
+        _github.FailingBlobs[FakeGitHub.BlobSha(_github.CommitFiles(_repo, "main")[Settings])] = RepoFailure.RateLimited;
+
+        var result = await Compare(Settings, view);
+
+        Assert.Equal("missing", result.Kind);
+        Assert.Contains("older version", result.Html, StringComparison.Ordinal);
+        Assert.Contains("RateLimited", result.Html, StringComparison.Ordinal);
+        Assert.DoesNotContain("added", result.Html, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task A_read_that_failed_is_not_remembered_once_GitHub_answers_again()
+    {
+        // A rate limit is about the moment, not the file: the answer it produced must not be
+        // served from the cache for the next half hour.
+        var (views, models) = Services();
+        var main = await Model(models, "main");
+        var next = await Model(models, "next");
+        var blob = FakeGitHub.BlobSha(_github.CommitFiles(_repo, "main")[Settings]);
+        _github.FailingBlobs[blob] = RepoFailure.RateLimited;
+        var during = (await views.CompareAsync(RepoAccess.Anonymous, main, next, Settings, PaneView.Rendered, false, CancellationToken.None)).Value!;
+        var single = (await views.ViewAsync(RepoAccess.Anonymous, main, Settings, PaneView.Rendered, false, CancellationToken.None)).Value!;
+
+        _github.FailingBlobs.Clear();
+        var after = (await views.CompareAsync(RepoAccess.Anonymous, main, next, Settings, PaneView.Rendered, false, CancellationToken.None)).Value!;
+        var singleAfter = (await views.ViewAsync(RepoAccess.Anonymous, main, Settings, PaneView.Rendered, false, CancellationToken.None)).Value!;
+
+        Assert.Equal("missing", during.Kind);
+        Assert.Equal("missing", single.Kind);
+        Assert.Equal("table", after.Kind);
+        Assert.Equal("table", singleAfter.Kind);
+    }
+
     [Fact]
     public async Task The_tree_has_each_projects_libraries_tasks_and_devices_from_its_catalogs()
     {
