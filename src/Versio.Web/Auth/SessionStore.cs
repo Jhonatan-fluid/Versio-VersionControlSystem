@@ -31,10 +31,12 @@ public sealed record Session
 
     public DateTimeOffset RefreshExpires { get; init; }
 
+    /// <summary>
+    /// When the session was made, for the absolute lifetime. There is no "last seen": activity is
+    /// the store's sliding expiry, because writing it here let a read overwrite a token renewal
+    /// (see <see cref="SessionStore.FindAsync"/>). An entry stored with that field still reads.
+    /// </summary>
     public required DateTimeOffset Created { get; init; }
-
-    /// <summary>When the session was made. Activity since is the store's sliding expiry, not this field, which is never rewritten.</summary>
-    public required DateTimeOffset LastSeen { get; init; }
 
     /// <summary>The <see cref="WebOptions.SessionEpoch"/> it was created under; a different epoch ends it.</summary>
     public required int Epoch { get; init; }
@@ -107,7 +109,6 @@ public sealed class SessionStore(IDistributedCache store, IDataProtectionProvide
             ProtectedRefreshToken = string.IsNullOrEmpty(refreshToken) ? string.Empty : _tokens.Protect(refreshToken),
             RefreshExpires = refreshExpires,
             Created = now,
-            LastSeen = now,
             Epoch = O.SessionEpoch,
         };
         await WriteAsync(session, ct).ConfigureAwait(false);

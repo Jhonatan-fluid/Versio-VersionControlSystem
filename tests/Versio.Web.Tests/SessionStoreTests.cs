@@ -76,4 +76,22 @@ public sealed class SessionStoreTests
         Assert.Equal("new-token", store.AccessToken(stored!));
         Assert.Equal("new-refresh", store.RefreshToken(stored!));
     }
+
+    [Fact]
+    public async Task A_session_stored_before_last_seen_was_dropped_still_reads()
+    {
+        // Sessions outlive a deploy in Redis. The field went with the fix above; an entry written
+        // by the version before must not become a sign-out.
+        var clock = new FakeClock(DateTimeOffset.UtcNow);
+        var cache = new MemoryDistributedCache(Options.Create(new MemoryDistributedCacheOptions()));
+        var store = new SessionStore(cache, new EphemeralDataProtectionProvider(), clock, Options.Create(new WebOptions()));
+        var session = await store.CreateAsync(1, "alice", "Alice", "", "token", clock.UtcNow.AddHours(8), null, default);
+        var json = System.Text.Json.Nodes.JsonNode.Parse(await cache.GetAsync("versio-session:" + session.Id))!.AsObject();
+        json["LastSeen"] = clock.UtcNow;
+        await cache.SetAsync("versio-session:" + session.Id, System.Text.Encoding.UTF8.GetBytes(json.ToJsonString()), new DistributedCacheEntryOptions());
+
+        var found = await store.FindAsync(session.Id);
+
+        Assert.Equal("token", store.AccessToken(found!));
+    }
 }
