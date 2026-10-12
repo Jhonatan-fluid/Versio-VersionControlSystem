@@ -172,6 +172,65 @@ public sealed class SecurityTests
         Assert.Equal(3, statuses.Count(s => s == HttpStatusCode.OK));
     }
 
+    [Theory]
+    [InlineData("127.0.0.1")]
+    [InlineData("127.0.0.0/8")]
+    public async Task Rule8_behind_a_trusted_proxy_each_client_has_its_own_rate(string proxy)
+    {
+        // Found in review: behind a load balancer every request came from the balancer's address,
+        // so the per-address limit was one bucket for everyone. The test's own connection stands
+        // in for the balancer.
+        await using var host = await TestHost.StartAsync(GitHub(out _, out _), new() { ["Web:RequestsPerMinute"] = "2", ["Web:TrustedProxies:0"] = proxy });
+
+        var busy = new List<HttpStatusCode>();
+        for (var i = 0; i < 3; i++)
+        {
+            busy.Add((await From(host, "203.0.113.7")).StatusCode);
+        }
+
+        var other = await From(host, "198.51.100.9");
+
+        Assert.Equal(HttpStatusCode.TooManyRequests, busy[^1]);
+        other.AssertStatus(HttpStatusCode.OK);
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("10.0.0.1")]
+    public async Task Rule8_a_forwarded_header_from_anyone_not_trusted_chooses_nothing(string? proxy)
+    {
+        // From anyone but a trusted proxy, X-Forwarded-For is a header the client wrote: believing
+        // it would let one client take a new rate bucket per request. With no proxy configured at
+        // all, ASP.NET's middleware would believe everyone (see WebHost.ForwardedFrom).
+        var settings = new Dictionary<string, string?> { ["Web:RequestsPerMinute"] = "2" };
+        if (proxy is not null)
+        {
+            settings["Web:TrustedProxies:0"] = proxy;
+        }
+
+        await using var host = await TestHost.StartAsync(GitHub(out _, out _), settings);
+
+        await From(host, "203.0.113.1");
+        await From(host, "203.0.113.2");
+        var third = await From(host, "203.0.113.3");
+
+        third.AssertStatus(HttpStatusCode.TooManyRequests);
+    }
+
+    [Fact]
+    public void A_trusted_proxy_that_is_not_an_address_stops_startup()
+    {
+        Assert.Throws<InvalidOperationException>(() => WebHost.ForwardedFrom(["10.0.0.0/99"]));
+        Assert.Throws<InvalidOperationException>(() => WebHost.ForwardedFrom(["proxy.internal"]));
+    }
+
+    private static Task<HttpResponseMessage> From(TestHost host, string client)
+    {
+        var request = new HttpRequestMessage(HttpMethod.Get, "/api/me");
+        request.Headers.Add("X-Forwarded-For", client);
+        return host.Client.SendAsync(request);
+    }
+
     [Fact]
     public async Task Rule14_a_session_cookie_is_not_trusted_after_the_epoch_moves()
     {

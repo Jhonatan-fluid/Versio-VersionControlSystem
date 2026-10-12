@@ -1,6 +1,8 @@
+using System.Net;
 using System.Text.RegularExpressions;
 using System.Threading.RateLimiting;
 using Microsoft.AspNetCore.DataProtection;
+using Microsoft.AspNetCore.HttpOverrides;
 using Versio.Core.Abstractions;
 using Versio.Core.Logging;
 using Versio.Core.Plc;
@@ -157,9 +159,22 @@ public static class WebHost
                 }));
         });
 
+        var forwarded = ForwardedFrom(options.TrustedProxies);
+
         configure?.Invoke(builder);
 
         var app = builder.Build();
+
+        // First, so the rate limiter, the request log and the OAuth callback's scheme all see the
+        // client rather than the proxy. Behind a load balancer every request arrives from the
+        // balancer's address, so the first version's per-address limit was one bucket for the
+        // whole internet: one busy client refused everyone (found in review). Not at all without a
+        // trusted proxy: see ForwardedFrom.
+        if (forwarded is not null)
+        {
+            app.UseForwardedHeaders(forwarded);
+        }
+
         if (!app.Environment.IsDevelopment())
         {
             app.UseHsts();
@@ -223,8 +238,62 @@ public static class WebHost
         logger.Log(RegexTimeoutApplied ? Versio.Core.Logging.LogLevel.Information : Versio.Core.Logging.LogLevel.Warning, LogCategory.App,
             $"Versio Web starting: {regex}, sign-in {(g.SignInConfigured ? "configured" : "not configured (anonymous, public repositories only)")}, "
             + $"installation tokens {(g.AppConfigured ? "configured" : "not configured")}, anonymous access {(options.AnonymousAccess ? "on" : "off")}, "
-            + $"API {g.ApiBaseUrl}, keys {(string.IsNullOrEmpty(keys) ? "in memory (sessions end on restart)" : "persisted")}, log {file.LogDirectory}");
+            + $"API {g.ApiBaseUrl}, keys {(string.IsNullOrEmpty(keys) ? "in memory (sessions end on restart)" : "persisted")}, "
+            + $"trusted proxies {(options.TrustedProxies.Length == 0 ? "none" : string.Join(' ', options.TrustedProxies))}, log {file.LogDirectory}");
 
         return app;
+    }
+
+    /// <summary>
+    /// Forwarded headers believed from <paramref name="proxies"/> only; null when none is
+    /// configured, and then the middleware must not run at all.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Null, not empty lists.</b> ASP.NET's middleware treats empty known-proxy and
+    /// known-network lists as "trust every sender", not "trust none". The first version cleared
+    /// both and ran it anyway, and the test that sends X-Forwarded-For from an untrusted client
+    /// got a fresh rate bucket per request. A header anyone can send must never choose whose
+    /// bucket a request lands in.
+    /// </para>
+    /// <para>
+    /// No forward limit: the middleware walks back through X-Forwarded-For only while the hop it
+    /// came from is a trusted proxy, so a chain of them (a CDN, then a balancer) resolves to the
+    /// client, and an address the client wrote itself is never reached. A malformed entry stops
+    /// startup rather than trusting less, or more, than was meant.
+    /// </para>
+    /// </remarks>
+    internal static ForwardedHeadersOptions? ForwardedFrom(IReadOnlyList<string> proxies)
+    {
+        if (proxies.Count == 0)
+        {
+            return null;
+        }
+
+        var forwarded = new ForwardedHeadersOptions
+        {
+            ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto,
+            ForwardLimit = null,
+        };
+        forwarded.KnownNetworks.Clear();
+        forwarded.KnownProxies.Clear();
+        foreach (var proxy in proxies)
+        {
+            var cidr = proxy.Contains('/', StringComparison.Ordinal);
+            if (cidr && Microsoft.AspNetCore.HttpOverrides.IPNetwork.TryParse(proxy, out var network))
+            {
+                forwarded.KnownNetworks.Add(network);
+            }
+            else if (!cidr && IPAddress.TryParse(proxy, out var address))
+            {
+                forwarded.KnownProxies.Add(address);
+            }
+            else
+            {
+                throw new InvalidOperationException($"Web:TrustedProxies: '{proxy}' is neither an IP address nor a network in CIDR form.");
+            }
+        }
+
+        return forwarded;
     }
 }

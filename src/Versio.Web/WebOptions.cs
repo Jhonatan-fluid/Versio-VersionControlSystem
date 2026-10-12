@@ -51,6 +51,12 @@ public sealed class WebOptions
     /// <summary>Requests per minute per client address, for everyone (security rule 8).</summary>
     public int RequestsPerMinute { get; set; } = 240;
 
+    /// <summary>
+    /// The reverse proxies whose X-Forwarded-For and X-Forwarded-Proto are believed: addresses, or
+    /// networks as CIDR (<c>10.0.0.0/8</c>). Empty: none is, and the client is the connection.
+    /// </summary>
+    public string[] TrustedProxies { get; set; } = [];
+
     /// <summary>Where the daily log file goes. Empty: the desktop's own log folder.</summary>
     public string LogDirectory { get; set; } = string.Empty;
 
