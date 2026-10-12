@@ -495,6 +495,29 @@ public sealed class SecurityTests
     }
 
     [Fact]
+    public async Task A_token_GitHub_gave_no_expiry_is_not_given_one()
+    {
+        // An App with expiry turned off answers with no expires_in and no refresh token. The first
+        // version guessed eight hours, and with nothing to renew with, the session ended there
+        // while GitHub still honoured the token (found in review).
+        await using var oauth = await FakeOAuth.StartAsync();
+        oauth.NonExpiring = true;
+        await using var host = await TestHost.StartAsync(GitHub(out _, out _), oauth.Settings());
+        var login = await host.GetAsync("/auth/login");
+        var state = Microsoft.AspNetCore.WebUtilities.QueryHelpers.ParseQuery(login.Headers.Location!.Query)["state"].ToString();
+        var callback = await host.GetAsync($"/auth/callback?code=good&state={Uri.EscapeDataString(state)}", $"{AuthEndpoints.LoginCookie}={TestHost.SetCookie(login, AuthEndpoints.LoginCookie)}");
+        var id = TestHost.SetCookie(callback, AccessResolver.SessionCookie)!;
+
+        var sessions = host.Services.GetRequiredService<SessionStore>();
+        var stored = await sessions.PeekAsync(id);
+
+        Assert.NotNull(stored);
+        Assert.Null(sessions.RefreshToken(stored!));
+        Assert.Equal(DateTimeOffset.MaxValue, stored!.AccessExpires);
+        (await host.GetAsync("/api/repos/acme/secret/tree", $"{AccessResolver.SessionCookie}={id}")).AssertStatus(HttpStatusCode.OK);
+    }
+
+    [Fact]
     public async Task Signing_in_again_ends_the_browsers_earlier_session()
     {
         await using var oauth = await FakeOAuth.StartAsync();

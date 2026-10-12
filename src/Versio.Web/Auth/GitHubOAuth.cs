@@ -121,7 +121,11 @@ public sealed class GitHubOAuth(IHttpClientFactory clients, IOptions<WebOptions>
         }
 
         var now = clock.UtcNow;
-        var expires = r.TryGetProperty("expires_in", out var e) && e.TryGetInt64(out var es) ? now.AddSeconds(es) : now.AddHours(8);
+        // No expires_in means an App with token expiry turned off: the token does not expire. The
+        // first version guessed eight hours, and with no refresh token to renew it the session
+        // ended at the guess while GitHub still honoured the token (found in review). The session's
+        // own idle and absolute limits still end it.
+        var expires = r.TryGetProperty("expires_in", out var e) && e.TryGetInt64(out var es) ? now.AddSeconds(es) : DateTimeOffset.MaxValue;
         var refresh = r.TryGetProperty("refresh_token", out var rt) ? rt.GetString() : null;
         var refreshExpires = r.TryGetProperty("refresh_token_expires_in", out var re) && re.TryGetInt64(out var res) ? now.AddSeconds(res) : now.AddMonths(6);
         return new UserTokens(access, expires, refresh, refreshExpires);

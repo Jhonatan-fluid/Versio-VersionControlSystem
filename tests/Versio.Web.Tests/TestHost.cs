@@ -100,6 +100,9 @@ internal sealed class FakeOAuth : IAsyncDisposable
     /// <summary>Refresh tokens that have not been used yet.</summary>
     public ConcurrentDictionary<string, bool> LiveRefreshTokens { get; } = new();
 
+    /// <summary>Answer the code exchange as an App with token expiry turned off does.</summary>
+    public bool NonExpiring { get; set; }
+
     private int _issued;
 
     private FakeOAuth(WebApplication app, Uri address)
@@ -135,6 +138,12 @@ internal sealed class FakeOAuth : IAsyncDisposable
             if (form.GetValueOrDefault("code") != "good")
             {
                 return Results.Json(new { error = "bad_verification_code" });
+            }
+
+            if (self.NonExpiring)
+            {
+                // An App with token expiry turned off: no expires_in, no refresh token.
+                return Results.Json(new { access_token = "alice-token" });
             }
 
             self.LiveRefreshTokens["alice-refresh"] = true;
