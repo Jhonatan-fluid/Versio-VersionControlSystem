@@ -166,8 +166,12 @@ public interface IInstallationTokens
 /// </remarks>
 public sealed class AppTokens(IHttpClientFactory clients, IOptions<WebOptions> options, IClock clock, IAppSigner signer) : IInstallationTokens
 {
-    private readonly Dictionary<string, (string Token, DateTimeOffset Expires)> _cache = new(StringComparer.OrdinalIgnoreCase);
-    private readonly SemaphoreSlim _gate = new(1, 1);
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<string, (string Token, DateTimeOffset Expires)> _cache = new(StringComparer.OrdinalIgnoreCase);
+
+    // One gate per repository: concurrent requests for one repository mint once, and nothing
+    // waits on another repository. A single gate, held across GitHub's round trips, made one
+    // slow answer stall every anonymous visitor to every repository (found in review).
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<string, SemaphoreSlim> _gates = new(StringComparer.OrdinalIgnoreCase);
 
     private GitHubOptions G => options.Value.GitHub;
 
@@ -180,7 +184,13 @@ public sealed class AppTokens(IHttpClientFactory clients, IOptions<WebOptions> o
         }
 
         var key = $"{owner}/{repo}";
-        await _gate.WaitAsync(ct).ConfigureAwait(false);
+        if (_cache.TryGetValue(key, out var fresh) && fresh.Expires - clock.UtcNow > TimeSpan.FromMinutes(5))
+        {
+            return fresh.Token;
+        }
+
+        var gate = _gates.GetOrAdd(key, _ => new SemaphoreSlim(1, 1));
+        await gate.WaitAsync(ct).ConfigureAwait(false);
         try
         {
             if (_cache.TryGetValue(key, out var held) && held.Expires - clock.UtcNow > TimeSpan.FromMinutes(5))
@@ -217,7 +227,7 @@ public sealed class AppTokens(IHttpClientFactory clients, IOptions<WebOptions> o
         }
         finally
         {
-            _gate.Release();
+            gate.Release();
         }
     }
 

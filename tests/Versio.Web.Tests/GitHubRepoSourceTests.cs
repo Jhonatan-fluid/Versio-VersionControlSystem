@@ -40,6 +40,7 @@ public sealed class GitHubRepoSourceTests : IAsyncLifetime
     private string _lfsHref = "https://169.254.169.254/latest/meta-data/";
     private readonly ConcurrentQueue<string> _appJwts = new();
     private readonly ConcurrentQueue<string> _mintBodies = new();
+    private readonly TaskCompletionSource _releaseHeld = new();
 
     public async Task InitializeAsync()
     {
@@ -101,6 +102,12 @@ public sealed class GitHubRepoSourceTests : IAsyncLifetime
             return Results.StatusCode(403);
         });
         app.MapGet("/repos/acme/forbidden", () => Results.StatusCode(403));
+        app.MapGet("/repos/acme/held/installation", async () =>
+        {
+            // GitHub slow to answer for one repository.
+            await _releaseHeld.Task;
+            return Results.Json(new { id = 77 });
+        });
         app.MapGet("/repos/acme/plant/installation", (HttpContext http) =>
         {
             _appJwts.Enqueue(http.Request.Headers.Authorization.ToString());
@@ -279,6 +286,30 @@ public sealed class GitHubRepoSourceTests : IAsyncLifetime
         Assert.Equal(RepoFailure.Upstream, (await source.GetRepoAsync(Alice, "acme", "plant", CancellationToken.None)).Failure);
         Assert.Equal(RepoFailure.Upstream, (await source.GetBlobAsync(Alice, "acme", "plant", new string('a', 40), 100, CancellationToken.None)).Failure);
         Assert.Equal(RepoFailure.Upstream, (await source.ResolveCommitAsync(Alice, "acme", "plant", "main", CancellationToken.None)).Failure);
+    }
+
+    [Fact]
+    public async Task One_repositorys_slow_mint_does_not_hold_up_another_repositorys()
+    {
+        // Found in review: one lock serialised all minting, held across GitHub's round trips, so
+        // one slow answer stalled every anonymous visitor to every repository.
+        using var rsa = System.Security.Cryptography.RSA.Create(2048);
+        var options = Options.Create(new WebOptions
+        {
+            GitHub = new GitHubOptions { ApiBaseUrl = _address!.ToString().TrimEnd('/'), AppId = "123", PrivateKeyPem = rsa.ExportRSAPrivateKeyPem() },
+        });
+        var services = new ServiceCollection();
+        services.AddHttpClient(GitHubRepoSource.ApiClient);
+        var tokens = new Versio.Web.Auth.AppTokens(services.BuildServiceProvider().GetRequiredService<IHttpClientFactory>(), options,
+            new Versio.Core.Abstractions.FakeClock(DateTimeOffset.UtcNow), new Versio.Web.Auth.PemAppSigner(options));
+
+        var held = tokens.ForRepositoryAsync("acme", "held", CancellationToken.None);
+        await Task.Delay(100);
+        var other = await tokens.ForRepositoryAsync("acme", "plant", CancellationToken.None).WaitAsync(TimeSpan.FromSeconds(10));
+        _releaseHeld.SetResult();
+
+        Assert.Equal("installation-token", other);
+        Assert.Equal("installation-token", await held);
     }
 
     [Fact]
