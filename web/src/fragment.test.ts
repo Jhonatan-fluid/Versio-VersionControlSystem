@@ -28,6 +28,20 @@ describe('sanitize: the third wall', () => {
     expect(out).toContain('<p>ok</p>');
   });
 
+  it('keeps the ladder "Changes only" checkbox, and no other input', () => {
+    // Found in review: every input was forbidden, so the ladder's switch reached the page as a
+    // bare label and did nothing.
+    const out = sanitize(
+      '<label><input type="checkbox" data-action="changes-only"> Changes only</label>' +
+        '<input type="text" value="x"><input name="q" form="f" type="checkbox"><input>' +
+        '<button type="button" data-action="next" title="Next change (F7)">v</button>',
+    );
+    expect(out).toContain('<input type="checkbox" data-action="changes-only">');
+    expect(out).toContain('<button type="button" data-action="next"');
+    expect(out).not.toMatch(/type="text"|name=|form=/);
+    expect(out.match(/<input/g)).toHaveLength(2);
+  });
+
   it('keeps a hidden-character marker as text, never the character', () => {
     const html = '<span class="cd-hidden" data-char="U+202E" title="Right-to-left override">U+202E</span>';
     expect(sanitize(html)).toBe(html);

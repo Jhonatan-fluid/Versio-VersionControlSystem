@@ -11,13 +11,24 @@ import DOMPurify from 'dompurify';
 // contract a link to a line, and later a review comment, attaches to), titles, ARIA, and the style
 // attribute two renderers use on purpose. What goes: script, style elements, event handlers,
 // javascript: URLs, forms, frames, objects.
+//
+// One input is kept: the ladder's "Changes only" checkbox, which the ladder script binds to. The
+// first version forbade every input, so on the web that control was a bare label and the switch
+// did nothing (found in review). A checkbox carries no text a file could fill, and with forms
+// gone and form= and name= stripped it submits nowhere; any other kind of input is removed.
+
+DOMPurify.addHook('afterSanitizeAttributes', (node) => {
+  if (node.nodeName === 'INPUT' && (node.getAttribute('type') ?? '').toLowerCase() !== 'checkbox') {
+    node.remove();
+  }
+});
 
 export function sanitize(html: string): string {
   return DOMPurify.sanitize(html, {
     USE_PROFILES: { html: true, svg: true },
     ALLOW_DATA_ATTR: true,
-    FORBID_TAGS: ['style', 'script', 'iframe', 'object', 'embed', 'form', 'input', 'textarea', 'select', 'link', 'meta', 'base'],
-    FORBID_ATTR: ['srcset', 'action', 'formaction', 'xlink:href'],
+    FORBID_TAGS: ['style', 'script', 'iframe', 'object', 'embed', 'form', 'textarea', 'select', 'link', 'meta', 'base'],
+    FORBID_ATTR: ['srcset', 'action', 'formaction', 'xlink:href', 'form', 'name', 'value', 'autofocus'],
   });
 }
 
