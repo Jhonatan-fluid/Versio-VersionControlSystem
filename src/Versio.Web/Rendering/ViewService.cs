@@ -79,7 +79,7 @@ public sealed class ViewService(
     IVersioLogger log)
 {
     /// <summary>Bumped whenever any renderer's output changes, so no stale fragment is served.</summary>
-    public const int RendererVersion = 2;
+    public const int RendererVersion = 3;
 
     private WebOptions O => options.Value;
 
@@ -313,14 +313,17 @@ public sealed class ViewService(
                 // A member's type that changed between the two versions changes this block's
                 // meaning while its own text may not move: highlighted, and said above the table.
                 var changedPaths = ChangedPaths(olderModel, newerModel).Select(c => c.Path).ToHashSet(StringComparer.Ordinal);
-                var compared = LinkTypes(Reword(MemberTableDiff.Compare(baseline, current)), path, newerModel, changedPaths);
+                var compared = LinkTypes(Reword(MemberTableDiff.Compare(baseline, current)), path, newerModel, changedPaths, olderModel);
                 if (compared.Members.Any(m => m.ReferenceChanged))
                 {
                     notices.Add(TypeChangedNotice);
                 }
 
                 var html = new StringBuilder(MemberTableHtml.Fragment(WebNote(compared)));
-                var tableChanged = compared.Members.Any(m => m.Change != MemberChange.None);
+                // A highlighted type counts as drawn: it is the highlight. Counting only the rows'
+                // own changes said "the type changed" and "nothing this view draws did" together
+                // (found in review).
+                var tableChanged = compared.Members.Any(m => m.Change != MemberChange.None || m.ReferenceChanged);
                 var codeChanged = false;
                 if (compared.IsInterface)
                 {
@@ -464,11 +467,19 @@ public sealed class ViewService(
     /// changed between the two versions.
     /// </summary>
     /// <remarks>
+    /// <para>
     /// The link is the target's file in this repository, so the page opens it in the viewer. A
     /// library or system type finds nothing and stays text, as on the desktop: a link to nowhere
     /// is worse than none.
+    /// </para>
+    /// <para>
+    /// A type deleted between the versions is looked for in <paramref name="older"/>: the newer
+    /// commit's index cannot find it, so it stayed plain text and unmarked, the one change to a
+    /// member's meaning the table could not show (found in review). It is marked, with no link,
+    /// since there is nothing in this version to open.
+    /// </para>
     /// </remarks>
-    internal static MemberTable LinkTypes(MemberTable table, string sourceFile, RepoModel model, IReadOnlySet<string>? changed)
+    internal static MemberTable LinkTypes(MemberTable table, string sourceFile, RepoModel model, IReadOnlySet<string>? changed, RepoModel? older = null)
     {
         if (!table.Members.Any(m => m.TypeReference.Length > 0) || model.Objects.Lookup(sourceFile) is not { } owner)
         {
@@ -479,9 +490,18 @@ public sealed class ViewService(
         {
             Members = table.Members.Select(member =>
             {
-                if (member.TypeReference.Length == 0 || model.Objects.FindByName(owner.Project, member.TypeReference) is not { } target)
+                if (member.TypeReference.Length == 0)
                 {
                     return member;
+                }
+
+                if (model.Objects.FindByName(owner.Project, member.TypeReference) is not { } target)
+                {
+                    var gone = changed is not null
+                        && older?.Objects.Lookup(sourceFile) is { } was
+                        && older.Objects.FindByName(was.Project, member.TypeReference) is { } removed
+                        && removed.Paths.Any(changed.Contains);
+                    return gone ? member with { ReferenceChanged = true } : member;
                 }
 
                 var open = target.Paths.Select(p => model.NodeFor(p)?.PrimaryFile).FirstOrDefault(p => p is not null) ?? target.Paths[0];

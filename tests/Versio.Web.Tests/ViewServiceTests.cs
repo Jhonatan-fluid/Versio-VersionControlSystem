@@ -257,6 +257,46 @@ public sealed class ViewServiceTests
     }
 
     [Fact]
+    public async Task A_highlighted_type_change_is_never_also_nothing_drawn()
+    {
+        // Found in review: the "nothing this view draws changed" notice counted only the rows' own
+        // changes, so a block whose file moved but whose rows did not, with a member's type
+        // changed, said both. Here ST_AlarmSettings' file changes only in whitespace.
+        var files = new Dictionary<string, byte[]>(_github.CommitFiles(_repo, "next"), StringComparer.Ordinal);
+        files[Settings] = [.. _github.CommitFiles(_repo, "main")[Settings], (byte)'\n'];
+        _github.Commit(_repo, "typeonly", files);
+        var (views, models) = Services();
+
+        var view = (await views.CompareAsync(RepoAccess.Anonymous, await Model(models, "main"), await Model(models, "typeonly"), Settings, PaneView.Rendered, false, CancellationToken.None)).Value!;
+
+        Assert.Contains("mt-ref-changed", view.Html, StringComparison.Ordinal);
+        Assert.Contains(ViewService.TypeChangedNotice, view.Notices);
+        Assert.DoesNotContain(ViewService.NothingDrawnChanged, view.Notices);
+    }
+
+    [Fact]
+    public async Task A_type_deleted_between_the_versions_marks_the_member_that_used_it()
+    {
+        // Found in review: the newer commit's index cannot find a deleted type, so the member that
+        // named it stayed plain and unmarked. Deleted here from the files and the manifest both.
+        const string Manifest = "fixtures/projects/RefrigeratorControl/_manifest.json";
+        var files = new Dictionary<string, byte[]>(_github.CommitFiles(_repo, "main"), StringComparer.Ordinal);
+        files.Remove(Severity);
+        var manifest = System.Text.Json.Nodes.JsonNode.Parse(files[Manifest])!;
+        var objects = manifest["objects"]!.AsArray();
+        objects.Remove(objects.Single(o => (string?)o!["name"] == "E_AlarmSeverity"));
+        files[Manifest] = Encoding.UTF8.GetBytes(manifest.ToJsonString());
+        _github.Commit(_repo, "gone", files);
+        var (views, models) = Services();
+
+        var view = (await views.CompareAsync(RepoAccess.Anonymous, await Model(models, "main"), await Model(models, "gone"), Settings, PaneView.Rendered, false, CancellationToken.None)).Value!;
+
+        Assert.Contains("mt-ref-changed\" data-path=\"Severity\"", view.Html, StringComparison.Ordinal);
+        Assert.DoesNotContain("data-link=", view.Html.Split("data-path=\"Severity\"")[1].Split("</tr>")[0], StringComparison.Ordinal);
+        Assert.Contains(ViewService.TypeChangedNotice, view.Notices);
+    }
+
+    [Fact]
     public async Task The_tree_has_each_projects_libraries_tasks_and_devices_from_its_catalogs()
     {
         var (_, models) = Services();
