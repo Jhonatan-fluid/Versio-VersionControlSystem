@@ -112,10 +112,20 @@ public static class LadderPageAssets
     /// Navigation between changes, the "changes only" toggle, and old and new scrolling sideways
     /// together. Optional: the page reads the same without it.
     /// </summary>
+    /// <remarks>
+    /// <b>Safe to run more than once in one document.</b> The desktop loads it once per page, but
+    /// the web viewer places fragment after fragment into one document and runs it for each. The
+    /// first version added a document F7 listener on every run, each keeping its replaced page
+    /// alive and stepping it on every press, and a second run over the same page stacked a second
+    /// set of handlers on it (found in review). Each set kept its own position, so nothing moved
+    /// twice on screen; the cost was a listener and a dead page per file viewed. A page already
+    /// marked <c>ld-scripted</c> is left alone, and the one keyboard listener is installed once and
+    /// steps whichever page is in the document now, through the step function that page carries.
+    /// </remarks>
     public const string Script = """
         (() => {
           const page = document.querySelector('.ld-page');
-          if (!page) return;
+          if (!page || page.classList.contains('ld-scripted')) return;
           page.classList.add('ld-scripted');
           const rows = [...page.querySelectorAll('.ld-row')];
           const changed = rows.filter(r => r.dataset.change !== 'same');
@@ -146,9 +156,14 @@ public static class LadderPageAssets
             only.addEventListener('change', apply);
             apply();
           }
-          document.addEventListener('keydown', (e) => {
-            if (e.key === 'F7') { e.preventDefault(); step(e.shiftKey ? -1 : 1); }
-          });
+          page.ldStep = step;
+          if (!window.ldKeys) {
+            window.ldKeys = true;
+            document.addEventListener('keydown', (e) => {
+              const live = document.querySelector('.ld-page.ld-scripted');
+              if (e.key === 'F7' && live && live.ldStep) { e.preventDefault(); live.ldStep(e.shiftKey ? -1 : 1); }
+            });
+          }
           rows.forEach((row) => {
             const panes = row.querySelectorAll('.ld-scroll');
             if (panes.length !== 2) return;

@@ -15,6 +15,10 @@ export default defineConfig({
     modulePreload: { polyfill: false },
   },
   server: {
+    // The page's own folder, plus the folder of the one C# file whose script ladderScript.test.ts
+    // runs as written, so the test cannot drift from what the server serves. Vite refused the file
+    // named alone; one folder of Core, not the repository.
+    fs: { allow: ['.', '../src/Versio.Core/Iec/Ladder'] },
     proxy: {
       '/api': 'http://127.0.0.1:5099',
       '/auth': 'http://127.0.0.1:5099',
