@@ -522,6 +522,18 @@ public sealed class LocalCodesysRunner(
                         $"{evt.String("path")} — a previous export did not finish");
                     break;
 
+                case "trash-restored":
+                    // The dangerous quadrant of SwapRecovery's table, handled in the script
+                    // because the script sees it first: the mirror was missing and the trash
+                    // was the only copy, so it was renamed back before this export staged
+                    // anything. Warn, because it means a previous run was killed between the
+                    // two swap renames — the one window the three-rename design exists for.
+                    _log.Warn(CodesysLog.Category,
+                        $"restored {evt.Int("files")} file(s) to {evt.String("path")} from " +
+                        "the trash a killed export left — it was the only copy of the " +
+                        "mirror; this export now replaces it normally");
+                    break;
+
                 case "trash-cleared":
                     // Rarer than a leftover staging folder and worse: a trash directory
                     // survives only if a run died inside the three-rename swap, which is

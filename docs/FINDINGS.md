@@ -19,6 +19,32 @@ produce a diff touching everything else.
 
 ---
 
+### The export's crash recovery deleted the one copy its own design says to put back
+
+**2026-10-14, branch `ReviewFixes`.** Found by reading `versio_export.py` against its C# twin.
+
+`SwapRecovery.Decide` names the dangerous quadrant precisely: trash present and mirror missing
+means a run died between the swap's two renames, the trash is the last complete export in
+existence, and the right act is to put it back — its remarks call the delete-loop alternative
+"the outcome the three-rename swap was built to prevent". The script did exactly that delete:
+every export start cleared `.versio_trash` unconditionally, under a comment that even said
+*"If the mirror is missing, THIS is where it is"* — and then removed it without looking.
+
+The window is real: a timeout tree-kills CODESYS between the renames (mirror gone, trash holds
+it); the app-side sweep (`SweepKilledSwapsAsync`) restores, but only at repository open, so with
+the app still running the retry export is the first thing to arrive — it cleared the trash first
+and only then could fail before its own swap (a profile error, a second kill), leaving no mirror
+on disk at all. Mitigations were real (the mirror re-derives from the project; git usually holds
+a committed copy) but an uncommitted mirror had no copy anywhere.
+
+The script now makes SwapRecovery's decision: mirror present → trash cleared as before; mirror
+missing → trash renamed back (`trash-restored`, a Warn in the runner), then exported over — so a
+failure anywhere later still leaves a mirror, and `preserve_equivalent` has the old bytes to
+keep. The python is embedded; the suites after a rebuild: pure 365, parity 97, both green. The
+CODESYS gate run for this change is recorded below the next finding when it lands.
+
+---
+
 ### TIA host: a delete never compared the live block, and a loose match could destroy the wrong PLC's
 
 **2026-10-14, branch `ReviewFixes`.** Found by a code review of the pack against the other two

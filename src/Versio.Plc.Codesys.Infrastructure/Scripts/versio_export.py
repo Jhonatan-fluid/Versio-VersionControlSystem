@@ -1056,9 +1056,27 @@ def main():
     if os.path.isdir(trash):
         # The other half of the same story, and a more interesting one: a trash directory
         # survives only if a run died in the three-rename swap below, which is the window
-        # this design exists to make harmless. If the mirror is missing, THIS is where it is.
-        emit({"t": "trash-cleared", "path": trash, "files": count_files(trash)})
-        shutil.rmtree(trash)
+        # this design exists to make harmless. What it means depends entirely on whether
+        # the mirror is beside it — the same decision SwapRecovery makes on the C# side,
+        # and the two must agree:
+        #
+        # - Mirror present: the swap completed and only the tidy-up was interrupted. The
+        #   trash is the superseded tree; clear it.
+        # - Mirror MISSING: the run died between the two renames, and the trash is the
+        #   last complete export IN EXISTENCE. Until 2026-10-14 this branch cleared it
+        #   anyway — so a kill between the renames, followed by a retry that failed
+        #   before its own swap (a profile error, a second kill), left no mirror on disk
+        #   at all: the one outcome the three-rename design was built to prevent. The
+        #   app sweeps the same restore (SweepKilledSwapsAsync), but only at repository
+        #   open, and this export may be the first thing to run after the kill. Restored
+        #   and then exported over, so a failure anywhere below still leaves a mirror,
+        #   and preserve_equivalent has the old bytes to keep.
+        if not os.path.isdir(out_root):
+            emit({"t": "trash-restored", "path": out_root, "files": count_files(trash)})
+            os.rename(trash, out_root)
+        else:
+            emit({"t": "trash-cleared", "path": trash, "files": count_files(trash)})
+            shutil.rmtree(trash)
     os.makedirs(staging)
 
     emit({"t": "start", "python": sys.version, "project": job["project"], "out": out_root})
