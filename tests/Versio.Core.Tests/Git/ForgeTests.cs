@@ -25,6 +25,7 @@ public sealed class ForgeTests
     [InlineData("https://gitlab.com/acme/group/machine.git", ForgeKind.GitLab)]
     [InlineData("git@gitlab.com:acme/machine.git", ForgeKind.GitLab)]
     [InlineData("https://dev.azure.com/acme/Plant/_git/machine", ForgeKind.AzureDevOps)]
+    [InlineData("git@ssh.dev.azure.com:v3/acme/Plant/machine", ForgeKind.AzureDevOps)]
     [InlineData("https://bitbucket.org/acme/machine.git", ForgeKind.Bitbucket)]
     public void A_known_host_identifies_its_forge(string raw, ForgeKind expected) =>
         Assert.Equal(expected, Forge.Detect(Url(raw)));
@@ -76,6 +77,14 @@ public sealed class ForgeTests
         "https://dev.azure.com/acme/Plant/_git/machine",
         "https://dev.azure.com/acme/Plant/_git/machine/pullrequestcreate" +
         "?sourceRef=feature%2Fpumps&targetRef=main")]
+    // The SSH endpoint is not the web host and v3/… is not the web path; the link is
+    // translated to the only shape Azure's web UI serves. Re-scheming the authority —
+    // what every other forge needs — produced https://ssh.dev.azure.com/v3/… here: a
+    // live button whose every click was a 404.
+    [InlineData(ForgeKind.AzureDevOps,
+        "git@ssh.dev.azure.com:v3/acme/Plant/machine",
+        "https://dev.azure.com/acme/Plant/_git/machine/pullrequestcreate" +
+        "?sourceRef=feature%2Fpumps&targetRef=main")]
     [InlineData(ForgeKind.Bitbucket,
         "https://bitbucket.org/acme/machine.git",
         "https://bitbucket.org/acme/machine/pull-requests/new?source=feature%2Fpumps&dest=main")]
@@ -85,6 +94,19 @@ public sealed class ForgeTests
     public void The_create_page_is_pre_filled_with_both_branches(
         ForgeKind kind, string remote, string expected) =>
         Assert.Equal(expected, Forge.CreateUrl(kind, Url(remote), "feature/pumps", "main"));
+
+    [Fact]
+    public void An_azure_ssh_remote_whose_path_is_not_v3_gets_no_button()
+    {
+        // The translation above is shape-gated. A path on Azure's SSH host that is not
+        // exactly v3/org/project/repo cannot be turned into a web address this code can
+        // vouch for, and the rule for that is no button, never a guess at a 404.
+        var url = Url("git@ssh.dev.azure.com:acme/machine.git");
+
+        Assert.Equal(string.Empty, Forge.CreateUrl(ForgeKind.AzureDevOps, url, "work", "main"));
+        Assert.Equal(string.Empty, Forge.ExistingUrl(ForgeKind.AzureDevOps, url, 7));
+        Assert.Equal(string.Empty, Forge.ListUrl(ForgeKind.AzureDevOps, url));
+    }
 
     [Fact]
     public void A_host_with_a_port_keeps_it()

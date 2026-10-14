@@ -284,14 +284,37 @@ public static class Forge
         }
 
         var scheme = url.Protocol == "http" ? "http" : "https";
+        var authority = url.Authority;
+        var owner = url.Owner.Trim('/');
+
+        // Azure's SSH endpoint is not its web host, and its SSH path is not its web path:
+        // git@ssh.dev.azure.com:v3/org/project/repo is browsed at
+        // https://dev.azure.com/org/project/_git/repo. Re-scheming the authority alone —
+        // what every other forge needs — produced a live button whose link was a 404 on
+        // both counts (ssh.dev.azure.com serves no web UI, and v3/… is not a web path).
+        // Rewritten only when the v3 shape is exactly there; any other shape on that host
+        // returns empty, because the rule for a link that cannot be built is no button,
+        // never a guess.
+        if (string.Equals(url.Host, "ssh.dev.azure.com", StringComparison.OrdinalIgnoreCase))
+        {
+            var segments = owner.Split('/');
+            if (segments.Length != 3
+                || !string.Equals(segments[0], "v3", StringComparison.OrdinalIgnoreCase))
+            {
+                return string.Empty;
+            }
+
+            authority = "dev.azure.com";
+            owner = $"{segments[1]}/{segments[2]}/_git";
+        }
 
         // The owner is empty for a remote whose repository sits at the host root, and joining
         // through it unconditionally produces a double slash — which some forges follow and
         // others 404 on.
-        var path = url.Owner.Length == 0
+        var path = owner.Length == 0
             ? url.Repository
-            : $"{url.Owner.Trim('/')}/{url.Repository}";
+            : $"{owner}/{url.Repository}";
 
-        return $"{scheme}://{url.Authority}/{path}";
+        return $"{scheme}://{authority}/{path}";
     }
 }
