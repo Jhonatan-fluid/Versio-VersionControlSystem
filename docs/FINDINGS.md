@@ -19,7 +19,29 @@ produce a diff touching everything else.
 
 ---
 
-### A repository folder renamed while open raised the same crash toast every 20 seconds
+### The empty state's Open and Clone buttons drew normally and never received a click
+
+**2026-10-14, branch `ReviewFixes`.** Reported from the running app, not derived: with no
+repository open, the project panel's "Open a repository…" and "Clone…" buttons did nothing —
+they could not even be hovered.
+
+The empty-state `StackPanel` and the `TreeView` share one `Grid`, the StackPanel was declared
+first, and the TreeView is always present with `Background="Transparent"` — **and Transparent is
+hit-testable**. A Grid hit-tests its later children first, so every click over the empty state
+landed on an empty tree's ScrollViewer while the buttons underneath drew normally. The panel's
+own row template already documents the inverse trap ("a Grid with none is transparent to
+hit-testing everywhere its children are not"); this was the other direction of the same rule.
+The wiring was all correct — `ApplicationCommands.Open` routed to the window's picker, the test
+asserted visibility, the command and the binding — which is exactly why the test never caught
+it: **visibility is not reachability.** The buttons had been broken since they were added
+(2026-09-21); the owner-eyeball item that would have clicked them (STATUS item 2) has not run
+yet.
+
+The empty state is declared after the TreeView now, with the order named as load-bearing; it
+collapses whenever a repository is open, so it never sits over a tree that has rows.
+`The_window_says_open_a_repository_only_when_none_is_open` now asks the question the mouse asks
+— `VisualTreeHelper.HitTest` at each button's centre must land inside that button — and against
+the old order it fails with *"a click at 200.8,478.4 lands on Grid"*.
 
 **2026-10-14, branch `ReviewFixes`.** Measured live, not derived: a packaged Versio had
 `C:\GIT\Codesys\FS_Codesys_Library` open when the folder was renamed to `FsLibrary`. Renaming a

@@ -238,51 +238,6 @@
                     docking beside it, and behind it, so the first row covers it.
                 -->
                 <Grid>
-                <!-- The sentence and the two ways to act on it. It used to be the
-                     sentence alone, with the buttons that answer it as two unlabelled
-                     icons at the far end of the top bar - an empty window that says
-                     "open a repository" should be the place to do it. Seen on a fresh
-                     window on 2026-09-21. Hidden with the sentence, by the same trigger. -->
-                <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center"
-                            Visibility="{Binding Visibility, ElementName=OpenRepositoryHint}">
-                <TextBlock x:Name="OpenRepositoryHint"
-                           HorizontalAlignment="Center"
-                           TextAlignment="Center" TextWrapping="Wrap"
-                           Margin="12"
-                           FontFamily="{DynamicResource Font.UI}"
-                           FontSize="{DynamicResource Font.Size.Body}"
-                           Foreground="{DynamicResource Brush.Text.Disabled}"
-                           Text="Open a repository to see what is in it">
-                    <!-- Keyed on the repository, not on the tree. It used to read
-                         Tree.Count == 0, which is also what a repository with every
-                         project in sync looks like - so the calmest state the tool has
-                         told its user to open the repository they had open. -->
-                    <TextBlock.Style>
-                        <Style TargetType="TextBlock">
-                            <Setter Property="Visibility" Value="Collapsed" />
-                            <Style.Triggers>
-                                <DataTrigger Binding="{Binding Sync.HasRepository}"
-                                             Value="False">
-                                    <Setter Property="Visibility" Value="Visible" />
-                                </DataTrigger>
-                            </Style.Triggers>
-                        </Style>
-                    </TextBlock.Style>
-                </TextBlock>
-                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
-                        <Button Content="Open a repository…"
-                                Style="{StaticResource AccentButton}"
-                                Height="{DynamicResource Size.Control.Height}"
-                                Command="ApplicationCommands.Open"
-                                ToolTip="Choose a folder that is a Git repository (Ctrl+O)" />
-                        <Button Content="Clone…" Margin="8,0,0,0"
-                                Style="{StaticResource GhostButton}"
-                                Height="{DynamicResource Size.Control.Height}"
-                                Padding="14,0"
-                                Command="{Binding CloneCommand}"
-                                ToolTip="Copy a repository from a server" />
-                    </StackPanel>
-                </StackPanel>
                 <TreeView x:Name="ProjectTree" ItemsSource="{Binding Sync.Tree}"
                           AutomationProperties.Name="Project contents"
                           Background="Transparent" BorderThickness="0"
@@ -449,6 +404,60 @@
                         </HierarchicalDataTemplate>
                     </TreeView.ItemTemplate>
                 </TreeView>
+                <!-- The sentence and the two ways to act on it. It used to be the
+                     sentence alone, with the buttons that answer it as two unlabelled
+                     icons at the far end of the top bar - an empty window that says
+                     "open a repository" should be the place to do it. Seen on a fresh
+                     window on 2026-09-21. Hidden with the sentence, by the same trigger.
+
+                     AFTER the TreeView, and that order is load-bearing: a Grid hit-tests
+                     its later children first, the TreeView is always present with a
+                     Transparent background, and Transparent is hit-testable - so with the
+                     buttons declared first, every click over the empty state landed on an
+                     empty tree's ScrollViewer and the buttons could be seen and never
+                     pressed (reported on the running app, 2026-10-14). The whole panel
+                     collapses with the hint when a repository is open, so it never sits
+                     over a tree that has rows. -->
+                <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center"
+                            Visibility="{Binding Visibility, ElementName=OpenRepositoryHint}">
+                <TextBlock x:Name="OpenRepositoryHint"
+                           HorizontalAlignment="Center"
+                           TextAlignment="Center" TextWrapping="Wrap"
+                           Margin="12"
+                           FontFamily="{DynamicResource Font.UI}"
+                           FontSize="{DynamicResource Font.Size.Body}"
+                           Foreground="{DynamicResource Brush.Text.Disabled}"
+                           Text="Open a repository to see what is in it">
+                    <!-- Keyed on the repository, not on the tree. It used to read
+                         Tree.Count == 0, which is also what a repository with every
+                         project in sync looks like - so the calmest state the tool has
+                         told its user to open the repository they had open. -->
+                    <TextBlock.Style>
+                        <Style TargetType="TextBlock">
+                            <Setter Property="Visibility" Value="Collapsed" />
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding Sync.HasRepository}"
+                                             Value="False">
+                                    <Setter Property="Visibility" Value="Visible" />
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </TextBlock.Style>
+                </TextBlock>
+                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
+                        <Button Content="Open a repository…"
+                                Style="{StaticResource AccentButton}"
+                                Height="{DynamicResource Size.Control.Height}"
+                                Command="ApplicationCommands.Open"
+                                ToolTip="Choose a folder that is a Git repository (Ctrl+O)" />
+                        <Button Content="Clone…" Margin="8,0,0,0"
+                                Style="{StaticResource GhostButton}"
+                                Height="{DynamicResource Size.Control.Height}"
+                                Padding="14,0"
+                                Command="{Binding CloneCommand}"
+                                ToolTip="Copy a repository from a server" />
+                    </StackPanel>
+                </StackPanel>
                 </Grid>
             </DockPanel>
     </Border>

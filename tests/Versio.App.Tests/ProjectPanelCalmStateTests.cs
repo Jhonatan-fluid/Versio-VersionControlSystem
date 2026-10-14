@@ -190,6 +190,14 @@ public sealed class ProjectPanelCalmStateTests
             Assert.Contains(window.CommandBindings.OfType<CommandBinding>(),
                 b => b.Command == ApplicationCommands.Open);
 
+            // Reaching the button is the half visibility cannot prove. The TreeView
+            // shares this Grid, is always present, and Transparent is hit-testable —
+            // declared over the buttons, it swallowed every click while they drew
+            // normally (seen on the running app, 2026-10-14). Ask the question the
+            // mouse asks: what does a click at the button's centre actually land on?
+            AssertClickable(content, open);
+            AssertClickable(content, CloneButton(panel));
+
             await OpenAndSettleAsync(repo, shell);
             Lay(content);
             Assert.NotEqual(Visibility.Visible, EmptyState(panel).Visibility);
@@ -219,6 +227,28 @@ public sealed class ProjectPanelCalmStateTests
 
     private static Button OpenButton(DependencyObject panel) =>
         Assert.Single(Descendants(panel).OfType<Button>(), b => Equals(b.Content, "Open a repository…"));
+
+    private static Button CloneButton(DependencyObject panel) =>
+        Assert.Single(Descendants(panel).OfType<Button>(), b => Equals(b.Content, "Clone…"));
+
+    private static void AssertClickable(FrameworkElement root, Button button)
+    {
+        var centre = button.TranslatePoint(
+            new Point(button.ActualWidth / 2, button.ActualHeight / 2), root);
+        var hit = VisualTreeHelper.HitTest(root, centre)?.VisualHit;
+
+        for (var walk = hit; walk is not null; walk = VisualTreeHelper.GetParent(walk))
+        {
+            if (ReferenceEquals(walk, button))
+            {
+                return;
+            }
+        }
+
+        Assert.Fail(
+            $"a click at {centre} lands on {hit?.GetType().Name ?? "nothing"}, " +
+            $"not on \"{button.Content}\" — something hit-testable is drawn over it");
+    }
 
     private static StackPanel CalmList(DependencyObject panel) =>
         Assert.Single(Descendants(panel).OfType<StackPanel>(),
