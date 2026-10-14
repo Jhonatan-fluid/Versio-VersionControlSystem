@@ -1,10 +1,16 @@
 /* The page around the fragments. The fragments' own look is CodePageAssets.Css and
    LadderPageAssets.Css from Versio.Core, linked in index.html; nothing here restyles them
-   beyond fitting them into the pane. Colours follow the desktop palette. */
+   beyond fitting them into the pane. Colours follow the desktop palette.
+
+   The layout is the desktop shell's (MainWindow.xaml): a top bar, a rail that swaps one panel
+   card, and the pane card beside it — cards on a sunken background, which is why there are two
+   surface tokens. --surface-sunken is the window behind everything; --surface-card is the top
+   bar, the rail and both cards. The desktop's Surface.Sunken / Surface.Base, by other names. */
 
 :root {
   --bg: #ffffff;
-  --surface: #f6f8fa;
+  --surface-sunken: #eef1f4;
+  --surface-card: #ffffff;
   --fg: #1f2328;
   --muted: #656d76;
   --border: #d0d7de;
@@ -22,7 +28,8 @@
 @media (prefers-color-scheme: dark) {
   :root {
     --bg: #0d1117;
-    --surface: #161b22;
+    --surface-sunken: #0d1117;
+    --surface-card: #161b22;
     --fg: #e6edf3;
     --muted: #8d96a0;
     --border: #30363d;
@@ -37,27 +44,24 @@
 }
 
 * { box-sizing: border-box; }
-html, body { margin: 0; height: 100%; background: var(--bg); color: var(--fg); font: 14px/1.45 var(--ui); }
+html, body { margin: 0; height: 100%; background: var(--surface-sunken); color: var(--fg); font: 14px/1.45 var(--ui); }
 #root { height: 100%; }
 a { color: var(--accent); }
 button { font: inherit; color: inherit; }
 .visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 .muted { color: var(--muted); }
-.pad { padding: 8px 12px; }
+.pad { padding: 8px 14px; }
 .error-text { color: var(--danger); }
 
 .app { display: flex; flex-direction: column; height: 100%; }
 
-.topbar { display: flex; align-items: center; gap: 12px; padding: 8px 16px; border-bottom: 1px solid var(--border);
-  background: var(--surface); flex-wrap: wrap; }
+.topbar { display: flex; align-items: center; gap: 12px; padding: 8px 16px; background: var(--surface-card); flex-wrap: wrap; }
 .brand { font-weight: 700; color: var(--fg); text-decoration: none; letter-spacing: 0.2px; }
 .crumb a { color: var(--fg); font-weight: 600; text-decoration: none; }
-.branch { display: inline-flex; align-items: center; gap: 6px; }
+.branch { display: inline-flex; align-items: center; gap: 6px; min-width: 0; }
 .branch select, .tree-filter, .open-row input { font: inherit; color: var(--fg); background: var(--bg); border: 1px solid var(--border);
   border-radius: 6px; padding: 4px 8px; }
-.topnav { display: flex; gap: 4px; }
-.topnav a { padding: 4px 10px; border-radius: 6px; color: var(--fg); text-decoration: none; }
-.topnav a.active { background: var(--selected); }
+.branch select { min-width: 0; }
 .spacer { flex: 1; }
 .user { display: flex; align-items: center; gap: 8px; }
 .avatar { border-radius: 50%; }
@@ -67,18 +71,33 @@ button { font: inherit; color: inherit; }
 .icon-button { background: none; border: 1px solid var(--border); border-radius: 6px; padding: 2px 8px; cursor: pointer; }
 .tree-toggle { display: none; }
 
-.workspace { flex: 1; display: grid; grid-template-columns: minmax(220px, 300px) minmax(0, 1fr); min-height: 0; }
-.sidebar { border-right: 1px solid var(--border); overflow: auto; min-height: 0; }
-.pane { overflow: auto; min-width: 0; padding: 12px 16px 48px; }
+/* The shell: the rail owns the left edge, the workspace holds the two cards. */
+.workbench { flex: 1; display: flex; min-height: 0; }
+.rail { width: 46px; flex: none; display: flex; flex-direction: column; gap: 4px; padding: 10px 5px; background: var(--surface-card); }
+.rail-tile { width: 36px; height: 36px; display: flex; align-items: center; justify-content: center; border-radius: 8px;
+  color: var(--muted); }
+.rail-tile:hover { background: var(--surface-sunken); color: var(--fg); }
+.rail-tile.is-active { background: var(--selected); color: var(--accent); }
+
+.workspace { flex: 1; display: grid; grid-template-columns: minmax(240px, 320px) minmax(0, 1fr); gap: 8px; padding: 8px 8px 8px 0;
+  min-height: 0; }
+
+/* The panel card: one card the rail swaps, titled like the desktop's PanelTitle. */
+.panel { background: var(--surface-card); border-radius: 8px; display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
+.panel-title { font: 600 11px var(--ui); letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted);
+  padding: 12px 14px 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: none; }
+.panel-body { flex: 1; min-height: 0; overflow: auto; }
+
+.pane { background: var(--surface-card); border-radius: 8px; overflow: auto; min-width: 0; padding: 12px 16px 48px; }
 .pane-empty { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; text-align: center; }
 
-.tree { padding: 8px 0; }
-.tree-filter { margin: 0 8px 8px; width: calc(100% - 16px); }
-.tree-note { margin: 4px 12px 8px; color: var(--muted); font-size: 13px; }
+.tree { padding: 0 0 8px; }
+.tree-filter { margin: 2px 8px 8px; width: calc(100% - 16px); }
+.tree-note { margin: 4px 14px 8px; color: var(--muted); font-size: 13px; }
 .tree-list, .tree ul, .changes { list-style: none; margin: 0; padding: 0; }
 .tree-row { display: flex; align-items: center; gap: 6px; width: 100%; text-align: left; background: none; border: 0;
   padding: 3px 8px; cursor: pointer; white-space: nowrap; }
-.tree-row:hover { background: var(--surface); }
+.tree-row:hover { background: var(--surface-sunken); }
 .tree-row.is-selected { background: var(--selected); }
 .tree-caret { width: 12px; color: var(--muted); flex: none; }
 .tree-kind { font: 600 10px var(--mono); border: 1px solid var(--border); border-radius: 3px; padding: 0 3px; color: var(--muted); flex: none; }
@@ -89,17 +108,22 @@ button { font: inherit; color: inherit; }
 .change-modified { color: #9a6700; }
 .change-deleted { color: var(--danger); }
 
+/* The pane header, in the desktop's PaneHeading grammar: a small label for the KIND of view,
+   the name in the face an ellipsis cannot eat, the folder after it in the quiet one. The name
+   column gives way last; the folder trims first (min-width: 0 on the folder alone). */
 .pane-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 8px; }
 .pane-title { display: flex; align-items: baseline; gap: 10px; min-width: 0; }
-.pane-title h1 { font: 600 18px var(--mono); margin: 0; overflow-wrap: anywhere; }
-.pane-kind { color: var(--muted); font-size: 12px; }
+.pane-label { font: 600 11px var(--ui); letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); flex: none; }
+.pane-title h1 { font: 600 15px var(--ui); margin: 0; overflow-wrap: anywhere; }
+.pane-folder { color: var(--muted); font: 12px var(--mono); min-width: 0; overflow: hidden; text-overflow: ellipsis;
+  white-space: nowrap; }
 .pane-tools { display: flex; gap: 8px; flex-wrap: wrap; }
 .segmented { display: inline-flex; border: 1px solid var(--border); border-radius: 6px; overflow: hidden; }
-.segmented button { background: var(--bg); border: 0; padding: 4px 10px; cursor: pointer; }
+.segmented button { background: var(--surface-card); border: 0; padding: 4px 10px; cursor: pointer; }
 .segmented button + button { border-left: 1px solid var(--border); }
 .segmented button[aria-selected="true"], .segmented button[aria-pressed="true"] { background: var(--selected); font-weight: 600; }
 .layers { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 8px; }
-.chip { border: 1px solid var(--border); background: var(--bg); border-radius: 999px; padding: 1px 10px; font-size: 12px; cursor: pointer; }
+.chip { border: 1px solid var(--border); background: var(--surface-card); border-radius: 999px; padding: 1px 10px; font-size: 12px; cursor: pointer; }
 .chip.is-on { border-color: var(--accent); color: var(--accent); }
 .notice { margin: 0 0 8px; padding: 6px 10px; border-left: 4px solid var(--notice-border); background: var(--notice-bg); }
 
@@ -108,39 +132,43 @@ button { font: inherit; color: inherit; }
 .fragment .is-target { outline: 2px solid var(--accent); outline-offset: -2px; }
 .fragment .cd-page, .fragment .mt-page, .fragment .ld-page { margin-bottom: 16px; }
 
-.comparebar { display: flex; align-items: center; gap: 10px; padding: 8px 16px; border-bottom: 1px solid var(--border); flex-wrap: wrap; }
+/* The Compare panel's two pickers, at the top of the card the way the desktop's git panel
+   leads with what it acts on. */
+.compare-pick { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 2px 14px 8px; }
+.compare-count { margin: 0; padding-top: 0; }
 
-.home, .history { max-width: 760px; margin: 0 auto; padding: 32px 16px; width: 100%; }
-.home h1, .history h1 { font-size: 24px; margin: 0 0 8px; }
+.home { max-width: 760px; margin: 0 auto; padding: 32px 16px; width: 100%; }
+.home h1 { font-size: 24px; margin: 0 0 8px; }
 .open-form { margin: 24px 0 12px; display: flex; flex-direction: column; gap: 6px; }
 .open-row { display: flex; gap: 8px; }
 .open-row input { flex: 1; min-width: 0; padding: 8px 10px; }
-.commits { list-style: none; padding: 0; margin: 16px 0; }
-.commits li { padding: 10px 0; border-bottom: 1px solid var(--border); }
+.commits { list-style: none; padding: 0; margin: 0; }
+.commits li { padding: 10px 14px; border-bottom: 1px solid var(--border); }
+.commits li:last-child { border-bottom: 0; }
 .commit-subject { font-weight: 600; overflow-wrap: anywhere; }
-.commit-links { display: flex; gap: 16px; margin-top: 4px; }
+.commit-links { display: flex; gap: 16px; margin-top: 4px; flex-wrap: wrap; }
 
 /* Markdown, which Core renders as plain elements inside .md-page: the desktop page's styles. */
 .md-page { max-width: 980px; line-height: 1.55; }
 .md-page h1, .md-page h2 { padding-bottom: .3em; border-bottom: 1px solid var(--border); }
 .md-page h1 { font-size: 1.75em; } .md-page h2 { font-size: 1.35em; } .md-page h3 { font-size: 1.12em; }
-.md-page code { font-family: var(--mono); font-size: .9em; background: var(--surface); padding: .12em .35em; border-radius: 4px; }
-.md-page pre { background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: 10px 14px; overflow-x: auto; }
+.md-page code { font-family: var(--mono); font-size: .9em; background: var(--surface-sunken); padding: .12em .35em; border-radius: 4px; }
+.md-page pre { background: var(--surface-sunken); border: 1px solid var(--border); border-radius: 6px; padding: 10px 14px; overflow-x: auto; }
 .md-page pre code { background: none; padding: 0; }
 .md-page blockquote { margin-left: 0; padding: 2px 0 2px 14px; color: var(--muted); border-left: 3px solid var(--border); }
 .md-page table { border-collapse: collapse; display: block; overflow-x: auto; max-width: 100%; }
 .md-page th, .md-page td { border: 1px solid var(--border); padding: 5px 10px; vertical-align: top; }
-.md-page th { background: var(--surface); text-align: left; }
+.md-page th { background: var(--surface-sunken); text-align: left; }
 .md-page a[data-href] { color: var(--accent); cursor: pointer; text-decoration: underline; }
 
-/* Phone width: the tree becomes a drawer over the pane, opened from the header. */
+/* Phone width: the panel becomes a drawer over the pane, opened from the header. The rail
+   stays — it is 46 px, and it is the only navigation between the three views. */
 @media (max-width: 760px) {
   .topbar { padding: 8px 16px; gap: 8px; }
   .tree-toggle { display: inline-block; }
-  .workspace { grid-template-columns: minmax(0, 1fr); position: relative; }
-  .sidebar { display: none; position: absolute; inset: 0 20% 0 0; z-index: 2; background: var(--bg); box-shadow: 0 0 24px rgba(0, 0, 0, .25); }
-  .workspace.tree-open .sidebar { display: block; }
-  .pane { padding: 12px 16px 48px; }
+  .workspace { grid-template-columns: minmax(0, 1fr); position: relative; padding: 8px 8px 8px 0; }
+  .panel { display: none; position: absolute; inset: 8px 20% 8px 0; z-index: 2; box-shadow: 0 0 24px rgba(0, 0, 0, .25); }
+  .workspace.panel-open .panel { display: flex; }
   .user-name { display: none; }
 }
 

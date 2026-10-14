@@ -336,7 +336,7 @@ One list. Reorder it; do not copy it into another file.
    - CFC;
    - the owner's eyeball of the drawing (right rail?) and of the row.
 10. **Versio Web, a read-only browser view of a repository on GitHub — built 2026-10-11 on
-   `WebViewer`, not merged.** The design, the security rules and what each step measured are
+   `WebViewer`, since merged.** The design, the security rules and what each step measured are
    in [`web/PLAN.md`](web/PLAN.md). An ASP.NET Core server (`src/Versio.Web`) renders with
    Versio.Core and the three pure packs; a React page (`web/`) places that HTML and draws no
    code. Built: the HTML renderers for source, text diffs and member tables (Outpost's Step 2b,
@@ -354,6 +354,11 @@ One list. Reorder it; do not copy it into another file.
    review, fourteen more, all fixed (FINDINGS 2026-10-11): among them a vendor leak (Siemens
    extensions in Core, now behind `PlcFormats.LanguageFor` and refused by `VendorSeamTests`), and
    answers built from failed reads that were drawn as "everything new" or cached.
+   **2026-10-14: the page restructured into the desktop's workbench shell** — the owner asked
+   for the desktop's look over GitHub's; the rail (Project / History / Compare) swaps one panel
+   card beside the pane, whose header is now the desktop's `PaneHeading` grammar. Phase 1 of
+   five; the plan and the remaining phases (commit card, compare as tree marks, shared theme
+   tokens, Explorer) are in [`web/PLAN.md`](web/PLAN.md), *The workbench restructure*.
    **Left, all needing the owner or a deployment:**
    - **register the GitHub App** (on GitHub: read-only Contents and Metadata, a callback at
      `/auth/callback`) and run sign-in against real GitHub; until then the server runs

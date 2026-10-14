@@ -1,11 +1,11 @@
-import { Link, NavLink } from 'react-router';
+import { Link } from 'react-router';
 import type { Branch, Me } from '../api';
 import { api } from '../api';
-import { historyUrl, repoUrl, treeUrl } from '../routes';
+import { repoUrl } from '../routes';
 
 interface Props {
   me: Me | null;
-  repo?: { owner: string; name: string; ref: string; branches: Branch[]; branchesTruncated?: boolean; onRef: (ref: string) => void; compareHref: string };
+  repo?: { owner: string; name: string; ref: string; branches: Branch[]; branchesTruncated?: boolean; onRef: (ref: string) => void };
   onToggleTree?: () => void;
 }
 
@@ -14,7 +14,7 @@ export function Header({ me, repo, onToggleTree }: Props) {
   return (
     <header className="topbar">
       {onToggleTree && (
-        <button type="button" className="icon-button tree-toggle" onClick={onToggleTree} aria-label="Show or hide the tree">
+        <button type="button" className="icon-button tree-toggle" onClick={onToggleTree} aria-label="Show or hide the panel">
           <span aria-hidden="true">{'☰'}</span>
         </button>
       )}
@@ -38,11 +38,6 @@ export function Header({ me, repo, onToggleTree }: Props) {
               )}
             </select>
           </label>
-          <nav className="topnav" aria-label="Repository">
-            <NavLink to={treeUrl(repo.owner, repo.name, repo.ref)} end={false}>Code</NavLink>
-            <NavLink to={historyUrl(repo.owner, repo.name, repo.ref)}>History</NavLink>
-            <NavLink to={repo.compareHref}>Compare</NavLink>
-          </nav>
         </>
       )}
       <div className="spacer" />

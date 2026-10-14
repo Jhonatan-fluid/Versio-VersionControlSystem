@@ -29,6 +29,12 @@ const kinds: Record<string, string> = {
   missing: 'Missing',
 };
 
+/** Everything up to the last slash, for the quiet part of the heading. */
+function folderOf(path: string): string {
+  const slash = path.lastIndexOf('/');
+  return slash < 0 ? '' : path.slice(0, slash);
+}
+
 /** The object pane: what the desktop's Rendered and Raw tabs show, placed from the server's HTML. */
 export function Pane({ result, view, layout, onView, onLayout, onLayer, onOpenPath, line, onLine, comparing, signInUrl }: Props) {
   if (result.state === 'loading') {
@@ -40,12 +46,19 @@ export function Pane({ result, view, layout, onView, onLayout, onLayer, onOpenPa
   }
 
   const v = result.value;
+  // The desktop's PaneHeading: a small label for the KIND of view, the name in the face an
+  // ellipsis cannot eat, the folder after it in the quiet one, the full path as the tooltip.
+  // The folder comes from the SPELLED label (security rule 9), not the raw path — the raw path
+  // is for navigation and may hold the very characters the label spells out.
+  const shownLabel = v.layerLabels[v.layers.indexOf(v.path)] ?? v.path;
+  const folder = folderOf(shownLabel);
   return (
     <section className="pane">
       <header className="pane-head">
-        <div className="pane-title">
+        <div className="pane-title" title={shownLabel}>
+          <span className="pane-label" title={kinds[v.kind] ?? v.kind}>{comparing ? 'DIFF' : 'FILE'}</span>
           <h1>{v.title}</h1>
-          <span className="pane-kind">{kinds[v.kind] ?? v.kind}</span>
+          {folder && <span className="pane-folder">{folder}</span>}
         </div>
         <div className="pane-tools">
           <div className="segmented" role="tablist" aria-label="View">

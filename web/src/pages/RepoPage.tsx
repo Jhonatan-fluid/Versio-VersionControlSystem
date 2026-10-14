@@ -1,11 +1,11 @@
-import { useState } from 'react';
 import { useLocation, useNavigate, useParams, useSearchParams } from 'react-router';
 import type { Layout, Me, PaneView, TreeNode } from '../api';
 import { api } from '../api';
 import { Header } from '../components/Header';
 import { ErrorPanel, Pane } from '../components/Pane';
 import { TreePanel } from '../components/TreePanel';
-import { blobUrl, compareUrl } from '../routes';
+import { Workbench } from '../components/Workbench';
+import { blobUrl } from '../routes';
 import { useAsync } from '../useAsync';
 
 /** The line in the URL's hash, as GitHub writes it: #L12. */
@@ -14,13 +14,12 @@ export function lineFromHash(hash: string): number | null {
   return m ? Number(m[1]) : null;
 }
 
-/** /owner/repo, /owner/repo/tree/ref and /owner/repo/blob/ref/path: the tree beside the object pane. */
+/** /owner/repo, /owner/repo/tree/ref and /owner/repo/blob/ref/path: the Project panel beside the pane. */
 export function RepoPage({ me }: { me: Me | null }) {
   const { owner = '', repo = '', ref: refParam, '*': pathParam } = useParams();
   const [search, setSearch] = useSearchParams();
   const location = useLocation();
   const navigate = useNavigate();
-  const [treeOpen, setTreeOpen] = useState(false);
 
   const info = useAsync((s) => api.repo(owner, repo, s), [owner, repo]);
   const ref = refParam ?? (info.state === 'ok' ? info.value.defaultBranch : null);
@@ -45,7 +44,6 @@ export function RepoPage({ me }: { me: Me | null }) {
       return;
     }
     navigate(blobUrl(owner, repo, ref, target, keep ? search : undefined));
-    setTreeOpen(false);
   }
 
   function select(node: TreeNode) {
@@ -74,49 +72,44 @@ export function RepoPage({ me }: { me: Me | null }) {
 
   const defaultBranch = info.state === 'ok' ? info.value.defaultBranch : 'main';
   return (
-    <div className="app">
-      <Header
-        me={me}
-        onToggleTree={() => setTreeOpen(!treeOpen)}
-        repo={
-          ref
-            ? {
-                owner,
-                name: repo,
-                ref,
-                branches: branches.state === 'ok' ? branches.value.branches : [], branchesTruncated: branches.state === 'ok' && branches.value.truncated,
-                onRef: (r) => navigate(path ? blobUrl(owner, repo, r, path, search) : `/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/tree/${encodeURIComponent(r)}`),
-                compareHref: compareUrl(owner, repo, defaultBranch, ref),
-              }
-            : undefined
-        }
-      />
-      <div className={`workspace${treeOpen ? ' tree-open' : ''}`}>
-        <aside className="sidebar">
+    <Workbench
+      me={me}
+      owner={owner}
+      repo={repo}
+      refName={ref ?? defaultBranch}
+      defaultBranch={defaultBranch}
+      branches={branches.state === 'ok' ? branches.value.branches : []}
+      branchesTruncated={branches.state === 'ok' && branches.value.truncated}
+      onRef={(r) => navigate(path ? blobUrl(owner, repo, r, path, search) : `/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/tree/${encodeURIComponent(r)}`)}
+      rail="project"
+      panelTitle="Project"
+      panel={
+        <>
           {tree.state === 'ok' && <TreePanel tree={tree.value} selected={path} onSelect={select} />}
           {tree.state === 'loading' && <p className="muted pad">Loading the tree...</p>}
           {tree.state === 'error' && <p className="error-text pad">{tree.error.message}</p>}
-        </aside>
-        {path ? (
-          <Pane
-            result={pane}
-            view={view}
-            layout={layout}
-            onView={(v) => setParam('view', v, 'rendered')}
-            onLayout={(l) => setParam('layout', l, 'unified')}
-            onLayer={(layer) => open(layer)}
-            onOpenPath={(p) => open(p)}
-            line={line}
-            onLine={(n) => navigate({ hash: `L${n}`, search: search.toString() }, { replace: true })}
-            comparing={false}
-            signInUrl={signIn}
-          />
-        ) : (
-          <section className="pane pane-empty">
-            <p className="muted">Pick an object in the tree.</p>
-          </section>
-        )}
-      </div>
-    </div>
+        </>
+      }
+    >
+      {path ? (
+        <Pane
+          result={pane}
+          view={view}
+          layout={layout}
+          onView={(v) => setParam('view', v, 'rendered')}
+          onLayout={(l) => setParam('layout', l, 'unified')}
+          onLayer={(layer) => open(layer)}
+          onOpenPath={(p) => open(p)}
+          line={line}
+          onLine={(n) => navigate({ hash: `L${n}`, search: search.toString() }, { replace: true })}
+          comparing={false}
+          signInUrl={signIn}
+        />
+      ) : (
+        <section className="pane pane-empty">
+          <p className="muted">Pick an object in the tree.</p>
+        </section>
+      )}
+    </Workbench>
   );
 }

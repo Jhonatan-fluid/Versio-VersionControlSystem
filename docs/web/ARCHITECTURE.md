@@ -1,7 +1,8 @@
 # Versio Web: architecture
 
 **What this is.** A map of the read-only web viewer as built on branch `WebViewer`
-(2026-10-11): what each part is, where it lives, how a request travels through it, and which
+(2026-10-11, merged; the page restructured into the desktop's workbench shell 2026-10-14):
+what each part is, where it lives, how a request travels through it, and which
 code it shares with the desktop app. Why it is built this way, the security rules, and what is
 still open are in [`PLAN.md`](PLAN.md); the threats and what stops each are in
 [`THREAT-MODEL.md`](THREAT-MODEL.md). Where the project stands is in
@@ -18,7 +19,7 @@ places that HTML.
 ```
  Browser ──────────────────────────────────────────────────────────────────────────────────
    web/  React + TypeScript page
-     routes, tree, pane, compare, history          ← lays out the page
+     the workbench: rail, panel card, pane         ← lays out the page as the desktop shell does
      FragmentHost: DOMPurify, then innerHTML        ← places the server's HTML, draws no code
      /assets/code.css, /assets/ladder.css, ladder.js← Core's own stylesheets and script
          │  JSON over /api, sign-in over /auth, same origin only; session = HttpOnly cookie
@@ -83,7 +84,7 @@ the project file, the IL and every vendor reference (section 7).
 | **`Http/`** | |
 | `Middleware.cs` | `SecurityHeaders` (CSP, nosniff, no-referrer, noindex, no-store on the API; the diagram frame's own narrower policy), `RequestLog` (one line per API request under an operation id, path only), `ConsoleLogSink` |
 
-### The page: `web/` (about 1,300 lines)
+### The page: `web/` (about 1,450 lines)
 
 | File | What it does |
 |---|---|
@@ -98,11 +99,12 @@ the project file, the IL and every vendor reference (section 7).
 | `src/useAsync.ts` | Loads with cancellation, so a slow earlier answer never replaces a newer one |
 | `src/components/FragmentHost.tsx` | Places a sanitised fragment, re-runs the ladder script, scrolls to `#L12`, turns gutter clicks into line links, Markdown and type-link clicks into navigation, and each Mermaid block into a sandboxed diagram frame |
 | `public/mermaid-frame.html`, `public/mermaid-frame.js` | The diagram frame: draws one diagram with the desktop's vendored Mermaid (strict mode), sandboxed without same-origin; text in, a height out |
-| `src/components/TreePanel.tsx` | The object tree with a filter |
-| `src/components/Pane.tsx` | Title, Rendered / Raw, Unified / Side by side, layer chips, notices, errors with sign-in when it would help |
-| `src/components/Header.tsx` | Repository, branch picker, Code / History / Compare, signed-in user |
-| `src/pages/*.tsx` | Home (open a repository), RepoPage (tree and pane), ComparePage (changed files and their diffs), HistoryPage (commits, each openable and comparable) |
-| `src/styles/app.css` | The page around the fragments, light and dark, a drawer under 760 px. Markdown's styles live here because Core emits plain elements for it |
+| `src/components/Workbench.tsx` | **The desktop shell** (PLAN.md, *The workbench restructure*): the rail — Project / History / Compare, Compare in the slot the desktop gives Git because the viewer only reads — swapping one panel card beside the pane card. Owns the phone drawer and closes it on any navigation |
+| `src/components/TreePanel.tsx` | The object tree with a filter, the Project panel's content |
+| `src/components/Pane.tsx` | The pane card: the desktop's `PaneHeading` grammar (FILE or DIFF, the name, the folder from the spelled label, the full label as tooltip), Rendered / Raw, Unified / Side by side, layer chips, notices, errors with sign-in when it would help |
+| `src/components/Header.tsx` | The top bar: repository, branch picker, signed-in user. The views moved to the rail |
+| `src/pages/*.tsx` | Home (open a repository), RepoPage (Project panel and pane), ComparePage (pickers and changed files in the panel, diffs in the pane), HistoryPage (commits in the panel, each openable and comparable) |
+| `src/styles/app.css` | The workbench around the fragments — cards on a sunken background (`--surface-sunken` / `--surface-card`, the desktop's Surface.Sunken / Surface.Base), light and dark, the panel a drawer under 760 px. Markdown's styles live here because Core emits plain elements for it |
 | `src/fragment.test.ts` | 13 vitest tests: the sanitiser (the ladder's checkbox kept, every other input removed), link rules, URL building |
 | `src/ladderScript.test.ts` | 5: Core's ladder script, read from `LadderPageAssets.cs` itself (Vite `?raw`), run fragment after fragment into one document, counting the listeners it leaves |
 | `src/pages/HistoryPage.test.tsx` | 4: the first page-component tests; render History over a stubbed fetch: the Compare link, the "latest 50" note only when a 51st commit came, the cut-branch-list note |

@@ -119,6 +119,10 @@ React nor TypeScript ever draws a rung or highlights a line.
 
 ## What the page looks like
 
+> **Superseded 2026-10-14.** The owner looked at this layout running and asked for the desktop's
+> shell instead — see *The workbench restructure* at the end of this file. The sketch below is
+> what was built first and why; the URLs and the pane's modes survived the restructure unchanged.
+
 GitHub's layout, with Versio's panels inside it:
 
 ```
@@ -413,3 +417,42 @@ NuGet, with Dependabot.
 
 Not open, but easy to forget: **npm hygiene.** A committed lockfile, exact versions, as few
 dependencies as possible. Node is needed in the web build only, never in the desktop build.
+
+## The workbench restructure (2026-10-14)
+
+The first layout shipped as GitHub's: top tabs (`Code / History / Compare`), History and Compare
+as whole pages of their own. The owner looked at it on the fixtures and asked for the desktop
+app's shell instead — the product is the desktop, and the page should read as the same tool.
+The restructure is five pieces, each a coherent commit; the server API and the page's URLs
+survive all of them, because every piece is presentation.
+
+1. **The workbench shell and the pane header — built 2026-10-14.** One layout for every
+   repository route (`web/src/components/Workbench.tsx`): the top bar, a rail on the left edge,
+   one panel card the rail swaps, the pane card beside it, cards on a sunken background
+   (`--surface-sunken` / `--surface-card`, the desktop's Surface.Sunken / Surface.Base). The
+   rail is **Project / History / Compare** — the desktop's is Project / Explorer / Git / History,
+   but Git has no read-only meaning, so Compare (what changed between two versions) takes its
+   slot, and Explorer waits until somebody misses it. History's commits and Compare's pickers
+   and changed-file list moved into the panel card; the routes still deep-link every view. The
+   pane header is the desktop's `PaneHeading` grammar: a small KIND label (FILE or DIFF), the
+   name in the face an ellipsis cannot eat, the folder after it in the quiet mono face, the full
+   spelled path as the tooltip (rule 9: the folder comes from the spelled label, not the raw
+   path). The renderer kind ("Member table", "Networks") moved from beside the title to the
+   label's tooltip.
+2. **History as a panel with the desktop's commit card.** Selecting a commit fills the pane:
+   byline, stats, the message **body** (this repository's commit bodies carry the reasoning and
+   the page never shows them), the objects it touched, then the per-file diffs. Needs
+   `/api/history` to return body and stats per commit.
+3. **Compare as marks on the tree.** The changed set drawn as A/M/D glyphs and tints on the
+   same tree the Project panel shows — the desktop's change marks — with a "changed only"
+   filter replacing the flat list. Needs the compare endpoint to return marks shaped like the
+   tree.
+4. **Shared theme tokens.** Generate the page's CSS custom properties from the desktop's
+   palette dictionaries (`Theme/tokens/Palette.*.xaml`), pinned by a test, so the two faces
+   cannot drift.
+5. **An Explorer panel**, files-as-on-disk beside Project — deferred until somebody misses it.
+
+Phase 1's measurements: 22 vitest green unchanged (the rail's visually-hidden "Compare" label
+is what keeps the History page's link test true), `tsc` clean, looked at on the fixtures in the
+built-in browser at desktop and phone widths — the drawer closes on navigation from the
+workbench's own effect now, since the pages no longer own that state.

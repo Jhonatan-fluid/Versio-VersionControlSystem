@@ -1,8 +1,8 @@
 import { Link, useLocation, useNavigate, useParams } from 'react-router';
 import type { Me } from '../api';
 import { api } from '../api';
-import { Header } from '../components/Header';
 import { ErrorPanel } from '../components/Pane';
+import { Workbench } from '../components/Workbench';
 import { blobUrl, compareUrl, historyUrl, treeUrl } from '../routes';
 import { useAsync } from '../useAsync';
 
@@ -12,7 +12,7 @@ import { useAsync } from '../useAsync';
  */
 const HistoryLimit = 50;
 
-/** /owner/repo/history/ref[/path]: the commits, each openable and comparable with the one before it. */
+/** /owner/repo/history/ref[/path]: the History panel — commits, each openable and comparable. */
 export function HistoryPage({ me }: { me: Me | null }) {
   const { owner = '', repo = '', ref = '', '*': path } = useParams();
   const location = useLocation();
@@ -26,39 +26,53 @@ export function HistoryPage({ me }: { me: Me | null }) {
   const signIn = me?.signInAvailable && !me.signedIn ? api.signInUrl(location.pathname) : null;
 
   return (
-    <div className="app">
-      <Header
-        me={me}
-        repo={{ owner, name: repo, ref, branches: branches.state === 'ok' ? branches.value.branches : [], branchesTruncated: branches.state === 'ok' && branches.value.truncated, onRef: (r) => navigate(historyUrl(owner, repo, r, path)), compareHref: compareUrl(owner, repo, defaultBranch, ref) }}
-      />
-      <main className="history">
-        <h1>History{path ? ` of ${path.slice(path.lastIndexOf('/') + 1)}` : ''}</h1>
-        {commits.state === 'loading' && <p className="muted">Loading...</p>}
-        {commits.state === 'error' && <ErrorPanel error={commits.error} signInUrl={signIn} />}
-        {commits.state === 'ok' && (
-          <ol className="commits">
-            {commits.value.slice(0, HistoryLimit).map((c, i) => {
-              const older = commits.value[i + 1];
-              const [subject] = c.message.split('\n');
-              return (
-                <li key={c.sha}>
-                  <div className="commit-subject">{subject}</div>
-                  <div className="muted">
-                    {c.author} &middot; {new Date(c.when).toLocaleString()} &middot; <code>{c.sha.slice(0, 8)}</code>
-                  </div>
-                  <div className="commit-links">
-                    <Link to={path ? blobUrl(owner, repo, c.sha, path) : treeUrl(owner, repo, c.sha)}>Open at this commit</Link>
-                    {older && <Link to={compareUrl(owner, repo, older.sha, c.sha, path || undefined)}>What changed</Link>}
-                  </div>
-                </li>
-              );
-            })}
-          </ol>
-        )}
-        {commits.state === 'ok' && commits.value.length > HistoryLimit && (
-          <p className="muted">The latest {HistoryLimit} commits. Older ones are on GitHub.</p>
-        )}
-      </main>
-    </div>
+    <Workbench
+      me={me}
+      owner={owner}
+      repo={repo}
+      refName={ref}
+      defaultBranch={defaultBranch}
+      branches={branches.state === 'ok' ? branches.value.branches : []}
+      branchesTruncated={branches.state === 'ok' && branches.value.truncated}
+      onRef={(r) => navigate(historyUrl(owner, repo, r, path))}
+      rail="history"
+      panelTitle={path ? `History of ${path.slice(path.lastIndexOf('/') + 1)}` : 'History'}
+      panel={
+        <>
+          {commits.state === 'loading' && <p className="muted pad">Loading...</p>}
+          {commits.state === 'ok' && (
+            <ol className="commits">
+              {commits.value.slice(0, HistoryLimit).map((c, i) => {
+                const older = commits.value[i + 1];
+                const [subject] = c.message.split('\n');
+                return (
+                  <li key={c.sha}>
+                    <div className="commit-subject">{subject}</div>
+                    <div className="muted">
+                      {c.author} &middot; {new Date(c.when).toLocaleString()} &middot; <code>{c.sha.slice(0, 8)}</code>
+                    </div>
+                    <div className="commit-links">
+                      <Link to={path ? blobUrl(owner, repo, c.sha, path) : treeUrl(owner, repo, c.sha)}>Open at this commit</Link>
+                      {older && <Link to={compareUrl(owner, repo, older.sha, c.sha, path || undefined)}>What changed</Link>}
+                    </div>
+                  </li>
+                );
+              })}
+            </ol>
+          )}
+          {commits.state === 'ok' && commits.value.length > HistoryLimit && (
+            <p className="muted pad">The latest {HistoryLimit} commits. Older ones are on GitHub.</p>
+          )}
+        </>
+      }
+    >
+      {commits.state === 'error' ? (
+        <ErrorPanel error={commits.error} signInUrl={signIn} />
+      ) : (
+        <section className="pane pane-empty">
+          <p className="muted">Open a commit's version of the repository, or see what it changed.</p>
+        </section>
+      )}
+    </Workbench>
   );
 }
