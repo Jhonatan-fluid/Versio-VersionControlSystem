@@ -26,10 +26,13 @@
 
         <TextBlock Grid.Row="0" Text="BRANCH NAME" Style="{StaticResource SectionLabel}" />
 
+        <!-- No watermark. The box is focused the moment the dialog opens, and a watermark
+             is the one hint focus hides — under the old template it sat beneath a blinking
+             caret instead, which read as text to delete (2026-10-14). The example lives in
+             the message line below, where a caret can never sit on it. -->
         <TextBox Grid.Row="1" x:Name="NameBox" Margin="0,6,0,0"
                  Style="{StaticResource FlatTextBox}"
                  FontFamily="{DynamicResource Font.Mono}"
-                 Tag="feature/what-this-changes"
                  TextChanged="OnNameChanged" />
 
         <!-- Why the name is refused, or what it will do if accepted. The box is never

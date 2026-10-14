@@ -36,10 +36,11 @@
                 <ColumnDefinition Width="Auto" />
             </Grid.ColumnDefinitions>
 
+            <!-- No watermark, for the branch dialog's reason: this box is focused on open,
+                 and the address-shape hint lives in the message line below instead. -->
             <TextBox Grid.Column="0" x:Name="UrlBox"
                      Style="{StaticResource FlatTextBox}"
                      FontFamily="{DynamicResource Font.Mono}"
-                     Tag="https://… or git@…"
                      TextChanged="OnUrlChanged" />
 
             <!-- Verification runs by itself once typing stops. The button stays for the

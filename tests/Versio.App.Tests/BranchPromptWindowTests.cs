@@ -56,6 +56,23 @@ public sealed class BranchPromptWindowTests
     }
 
     [Fact]
+    public void The_naming_example_lives_in_the_message_line_not_in_a_watermark()
+    {
+        // The box is focused the moment the dialog opens, and a watermark is the one hint
+        // focus hides — under the old template it sat beneath a blinking caret instead,
+        // which read as text to delete (2026-10-14). The example has to be legible while
+        // the person types, so it lives in the message line, where a caret cannot sit.
+        StaHarness.Run(() =>
+        {
+            var window = new BranchPromptWindow();
+
+            Assert.Null(Control<TextBox>(window, "NameBox").Tag);
+            Assert.Contains("feature/what-this-changes",
+                Control<TextBlock>(window, "Message").Text, StringComparison.Ordinal);
+        });
+    }
+
+    [Fact]
     public void Create_is_disabled_until_something_valid_is_typed()
     {
         StaHarness.Run(() =>

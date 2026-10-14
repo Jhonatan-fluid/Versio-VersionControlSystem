@@ -38,6 +38,16 @@ because a Top that is finally honoured would otherwise kiss the border.
 Pinned in `FocusVisualTests` through a shown window (keyboard focus needs a
 `PresentationSource`); against the old template the pin fails on both counts.
 
+**The sweep after the fix found the one case hide-on-focus makes worse.** The branch and clone
+dialogs focus their box on `Loaded`, so a watermark there is the one hint focus hides — and
+under the old template it had sat beneath a blinking caret instead, the same reported funk
+("same for the new branch"). Their examples (`feature/what-this-changes`, the two address
+shapes) moved into each dialog's message line, where a caret can never sit on them and they stay
+legible *while* typing; the boxes carry no watermark. Every other watermarked box — the four
+find boxes, the log filter, the identity pair, clone's folder — is read before it is clicked and
+keeps the standard behaviour. Pinned in both dialogs' own suites: no `Tag`, example present in
+the message.
+
 ---
 
 ### The body-under-a-table view told the declaration's story twice, badly, and drew husks

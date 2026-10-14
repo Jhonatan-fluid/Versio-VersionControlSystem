@@ -78,6 +78,12 @@ public partial class ClonePromptWindow : Window
         // Once up front: TextChanged does not fire for the initial values, and a dialog that
         // opens with two blank explanation lines reads as broken rather than as waiting.
         UpdateDestination();
+        if (UrlBox.Text.Trim().Length == 0)
+        {
+            VerifyMessage.Text = AddressShapes;
+            VerifyMessage.Foreground =
+                (System.Windows.Media.Brush)FindResource("Brush.Text.Disabled");
+        }
 
         Loaded += (_, _) => UrlBox.Focus();
     }
@@ -104,12 +110,16 @@ public partial class ClonePromptWindow : Window
 
         // Half a URL is not a failure, and saying "repository not found" at somebody who is
         // still typing trains them to ignore the line that will later carry the real answer.
+        // An empty box rests on the address shapes — here, not as a watermark, because the
+        // box is focused on open and a watermark is the one hint focus hides.
         VerifyMessage.Text = UrlBox.Text.Trim().Length == 0
-            ? string.Empty
+            ? AddressShapes
             : "Waiting for the rest of the address…";
         VerifyMessage.Foreground =
             (System.Windows.Media.Brush)FindResource("Brush.Text.Disabled");
     }
+
+    private const string AddressShapes = "https://… and git@… addresses both work.";
 
     /// <summary>
     /// True when a URL is complete enough to be worth asking git about.

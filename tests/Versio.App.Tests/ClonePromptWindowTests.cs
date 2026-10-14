@@ -69,6 +69,12 @@ public sealed class ClonePromptWindowTests
             // two blank labels reads as broken rather than as waiting — the same defect a
             // test caught in the branch dialog.
             Assert.NotEqual(string.Empty, Control<TextBlock>(window, "DestinationMessage").Text);
+
+            // The address-shape hint rests in the message line, not in a watermark: the box
+            // is focused on open, and a watermark is the one hint focus hides (2026-10-14).
+            Assert.Null(Control<TextBox>(window, "UrlBox").Tag);
+            Assert.Contains("git@", Control<TextBlock>(window, "VerifyMessage").Text,
+                StringComparison.Ordinal);
         });
     }
 

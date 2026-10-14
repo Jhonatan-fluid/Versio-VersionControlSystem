@@ -54,8 +54,11 @@ public partial class BranchPromptWindow : Window
         if (string.IsNullOrEmpty(name))
         {
             // Nothing typed yet is not an error. Saying "a branch needs a name" the instant
-            // the dialog opens is scolding somebody for not having typed yet.
-            Message.Text = "Created from the current HEAD, and switched to straight away.";
+            // the dialog opens is scolding somebody for not having typed yet. The example
+            // rides here rather than as a watermark: the box is focused on open, and a
+            // watermark is the one hint focus hides.
+            Message.Text = "Created from the current HEAD, and switched to straight away. "
+                           + "A name like feature/what-this-changes says what it is for.";
             Message.Foreground = (System.Windows.Media.Brush)FindResource("Brush.Text.Secondary");
             CreateButton.IsEnabled = false;
             return;
