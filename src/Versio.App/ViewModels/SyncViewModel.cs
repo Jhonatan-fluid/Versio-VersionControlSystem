@@ -1572,8 +1572,9 @@ public sealed class SyncViewModel : ObservableObject
 
         // After adoption, so a project tracked a moment ago is covered by the same pass, and
         // on every scan, because the rules Versio writes grow over time and a repository
-        // adopted before a rule existed would otherwise never receive it.
-        await TopUpRepositoryRulesAsync(busy.Token).ConfigureAwait(true);
+        // adopted before a rule existed would otherwise never receive it. The snapshot rides
+        // along for the source projects, which adoption never sees.
+        await TopUpRepositoryRulesAsync(snapshot, busy.Token).ConfigureAwait(true);
 
         if (adopted > 0)
         {
@@ -3187,9 +3188,13 @@ public sealed class SyncViewModel : ObservableObject
     /// scan after an upgrade and never again.
     /// </para>
     /// </remarks>
-    private async Task TopUpRepositoryRulesAsync(CancellationToken ct)
+    private async Task TopUpRepositoryRulesAsync(RepoSnapshot snapshot, CancellationToken ct)
     {
-        if (_repositoryRoot is null || _git is null || _config.Bindings.Count == 0)
+        // Source projects count: a repository holding only an FBS library has no bindings
+        // and still needs its machine-local folders kept out of git — nothing else ever
+        // writes those rules, because a source project never goes through adoption.
+        if (_repositoryRoot is null || _git is null
+            || (_config.Bindings.Count == 0 && snapshot.SourceProjects.Count == 0))
         {
             return;
         }
@@ -3206,12 +3211,21 @@ public sealed class SyncViewModel : ObservableObject
 
         try
         {
-            await setup.EnsureGitAttributesAsync(_git, ct, mirrors, projects).ConfigureAwait(true);
+            if (enabled.Count > 0)
+            {
+                await setup.EnsureGitAttributesAsync(_git, ct, mirrors, projects)
+                    .ConfigureAwait(true);
+            }
 
             foreach (var binding in enabled)
             {
                 await setup.EnsureGitIgnoreAsync(binding.ProjectPath, ct, binding.ExportPath)
                     .ConfigureAwait(true);
+            }
+
+            foreach (var source in snapshot.SourceProjects)
+            {
+                await setup.EnsureSourceProjectIgnoresAsync(source, ct).ConfigureAwait(true);
             }
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)

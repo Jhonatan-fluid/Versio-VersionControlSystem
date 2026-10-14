@@ -178,6 +178,46 @@ public sealed class RepoSetup(
             mirror + BindingConventions.TrashSuffix + "/",
         ];
 
+        return await ApplyIgnorePatternsAsync(patterns, ct).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Keep a source project's machine-local folders out of git.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// A source project is never adopted — no binding, no lock, no export — so it never went
+    /// through <see cref="EnsureGitIgnoreAsync"/>, and nothing wrote its vendor's scratch
+    /// rules. On a real library that meant every open of the IDE dressed the project row in
+    /// "modified" cache files, and the per-user sidecar put a username and machine name into
+    /// history by its filename alone (reported 2026-10-14) — the exact leak the classic
+    /// per-user <c>.opt</c> rule exists to stop.
+    /// </para>
+    /// <para>
+    /// The patterns come from the vendor, scoped to this root. Writing <c>.gitignore</c> is
+    /// the same courtesy adoption extends, not a sync: the "never synced" promise is about
+    /// the project's content, and these rules only stop git from recording what the vendor
+    /// itself calls machine-local. Rules cannot untrack what a repository already committed —
+    /// that is a history decision, left to its owner.
+    /// </para>
+    /// </remarks>
+    public async Task<GitIgnorePlan> EnsureSourceProjectIgnoresAsync(
+        string sourceRoot, CancellationToken ct)
+    {
+        var resolved = format ?? PlcFormats.ForSourceProject(sourceRoot);
+        var patterns = resolved?.TransientPatternsFor(sourceRoot) ?? [];
+
+        if (patterns.Count == 0)
+        {
+            return GitIgnorePlan.NoChange(string.Empty);
+        }
+
+        return await ApplyIgnorePatternsAsync([.. patterns], ct).ConfigureAwait(false);
+    }
+
+    private async Task<GitIgnorePlan> ApplyIgnorePatternsAsync(
+        List<string> patterns, CancellationToken ct)
+    {
         var existing = File.Exists(GitIgnorePath)
             ? await File.ReadAllTextAsync(GitIgnorePath, ct).ConfigureAwait(false)
             : string.Empty;

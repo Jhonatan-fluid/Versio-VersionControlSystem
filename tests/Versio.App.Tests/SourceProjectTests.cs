@@ -78,6 +78,25 @@ public sealed class SourceProjectTests
     }
 
     [Fact]
+    public async Task Opening_writes_the_machine_local_ignore_rules_a_source_project_never_got()
+    {
+        // A source project never goes through adoption, so nothing wrote its vendor's
+        // scratch rules: on a real library every IDE open dressed the project in "modified"
+        // cache rows, and the per-user sidecar put a username and machine name into history
+        // by its filename alone (reported 2026-10-14). The top-up pass writes them now —
+        // and it must run even here, where the repository has no bindings at all.
+        using var repo = new TempRepo(identity: true);
+        GivenACommittedSourceProject(repo);
+        using var shell = TestShell.Build();
+
+        await OpenAndSettleAsync(repo, shell);
+
+        var rules = File.ReadAllText(Path.Combine(repo.Path, ".gitignore"));
+        Assert.Contains(Folder + "/.sidecars/", rules, StringComparison.Ordinal);
+        Assert.Contains(Folder + "/.auxiliaries/", rules, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task The_folder_is_a_row_read_from_its_files_and_no_binding_is_written()
     {
         using var repo = new TempRepo(identity: true);

@@ -102,6 +102,23 @@ public sealed class CodesysProjectFormat : IPlcProjectFormat
         }
 
         var normalized = projectPath.Replace(Backslash, '/');
+
+        // A File-Based Storage root keeps its machine-local state in named folders rather
+        // than beside the project (measured — docs/fbs/PLAN.md §2): .sidecars/ holds the
+        // per-user .opt (username and machine in the FILENAME, the same leak the classic
+        // per-user .opt had), the precompile cache and the .~u occupancy marker;
+        // .auxiliaries/ holds caches the IDE regenerates on open. Both churn with every
+        // open, which on a real library drew seven "modified" rows under a project nobody
+        // had changed (reported 2026-10-14). .FBS_Project_Related/ is deliberately NOT
+        // here: its profile and inspection metadata are small, shared, and a profile
+        // change is a change a reviewer should see.
+        var trimmed = normalized.TrimEnd('/');
+        if (FileBased.CodesysFileBasedLayout.Extensions.Any(
+                e => trimmed.EndsWith(e, StringComparison.OrdinalIgnoreCase)))
+        {
+            return [trimmed + "/.sidecars/", trimmed + "/.auxiliaries/"];
+        }
+
         var stem = normalized.EndsWith(BindingConventions.ProjectExtension,
                                        StringComparison.OrdinalIgnoreCase)
             ? normalized[..^BindingConventions.ProjectExtension.Length]

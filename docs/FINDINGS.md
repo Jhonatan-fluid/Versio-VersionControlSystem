@@ -19,6 +19,28 @@ produce a diff touching everything else.
 
 ---
 
+### A source project's machine-local folders polluted every change list, because nothing ever wrote their rules
+
+**2026-10-14, branch `ReviewFixes`.** Reported from a real library: an unchanged
+`FsLibrary.fbslib` wore seven "modified" rows — `.auxiliaries/` caches, a
+`.FBS_Project_Related` inspection file, and two `.sidecars/` files, one of them carrying the
+engineer's username and machine name in its filename. The folders were already measured and
+classified (docs/fbs/PLAN.md §2: sidecars = per-user `.opt` + precompile cache + `.~u`;
+auxiliaries = caches) and this repository keeps `.sidecars/` out of git by a hand-typed rule
+(b15d365) — but a source project never goes through adoption, so `EnsureGitIgnoreAsync` never
+ran for one and no adopted repository ever received the rules. The same shape as the three
+comments that once described `.versio/local/` as gitignored while nothing wrote the rule.
+
+`TransientPatternsFor` now answers an FBS root with its two machine-local folders, scoped to
+that root; `RepoSetup.EnsureSourceProjectIgnoresAsync` writes them; and the top-up pass runs
+them on every scan — including a repository whose only project is a source project, which has
+no bindings and used to skip the pass entirely. `.FBS_Project_Related/` stays trackable on
+purpose: profile and inspection metadata are small, shared, and a profile change is a change a
+reviewer should see. Rules cannot untrack what a repository already committed — that history
+decision stays with its owner (`git rm -r --cached` once, then the rules hold).
+
+---
+
 ### The commit box's caret blinked mid-box beside a hint that would not step aside
 
 **2026-10-14, branch `ReviewFixes`.** Reported from the running app: clicking the commit

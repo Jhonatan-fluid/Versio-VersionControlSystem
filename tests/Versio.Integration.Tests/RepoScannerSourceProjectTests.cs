@@ -88,6 +88,61 @@ public sealed class RepoScannerSourceProjectTests(ITestOutputHelper output)
     }
 
     [Fact]
+    public void A_source_projects_machine_local_folders_are_scoped_ignore_rules()
+    {
+        // Measured in docs/fbs/PLAN.md §2: .sidecars/ holds the per-user .opt (username and
+        // machine in the FILENAME), the precompile cache and the .~u occupancy marker;
+        // .auxiliaries/ holds caches. Both churn with every IDE open, and on a real library
+        // they dressed an unchanged project in seven "modified" rows (reported 2026-10-14).
+        // .FBS_Project_Related/ stays trackable on purpose: profile and inspection metadata
+        // are small, shared, and a profile change is a change a reviewer should see.
+        Assert.Equal(
+            ["plc/Machine.fbsproj/.sidecars/", "plc/Machine.fbsproj/.auxiliaries/"],
+            CodesysProjectFormat.Instance.TransientPatternsFor("plc/Machine.fbsproj"));
+        Assert.Equal(
+            ["FsLibrary.fbslib/.sidecars/", "FsLibrary.fbslib/.auxiliaries/"],
+            CodesysProjectFormat.Instance.TransientPatternsFor("FsLibrary.fbslib/"));
+
+        // The classic shape is untouched: same three patterns it always wrote.
+        Assert.Equal(
+            ["plc/Rig.~u*", "plc/Rig-*.opt", "plc/Rig_project.precompilecache"],
+            CodesysProjectFormat.Instance.TransientPatternsFor("plc/Rig.project"));
+    }
+
+    [Fact]
+    public async Task Ensuring_a_source_projects_ignores_writes_them_scoped_and_only_once()
+    {
+        // A source project never goes through adoption, so EnsureGitIgnoreAsync never ran
+        // for it and nothing wrote these rules — the gap that let the caches pollute the
+        // changes list. The write is idempotent, like adoption's: the second call answers
+        // "no change".
+        var root = NewRoot();
+        try
+        {
+            Write(root, "plc/Machine.fbsproj/Device.device.xml.v3");
+
+            var setup = new RepoSetup(root, format: null, new TestLogger(output));
+            var plan = await setup.EnsureSourceProjectIgnoresAsync(
+                "plc/Machine.fbsproj", CancellationToken.None);
+
+            Assert.True(plan.ChangeNeeded);
+            var rules = File.ReadAllText(Path.Combine(root, ".gitignore"));
+            Assert.Contains("plc/Machine.fbsproj/.sidecars/", rules, StringComparison.Ordinal);
+            Assert.Contains("plc/Machine.fbsproj/.auxiliaries/", rules, StringComparison.Ordinal);
+            Assert.DoesNotContain(".FBS_Project_Related", rules, StringComparison.Ordinal);
+            Assert.DoesNotContain(".versio_staging", rules, StringComparison.Ordinal);
+
+            var again = await setup.EnsureSourceProjectIgnoresAsync(
+                "plc/Machine.fbsproj", CancellationToken.None);
+            Assert.False(again.ChangeNeeded);
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
     public void The_registry_answers_for_a_folder_and_never_for_a_file()
     {
         PlcFormats.Register(CodesysProjectFormat.Instance);
