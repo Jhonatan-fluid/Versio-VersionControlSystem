@@ -291,10 +291,49 @@ public static class CodesysLadderParser
         }
 
         /// <summary>
+        /// How deep an expression tree may nest before the rest is drawn as one
+        /// unsupported element.
+        /// </summary>
+        /// <remarks>
+        /// Far beyond anything the IDE writes — and a hard requirement all the same,
+        /// because <see cref="Power"/> and <see cref="Data"/> recurse once per nesting
+        /// level and a StackOverflowException is the one failure no catch can keep. The
+        /// web viewer hands every repository <c>.xml</c> to this parser, and its
+        /// "a throwing parser degrades to plain text" rule cannot catch an overflow: a
+        /// crafted file of tens of thousands of nested <c>And</c> boxes would end the
+        /// server process. Past the cap the drawing says something was cut, which is
+        /// what every other shape this parser cannot draw already gets.
+        /// </remarks>
+        private const int MaxExpressionDepth = 128;
+
+        private int _depth;
+
+        /// <summary>
         /// Ladder: the elements that take power from <paramref name="from"/>, and the point
         /// power leaves them.
         /// </summary>
         private LdPinRef Power(XElement element, LdPinRef from)
+        {
+            if (_depth >= MaxExpressionDepth)
+            {
+                var deep = NewId();
+                Add(new LdUnsupported(deep, "too deeply nested", TwoTerminal(null)));
+                Connect(from, new LdPinRef(deep, LdPins.In));
+                return new LdPinRef(deep, LdPins.Out);
+            }
+
+            _depth++;
+            try
+            {
+                return PowerCore(element, from);
+            }
+            finally
+            {
+                _depth--;
+            }
+        }
+
+        private LdPinRef PowerCore(XElement element, LdPinRef from)
         {
             switch (Attr(element, "Type"))
             {
@@ -373,6 +412,28 @@ public static class CodesysLadderParser
         /// non-power inputs of a ladder box.
         /// </summary>
         private (LdPinRef? Out, string? Operand) Data(XElement element)
+        {
+            // Same guard as Power, same reason; the two are the only recursion here and
+            // each can reach the other through a box's feeds. Said on the pin rather
+            // than silently unwired, because a drawing that quietly lost an input would
+            // read as the input never having existed.
+            if (_depth >= MaxExpressionDepth)
+            {
+                return (null, "(too deeply nested)");
+            }
+
+            _depth++;
+            try
+            {
+                return DataCore(element);
+            }
+            finally
+            {
+                _depth--;
+            }
+        }
+
+        private (LdPinRef? Out, string? Operand) DataCore(XElement element)
         {
             switch (Attr(element, "Type"))
             {

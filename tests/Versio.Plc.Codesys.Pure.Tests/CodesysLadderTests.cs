@@ -308,6 +308,58 @@ public sealed class CodesysLadderTests
         Assert.Fail($"{approvedAs}: the drawing differs from {approved}. Look at {received} in a browser; if it is right, copy it over the approved file.");
     }
 
+    /// <summary>The fixture's first network with <paramref name="boxes"/> nested And boxes
+    /// spliced into an input list.</summary>
+    private static string Nested(int boxes)
+    {
+        var open = "<Single Type=\"{acfc6f68-8e3a-4af5-bf81-3dd512095a46}\" Method=\"IArchivable\">"
+                   + "<Single Name=\"CallType\" Type=\"string\">And</Single><List2 Name=\"InputItems\">";
+        var deep = string.Concat(Enumerable.Repeat(open, boxes))
+                   + "<Null />"
+                   + string.Concat(Enumerable.Repeat("</List2></Single>", boxes));
+
+        const string marker = "<List2 Name=\"InputItems\">";
+        var text = File.ReadAllText(ClassicFile);
+        return text.Insert(text.IndexOf(marker, StringComparison.Ordinal) + marker.Length, deep);
+    }
+
+    [Fact]
+    public void Boxes_nested_past_the_expression_cap_draw_a_cut_mark_instead_of_overflowing()
+    {
+        // Power and Data recurse once per expression level, and a StackOverflowException
+        // is the one failure no catch can keep: the web viewer hands every repository
+        // .xml to this parser, and its "throwing parser degrades to plain text" rule
+        // cannot catch an overflow. Past the cap the drawing carries an element saying
+        // something was cut, like every other shape this parser cannot draw. 180 boxes
+        // stays under SafeXml's document depth cap, so this exercises the parser's own
+        // guard rather than the one below it.
+        var document = CodesysProjectFormat.Instance.TryParseLadder(
+            "Device/Plc Logic/Application/Signals.xml", Nested(180));
+
+        Assert.NotNull(document);
+        Assert.Contains(
+            document.Body.Networks.SelectMany(n => n.Nodes),
+            n => n is LdUnsupported { VendorName: "too deeply nested" }
+                 || (n is LdBox box && box.Pins.Any(p => p.Operand == "(too deeply nested)")));
+    }
+
+    [Fact]
+    public void A_document_nested_past_the_xml_cap_is_refused_in_milliseconds_not_minutes()
+    {
+        // XDocument's tree building is quadratic in nesting depth — 30,000 levels was
+        // measured at 70+ s of CPU before any parser code ran — so SafeXml refuses the
+        // shape in a streaming pre-pass and the parser answers null: the Raw view, which
+        // is where an undrawable file always lands.
+        var watch = System.Diagnostics.Stopwatch.StartNew();
+        var document = CodesysProjectFormat.Instance.TryParseLadder(
+            "Device/Plc Logic/Application/Signals.xml", Nested(30_000));
+        watch.Stop();
+
+        Assert.Null(document);
+        Assert.True(watch.Elapsed < TimeSpan.FromSeconds(5),
+            $"the refusal took {watch.Elapsed.TotalSeconds:F1}s");
+    }
+
     [Fact]
     public void A_gallery_of_signals_is_written_for_a_human_to_look_at()
     {

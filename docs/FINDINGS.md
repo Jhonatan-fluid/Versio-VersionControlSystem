@@ -19,6 +19,29 @@ produce a diff touching everything else.
 
 ---
 
+### Deep XML: the ladder parser could overflow the stack, and XDocument itself burns minutes first
+
+**2026-10-14, branch `ReviewFixes`.** A review found the first defect by reading; pinning it
+found the second by measuring.
+
+**The parser.** `CodesysLadderParser.Power` and `Data` recurse once per `RValue` nesting level
+with no guard, and the web viewer hands every repository `.xml` to `TryParseLadder` — a crafted
+file of tens of thousands of nested `And` boxes would end the server process with the one
+exception no catch can keep, straight past the "throwing parser degrades to plain text" rule and
+faster than the render budget. Both now stop at 128 expression levels; past the cap the drawing
+carries an element saying something was cut, like every other shape this parser cannot draw.
+
+**The framework.** The pin test for that guard took 91 seconds, and the time was not the
+parser's: **`XDocument`'s tree building is quadratic in nesting depth.** Measured in a harness —
+a 5 MB document of 30,000 nested elements streams through a bare `XmlReader` in 51 ms and takes
+`XDocument.Load` 70+ seconds, every settings combination alike, so `SafeXml`'s character cap
+could never catch it: the cost is the shape, not the size. `SafeXml` now refuses nesting past
+512 levels (two orders of magnitude above the deepest real export) in a streaming pre-pass,
+before any tree exists — the same `XmlException` every caller already turns into the Raw view.
+The eight no-toolchain suites, the 2.5 MB visualisation export included, pass under the cap.
+
+---
+
 ### The Markdown parser could be made to kill the process, or to burn minutes of CPU, by a pushed file
 
 **2026-10-14, branch `ReviewFixes`.** Found by a review that measured rather than read: both
