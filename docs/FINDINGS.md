@@ -96,6 +96,10 @@ not, so the gate is now header **or** folder; a headerless file outside an FBS t
 refused, because a classic mirror's `.st` must keep the layout it has. Pinned both ways, with
 the reported file reduced to a specimen.
 
+---
+
+### A parent-GUID cycle made every object in it vanish from the project tree
+
 **2026-10-14, branch `ReviewFixes`.** Found by a review pass over `Projects/`; the method's own
 remarks name silent object loss as the one failure the panel must not have, and its cycle story
 was only half true. The visited set stops the recursion — but only once `Attach` runs, and for a
@@ -107,8 +111,19 @@ hang", not "objects survive".
 
 An ownership chain must end at ground, so `Nest` now checks that it does: a leaf whose chain
 loops (itself included) or enters a loop is treated as having no honest owner — flat, as a root,
-exactly like the missing-owner case two lines up. Display-only (nothing on disk moves), pinned by
-three tests: the mutual cycle, the self-parent, and a child whose owner sits inside a cycle.
+exactly like the missing-owner case two lines up. Display-only (nothing on disk moves).
+
+**The first fix did not fix it, and its tests could not see that.** It filtered the members
+lookup by groundedness and never widened the root set — so a cycle member was neither a member
+nor a root, exactly as before — and all three pin tests went green anyway, because every fixture
+was all-cycle: with zero grounded members, the `members.Count == 0` early return handed every
+leaf back untouched. Beside one honest member — which is every real manifest, since methods nest
+under their blocks — the loop still vanished. Caught by an adversarial re-review that built
+exactly that mixed manifest and watched the assertion fail. The root set now admits ungrounded
+leaves too, groundedness is memoised per guid (one walk per chain, not one per member), and the
+mixed shape is the fourth pin: a cycle beside an honest member keeps every object, with the
+honest member still nested. Mutation-checked on the root-set clause alone — removing just it
+fails the new test, which is the half the first round's mutation check never isolated.
 
 ---
 
@@ -164,6 +179,10 @@ collapses whenever a repository is open, so it never sits over a tree that has r
 — `VisualTreeHelper.HitTest` at each button's centre must land inside that button — and against
 the old order it fails with *"a click at 200.8,478.4 lands on Grid"*.
 
+---
+
+### A repository folder renamed while open raised the same crash toast every 20 seconds
+
 **2026-10-14, branch `ReviewFixes`.** Measured live, not derived: a packaged Versio had
 `C:\GIT\Codesys\FS_Codesys_Library` open when the folder was renamed to `FsLibrary`. Renaming a
 watched tree succeeds — the watcher handles move with it — so the shell went on polling the old
@@ -184,6 +203,10 @@ mutation-checked both ways: without the suppression the storm returns, and witho
 success-reset the second disappearance is never reported. The notification center refreshes an
 identical headline rather than stacking it, so the count that proves "said once" is the card's
 Error mirror in the log, one line per post.
+
+---
+
+### Every clean exit logged its shutdown into a disposed file sink, which quietly reopened the file
 
 **2026-10-14, branch `ReviewFixes`.** `App.xaml.cs` registered its Exit handlers sink-first and
 shell-last, and multicast handlers run in registration order — so on every clean exit the

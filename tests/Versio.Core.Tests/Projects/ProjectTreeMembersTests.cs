@@ -201,6 +201,29 @@ public sealed class ProjectTreeMembersTests
     }
 
     [Fact]
+    public void A_cycle_beside_an_honest_member_still_keeps_every_object()
+    {
+        // The shape the first fix missed. Its fixtures were all-cycle, so the members
+        // lookup came out empty and the early return handed every leaf back — the tests
+        // were green while the root set still excluded cycle members whenever one honest
+        // member existed, which is every real manifest (methods under their blocks).
+        // Caught by an adversarial re-review that built exactly this manifest.
+        var tree = Build(Manifest(
+            Obj("clsRoom", "clsRoom.st", "room"),
+            Obj("InitRoom", "clsRoom.InitRoom.st", "init", "METHOD", parent: "room"),
+            Obj("A", "A.st", "a", parent: "b"),
+            Obj("B", "B.st", "b", parent: "a")));
+
+        var rows = Flatten(tree).Select(n => n.Name).ToList();
+        Assert.Contains("A", rows);
+        Assert.Contains("B", rows);
+
+        // And the honest member still nests where it belongs.
+        Assert.Equal("InitRoom",
+            Assert.Single(Find(tree, "clsRoom").Children).Name);
+    }
+
+    [Fact]
     public void A_member_whose_owner_is_inside_a_cycle_still_appears()
     {
         // Its chain enters the loop and never reaches ground, so it cannot be nested

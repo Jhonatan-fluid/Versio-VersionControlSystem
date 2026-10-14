@@ -433,23 +433,59 @@ public static class ProjectTreeBuilder
         // of them and every object in the loop vanishes from the panel. That is the one
         // failure this method's own remarks forswear, and the opposite of the
         // missing-owner case, which deliberately keeps the leaf. The edge is what lies,
-        // so the edge is what goes: an ungrounded leaf keeps its place as a root, flat,
-        // which is where an object with no honest owner belongs.
+        // so the edge is what goes: an ungrounded leaf is excluded from the members
+        // lookup AND admitted to the root set below — flat, which is where an object
+        // with no honest owner belongs. Both halves, deliberately spelled out: the first
+        // fix guarded only the lookup, and its tests stayed green through the
+        // members.Count == 0 early return because every fixture was all-cycle — beside
+        // one honest member, the loop still vanished. Caught by a re-review that built
+        // the mixed manifest; that shape is the pin now.
+        //
+        // Memoised per guid: every guid on a walked chain shares the chain's verdict,
+        // so one deep honest chain costs one walk, not one per member.
+        var verdicts = new Dictionary<string, bool>(StringComparer.Ordinal);
+
         bool Grounded(Leaf leaf)
         {
-            var chain = new HashSet<string>(StringComparer.Ordinal);
-            var current = leaf;
-            while (current.Parent.Length > 0 && owners.TryGetValue(current.Parent, out var owner))
+            var chain = new List<string>();
+            var onChain = new HashSet<string>(StringComparer.Ordinal);
+            if (leaf.Node.Guid is { Length: > 0 } own)
             {
-                if (owner.Node.Guid is not { Length: > 0 } guid || !chain.Add(guid))
+                if (verdicts.TryGetValue(own, out var knownOwn))
                 {
-                    return false;
+                    return knownOwn;
                 }
 
+                chain.Add(own);
+                onChain.Add(own);
+            }
+
+            var current = leaf;
+            var result = true;
+            while (current.Parent.Length > 0 && owners.TryGetValue(current.Parent, out var owner))
+            {
+                if (owner.Node.Guid is not { Length: > 0 } guid || !onChain.Add(guid))
+                {
+                    result = false;
+                    break;
+                }
+
+                if (verdicts.TryGetValue(guid, out var known))
+                {
+                    result = known;
+                    break;
+                }
+
+                chain.Add(guid);
                 current = owner;
             }
 
-            return true;
+            foreach (var walked in chain)
+            {
+                verdicts[walked] = result;
+            }
+
+            return result;
         }
 
         var members = leaves
@@ -500,7 +536,7 @@ public static class ProjectTreeBuilder
         }
 
         return leaves
-            .Where(l => l.Parent.Length == 0 || !owners.ContainsKey(l.Parent))
+            .Where(l => l.Parent.Length == 0 || !owners.ContainsKey(l.Parent) || !Grounded(l))
             .Select(l => l with { Node = Attach(l) })
             .ToList();
     }
