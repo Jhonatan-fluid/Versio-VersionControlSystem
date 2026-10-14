@@ -722,7 +722,23 @@ public sealed partial class GitCliClient(
         using var announce = new CancellationTokenSource();
         var announced = AnnounceIfSlowAsync(display, announce.Token);
 
-        process.Start();
+        try
+        {
+            process.Start();
+        }
+        catch (Exception ex) when (ex is System.ComponentModel.Win32Exception or InvalidOperationException)
+        {
+            // The process never started, so the slow-announce must not go on to say
+            // "still running" about it — with the repository folder renamed out from
+            // under an open session, every 20 s status poll logged exactly that line a
+            // second after its start had already failed (FINDINGS 2026-10-14). Cancelled
+            // here because the announcer was armed above, before the start could fail;
+            // the throw still reaches the caller, which owns saying what it means.
+            await announce.CancelAsync().ConfigureAwait(false);
+            _log.Warn(LogCategory.Git, $"{display} could not start: {ex.Message}");
+            throw;
+        }
+
         ChildProcess.AssignToSession(process);
         process.BeginOutputReadLine();
         process.BeginErrorReadLine();

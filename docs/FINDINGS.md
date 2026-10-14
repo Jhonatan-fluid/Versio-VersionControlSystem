@@ -19,7 +19,28 @@ produce a diff touching everything else.
 
 ---
 
-### Every clean exit logged its shutdown into a disposed file sink, which quietly reopened the file
+### A repository folder renamed while open raised the same crash toast every 20 seconds
+
+**2026-10-14, branch `ReviewFixes`.** Measured live, not derived: a packaged Versio had
+`C:\GIT\Codesys\FS_Codesys_Library` open when the folder was renamed to `FsLibrary`. Renaming a
+watched tree succeeds — the watcher handles move with it — so the shell went on polling the old
+path, every git call threw `Win32Exception (267)` out of `Process.Start` ("The directory name is
+invalid"), and `RunRefreshAsync`'s generic catch raised an identical "Something went wrong" toast
+on every 20-second tick for as long as the window stayed open. The log also claimed
+`git status … still running` one second after each failed start: the slow-command announcer is
+armed before `Process.Start`, and a throw there skipped every cancel, so the heartbeat reported a
+process that never existed.
+
+Two scoped fixes, deliberately short of SAFEGUARDS §5.H (which stays deferred — nothing here
+classifies toolchain failures or touches the breaker): the shell says the folder is gone **once**,
+by name, with the remedy ("put it back, or open the repository from its new location"), repeats at
+Debug while it stays gone, and a refresh that works again makes the next disappearance news; and
+`GitCliClient.RunAsync` cancels the announcer and logs `could not start` when the process never
+started. Pinned by `RepositoryGoneTests` against a really-moved real repository,
+mutation-checked both ways: without the suppression the storm returns, and without the
+success-reset the second disappearance is never reported. The notification center refreshes an
+identical headline rather than stacking it, so the count that proves "said once" is the card's
+Error mirror in the log, one line per post.
 
 **2026-10-14, branch `ReviewFixes`.** `App.xaml.cs` registered its Exit handlers sink-first and
 shell-last, and multicast handlers run in registration order — so on every clean exit the

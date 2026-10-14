@@ -2275,10 +2275,17 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         try
         {
             await RefreshCoreAsync(trigger, paths).ConfigureAwait(true);
+
+            // A refresh that worked means the folder is back (or a different repository
+            // is open), so a later disappearance is news again.
+            _repositoryGoneSaid = null;
         }
         catch (Exception ex)
         {
-            ReportError(ex);
+            if (!TryReportRepositoryGone(ex))
+            {
+                ReportError(ex);
+            }
         }
         finally
         {
@@ -8280,6 +8287,61 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
     /// worded as an outcome, because a red error line for something the user just asked for
     /// teaches them that the button is broken.
     /// </remarks>
+    /// <summary>
+    /// The repository folder this session already said is gone, or null. Which path, not a
+    /// flag: a successful refresh clears it, and a different repository vanishing is its own
+    /// news even if the first one never came back.
+    /// </summary>
+    private string? _repositoryGoneSaid;
+
+    /// <summary>
+    /// If the refresh failed because the repository folder itself is gone, say so — once.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// A repository renamed or deleted while Versio has it open makes every git call throw
+    /// from <c>Process.Start</c> ("The directory name is invalid"), and the status poll
+    /// retries every 20 s — so the generic handler raised the same "Something went wrong"
+    /// toast on every tick, for as long as the window stayed open. Measured live on
+    /// 2026-10-14: a repository folder renamed at 08:44 produced an identical error pair
+    /// every poll until the app was closed. A storm of identical toasts is how the one that
+    /// matters goes unread.
+    /// </para>
+    /// <para>
+    /// <b>This is detection and wording only — deliberately not SAFEGUARDS §5.H</b>, which
+    /// stays deferred: nothing here classifies a mid-run toolchain failure, feeds or spares
+    /// the circuit breaker, or closes the repository. The polls keep running, so the moment
+    /// the folder comes back the next refresh succeeds and resets the notice; until then the
+    /// repeats are a Debug line each.
+    /// </para>
+    /// </remarks>
+    private bool TryReportRepositoryGone(Exception ex)
+    {
+        var root = _repositoryPath;
+        if (root is null || Directory.Exists(root))
+        {
+            return false;
+        }
+
+        if (string.Equals(_repositoryGoneSaid, root, StringComparison.OrdinalIgnoreCase))
+        {
+            _logger.Debug(LogCategory.App,
+                $"the repository folder is still missing ({root}); not repeating the notice");
+            return true;
+        }
+
+        _repositoryGoneSaid = root;
+        _logger.Error(LogCategory.App,
+            $"the repository folder is gone: {root} was moved, renamed or deleted while it " +
+            "was open. Every git call will fail until it is back at that path or another " +
+            "repository is opened.", ex);
+        Notifications.Failure(
+            "The repository folder is gone.",
+            $"{root} is no longer on disk — it was moved, renamed or deleted while Versio had " +
+            "it open. Put it back, or open the repository from its new location.");
+        return true;
+    }
+
     private void ReportError(Exception ex)
     {
         if (ex is OperationCanceledException)
