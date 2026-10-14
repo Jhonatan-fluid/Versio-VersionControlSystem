@@ -259,4 +259,19 @@ public class PorcelainV2ParserTests
 
         Assert.Equal("plc/Good.st", Assert.Single(status.Changes).Path);
     }
+
+    [Fact]
+    public void An_untracked_entry_truncated_at_the_tag_is_skipped_rather_than_throwing()
+    {
+        // The '?' arm was the one unguarded slice: a stream cut right after the tag —
+        // git killed mid-status — threw ArgumentOutOfRangeException out of the parse,
+        // converting a partial status into a dead refresh. Same contract as above, and
+        // "? " alone names no file, so nothing is invented from it either.
+        var status = PorcelainV2Parser.Parse(Entries(
+            "?",
+            "? ",
+            "? plc/New.st"));
+
+        Assert.Equal("plc/New.st", Assert.Single(status.Changes).Path);
+    }
 }

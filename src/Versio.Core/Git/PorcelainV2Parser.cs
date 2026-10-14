@@ -79,12 +79,21 @@ public static class PorcelainV2Parser
                     break;
 
                 case '?':
-                    changes.Add(new FileChange
+                    // Length-checked like every other arm: a stream truncated right after
+                    // the tag — git killed mid-status — leaves a bare "?" whose slice threw
+                    // out of the whole parse, taking the refresh with it. The contract the
+                    // '1' arm states holds here too: a truncated read must not take down
+                    // the status refresh; the torn entry is dropped, never invented.
+                    if (line.Length > 2)
                     {
-                        Path = line[2..],
-                        Staged = ChangeKind.Unmodified,
-                        Unstaged = ChangeKind.Untracked,
-                    });
+                        changes.Add(new FileChange
+                        {
+                            Path = line[2..],
+                            Staged = ChangeKind.Unmodified,
+                            Unstaged = ChangeKind.Untracked,
+                        });
+                    }
+
                     break;
 
                 case '!':
