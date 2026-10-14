@@ -170,11 +170,50 @@ public sealed class ProjectTreeMembersTests
     {
         // A manifest is a file on disk and can say anything. A cycle here would recurse
         // forever inside a background build, which presents as the panel never appearing.
+        //
+        // Not hanging is half the contract. The other half: BOTH objects still appear.
+        // The root set used to be "no parent, or parent not in the manifest", and every
+        // member of a cycle has a parent that IS in the manifest — so none was a root,
+        // Attach never ran for any of them, and the whole loop vanished from the panel
+        // without the visited guard ever being consulted. This assertion was
+        // Assert.NotEmpty(Flatten(tree)), which the root folder satisfies by itself.
         var tree = Build(Manifest(
             Obj("A", "A.st", "a", parent: "b"),
             Obj("B", "B.st", "b", parent: "a")));
 
-        Assert.NotEmpty(Flatten(tree));
+        var rows = Flatten(tree).Select(n => n.Name).ToList();
+        Assert.Contains("A", rows);
+        Assert.Contains("B", rows);
+    }
+
+    [Fact]
+    public void An_object_claiming_itself_as_owner_still_appears()
+    {
+        // The one-element cycle, same reasoning: its parent is in the manifest (it is
+        // itself), so it qualified as nobody's root and vanished.
+        var tree = Build(Manifest(
+            Obj("clsRoom", "clsRoom.st", "room"),
+            Obj("Loop", "Loop.st", "self", parent: "self")));
+
+        var rows = Flatten(tree).Select(n => n.Name).ToList();
+        Assert.Contains("clsRoom", rows);
+        Assert.Contains("Loop", rows);
+    }
+
+    [Fact]
+    public void A_member_whose_owner_is_inside_a_cycle_still_appears()
+    {
+        // Its chain enters the loop and never reaches ground, so it cannot be nested
+        // honestly. Flat and present beats nested and gone.
+        var tree = Build(Manifest(
+            Obj("A", "A.st", "a", parent: "b"),
+            Obj("B", "B.st", "b", parent: "a"),
+            Obj("C", "C.st", "c", parent: "a")));
+
+        var rows = Flatten(tree).Select(n => n.Name).ToList();
+        Assert.Contains("A", rows);
+        Assert.Contains("B", rows);
+        Assert.Contains("C", rows);
     }
 
     [Fact]

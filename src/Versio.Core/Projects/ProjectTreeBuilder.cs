@@ -425,8 +425,35 @@ public static class ProjectTreeBuilder
             }
         }
 
+        // An ownership chain must end at ground — a leaf with no parent, or one whose
+        // owner the manifest does not contain. A chain that loops (an object claiming
+        // itself, or two claiming each other) has no end, and nesting by it would not
+        // hang — the visited set below guards that — it would do something quieter and
+        // worse: no member of the loop qualifies as a root, so Attach never runs for any
+        // of them and every object in the loop vanishes from the panel. That is the one
+        // failure this method's own remarks forswear, and the opposite of the
+        // missing-owner case, which deliberately keeps the leaf. The edge is what lies,
+        // so the edge is what goes: an ungrounded leaf keeps its place as a root, flat,
+        // which is where an object with no honest owner belongs.
+        bool Grounded(Leaf leaf)
+        {
+            var chain = new HashSet<string>(StringComparer.Ordinal);
+            var current = leaf;
+            while (current.Parent.Length > 0 && owners.TryGetValue(current.Parent, out var owner))
+            {
+                if (owner.Node.Guid is not { Length: > 0 } guid || !chain.Add(guid))
+                {
+                    return false;
+                }
+
+                current = owner;
+            }
+
+            return true;
+        }
+
         var members = leaves
-            .Where(l => l.Parent.Length > 0 && owners.ContainsKey(l.Parent))
+            .Where(l => l.Parent.Length > 0 && owners.ContainsKey(l.Parent) && Grounded(l))
             .ToLookup(l => l.Parent, StringComparer.Ordinal);
 
         if (members.Count == 0)
