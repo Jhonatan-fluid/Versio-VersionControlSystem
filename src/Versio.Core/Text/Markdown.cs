@@ -108,8 +108,32 @@ public static partial class Markdown
     [GeneratedRegex(@"^ *\|? *:?-+:? *(\| *:?-+:? *)*\|? *$")]
     private static partial Regex TableDelimiter();
 
-    private static IReadOnlyList<MdBlock> ParseBlocks(IReadOnlyList<string> lines)
+    /// <summary>
+    /// How deep blocks may nest before the rest is rendered flat.
+    /// </summary>
+    /// <remarks>
+    /// Far beyond any document a person writes — and a hard requirement all the same,
+    /// because this parser's promise is "degrades to paragraph text, never to an
+    /// exception", and recursion is the one failure no catch can keep: ~2,000 leading
+    /// <c>&gt;</c> on a line was measured to end the process with StackOverflowException.
+    /// The web viewer renders files anyone with push access wrote, so without the cap
+    /// one crafted .md took the whole server down, straight past the renderer's own
+    /// catch-all (an overflow is uncatchable) and faster than its time budget.
+    /// </remarks>
+    private const int MaxBlockDepth = 64;
+
+    private static IReadOnlyList<MdBlock> ParseBlocks(IReadOnlyList<string> lines, int depth = 0)
     {
+        if (depth >= MaxBlockDepth)
+        {
+            // Flat, not gone: the content survives as one paragraph, which is the same
+            // degradation every other unparseable shape gets.
+            var flat = string.Join(" ", lines.Where(l => !string.IsNullOrWhiteSpace(l))).Trim();
+            return flat.Length == 0
+                ? []
+                : [new MdParagraph([new MdRun(flat, MdStyle.None, null)])];
+        }
+
         var blocks = new List<MdBlock>();
         var paragraph = new List<string>();
         var i = 0;
@@ -190,7 +214,7 @@ public static partial class Markdown
                     i++;
                 }
 
-                blocks.Add(new MdQuote(ParseBlocks(quoted)));
+                blocks.Add(new MdQuote(ParseBlocks(quoted, depth + 1)));
                 continue;
             }
 
@@ -205,7 +229,7 @@ public static partial class Markdown
                 && (paragraph.Count == 0 || CanInterruptParagraph(marker)))
             {
                 FlushParagraph();
-                i = ReadList(lines, i, blocks);
+                i = ReadList(lines, i, blocks, depth);
                 continue;
             }
 
@@ -392,7 +416,7 @@ public static partial class Markdown
     /// simply continues the item's last paragraph. That last one is what hard-wrapped prose
     /// in a numbered list needs, and this repository's STATUS is written that way.
     /// </remarks>
-    private static int ReadList(IReadOnlyList<string> lines, int start, List<MdBlock> blocks)
+    private static int ReadList(IReadOnlyList<string> lines, int start, List<MdBlock> blocks, int depth)
     {
         var first = ListMarker().Match(lines[start]);
         var ordered = first.Groups[3].Success;
@@ -457,7 +481,7 @@ public static partial class Markdown
                 i++;
             }
 
-            items.Add(ParseBlocks(item));
+            items.Add(ParseBlocks(item, depth + 1));
 
             // Blank lines between items keep the list going; anything else after them ends it.
             var after = i;
@@ -523,11 +547,23 @@ public static partial class Markdown
     {
         ArgumentNullException.ThrowIfNull(text);
         var runs = new List<MdRun>();
-        ParseInline(text, MdStyle.None, null, runs);
+
+        // The scan budget: generous multiple of linear, floored so a short text never
+        // hits it. Every scanner below looks ahead for a closer, and an input built of
+        // openers that never close ("*a " or "[" repeated) makes each opener scan to the
+        // end — measured at 84 s of CPU for a 240 KB file, well inside the web viewer's
+        // size cap and past its time budget (which stops the reader's wait, not the
+        // work). Honest emphasis and links cost a few units per character; only the
+        // degenerate shapes exhaust this, and what exhaustion costs them is styling:
+        // the rest of the text arrives as one plain run, which is this parser's stated
+        // degradation for everything it cannot do.
+        var fuel = Math.Max(4096, text.Length * 16);
+        ParseInline(text, MdStyle.None, null, runs, ref fuel);
         return Merge(runs);
     }
 
-    private static void ParseInline(string text, MdStyle style, string? link, List<MdRun> runs)
+    private static void ParseInline(
+        string text, MdStyle style, string? link, List<MdRun> runs, ref int fuel)
     {
         var plain = new StringBuilder();
         var i = 0;
@@ -543,6 +579,13 @@ public static partial class Markdown
 
         while (i < text.Length)
         {
+            // Out of budget: the rest of the text is still the reader's, just unstyled.
+            if (--fuel < 0)
+            {
+                plain.Append(text, i, text.Length - i);
+                break;
+            }
+
             var c = text[i];
 
             if (c == '\\' && i + 1 < text.Length
@@ -553,7 +596,7 @@ public static partial class Markdown
                 continue;
             }
 
-            if (c == '`' && CodeSpan(text, i) is (var code, var codeEnd))
+            if (c == '`' && CodeSpan(text, i, ref fuel) is (var code, var codeEnd))
             {
                 Flush();
                 runs.Add(new MdRun(code, style | MdStyle.Code, link));
@@ -562,7 +605,7 @@ public static partial class Markdown
             }
 
             if (link is null && (c == '[' || (c == '!' && i + 1 < text.Length && text[i + 1] == '['))
-                && LinkAt(text, c == '!' ? i + 1 : i) is (var label, var url, var linkEnd))
+                && LinkAt(text, c == '!' ? i + 1 : i, ref fuel) is (var label, var url, var linkEnd))
             {
                 Flush();
 
@@ -570,18 +613,18 @@ public static partial class Markdown
                 // text, in italics, says what was there.
                 if (c == '!')
                 {
-                    ParseInline(label, style | MdStyle.Emphasis, null, runs);
+                    ParseInline(label, style | MdStyle.Emphasis, null, runs, ref fuel);
                 }
                 else
                 {
-                    ParseInline(label, style, url, runs);
+                    ParseInline(label, style, url, runs, ref fuel);
                 }
 
                 i = linkEnd;
                 continue;
             }
 
-            if (link is null && c == '<' && AutoLink(text, i) is (var auto, var autoEnd))
+            if (link is null && c == '<' && AutoLink(text, i, ref fuel) is (var auto, var autoEnd))
             {
                 Flush();
                 runs.Add(new MdRun(auto, style, auto));
@@ -589,10 +632,11 @@ public static partial class Markdown
                 continue;
             }
 
-            if (c is '*' or '_' or '~' && Delimited(text, i) is (var inner, var added, var delimEnd))
+            if (c is '*' or '_' or '~'
+                && Delimited(text, i, ref fuel) is (var inner, var added, var delimEnd))
             {
                 Flush();
-                ParseInline(inner, style | added, link, runs);
+                ParseInline(inner, style | added, link, runs, ref fuel);
                 i = delimEnd;
                 continue;
             }
@@ -605,7 +649,14 @@ public static partial class Markdown
     }
 
     /// <summary>A code span: a run of backticks closed by a run of the same length.</summary>
-    private static (string Code, int End)? CodeSpan(string text, int start)
+    /// <remarks>
+    /// Every scanner here charges the characters it looks at against the caller's budget
+    /// and gives up by answering null once it is spent. An opener that never closes makes
+    /// its scan read to the end of the text, and a text made of nothing but such openers
+    /// used to cost one full scan per opener — quadratic, measured in minutes of CPU on
+    /// kilobytes of input that any push could contain.
+    /// </remarks>
+    private static (string Code, int End)? CodeSpan(string text, int start, ref int fuel)
     {
         var ticks = 0;
         while (start + ticks < text.Length && text[start + ticks] == '`')
@@ -613,11 +664,19 @@ public static partial class Markdown
             ticks++;
         }
 
+        fuel -= ticks;
+
         var fence = new string('`', ticks);
         var search = start + ticks;
         while (search < text.Length)
         {
+            if (fuel < 0)
+            {
+                return null;
+            }
+
             var close = text.IndexOf(fence, search, StringComparison.Ordinal);
+            fuel -= (close < 0 ? text.Length : close) - search;
             if (close < 0)
             {
                 return null;
@@ -649,19 +708,24 @@ public static partial class Markdown
     }
 
     /// <summary><c>[label](url)</c>, with brackets nested in the label and an optional title.</summary>
-    private static (string Label, string Url, int End)? LinkAt(string text, int open)
+    private static (string Label, string Url, int End)? LinkAt(string text, int open, ref int fuel)
     {
         var depth = 0;
         var close = -1;
         for (var i = open; i < text.Length; i++)
         {
+            if (--fuel < 0)
+            {
+                return null;
+            }
+
             if (text[i] == '\\')
             {
                 i++;
                 continue;
             }
 
-            if (text[i] == '`' && CodeSpan(text, i) is (_, var codeEnd))
+            if (text[i] == '`' && CodeSpan(text, i, ref fuel) is (_, var codeEnd))
             {
                 i = codeEnd - 1;
                 continue;
@@ -686,6 +750,11 @@ public static partial class Markdown
         var parens = 0;
         for (var i = close + 1; i < text.Length; i++)
         {
+            if (--fuel < 0)
+            {
+                return null;
+            }
+
             if (text[i] == '(')
             {
                 parens++;
@@ -709,10 +778,11 @@ public static partial class Markdown
         return null;
     }
 
-    private static (string Url, int End)? AutoLink(string text, int start)
+    private static (string Url, int End)? AutoLink(string text, int start, ref int fuel)
     {
         var close = text.IndexOf('>', start + 1);
-        if (close < 0)
+        fuel -= (close < 0 ? text.Length : close) - start;
+        if (close < 0 || fuel < 0)
         {
             return null;
         }
@@ -736,7 +806,8 @@ public static partial class Markdown
     /// letter or digit precedes it and closes only where none follows. Code spans are skipped
     /// while searching, so a delimiter inside backticks never closes one outside them.
     /// </remarks>
-    private static (string Inner, MdStyle Style, int End)? Delimited(string text, int start)
+    private static (string Inner, MdStyle Style, int End)? Delimited(
+        string text, int start, ref int fuel)
     {
         var c = text[start];
         var run = 0;
@@ -744,6 +815,8 @@ public static partial class Markdown
         {
             run++;
         }
+
+        fuel -= run;
 
         if (c == '~' && run != 2)
         {
@@ -767,13 +840,18 @@ public static partial class Markdown
         var token = new string(c, width);
         for (var i = open; i < text.Length; i++)
         {
+            if (--fuel < 0)
+            {
+                return null;
+            }
+
             if (text[i] == '\\')
             {
                 i++;
                 continue;
             }
 
-            if (text[i] == '`' && CodeSpan(text, i) is (_, var codeEnd))
+            if (text[i] == '`' && CodeSpan(text, i, ref fuel) is (_, var codeEnd))
             {
                 i = codeEnd - 1;
                 continue;

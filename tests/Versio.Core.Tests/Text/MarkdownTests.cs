@@ -233,6 +233,97 @@ public sealed class MarkdownTests
     }
 
     [Fact]
+    public void Thousands_of_nested_quotes_parse_flat_instead_of_overflowing_the_stack()
+    {
+        // ">" repeated recursed once per level and ~2,000 of them ended the PROCESS with
+        // StackOverflowException — uncatchable, so it sailed past the web viewer's
+        // renderer catch-all and took the whole server with it, on a file anyone with
+        // push access can commit. Past the depth cap the content arrives flat; the
+        // parser's promise is "degrades to paragraph text, never to an exception", and
+        // an overflow is the one exception no catch can keep.
+        var blocks = Markdown.Parse(new string('>', 5000) + " still here");
+
+        Assert.Contains("still here", Flatten(blocks));
+    }
+
+    [Fact]
+    public void Thousands_of_nested_list_levels_parse_flat_instead_of_overflowing_the_stack()
+    {
+        // The same recursion through ReadList: one level per two spaces of indent.
+        var lines = Enumerable.Range(0, 5000).Select(n => new string(' ', n * 2) + "- item" + n);
+        var blocks = Markdown.Parse(string.Join('\n', lines));
+
+        Assert.Contains("item4999", Flatten(blocks));
+    }
+
+    [Fact]
+    public void A_text_of_openers_that_never_close_parses_in_linear_time_not_minutes()
+    {
+        // Each unmatched "*" or "[" used to scan to the end of the text looking for its
+        // closer: quadratic, measured at 84 s of CPU for 240 KB — well inside the web
+        // viewer's size cap, and its render budget stops the reader's wait, not the
+        // work. The budget inside Inline() now bounds the total scan; what the
+        // degenerate shapes lose is styling, never text.
+        foreach (var hostile in new[]
+                 {
+                     string.Concat(Enumerable.Repeat("*a ", 60_000)),
+                     new string('[', 120_000) + "a",
+                     new string('<', 120_000) + "a",
+                 })
+        {
+            var watch = System.Diagnostics.Stopwatch.StartNew();
+            var runs = Markdown.Inline(hostile);
+            watch.Stop();
+
+            Assert.True(watch.Elapsed < TimeSpan.FromSeconds(5),
+                $"inline parse took {watch.Elapsed.TotalSeconds:F1}s");
+            Assert.Equal(hostile.Length, runs.Sum(TextLength));
+        }
+    }
+
+    /// <summary>Visible characters a run contributes, counting delimiters it consumed.</summary>
+    /// <remarks>
+    /// The budget must never eat content, only styling — so the hostile inputs above are
+    /// chosen so nothing parses as emphasis or link and every character must come back.
+    /// </remarks>
+    private static int TextLength(MdRun run) => run.Text.Length;
+
+    private static string Flatten(IReadOnlyList<MdBlock> blocks)
+    {
+        var text = new System.Text.StringBuilder();
+
+        void Walk(IEnumerable<MdBlock> list)
+        {
+            foreach (var block in list)
+            {
+                switch (block)
+                {
+                    case MdParagraph p:
+                        foreach (var run in p.Runs)
+                        {
+                            text.Append(run.Text);
+                        }
+
+                        break;
+                    case MdQuote q:
+                        Walk(q.Blocks);
+                        break;
+                    case MdList l:
+                        foreach (var item in l.Items)
+                        {
+                            Walk(item);
+                        }
+
+                        break;
+                }
+            }
+        }
+
+        Walk(blocks);
+        return text.ToString();
+    }
+
+    [Fact]
     public void This_repository_s_own_documents_parse_without_throwing()
     {
         // The real corpus, not a sample: whatever is in docs/ today. A parser that throws on

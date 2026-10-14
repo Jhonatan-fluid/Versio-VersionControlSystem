@@ -19,6 +19,32 @@ produce a diff touching everything else.
 
 ---
 
+### The Markdown parser could be made to kill the process, or to burn minutes of CPU, by a pushed file
+
+**2026-10-14, branch `ReviewFixes`.** Found by a review that measured rather than read: both
+defects were verified by running the built `Versio.Core.dll` against generated inputs.
+
+**The crash.** `ParseBlocks` recursed once per blockquote level and once per nested list item,
+with no depth limit; ~2,000 leading `>` on one line ended the harness process with
+`StackOverflowException` (exit 127). An overflow is the one exception no catch can keep, so it
+sailed past the web viewer's renderer catch-all — which exists precisely to turn a throwing
+parser into plain text — and would take the whole server down on a file anyone with push access
+commits; on the desktop, selecting the file took the app with it. The parser's own docstring
+promises "degrades to paragraph text, never to an exception". Blocks now stop nesting at 64
+levels and the rest arrives flat: content preserved, styling surrendered.
+
+**The burn.** Every inline scanner (`Delimited`, `LinkAt`, `CodeSpan`, `AutoLink`) looks ahead
+for its closer, and an input of openers that never close made each opener scan to the end —
+quadratic, measured at 84 s of CPU for a 240 KB file of `*a `, well inside the viewer's 2 MB cap.
+The web render budget bounds the reader's wait, not the work, so a few concurrent requests
+pinned cores for a minute and a half each; the desktop had no budget at all. `Inline()` now
+carries a linear fuel budget that every scanner charges its lookahead against; honest documents
+never touch it, and what a degenerate shape loses when it runs out is styling — the rest of the
+text arrives as one plain run, byte for byte. Pinned by three adversarial-shape tests that also
+assert no character is lost.
+
+---
+
 ### An FBS library file without the metadata header rendered its declaration twice and buried its code
 
 **2026-10-14, branch `ReviewFixes`.** Reported from the running app with a real library:
@@ -184,7 +210,9 @@ The script now makes SwapRecovery's decision: mirror present → trash cleared a
 missing → trash renamed back (`trash-restored`, a Warn in the runner), then exported over — so a
 failure anywhere later still leaves a mirror, and `preserve_equivalent` has the old bytes to
 keep. The python is embedded; the suites after a rebuild: pure 365, parity 97, both green. The
-CODESYS gate run for this change is recorded below the next finding when it lands.
+CODESYS gate ran on 2026-10-14 with the change embedded: **55/55 green in 1 h 58 m** — on a
+machine busy with parallel builds, so the duration is load, not regression (the idle norm is
+~40 min).
 
 ---
 
