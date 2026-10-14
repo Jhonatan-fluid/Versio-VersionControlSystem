@@ -124,6 +124,20 @@ public sealed class RollingFileSink : ILogSink, IDisposable
     {
         lock (_gate)
         {
+            // Same guard as CurrentFile, for the same reason: after Dispose, EnsureOpen
+            // would quietly reopen the file through a FileStream nobody will ever close.
+            // That is exactly what happened on every clean exit until 2026-10-14 — the
+            // sink's Exit handler was registered before the shell's, so the shutdown
+            // lines (watcher stop, "released this repository") arrived here disposed,
+            // reached disk only through that leaked reopen, and "Dispose closes the
+            // file" was a sentence the class said and did not mean. The handler order
+            // is fixed in App.xaml.cs; a line arriving here anyway is a caller writing
+            // after shutdown, and the ring-buffer sink still has it.
+            if (_disposed)
+            {
+                return;
+            }
+
             // The LOCAL day, matching what Format() renders. A file named for the 13th
             // holding entries stamped 17:00 on the 12th is the confusion this whole change
             // was about, and the file name is what somebody picks when asked for "yesterday's

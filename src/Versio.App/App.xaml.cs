@@ -67,8 +67,17 @@ public partial class App : Application
         // The file first, so that everything below it is on disk. Attaching this when a
         // repository opened — as it used to — meant the banner and any startup crash were
         // recorded only in memory, and memory does not survive the crash.
+        //
+        // Its DISPOSE is registered last, below the shell's, not here. Exit handlers run
+        // in registration order, and the shell logs on its way out — the watcher stop,
+        // "released this repository", the lines that distinguish a clean shutdown from a
+        // crash in tomorrow's bug report. Registered first, the sink was disposed before
+        // those lines arrived, and they reached disk only because Emit quietly reopened
+        // the file through a stream nobody closed; Emit honours Dispose now, so the order
+        // here is what keeps shutdown on disk. A startup failure between here and that
+        // registration leaves the sink undisposed on exit, which costs nothing: AutoFlush
+        // has every line on disk and process teardown closes the handle.
         var fileSink = AttachFileLog(logger);
-        Exit += (_, _) => fileSink?.Dispose();
 
         // Before anything else can fail. A crash during startup is exactly the crash with
         // no user sitting in front of it to describe what they were doing.
@@ -146,6 +155,10 @@ public partial class App : Application
         // FileSystemWatcher keeps an OS handle on the directory. Releasing it on exit keeps
         // the folder free to be renamed or deleted the moment Versio closes.
         Exit += (_, _) => shell.Dispose();
+
+        // The file sink goes LAST, after everything above it has logged its way out —
+        // see the remark where it is attached.
+        Exit += (_, _) => fileSink?.Dispose();
 
         // Logging off or shutting down. This does NOT go through the close guard: Windows
         // gives a process a few seconds and will not read a dialog, so the only useful thing

@@ -291,6 +291,28 @@ public sealed class RollingFileSinkTests : IDisposable
         using var exclusive = new FileStream(path, FileMode.Open, FileAccess.ReadWrite, FileShare.None);
     }
 
+    [Fact]
+    public void Emitting_to_a_disposed_sink_writes_nothing_and_reopens_nothing()
+    {
+        // The app's Exit handlers used to dispose the sink before the shell, so every clean
+        // shutdown emitted its last lines here — and Emit reopened the file through a stream
+        // nobody would ever close. The handler order is fixed; this pins the sink's half:
+        // after Dispose the file is closed and stays closed, whatever arrives.
+        var sink = new RollingFileSink(_dir);
+        sink.Emit(Entry(LogLevel.Information, "before dispose"));
+        var path = sink.CurrentFile;
+        sink.Dispose();
+
+        sink.Emit(Entry(LogLevel.Information, "after dispose"));
+
+        var written = ReadShared(path);
+        Assert.Contains("before dispose", written);
+        Assert.DoesNotContain("after dispose", written);
+
+        // And no leaked handle: an exclusive open succeeds.
+        using var exclusive = new FileStream(path, FileMode.Open, FileAccess.ReadWrite, FileShare.None);
+    }
+
     private static string ReadShared(string path)
     {
         using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);

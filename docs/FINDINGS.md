@@ -19,6 +19,26 @@ produce a diff touching everything else.
 
 ---
 
+### Every clean exit logged its shutdown into a disposed file sink, which quietly reopened the file
+
+**2026-10-14, branch `ReviewFixes`.** `App.xaml.cs` registered its Exit handlers sink-first and
+shell-last, and multicast handlers run in registration order — so on every clean exit the
+`RollingFileSink` was disposed before the shell logged its way out (the watcher stop, *"released
+this repository"*, the lines that distinguish a clean shutdown from a crash in tomorrow's bug
+report). Those lines reached disk anyway, which is why nobody noticed: `Emit` never checked
+`_disposed` and reopened the file through a `FileStream` nobody would ever close — directly
+contradicting the guard `CurrentFile` carries with the comment *"Named, never reopened, once
+disposed"*. The trap was armed for whoever "completed" that guard in `Emit`: the fix-shaped
+change would have silently dropped the session-release evidence from disk on every clean exit.
+
+Both halves are fixed together, because each alone is wrong: the sink's dispose is registered
+after the shell's, so shutdown lines land in a live sink, and `Emit` now honours `_disposed`, so
+nothing reopens the stream. Pinned by
+`Emitting_to_a_disposed_sink_writes_nothing_and_reopens_nothing`, mutation-checked: removing the
+guard fails it on the leaked reopen.
+
+---
+
 ### The CODESYS runner dropped malformed protocol lines, and the task count never reached the log
 
 **2026-10-14, branch `ReviewFixes`.** Two drifts between what is parsed or promised and what is
