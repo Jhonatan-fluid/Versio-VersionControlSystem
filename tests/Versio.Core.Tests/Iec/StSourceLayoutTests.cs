@@ -293,6 +293,32 @@ public class StSourceLayoutTests
     }
 
     [Fact]
+    public void A_declaration_removal_stays_out_of_a_body_only_view_when_the_caller_says_where_the_body_began()
+    {
+        // The body-under-a-member-table layout draws no declaration, so a removal from the
+        // old declaration had no part of its own to stand before and surfaced at the top of
+        // the CODE — a struck VAR_INPUT leading a method's body (seen on a real library,
+        // 2026-10-14) — while the table above was already saying what the declaration lost.
+        // The caller passes the old file's body start; a removal from the body itself, even
+        // its first line, must still show.
+        const string Before = "METHOD M\nVAR_INPUT\nEND_VAR\nx := 1;\ny := 2;";
+        const string After = "METHOD M\ny := 2;";
+
+        var body = StSourceLayout.Body(After, 1, 2);
+
+        // Hidden: VAR_INPUT and END_VAR were declaration-side (old body began at line 3).
+        // Shown: x := 1; was the body's own first line.
+        Assert.Equal(
+            ["- x := 1;", "  y := 2;"],
+            Marked(StSourceLayout.Mark(body, Before, After, hideRemovalsBeforeOldLine: 3)));
+
+        // Zero, the default, hides nothing — the layouts that draw the declaration keep all.
+        Assert.Equal(
+            ["- VAR_INPUT", "- END_VAR", "- x := 1;", "  y := 2;"],
+            Marked(StSourceLayout.Mark(body, Before, After)));
+    }
+
+    [Fact]
     public void A_new_file_is_every_line_added_and_an_unchanged_one_is_nothing_marked()
     {
         Assert.Equal(["+ A;", "+ B;"], Marked(StSourceLayout.Mark(StSourceLayout.Lay("A;\nB;"), "", "A;\nB;")));

@@ -7308,7 +7308,28 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
             return;
         }
 
-        var marked = source with { Rows = Versio.Core.Iec.StSourceLayout.Mark(source.Rows, head, current) };
+        // A body shown under a member table draws no declaration, so a removal from the OLD
+        // file's declaration must not surface as a struck line at the top of the code — the
+        // table above already says what the declaration lost. The format that knows where the
+        // old body began answers through the same seam that sliced the current one; a plain
+        // source layout draws its declaration itself and keeps every removal.
+        var hideRemovalsBefore = 0;
+        if (shown is InterfaceRender && head.Length > 0)
+        {
+            foreach (var format in PlcFormats.All)
+            {
+                if (format.CodeBody(file, head) is { } oldBody)
+                {
+                    hideRemovalsBefore = oldBody.Start;
+                    break;
+                }
+            }
+        }
+
+        var marked = source with
+        {
+            Rows = Versio.Core.Iec.StSourceLayout.Mark(source.Rows, head, current, hideRemovalsBefore),
+        };
         var added = marked.Rows.OfType<Versio.Core.Iec.SourceCodeLine>().Count(l => l.Change == Versio.Core.Iec.SourceChange.Added);
         var removed = marked.Rows.OfType<Versio.Core.Iec.SourceRemovedLine>().Count();
         _logger.Debug(LogCategory.Ui, $"rendered source {file}: {added} line(s) added, {removed} removed since the last commit");
@@ -7528,7 +7549,15 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
                     foreach (var file in node.Files)
                     {
                         if (ReadOrNull(file) is { } text
-                            && format.TryParseMemberTable(file, text) is { IsValid: true } parsed)
+                            && format.TryParseMemberTable(file, text) is { IsValid: true } parsed
+                            // A table with nothing in it is a husk, not an interface: a
+                            // parameterless method tabled column headers over a blank
+                            // (seen on a real library, 2026-10-14) where its code should
+                            // be. Falling through draws the source with its sections,
+                            // which is what a type with no members has always got. The
+                            // cost is the rare block whose members were ALL deleted: its
+                            // struck rows live in Raw rather than a rendered table.
+                            && parsed.Members.Count > 0)
                         {
                             var table = LinkTypes(parsed, file);
                             _tableSource = (format, file);

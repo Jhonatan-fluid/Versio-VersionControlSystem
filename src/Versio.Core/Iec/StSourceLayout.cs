@@ -206,8 +206,20 @@ public static class StSourceLayout
     /// <para>
     /// A null or empty <paramref name="committed"/> is a new file: every drawn line is added.
     /// </para>
+    /// <para>
+    /// <paramref name="hideRemovalsBeforeOldLine"/> is for the one layout whose rows are the
+    /// code body alone, under a member table: a removal from the old file's declaration has no
+    /// drawn line of its own part to stand before, so the catch-all above surfaced it at the
+    /// top of the BODY — a struck <c>VAR_INPUT</c> leading a method's code (seen on a real
+    /// library, 2026-10-14) — while the table above was already saying what the declaration
+    /// lost. The caller passes where the old file's body began; removals from above that line
+    /// belong to the table and are left out here. Zero, the default, hides nothing, which is
+    /// right for every layout that draws the declaration itself.
+    /// </para>
     /// </remarks>
-    public static IReadOnlyList<SourceRow> Mark(IReadOnlyList<SourceRow> rows, string? committed, string? current)
+    public static IReadOnlyList<SourceRow> Mark(
+        IReadOnlyList<SourceRow> rows, string? committed, string? current,
+        int hideRemovalsBeforeOldLine = 0)
     {
         ArgumentNullException.ThrowIfNull(rows);
 
@@ -224,7 +236,11 @@ public static class StSourceLayout
             switch (step.Op)
             {
                 case Diff.LineOp.Removed:
-                    pending.Add(new SourceRemovedLine(oldLines[step.OldIndex], step.OldIndex + 1));
+                    if (step.OldIndex >= hideRemovalsBeforeOldLine)
+                    {
+                        pending.Add(new SourceRemovedLine(oldLines[step.OldIndex], step.OldIndex + 1));
+                    }
+
                     continue;
                 case Diff.LineOp.Added:
                     added.Add(step.NewIndex);

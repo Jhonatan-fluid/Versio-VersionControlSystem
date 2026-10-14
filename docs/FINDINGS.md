@@ -19,7 +19,30 @@ produce a diff touching everything else.
 
 ---
 
-### A nested block comment ended at the inner closer and the member table invented rows
+### The body-under-a-table view told the declaration's story twice, badly, and drew husks
+
+**2026-10-14, branch `ReviewFixes`.** Three defects from two screenshots of a real library, all
+in the rendered pane for blocks shown as a member table over their code.
+
+**A declaration removal leaked into the code pane.** `StSourceLayout.Mark` compares whole files
+and surfaces a removal "at the end rather than dropped" when its part is not drawn — right for
+every layout that draws the declaration, and wrong for the one that replaces it with a table: a
+struck `VAR_INPUT` led a method's body while the table above was already saying what the
+declaration lost. `Mark` now takes where the old file's body began (answered through the same
+`CodeBody` seam that sliced the current one) and leaves declaration-side removals to the table;
+a removal from the body itself, even its first line, still shows. Pinned pure and through the
+shell — the shell pin asserts both halves at once: the body's own removed line shown, the
+declaration's hidden.
+
+**A parameterless method drew an empty table husk.** Zero members still parse as a valid table,
+so the pane drew column headers over a blank where the code should be. A table with nothing in
+it is a husk, not an interface: it falls through to the source layout now, which is what a type
+with no members always got. The cost, taken knowingly: a block whose members were ALL deleted
+shows its struck rows in Raw rather than a rendered table.
+
+**A removed line of tabs drew as a redaction bar.** Strikethrough over the whole line turned
+`\t\t;` into one long dash. The indent is kept and kept undecorated; the strike starts where the
+text does.
 
 **2026-10-14, branch `ReviewFixes`.** `StDeclarationTable.Clean` tracked block comments with a
 flag, not a depth. IEC 61131-3 permits `(* … (* … *) … *)` and CODESYS enables nested comments

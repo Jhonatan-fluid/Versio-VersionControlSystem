@@ -442,9 +442,31 @@ public class DiffView : ListBox
         marker.Margin = new Thickness(0, 0, 8, 0);
         grid.Children.Add(marker);
 
-        var content = Highlighted(line.Text, language);
+        // The strike starts where the text does. Decorating the whole line drew the leading
+        // tabs as one long bar — a removed "\t\t;" read as a redaction mark, not as an
+        // indented semicolon (seen on a real library, 2026-10-14). The indent is kept, and
+        // kept undecorated, so the removed line still stands at its own depth.
+        var indentLength = line.Text.Length - line.Text.TrimStart(' ', '\t').Length;
+        var content = Highlighted(line.Text[indentLength..], language);
+        foreach (var inline in content.Inlines)
+        {
+            inline.TextDecorations = TextDecorations.Strikethrough;
+        }
+
+        if (indentLength > 0)
+        {
+            var indent = new System.Windows.Documents.Run(line.Text[..indentLength]);
+            if (content.Inlines.FirstInline is { } first)
+            {
+                content.Inlines.InsertBefore(first, indent);
+            }
+            else
+            {
+                content.Inlines.Add(indent);
+            }
+        }
+
         content.Margin = new Thickness(6, 0, 12, 0);
-        content.TextDecorations = TextDecorations.Strikethrough;
         content.ToolTip = $"Removed since the last commit (was line {line.OldFileLine.ToString(CultureInfo.InvariantCulture)})";
         Grid.SetColumn(content, 1);
         grid.Children.Add(content);

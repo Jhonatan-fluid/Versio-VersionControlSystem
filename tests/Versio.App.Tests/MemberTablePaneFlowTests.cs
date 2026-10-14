@@ -334,6 +334,106 @@ public sealed class MemberTablePaneFlowTests
         Assert.Contains("END_FUNCTION_BLOCK", render.Source!.PseudoDiff, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public async Task A_parameterless_method_renders_its_code_not_an_empty_table_husk()
+    {
+        // A method with no variables and no return parses to a valid table with zero
+        // members, and the pane drew it: column headers over a blank where the code
+        // should be (seen on a real library's StateMachine.meth.st, 2026-10-14). A table
+        // with nothing in it is a husk, not an interface — the source, with its sections,
+        // is what answers the click.
+        using var repo = new TempRepo();
+        var versio = Path.Combine(repo.Path, ".versio");
+        Directory.CreateDirectory(versio);
+        File.WriteAllText(Path.Combine(versio, "repo.json"), """
+        {
+          "schema": 1,
+          "bindings": [
+            {
+              "id": "b1",
+              "projectPath": "plc/Rig.project",
+              "exportPath": "plc/Rig",
+              "enabled": true
+            }
+          ]
+        }
+        """);
+
+        var application = Path.Combine(repo.Path, "plc", "Rig", "Application");
+        Directory.CreateDirectory(application);
+        File.WriteAllBytes(Path.Combine(repo.Path, "plc", "Rig.project"), [0x00, 0x01]);
+        File.WriteAllText(Path.Combine(repo.Path, "plc", "Rig", "_manifest.json"), """
+        {
+          "schema": 4,
+          "bindingId": "b1",
+          "project": "Rig.project",
+          "objectCount": 1,
+          "objects": [
+            { "guid": "m1", "name": "DoIt", "type": "METHOD", "form": "ST_FULL",
+              "path": "Application/DoIt.st", "hash": "sha256:0", "bytes": 1 }
+          ],
+          "warnings": [],
+          "skipped": []
+        }
+        """);
+        File.WriteAllText(Path.Combine(application, "DoIt.st"),
+            "METHOD DoIt\n// --- BEGIN IMPLEMENTATION ---\nx := 1;\n");
+
+        using var shell = Shell();
+        await shell.OpenAsync(repo.Path);
+
+        shell.Sync.SelectedNode = await Row(shell, "DoIt");
+
+        var source = Assert.IsType<SourceRender>(shell.RenderedContent);
+        Assert.Contains(source.Rows.OfType<Versio.Core.Iec.SourceCodeLine>(),
+            l => l.Text == "x := 1;");
+    }
+
+    [Fact]
+    public async Task A_declaration_removal_marks_the_table_and_stays_out_of_the_code_below_it()
+    {
+        // The body under a member table draws no declaration, so a removal from the old
+        // declaration surfaced at the top of the CODE as a struck VAR line (seen on a
+        // real library, 2026-10-14) while the table above was already saying what the
+        // declaration lost. One story, told once, in the part that owns it.
+        using var repo = new TempRepo(identity: true);
+        GivenATrackedPortalProject(repo);
+        repo.Git("add -A");
+        repo.Git("commit -qm base");
+
+        // The Enable input leaves the declaration AND the body's one line changes, so the
+        // marking pass has something visible to say — which is what the wait below keys on.
+        File.WriteAllLines(Path.Combine(repo.Path, "plc", "Station", "Blocks", "Motor.scl"),
+        [
+            "FUNCTION_BLOCK \"Motor\"",
+            "VERSION : 0.1",
+            "",
+            "BEGIN",
+            "   #Enable := FALSE;",
+            "END_FUNCTION_BLOCK",
+        ]);
+
+        using var shell = Shell();
+        await shell.OpenAsync(repo.Path);
+        shell.Sync.SelectedNode = await Row(shell, "Motor");
+
+        // The marks arrive once the committed copy has been read: the body's own removal.
+        await Eventually.Until(
+            () => shell.RenderedContent is InterfaceRender { Source: { } s }
+                  && s.Rows.OfType<Versio.Core.Iec.SourceRemovedLine>().Any(),
+            "the body's removed line was marked");
+
+        // The body removal shows — that half of the old file is this pane's to tell —
+        // and the declaration removal does not, because the table above owns that story.
+        var marked = Assert.IsType<InterfaceRender>(shell.RenderedContent);
+        var removed = marked.Source!.Rows.OfType<Versio.Core.Iec.SourceRemovedLine>().ToList();
+        Assert.Contains(removed, r => r.Text.Contains("#Enable := TRUE;", StringComparison.Ordinal));
+        Assert.DoesNotContain(removed, r => r.Text.Contains("VAR_INPUT", StringComparison.Ordinal)
+                                            || r.Text.Contains("Enable : Bool", StringComparison.Ordinal));
+        Assert.Contains(marked.Source!.Rows.OfType<Versio.Core.Iec.SourceCodeLine>(),
+            l => l.Text == "#Enable := FALSE;" && l.Change == Versio.Core.Iec.SourceChange.Added);
+    }
+
     /// <summary>Commit the data type only, so the block stays in the tree and the type is clean.</summary>
     private static void CommitTheDataType(TempRepo repo)
     {
