@@ -19,6 +19,26 @@ produce a diff touching everything else.
 
 ---
 
+### The CODESYS runner dropped malformed protocol lines, and the task count never reached the log
+
+**2026-10-14, branch `ReviewFixes`.** Two drifts between what is parsed or promised and what is
+logged, both in `LocalCodesysRunner`, both the house's named failure mode: a silent failure is a
+bug even when the code is correct.
+
+**Malformed lines.** `ScriptProtocol.Parse` collects lines that carry `@@VERSIO@@` but not valid
+JSON into `Malformed` — a script killed mid-print leaves its last event exactly like that — and
+the runner read the field nowhere, so the one line explaining a death could reach nothing. Both
+newer vendors' runners logged these at Warn from their first version, with the comment that a
+malformed line may be the fatal that explains everything else; the oldest runner now does the
+same.
+
+**The task count.** `versio_export.py` emits `{"t": "tasks", "count"}` under a comment promising
+it at Info "for the same reason the library count is" — and `LogScriptEvents` had arms for
+`libraries` and `devices` and none for `tasks`, so it fell to the default `· tasks` at Debug.
+Same shape as the `· task_set` drift already recorded. The arm exists now.
+
+---
+
 ### The export's crash recovery deleted the one copy its own design says to put back
 
 **2026-10-14, branch `ReviewFixes`.** Found by reading `versio_export.py` against its C# twin.

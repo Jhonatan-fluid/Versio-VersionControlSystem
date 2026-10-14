@@ -412,6 +412,16 @@ public sealed class LocalCodesysRunner(
         // log that cannot show that step is not a log of the export.
         LogScriptEvents(job, output);
 
+        // A malformed protocol line may be the fatal that explains everything else — a script
+        // killed mid-print leaves its last event truncated, carrying the marker but not the
+        // JSON, so it lands here and not in Chatter. Dropping it silently is how a failure
+        // arrives with no message at all. The two newer vendors' runners have logged these
+        // from their first version; this one parsed them into Malformed and read it nowhere.
+        foreach (var line in output.Malformed)
+        {
+            _log.Warn(CodesysLog.Category, $"malformed protocol line: {line}");
+        }
+
         // CODESYS's own output, kept at Debug. It is verbose and mostly uninteresting until
         // an export fails for a reason our protocol did not model, at which point it is the
         // only evidence there is.
@@ -580,6 +590,16 @@ public sealed class LocalCodesysRunner(
                     _log.Info(CodesysLog.Category,
                         $"device connectors recorded: {evt.Int("connectors")} connector(s), " +
                         $"{evt.Int("slots")} empty slot(s) in {evt.String("path")}");
+                    break;
+
+                case "tasks":
+                    // The script's comment promises this count at Info "for the same reason
+                    // the library count is" — and until 2026-10-14 the event had no arm here,
+                    // so it fell to the default and logged as a literal "· tasks" at Debug.
+                    // Same shape as the "· task_set" drift this switch already records.
+                    _log.Info(CodesysLog.Category,
+                        $"task configuration recorded: {evt.Int("count")} task(s) in " +
+                        $"{evt.String("path")}");
                     break;
 
                 case "not_imported":
