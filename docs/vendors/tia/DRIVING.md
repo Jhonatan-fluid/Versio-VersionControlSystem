@@ -194,9 +194,9 @@ review and are not imported.
 
 | Member | Used by | Notes |
 |---|---|---|
-| `FindObject` over `BlockGroup`, `TypeGroup`, `TagTableGroup` | rename, delete | Same identity strings export writes. A UDT or tag table used to be a silent no-op |
+| `FindObject` over `BlockGroup`, `TypeGroup`, `TagTableGroup` | rename, delete | **Exact identity only** (since 2026-10-14) — the same strings export writes. It used to also accept `EndsWith("/name#number")` and a bare name-contains, which in a multi-PLC project matched the first PLC's `Main` for a deletion planned on the second's. A miss is warned and kept; the remedy is an export. A UDT or tag table used to be a silent no-op |
 | `obj.Name = newName` | rename | Identity is name+number, so this is the rename |
-| `obj.Delete()` via `TryDelete` | delete | Refused when `cannotVerify` is set. If `Delete()` is missing or throws, emit a warning and **keep** the object — same class of refusal as an unverifiable delete. No second API is invented |
+| `obj.Delete()` via `TryDelete` | delete | Refused when `cannotVerify` is set, **and refused when the live object no longer matches the last export** (since 2026-10-14): `LiveMatchesRecorded` compares GenerateSource text against the recorded `hash` and a fresh in-session XML export through `HashNormalized` against `nhash` — the same check the CODESYS script (`why_not_delete`) and the TwinCAT host already made. A live object that cannot be read back is kept. If `Delete()` is missing or throws, emit a warning and **keep** the object — same class of refusal as an unverifiable delete. No second API is invented |
 | `ExternalSourceGroup.CreateFromFile` / `CreateFrom` | SCL apply / create | Existing source of the same file name is deleted first |
 | `externalSource.GenerateBlocksFromSource()` | SCL apply / create | V21: zero-arg only. `GenerateBlockOptions` is `None \| KeepOnError` — there is no `Overwrite`. KeepOnError created `*_1` clones; zero-arg then dropped `Level.scl` from the next export. See Findings. Do not invent a second API |
 | `BlockGroup.Blocks.Import` / `TypeGroup.Types.Import` / `TagTableGroup.TagTables.Import` | native XML | Chosen from the identity (`…/UDT/…`, `…/TAG_TABLE/…`, else blocks). Handing a tag table to `Blocks.Import` fails "out of context" — measured 2026-08-19. SimaticML marked `XML_REVIEW` is **never** this path |

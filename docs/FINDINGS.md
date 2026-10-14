@@ -19,7 +19,40 @@ produce a diff touching everything else.
 
 ---
 
-### Versio Web: rule 9 never covered names; a rate limit was a refusal
+### TIA host: a delete never compared the live block, and a loose match could destroy the wrong PLC's
+
+**2026-10-14, branch `ReviewFixes`.** Found by a code review of the pack against the other two
+vendors; both held on reading, neither needs Portal to see.
+
+**The deletion check the product documents did not exist for TIA.** `DeletedFile.Hash`'s contract
+(`ImportPlan.cs`) says the executing side compares the *live* object before removing anything —
+the CODESYS script does (`why_not_delete`), the TwinCAT host does (`LiveMatchesRecorded`), and
+SAFEGUARDS claims it as a product property. The TIA host checked only the plan-side
+`cannotVerify` string, then `FindObject` → `TryDelete`. The hashes travelled in the plan and were
+never read, so a block edited in Portal after the last export (Versio closed, or the edit landing
+between export and import) was deleted anyway the moment its mirror file went missing and somebody
+confirmed the import — destroying exactly the IDE edit the check exists to keep. The host now has
+its own `LiveMatchesRecorded`: GenerateSource text hashed as `HashTextFile` hashed the exported
+`.scl`/`.udt`, and a fresh in-session XML export through `HashNormalized` against `nhash`; any
+agreement allows the delete, anything else — including a live object that cannot be read back —
+keeps it with the sentence naming the remedy.
+
+**Destructive lookup accepted a name-contains.** `MatchesBlock` accepted
+`guid.EndsWith("/" + name + "#" + number)` and `Has(guid, "/" + name + "#")` — a case-insensitive
+*contains* on the name alone — and `FindObject` returned the first hit iterating PLCs in device
+order. Every S7 PLC has an OB named `Main`, so a deletion (or rename: same lookup, `SetProp Name`)
+planned as `Dev2/PLC_2/OB/Main#1` matched `PLC_1`'s `Main` first. Combined with the missing live
+check there was nothing downstream to catch it — P3 already measured that delete raises no
+exception, no cascade, no warning. The lookup is exact identity now, as the TwinCAT host always
+was and documents; `MatchesIdentity`'s bare-name clause went with it. A miss — an object renamed
+or moved in the IDE — is warned and kept, for renames too: a silently skipped rename diverged the
+mirror, because the next export wrote the old name back while the arrived file sat as a duplicate.
+
+**The loose clauses dated from the pack's first commit** (`1df1913`); nothing later depended on
+them, and the gate fixture has one PLC, which is why five gate runs never met the scenario.
+**Owed:** a `Versio.Plc.TiaPortal.Tests` run on a machine with Portal — this machine has none.
+The host has no pure-test seam (net48, Openness via reflection), so the gate is the only
+executable check.
 
 **2026-10-12, branch `WebViewer`.** Two reviews; every point held.
 

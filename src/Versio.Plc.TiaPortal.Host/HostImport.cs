@@ -1,5 +1,6 @@
 using System.Collections;
 using System.Reflection;
+using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 
@@ -43,8 +44,17 @@ internal static partial class HostApp
 
             if (FindObject(plcs, guid) is { } found)
             {
-                SetProp(found, "Name", newName);
+                SetProp(found.Item, "Name", newName);
                 Emit("object", "path", newName, "action", "rename");
+            }
+            else
+            {
+                // Said out loud, because a silently skipped rename diverges the mirror:
+                // the next export writes the OLD name back and the file that arrived
+                // under the new name becomes a duplicate.
+                Emit("warning", "msg",
+                    "did not rename " + guid + ": no live object with that identity — "
+                    + "it may have been renamed or moved in the IDE; export again");
             }
         }
 
@@ -99,17 +109,37 @@ internal static partial class HostApp
             }
 
             var guid = Str(del, "guid");
+            var name = Str(del, "name");
             if (guid is null)
             {
+                Emit("warning", "msg",
+                    "kept " + (name ?? "an object") + ": the plan carries no identity for it");
                 continue;
             }
 
-            if (FindObject(plcs, guid) is { } found)
+            if (FindObject(plcs, guid) is not { } found)
             {
-                if (TryDelete(found, Str(del, "name") ?? guid))
-                {
-                    Emit("object", "path", Str(del, "name") ?? guid, "action", "delete");
-                }
+                Emit("warning", "msg",
+                    "kept " + (name ?? guid) + ": no live object with that identity — "
+                    + "it may have been renamed or moved in the IDE; export again");
+                continue;
+            }
+
+            // The contract on DeletedFile.Hash: the executing side compares the live object
+            // against what the export recorded before removing anything. A mismatch means it
+            // was edited in Portal since the export, and a missing mirror file is not
+            // permission to destroy that edit. The CODESYS script (why_not_delete) and the
+            // TwinCAT host (LiveMatchesRecorded) both make this check; until 2026-10-14 this
+            // host checked only the plan-side cannotVerify and deleted on identity alone.
+            if (!LiveMatchesRecorded(found, del, out var why))
+            {
+                Emit("warning", "msg", "kept " + (name ?? guid) + ": " + why);
+                continue;
+            }
+
+            if (TryDelete(found.Item, name ?? guid))
+            {
+                Emit("object", "path", name ?? guid, "action", "delete");
             }
         }
 
@@ -611,7 +641,27 @@ internal static partial class HostApp
         return ("BlockGroup", "Blocks");
     }
 
-    private static object? FindObject(IReadOnlyList<PlcRef> plcs, string guid)
+    /// <summary>A live object a destructive action resolved, with where it lives.</summary>
+    /// <param name="Plc">Needed by the delete check: GenerateSource runs through the PLC's
+    /// ExternalSourceGroup, not through the object.</param>
+    /// <param name="Kind"><c>block</c>, <c>type</c> or <c>table</c> — which comparisons the
+    /// live object can answer (a tag table has no source to generate).</param>
+    private sealed record FoundObject(PlcRef Plc, object Item, string Kind);
+
+    /// <summary>
+    /// The live object a plan's identity names, or null — for renames and deletes only.
+    /// </summary>
+    /// <remarks>
+    /// <b>Exact identity only, and null is the safe answer.</b> Every caller is destructive
+    /// (SetProp Name, TryDelete), and a miss is reported and kept — the remedy is an export.
+    /// A fuzzy hit has no such recovery: delete raises no exception, no cascade and no
+    /// warning (P3), so a wrong match is somebody's block gone. This used to accept
+    /// <c>EndsWith("/" + name + "#" + number)</c> and a bare name-contains, and every S7 PLC
+    /// has an OB named Main — so in a multi-PLC project a deletion planned for
+    /// <c>Dev2/PLC_2/OB/Main#1</c> matched PLC_1's Main first in device order. The TwinCAT
+    /// host is identity-only for the same reason and says so.
+    /// </remarks>
+    private static FoundObject? FindObject(IReadOnlyList<PlcRef> plcs, string guid)
     {
         foreach (var plc in plcs)
         {
@@ -619,25 +669,25 @@ internal static partial class HostApp
             {
                 if (MatchesBlock(plc, block, guid))
                 {
-                    return block;
+                    return new FoundObject(plc, block, "block");
                 }
             }
 
             foreach (var type in AllNamed(GetProp(plc.Software, "TypeGroup"), "Types"))
             {
                 var identity = $"{plc.DeviceName}/{plc.PlcName}/UDT/{Str(type, "Name")}";
-                if (MatchesIdentity(type, guid, identity, Str(type, "Name") ?? ""))
+                if (MatchesIdentity(type, guid, identity))
                 {
-                    return type;
+                    return new FoundObject(plc, type, "type");
                 }
             }
 
             foreach (var table in AllNamed(GetProp(plc.Software, "TagTableGroup"), "TagTables"))
             {
                 var identity = $"{plc.DeviceName}/{plc.PlcName}/TAG_TABLE/{Str(table, "Name")}";
-                if (MatchesIdentity(table, guid, identity, Str(table, "Name") ?? ""))
+                if (MatchesIdentity(table, guid, identity))
                 {
-                    return table;
+                    return new FoundObject(plc, table, "table");
                 }
             }
         }
@@ -651,15 +701,120 @@ internal static partial class HostApp
         var number = Str(block, "Number") ?? "";
         var typeName = BlockType(block);
         var identity = $"{plc.DeviceName}/{plc.PlcName}/{typeName}/{name}#{number}";
-        return MatchesIdentity(block, guid, identity, name)
-               || guid.EndsWith("/" + name + "#" + number, StringComparison.OrdinalIgnoreCase)
-               || Has(guid, "/" + name + "#");
+        return MatchesIdentity(block, guid, identity);
     }
 
-    private static bool MatchesIdentity(object obj, string guid, string identity, string name)
+    /// <summary>
+    /// Does the live object still match what the last export recorded for it?
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The plan's deleted files carry <c>hash</c> (the exported file's text/bytes) and
+    /// <c>normalizedHash</c> (the SimaticML after churn attributes are stripped). The live
+    /// side can answer with up to two values: GenerateSource of the block or type, hashed
+    /// exactly as <c>HashTextFile</c> hashed the exported <c>.scl</c>/<c>.udt</c>, and a
+    /// fresh in-session XML export through the same <c>HashNormalized</c> the export used
+    /// for <c>nhash</c>. Any agreement means the object is what the mirror said it was.
+    /// </para>
+    /// <para>
+    /// <b>Every failure answers "keep".</b> A live object that cannot be read back —
+    /// GenerateSource refuses an inconsistent block, Export throws — is an object this
+    /// session cannot prove unchanged, and deleting on an unprovable claim is the failure
+    /// mode this check exists for. The raw XML byte hash is deliberately never computed
+    /// live: native bytes churn between exports, which is why <c>nhash</c> exists, and a
+    /// churned mismatch against the recorded raw hash would only ever widen "keep" — the
+    /// normalized comparison is the honest one.
+    /// </para>
+    /// </remarks>
+    private static bool LiveMatchesRecorded(FoundObject found, JsonElement del, out string why)
     {
-        if (string.Equals(identity, guid, StringComparison.OrdinalIgnoreCase)
-            || string.Equals(name, guid, StringComparison.OrdinalIgnoreCase))
+        var recorded = new List<string>();
+        if (del.TryGetProperty("files", out var files) && files.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var f in files.EnumerateArray())
+            {
+                foreach (var field in new[] { "hash", "normalizedHash" })
+                {
+                    if (Str(f, field) is { Length: > 0 } h)
+                    {
+                        recorded.Add(h);
+                    }
+                }
+            }
+        }
+
+        if (recorded.Count == 0)
+        {
+            // The planner marks a hashless deletion CannotVerify, so reaching here means
+            // the plan disagrees with its own precondition. Keep the object either way.
+            why = "the plan records no hash to compare the live object against";
+            return false;
+        }
+
+        var live = new List<string>();
+        if (found.Kind is "block" or "type")
+        {
+            var text = TryGenerateSourceText(found.Plc, found.Item, isType: found.Kind == "type");
+            if (text is not null)
+            {
+                live.Add(HashBytes(Encoding.UTF8.GetBytes(text)));
+            }
+        }
+
+        if (TryExportXmlText(found.Item) is { } xml)
+        {
+            live.Add(HashNormalized(xml));
+        }
+
+        if (live.Count == 0)
+        {
+            why = "the live object could not be read back to compare against the last export";
+            return false;
+        }
+
+        if (live.Any(recorded.Contains))
+        {
+            why = "";
+            return true;
+        }
+
+        why = "the live object no longer matches the last export — it was edited in "
+              + "Portal since, and a missing mirror file is not permission to destroy "
+              + "that edit; export again";
+        return false;
+    }
+
+    /// <summary>The live object's SimaticML, via a temp file, or null when Export refuses.</summary>
+    private static string? TryExportXmlText(object item)
+    {
+        var dest = Path.Combine(Path.GetTempPath(),
+            "versio-tia-del-" + Guid.NewGuid().ToString("N").Substring(0, 8) + ".xml");
+        try
+        {
+            ExportXml(item, dest);
+            return File.Exists(dest) ? File.ReadAllText(dest) : null;
+        }
+        catch (Exception ex)
+        {
+            Emit("info", "msg", "Export for the delete check: " + Innermost(ex));
+            return null;
+        }
+        finally
+        {
+            try
+            {
+                File.Delete(dest);
+            }
+            catch (IOException)
+            {
+                // Temp.
+            }
+        }
+    }
+
+    private static bool MatchesIdentity(object obj, string guid, string identity)
+    {
+        if (string.Equals(identity, guid, StringComparison.OrdinalIgnoreCase))
         {
             return true;
         }
