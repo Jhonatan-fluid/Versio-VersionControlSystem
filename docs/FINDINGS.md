@@ -19,6 +19,52 @@ produce a diff touching everything else.
 
 ---
 
+### A parent-GUID cycle made every object in it vanish from the project tree
+
+**2026-10-14, branch `ReviewFixes`.** Found by a review pass over `Projects/`; the method's own
+remarks name silent object loss as the one failure the panel must not have, and its cycle story
+was only half true. The visited set stops the recursion — but only once `Attach` runs, and for a
+cycle it never ran: the root set was "no parent, or parent not in the manifest", and every member
+of a cycle has a parent that IS in the manifest, so none qualified and the whole loop fell out of
+the tree. The guard against the hang masked the loss. The existing test asserted
+`Assert.NotEmpty(Flatten(tree))`, which the root folder satisfies by itself — it pinned "no
+hang", not "objects survive".
+
+An ownership chain must end at ground, so `Nest` now checks that it does: a leaf whose chain
+loops (itself included) or enters a loop is treated as having no honest owner — flat, as a root,
+exactly like the missing-owner case two lines up. Display-only (nothing on disk moves), pinned by
+three tests: the mutual cycle, the self-parent, and a child whose owner sits inside a cycle.
+
+---
+
+### A status stream truncated inside an untracked entry threw out of the whole parse
+
+**2026-10-14, branch `ReviewFixes`.** `PorcelainV2Parser`'s `?` arm was the one unguarded slice:
+`line[2..]` on a field that is exactly `"?"` — git killed or cut off right after the tag — threw
+`ArgumentOutOfRangeException` out of `Parse`, converting a partial status into a dead refresh.
+Every other arm length-checks and drops, and the suite states the contract in words ("A truncated
+read must not take down the status refresh") one arm above. Guarded now; a bare `?` or `? ` names
+no file and is dropped, never invented.
+
+---
+
+### An Azure DevOps SSH remote got live forge buttons whose every click was a 404
+
+**2026-10-14, branch `ReviewFixes`.** `Forge.Detect` deliberately maps `ssh.dev.azure.com` to
+AzureDevOps, but `WebRoot` only re-schemed the parsed authority and path — right for every other
+forge, and doubly wrong for Azure's SSH shape: `git@ssh.dev.azure.com:v3/org/project/repo` became
+`https://ssh.dev.azure.com/v3/org/project/repo/pullrequestcreate?…`, a host that serves no web UI
+and a path its web UI does not use. Create, Existing and List all inherited it, so
+`MergeRequestPlan` rendered a working-looking button that could only fail — the exact "wrong link
+is a 404 with Versio's name on it" the `ForgeKind` remark forswears. Tests covered only the https
+Azure shape.
+
+`WebRoot` now translates the one shape it can vouch for — `v3/{org}/{project}` on that host
+becomes `dev.azure.com/{org}/{project}/_git` — and any other path on Azure's SSH host returns
+empty, which is what hides the button: no button, never a guess.
+
+---
+
 ### The empty state's Open and Clone buttons drew normally and never received a click
 
 **2026-10-14, branch `ReviewFixes`.** Reported from the running app, not derived: with no
