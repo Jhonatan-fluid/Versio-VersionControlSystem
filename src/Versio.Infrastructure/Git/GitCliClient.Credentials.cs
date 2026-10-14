@@ -223,10 +223,16 @@ public sealed partial class GitCliClient
     /// form is what makes the path a path.
     /// </para>
     /// <para>
-    /// <b>Not trimmed, unlike every other reader here.</b> This is file content, and a trailing
-    /// newline is part of it — the exporter writes one and hashes what it writes, so trimming
-    /// would make every comparison against a recorded hash fail for a reason that has nothing
-    /// to do with the file.
+    /// <b>Not trimmed, unlike every other reader here — but not byte-exact either.</b>
+    /// <see cref="RunAsync"/> reassembles stdout from <c>OutputDataReceived</c> line events,
+    /// appending <c>'\n'</c> per line, so CRLF content comes back LF and a file without a
+    /// final newline is indistinguishable from one with it. Every caller today is line-based
+    /// (the catalog baselines, the merged-diff builder) and the mirror is committed
+    /// <c>eol=lf</c> with a final newline, so nothing observes the difference — but a future
+    /// <i>byte</i> comparison against a recorded hash must not be built on this method: it
+    /// would mismatch on exactly those two shapes for a reason that has nothing to do with
+    /// the file. That comparison needs <c>git show</c> with raw byte capture, which nothing
+    /// has needed yet.
     /// </para>
     /// <para>
     /// A missing path, an empty repository and a mirror that was never committed all exit
