@@ -1,6 +1,7 @@
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
+using System.Windows.Input;
 using System.Windows.Media;
 using Xunit;
 
@@ -152,6 +153,52 @@ public sealed class FocusVisualTests
 
                 Assert.True(FillBorderThickness(item) >= 1,
                             "a keyboard-focused tree row draws no outline");
+            });
+        });
+    }
+
+    [Fact]
+    public void A_text_box_watermark_steps_aside_for_the_keyboard_and_sits_where_the_caret_will()
+    {
+        // The commit box, reported 2026-10-14: a 72 px box saying VerticalContentAlignment=Top
+        // whose caret blinked mid-box beside a mid-box "Summary of the change…" that did not
+        // go away on focus — it read as text to delete. The template hardcoded Center on both
+        // the content host and the placeholder, so the property was a silent lie at every
+        // usage site, and the placeholder hid on the first keystroke rather than on focus.
+        StaHarness.Run(() =>
+        {
+            var style = Assert.IsType<Style>(Application.Current.Resources["FlatTextBox"]);
+            var box = new TextBox
+            {
+                Style = style,
+                Tag = "Summary of the change…",
+                AcceptsReturn = true,
+                Height = 72,
+                VerticalContentAlignment = VerticalAlignment.Top,
+            };
+
+            InAWindow(box, () =>
+            {
+                var placeholder = Descendants(box).OfType<TextBlock>()
+                    .Single(t => (string)t.Text == "Summary of the change…");
+                var host = Descendants(box).OfType<ScrollViewer>().Single();
+
+                // Both follow the box's own alignment, so the hint sits where typing starts.
+                Assert.Equal(VerticalAlignment.Top, placeholder.VerticalAlignment);
+                Assert.Equal(VerticalAlignment.Top, host.VerticalAlignment);
+
+                Assert.Equal(Visibility.Visible, placeholder.Visibility);
+
+                Assert.True(box.Focus(), "the box refused focus");
+                Assert.Equal(Visibility.Collapsed, placeholder.Visibility);
+
+                // Left empty, the hint comes back when the keyboard leaves.
+                Keyboard.ClearFocus();
+                Assert.Equal(Visibility.Visible, placeholder.Visibility);
+
+                // With text, it stays away whether focused or not.
+                box.Text = "Fix the pump interlock";
+                Assert.Equal(Visibility.Collapsed, placeholder.Visibility);
             });
         });
     }

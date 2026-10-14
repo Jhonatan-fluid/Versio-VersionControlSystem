@@ -19,6 +19,27 @@ produce a diff touching everything else.
 
 ---
 
+### The commit box's caret blinked mid-box beside a hint that would not step aside
+
+**2026-10-14, branch `ReviewFixes`.** Reported from the running app: clicking the commit
+message box put the caret vertically mid-box, right beside a "Summary of the change…" that
+stayed put — reading as text to delete.
+
+Two template defects in `FlatTextBox`. Its content host and its placeholder both hardcoded
+`VerticalAlignment="Center"`, which made `VerticalContentAlignment` a silent lie at every usage
+site — the commit box says `Top` and is 72 px tall, so both floated to the middle. And the
+placeholder's visibility hung on `Text=""` alone, so it survived focus and sat under the caret
+until the first keystroke. Both now follow the box: the alignment is template-bound (the style's
+own default stays Center, so single-line boxes are unchanged), and the hint shows only while the
+box is empty AND unfocused — the keyboard arriving is the moment the box becomes the person's,
+and the hint returns if they leave it empty. The commit box carries its own vertical padding,
+because a Top that is finally honoured would otherwise kiss the border.
+
+Pinned in `FocusVisualTests` through a shown window (keyboard focus needs a
+`PresentationSource`); against the old template the pin fails on both counts.
+
+---
+
 ### The body-under-a-table view told the declaration's story twice, badly, and drew husks
 
 **2026-10-14, branch `ReviewFixes`.** Three defects from two screenshots of a real library, all

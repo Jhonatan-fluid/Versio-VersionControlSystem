@@ -874,11 +874,13 @@
                                Visibility="{Binding HasChangeSummary,
                                    Converter={StaticResource BoolToVisibility}}" />
 
+                    <!-- Padding carries the vertical inset: the template now honours Top,
+                         and with the style's 10,0 the first line would kiss the border. -->
                     <TextBox x:Name="CommitMessageBox" Height="72"
                              Style="{StaticResource FlatTextBox}"
                              Tag="Summary of the change…"
                              AcceptsReturn="True" TextWrapping="Wrap"
-                             VerticalContentAlignment="Top"
+                             VerticalContentAlignment="Top" Padding="10,8"
                              KeyDown="OnCommitMessageKeyDown"
                              Text="{Binding CommitMessage, UpdateSourceTrigger=PropertyChanged}" />
 

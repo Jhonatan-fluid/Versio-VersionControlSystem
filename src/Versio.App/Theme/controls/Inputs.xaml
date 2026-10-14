@@ -136,21 +136,37 @@
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate TargetType="TextBox">
+                    <!-- The caret and the placeholder FOLLOW VerticalContentAlignment.
+                         Both were hardcoded Center, which made the property a silent lie
+                         at every usage site: the commit box says Top and is 72 px tall,
+                         so its caret blinked mid-box beside a mid-box watermark (reported
+                         2026-10-14). The style's own default stays Center, so every
+                         single-line box looks exactly as before. -->
                     <Border x:Name="Root" Background="{TemplateBinding Background}"
                             CornerRadius="{DynamicResource Radius.Control}"
                             Padding="{TemplateBinding Padding}">
                         <Grid>
                             <TextBlock x:Name="Placeholder" Text="{TemplateBinding Tag}"
-                                       VerticalAlignment="Center" IsHitTestVisible="False"
+                                       VerticalAlignment="{TemplateBinding VerticalContentAlignment}"
+                                       IsHitTestVisible="False"
                                        Foreground="{DynamicResource Brush.Text.Disabled}"
                                        Visibility="Collapsed" />
-                            <ScrollViewer x:Name="PART_ContentHost" VerticalAlignment="Center" />
+                            <ScrollViewer x:Name="PART_ContentHost"
+                                          VerticalAlignment="{TemplateBinding VerticalContentAlignment}" />
                         </Grid>
                     </Border>
                     <ControlTemplate.Triggers>
-                        <Trigger Property="Text" Value="">
+                        <!-- Empty AND unfocused. On Text alone, the hint stayed under a
+                             blinking caret and read as text to delete; clicking in is the
+                             moment the person starts writing, and the box is theirs. The
+                             hint returns if they leave it empty. -->
+                        <MultiTrigger>
+                            <MultiTrigger.Conditions>
+                                <Condition Property="Text" Value="" />
+                                <Condition Property="IsKeyboardFocused" Value="False" />
+                            </MultiTrigger.Conditions>
                             <Setter TargetName="Placeholder" Property="Visibility" Value="Visible" />
-                        </Trigger>
+                        </MultiTrigger>
                         <Trigger Property="IsKeyboardFocused" Value="True">
                             <Setter TargetName="Root" Property="Background"
                                     Value="{DynamicResource Brush.Surface.Base}" />
