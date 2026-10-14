@@ -20,6 +20,7 @@ distinction is the project's central architectural rule rather than an aspiratio
 | `Versio.Plc.TwinCat` | **One vendor, pure.** `.tsproj` conventions, directory payload, import planner, ST header |
 | `Versio.Plc.TwinCat.Infrastructure` | **One vendor, driven.** TcXaeShell locator, net9 host spawn, Automation Interface session |
 | `Versio.Plc.TwinCat.Host` | **One vendor, net9 x64 exe.** COM into `TcXaeShell.DTE.17.0`; never shipped as Beckhoff DLLs |
+| `Versio.Web` + `web/` | **The read-only web viewer** (`docs/web/PLAN.md`). A composition root like `Versio.App`, but references only the *pure* packs and names vendors only in `WebHost.RegisterFormats`; the React page draws no code. Arch tests enforce both |
 | everything else | Vendor-neutral: git, diff, sync, locking, watching, logging, bindings |
 
 Adding a vendor means a new project implementing `IPlcRunner`, `IPlcProjectFormat` and
@@ -251,17 +252,19 @@ stays that way.
 
 | Suite | Count | Time | Needs |
 |---|---|---|---|
-| `Versio.Core.Tests` | 1,693 | under a second | nothing |
+| `Versio.Core.Tests` | 1,757 | under a second | nothing |
 | `Versio.Integration.Tests` | 171 | ~10 s | real git |
 | `Versio.App.Tests` | 782 | ~3.6 min on 2026-09-22, 8 m 38 s on 2026-10-05 (idleness not checked); STA, no window shown; it was ~50 s once | nothing |
-| `Versio.Arch.Tests` | 27 | instant | nothing — it reads assembly metadata, IL and the `.csproj` files |
+| `Versio.Arch.Tests` | 35 | instant | nothing — it reads assembly metadata, IL and the `.csproj` files |
 | `Versio.Plc.Codesys.Pure.Tests` | 365 | under a second | nothing — the planner, the codecs, the protocol |
 | `Versio.Plc.Codesys.Parity.Tests` | 97 | ~15 s | `python` on PATH — **skips cleanly without it, so check the count, not the colour** |
-| `Versio.Plc.TiaPortal.Pure.Tests` | 93 | instant | nothing — format, planner, protocol, LAD and FBD parser |
+| `Versio.Plc.TiaPortal.Pure.Tests` | 96 | instant | nothing — format, planner, protocol, LAD and FBD parser |
 | `Versio.Plc.TiaPortal.Tests` | 5 | seconds when skipped; minutes when Portal runs the import gate | **real TIA Portal** — skips cleanly without Openness membership or LFS content. Import Fact is green |
 | `Versio.Plc.TwinCat.Pure.Tests` | 23 | instant | nothing — format, planner, protocol |
 | `Versio.Plc.TwinCat.Tests` | 6 | seconds when skipped; ~5 min when XAE runs the import gate | **real TwinCAT XAE** — skips cleanly without `TcXaeShell.DTE.17.0` or the fixture. Import Fact is green |
-| `Versio.Plc.Codesys.Tests` | 55 | **~30 min** | **real CODESYS** — every test launches it, which is the whole cost |
+| `Versio.Web.Tests` | 142 | a few seconds | nothing — GitHub is faked; one test starts the built server as its own process |
+| `web/` (vitest) | 22 | ~20 s | the pinned Node in `web/.node` (`dotnet build src/Versio.Web -p:BuildWeb=true` fetches it), then `npm test` in `web/` |
+| `Versio.Plc.Codesys.Tests` | 55 | **~30 min**; 41 m 14 s, 55/55, on 2026-10-11 | **real CODESYS** — every test launches it, which is the whole cost |
 
 The TIA gate fixture is `fixtures/projects/CleaningStation_V20_V21/` (Git LFS). Never the
 OneDrive original. `docs/vendors/tia/DRIVING.md` is this vendor's driving notes. The TwinCAT
@@ -278,7 +281,14 @@ C:\Users\elli_\AppData\Local\Microsoft\dotnet\dotnet.exe test tests\Versio.Plc.C
 C:\Users\elli_\AppData\Local\Microsoft\dotnet\dotnet.exe test tests\Versio.Plc.Codesys.Parity.Tests
 C:\Users\elli_\AppData\Local\Microsoft\dotnet\dotnet.exe test tests\Versio.Plc.TiaPortal.Pure.Tests
 C:\Users\elli_\AppData\Local\Microsoft\dotnet\dotnet.exe test tests\Versio.Plc.TwinCat.Pure.Tests
+C:\Users\elli_\AppData\Local\Microsoft\dotnet\dotnet.exe test tests\Versio.Web.Tests
 ```
+
+**The web viewer's page** is not in that loop because it needs Node: build it with
+`dotnet build src/Versio.Web -p:BuildWeb=true` (fetches the Node pinned in `web/node.props`,
+refuses a hash mismatch, runs `npm ci` and `vite build`), and test it with `npm test` in `web/`
+using that Node (`web/.node/node-v<version>-win-x64` on PATH). Release builds always build it.
+To look at it against the fixtures without GitHub or an App, see `tests/Versio.Web.Tests/FixturePreview.cs`.
 
 About thirty seconds together, plus about three and a half minutes for `Versio.App.Tests` when
 the UI is in play (measured 2026-09-22 on `main` and on `UiLook` alike; it was fifty seconds

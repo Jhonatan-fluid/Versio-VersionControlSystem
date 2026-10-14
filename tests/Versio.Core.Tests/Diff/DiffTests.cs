@@ -257,9 +257,6 @@ public class LanguageCatalogTests
 {
     [Theory]
     [InlineData("plc/Main.st", "Structured Text")]
-    [InlineData("plc/FB_Motor.scl", "Structured Text")]
-    [InlineData("plc/Type.udt", "Structured Text")]
-    [InlineData("plc/FB_Motor.s7dcl", "Structured Text")]
     [InlineData("src/Program.cs", "C#")]
     [InlineData("tools/build.py", "Python")]
     [InlineData("Visualization.vis.xml", "XML")]
@@ -273,6 +270,18 @@ public class LanguageCatalogTests
     public void The_extension_selects_the_language(string path, string expected)
     {
         Assert.Equal(expected, LanguageCatalog.ForPath(path).Name);
+    }
+
+    [Theory]
+    [InlineData("plc/FB_Motor.scl")]
+    [InlineData("plc/Type.udt")]
+    [InlineData("plc/FB_Motor.s7dcl")]
+    public void A_vendors_own_extension_is_not_the_neutral_catalogs_to_know(string path)
+    {
+        // These were Structured Text here until 2026-10-11: a vendor's file names in neutral
+        // code. The vendor's format names them now (TiaPortalFormatTests), through
+        // PlcFormats.LanguageFor; this assembly registers no such vendor, so they are plain.
+        Assert.Same(SyntaxLanguage.PlainText, LanguageCatalog.ForPath(path));
     }
 
     [Fact]

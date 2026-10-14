@@ -60,17 +60,19 @@ marking, duplicate-param keys, and the detail-pane lookup. All of them are in
 
 | Project | Tests | Time | Needs |
 |---|---|---|---|
-| `Versio.Core.Tests` | 1,693 | under a second | nothing |
+| `Versio.Core.Tests` | 1,757 | under a second | nothing |
 | `Versio.Integration.Tests` | 171 | ~10 s | real git |
 | `Versio.App.Tests` | 782 | 6 m 35 s on 2026-10-10; 8 m 38 s on 2026-10-05; ~3.6 min on 2026-09-22 | nothing |
-| `Versio.Arch.Tests` | 27 | instant | nothing |
+| `Versio.Arch.Tests` | 35 | instant | nothing |
 | `Versio.Plc.Codesys.Pure.Tests` | 365 | under a second | nothing |
 | `Versio.Plc.Codesys.Parity.Tests` | 97 | ~15 s | `python` on PATH — skips cleanly without it, so check the count |
-| `Versio.Plc.TiaPortal.Pure.Tests` | 93 | instant | nothing |
+| `Versio.Plc.TiaPortal.Pure.Tests` | 96 | instant | nothing |
 | `Versio.Plc.TiaPortal.Tests` | 5 | seconds when skipped; minutes when Portal runs the import gate | **real TIA Portal** — skips without Openness membership or LFS content |
 | `Versio.Plc.TwinCat.Pure.Tests` | 23 | instant | nothing |
 | `Versio.Plc.TwinCat.Tests` | 6 | seconds when skipped; ~5 min when XAE runs the import gate | **real TwinCAT XAE** — skips without `TcXaeShell.DTE.17.0` or the fixture |
-| `Versio.Plc.Codesys.Tests` | 55 | **~30 min** | **real CODESYS** |
+| `Versio.Web.Tests` | 142 | a few seconds | nothing — GitHub is faked |
+| `web/` (vitest) | 22 | ~20 s | the pinned Node in `web/.node` |
+| `Versio.Plc.Codesys.Tests` | 55 | **~30 min**; 41 m 14 s, 55/55, on 2026-10-11 on `WebViewer` | **real CODESYS** |
 
 The first ten are the loop to work in — about thirty seconds plus the UI suite. The last is
 the CODESYS gate before a commit. `Versio.Plc.TiaPortal.Tests` and `Versio.Plc.TwinCat.Tests`
@@ -96,6 +98,8 @@ real toolchain.
 | [`archive/`](archive/) | Phase 2 queue, UX plan, session handoffs, the long STATUS diary they replaced |
 | [`project/PLAN.md`](project/PLAN.md) | Design record for Versio Project — one PLC beside the IDE. Not the live queue |
 | [`outpost/PLAN.md`](outpost/PLAN.md) | Design record for Versio Outpost — plant backup and confirmed restore. Not the live queue |
+| [`web/ARCHITECTURE.md`](web/ARCHITECTURE.md) | Versio Web as built: the layers, where every file is, one request end to end, what it reuses from the desktop |
+| [`web/PLAN.md`](web/PLAN.md) | Design record for Versio Web — a read-only browser view of a repository on GitHub, drawn by the same Core renderers. Its Step 1 is Outpost's Step 2b. Not the live queue |
 | [`fbs/PLAN.md`](fbs/PLAN.md) | Design record for CODESYS File-Based Storage — an `.fbsproj` folder shown and drawn as a project, never synced. What the fixture measured. Not the live queue |
 
 ---
@@ -330,6 +334,37 @@ One list. Reorder it; do not copy it into another file.
    - "open in CODESYS" from `.sidecars/.~u`;
    - CFC;
    - the owner's eyeball of the drawing (right rail?) and of the row.
+10. **Versio Web, a read-only browser view of a repository on GitHub — built 2026-10-11 on
+   `WebViewer`, not merged.** The design, the security rules and what each step measured are
+   in [`web/PLAN.md`](web/PLAN.md). An ASP.NET Core server (`src/Versio.Web`) renders with
+   Versio.Core and the three pure packs; a React page (`web/`) places that HTML and draws no
+   code. Built: the HTML renderers for source, text diffs and member tables (Outpost's Step 2b,
+   shared), SafeXml under every pack parser, the server, sign-in through a GitHub App, the page,
+   the Arch rules, and a Dockerfile. Looked at in the built-in browser on the fixtures.
+   Later the same day: two review passes (seven defects fixed), a performance pass (17 GitHub
+   calls per page load down to 9, responses compressed 18x, the 33,644-line file on screen in
+   1.4 s, so no paging), and the open code items closed: type links in member tables,
+   catalogs and FBS projects in the tree, look-alike letters, Mermaid in a sandboxed frame,
+   a comparison cap, sessions shareable through Redis, the App key behind a signing seam, a
+   threat model ([`web/THREAT-MODEL.md`](web/THREAT-MODEL.md)). Then an external review's eight
+   findings, all real and all fixed (FINDINGS 2026-10-11), among them a session read that could
+   undo a token renewal and a per-address rate limit that was one bucket behind a load balancer;
+   a deployment behind one sets `Web:TrustedProxies`. Then that review's open items and a second
+   review, fourteen more, all fixed (FINDINGS 2026-10-11): among them a vendor leak (Siemens
+   extensions in Core, now behind `PlcFormats.LanguageFor` and refused by `VendorSeamTests`), and
+   answers built from failed reads that were drawn as "everything new" or cached.
+   **Left, all needing the owner or a deployment:**
+   - **register the GitHub App** (on GitHub: read-only Contents and Metadata, a callback at
+     `/auth/callback`) and run sign-in against real GitHub; until then the server runs
+     anonymously on public repositories, which was checked against real GitHub;
+   - decide who hosts it (the same question as Outpost §16); that picks the key vault behind
+     `IAppSigner` and the key ring, and Redis if more than one instance;
+   - build the Docker image on a host that has Docker (none on the machine that wrote it);
+   - one look in a normal browser at a Markdown page with a Mermaid diagram (the built-in
+     browser refuses sub-frames, so the page embedding the frame was not observed);
+   - the external penetration test and a cost alarm, once it is deployed;
+   - later, on purpose: the desktop drawing with the shared HTML renderers, and the choice of
+     renderer moved into Core for both (today mirrored, pinned by a test).
 7. **Wait for a specimen, not a build.** C5 (`DELETE_UNREADABLE`) and `native_partial` close when
    reality produces an object nobody has observed. They cannot be manufactured. See
    [`phase1/IMPORT-PLAN.md`](phase1/IMPORT-PLAN.md).

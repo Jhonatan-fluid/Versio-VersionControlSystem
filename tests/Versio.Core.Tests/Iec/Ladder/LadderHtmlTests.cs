@@ -47,6 +47,20 @@ public sealed partial class LadderHtmlTests
     }
 
     [Fact]
+    public void The_summary_speaks_the_hosts_words_and_the_desktops_by_default()
+    {
+        var same = Block(Rung("o", "A", "B", "C"));
+        var unchanged = LadderDiff.Compare(same, same);
+        var added = LadderDiff.Compare(null, same);
+        var web = new LadderWording("", "Not in the older version: every {0} is new.");
+
+        Assert.Contains("No changes since the last commit.", LadderHtml.Fragment(unchanged, LadderStyle.Default), StringComparison.Ordinal);
+        Assert.DoesNotContain("ld-note", LadderHtml.Fragment(unchanged, LadderStyle.Default, wording: web), StringComparison.Ordinal);
+        Assert.Contains("No committed copy to compare with: every network is new.", LadderHtml.Fragment(added, LadderStyle.Default), StringComparison.Ordinal);
+        Assert.Contains("Not in the older version: every network is new.", LadderHtml.Fragment(added, LadderStyle.Default, wording: web), StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void Side_by_side_is_two_columns_when_asked()
     {
         var html = Html(Block(Rung("o", "A", "B", "C")), Block(Rung("n", "A", "X", "C")), LadderView.SideBySide);

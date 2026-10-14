@@ -19,6 +19,230 @@ produce a diff touching everything else.
 
 ---
 
+### Versio Web: rule 9 never covered names; a rate limit was a refusal
+
+**2026-10-12, branch `WebViewer`.** Two reviews; every point held.
+
+**Hidden characters in names reached the page.** Rule 9 (Trojan Source) was built for file contents:
+markers in code, tooltips and attributes. Names and messages went into React text as they were:
+tree rows, titles, notices, layer chips, the compare list, branch names, commit messages. React
+escapes HTML, so nothing could be injected, but git allows a right-to-left override in a file or
+branch name, so a row could read as one name and be another. Every earlier review missed it,
+mine included, because the rule was stated about code. Fixed on the server with Core's one list
+(`CodeHtml.Spelled`), keeping navigation exact: paths and branch names stay as they are, with a
+spelled label beside each for the page to show.
+
+**Session renewal, three edges of the previous fix:** a 429 or 408 counted as GitHub refusing, which
+ends the session; the minute's pause was stamped before a call that can take thirty seconds; and
+in an outage a token with minutes left was answered as signed out. And the left-out-layer notice
+promised a difference for a layer that was the same in both versions.
+
+---
+
+### Versio Web: my fix for one race made every page slow, and a notice pointed at nothing
+
+**2026-10-12, branch `WebViewer`.** Two reviews of the previous round's fixes; every point held.
+
+**Not deleting a session whose renewal failed** (`95af1a6`, to stop deleting another instance's
+renewal) left the dead session alive: every request carrying its cookie made a doomed call to
+GitHub and waited a second, one after another on the gate, so a page took four seconds; its idle
+expiry slid with each request, so it lasted a month; and on a public repository the request fell
+back to anonymous and succeeded, so the only symptom was a slow site. The mutant reproduces it:
+four requests, four seconds. The answer splits what were one case: nothing can renew (no refresh
+token, or a spent one: no race, end at once), GitHub refused (look a second, then end), GitHub did
+not answer (keep it, and do not ask again for a minute). The last two were one `null` from
+`RefreshAsync`, and a network error was not caught at all.
+
+**The left-out-layer notice pointed at Raw for both limits.** A layer over the fetch limit was never
+fetched, and its Raw tab says "too large to compare"; and a change only in a left-out layer also
+raised "nothing this view draws changed", whose Raw tab is the unchanged file on screen. The test
+had asserted the notice for both limits without ever opening the layer it pointed at.
+
+**Lesson, twice in two days:** a fix that stops an action (deleting, refusing) needs the question
+"and then what happens to the thing it would have acted on?"
+
+---
+
+### Versio Web: two more reviews, four findings, and two that were already fixed
+
+**2026-10-11, branch `WebViewer`.** Two more reviews, pasted one after the other.
+
+**Two "still open" items were already fixed**, in `95af1a6` (a refused renewal deleting the
+winner's write) and `ab76d7c` (a type highlight beside "nothing drawn"; a deleted type never
+highlighted). The reviewer read the pushed branch, and none of the session's commits were pushed.
+Worth remembering when a review disagrees with the code: check which revision it read.
+
+**Two of the findings pulled opposite ways, both real.** A layer over the draw limit in one version
+only has no `Failure`, so the unreadable-side check passed it, and a table living in it drew every
+member as added, then was cached. And my own fix for unreadable sides counted "too large" as
+unreadable for every layer, so an `.xml` over the fetch limit refused a whole comparison whose
+`.st` diff could be drawn. One rule answers both: another layer too large on either side is left
+out of both sides and said. **The first test for it proved less than it looked**: a CODESYS GVL's
+table comes from its `.st`, so the mutant failed only on the missing notice and never drew a
+member as added. On a TIA data type, whose members live in the `.xml` beside the `.udt`, the
+mutant reproduces both defects exactly.
+
+**The other two:** views drawn from a model with a failed read were still cached, though the model
+no longer was; and with Redis but no shared key ring, a token sealed by another instance threw on
+decryption, a 500 for every signed-in call and every sign-out. It now reads as signed out, and
+startup warns, since only a shared ring stops the random sign-outs.
+
+---
+
+### Versio Web: the first review's open items and a second review, fourteen findings, one vendor leak
+
+**2026-10-11, branch `WebViewer`.** The first review's items still open, then a second review
+pasted mid-way; two items were in both. Each checked against the code first; all held. Each fix
+has a commit and a test that fails with it reverted.
+
+**The vendor leak, wider than reported.** `ProjectTreeNode.PrimaryFile` listed `.st`, `.scl`
+and `.udt`: two Siemens extensions in a namespace that may learn no vendor. The seam tests look
+for brand names and saw none. A second copy the review did not name sat in Core's
+`LanguageCatalog`, kept there on purpose by a comment arguing no vendor was named, which the later
+`SyntaxFor` seam's own remarks contradict; the desktop's `DiffLayerChoice` held a third. TIA's
+format names its text files now, `PlcFormats.LanguageFor` is the one place vendor and catalog
+meet, and `VendorSeamTests` refuses vendor-only extensions as literals in neutral namespaces.
+On the desktop, a File-Based Storage object's text layer now opens first and is labelled ST.
+
+**Answers built from a failed read, three ways.** (1) A comparison checked only the side it found
+first, so a rate-limited older copy drew every member as added and Raw diffed against null. (2)
+Every rendered answer, failures included, was cached for half an hour by blob, so "could not be
+read" outlived the rate limit; the repository model had the same defect for manifests and
+catalogs, found by reading the loader for another item. (3) Concurrent loads of one commit shared
+one answer, so an anonymous load's rate limit was handed to a signed-in request that joined it.
+
+**Sessions across instances.** The loser of a renewal peeked once and deleted the session; a
+winner's write landing between the two was deleted with it. Deleting bought nothing, so it is
+gone. A sign-out during a renewal now revokes the new token rather than writing it back; without
+compare-and-swap both are narrowed, not closed, and THREAT-MODEL says what is left.
+
+**Smaller, each real:** a parser that throws was a 500, now the plain-text fallback; "nothing this
+view draws changed" ignored a type highlight, and a deleted type was never highlighted; an
+unreadable catalog dropped its rows silently; the loader's remark said catalogs and File-Based
+Storage were unread, weeks after both were built; LFS downloads were never checked against the
+pointer's hash, and there was no test of a successful LFS download at all; one lock serialised all
+App token minting; the branch picker stopped at 1,000 in silence; "the latest 50" appeared for
+exactly 50 commits.
+
+**What the mutations caught in the tests themselves.** Two mutation checks first printed nothing:
+`if (true)` made the following code unreachable, which this build treats as an error, so the
+mutant never compiled. An empty mutation report is not a pass; each was redone with a mutation
+that compiles. And the first tampered-LFS test changed the length, so the size check alone caught
+it and the hash comparison was untested; the tamper is now the same length.
+
+---
+
+### Versio Web: an external review's eight findings, all real, two smaller or larger than stated
+
+**2026-10-11, branch `WebViewer`.** A review of the branch was pasted in with eight findings. Each
+was checked against the code before anything changed; all eight held. Each fix has its own commit
+and a test that fails with the fix reverted.
+
+1. **A layer chip showed the first layer asked for.** `ViewService` keyed a fragment by every
+   layer's blob hash, which one object's layers share, so with the server's one process-wide cache
+   the second layer got the first's answer. The earlier chip test built a new service, so a new
+   cache, per call, and could never see a warm entry. The key carries the file shown.
+2. **A read could put a consumed refresh token back.** `SessionStore.FindAsync` wrote "last seen"
+   by replacing the whole entry; a request that read before a renewal and wrote after it restored
+   the old token, and the next renewal signed the person out. The four-requests renewal test could
+   not see it, because every read in it finished before the renewal. There is no compare-and-swap
+   on `IDistributedCache`, so reads stopped writing: idleness is the store's sliding expiry, kept
+   alive with `Refresh`. `LastSeen` then had no reader and went, with a test that an entry stored
+   with it still reads.
+3. **A token GitHub gave no expiry was given eight hours.** With expiry turned off on the App there
+   is no `expires_in` and no refresh token, so the session ended at the guess while GitHub still
+   honoured the token.
+4. **The ladder's "Changes only" checkbox was stripped.** DOMPurify forbade every `input`. A
+   checkbox is now kept and every other input removed. Rejected on the way: also forbidding
+   `button`, since the ladder's previous and next controls are buttons.
+5. **The ladder script was not safe to run twice in one document — smaller than stated.** The web
+   page runs it per fragment; each run added a document F7 listener holding its page. The review
+   said one press then moved two changes. It does not: each set of handlers keeps its own position
+   and they agree. The cost was a listener and a dead page per file viewed. **The first test checked
+   the screen and passed against both mutations**, which is how the overstatement showed; the test
+   that went in counts registrations, running the script read from `LadderPageAssets.cs` itself.
+6. **History's Compare compared the ref with itself.** Now the default branch against the ref. The
+   accompanying paging request was declined: the latest 50 is deliberate, and the page now says so
+   when the list is full. This is the page's first component test.
+7. **Branches past the first 100 were missing.** Now every page, to a cap of ten.
+8. **Behind a load balancer the rate limit was one bucket for everyone — and the obvious fix was
+   worse.** `Web:TrustedProxies` names the proxies whose forwarded address is believed. **ASP.NET's
+   forwarded-headers middleware treats empty known-proxy lists as "trust every sender"**: the first
+   version cleared both lists and ran it, and the test sending `X-Forwarded-For` from an untrusted
+   client got a fresh bucket per request, which would have let any one client evade the limit
+   entirely. With nothing configured the middleware does not run.
+
+**What it says about the tests.** Three of the eight sat behind a test that looked like coverage:
+a chip test with a cold cache, a renewal test whose reads all finished first, and (until rewritten)
+a ladder test that watched the screen. Each was green for a reason unrelated to the defect.
+
+---
+
+### Versio Web: what the browser, the audit and the mutations found while it was built
+
+**2026-10-11, branch `WebViewer`** (docs/web/PLAN.md). Seven defects, each caught by something
+other than the first green run. Grouped because each is small; each has its own test.
+
+**Only a browser could show these.** Every server test was green while:
+- **a pasted or reloaded link to any file with an extension was a 404.** ASP.NET's default
+  single-page fallback skips paths that look like files, and nearly every PLC file's URL ends in
+  `.st` or `.xml`. Clicking inside the page worked, which is why nothing noticed. Fixed with
+  explicit fallbacks for the page's URL shapes.
+- **that fix then 404'd the page's own script and stylesheet.** Static files stand aside once
+  routing has chosen an endpoint, and the new fallbacks matched `/assets/*`. Static files now
+  run before an explicit `UseRouting()`. The test serves a real built asset and checks its
+  bytes; the first version of the test did not, and passed over the broken order.
+- **the desktop's wording leaked:** "No changes since the last commit" on a single commit, a
+  table note about uncommitted changes, a tooltip starting "At the last commit". `LadderWording`
+  (Core, desktop text by default) and `MemberTable.Note` carry the page's words; a test now looks
+  for either phrase across views and caught the tooltip after the first fix.
+
+**The audit, on versions written from memory.** `npm audit` found DOMPurify 3.2.2 (a long list
+of XSS fixes since, on the page's sanitiser), React Router 6.28 (an open-redirect advisory with no
+6.x fix), and critical-to-moderate advisories in Vite 5 and Vitest 2. Every version is now pinned
+exactly, at least two weeks old, with `npm audit` at zero; the page uses react-router 7.
+
+**Mutations that survived, and what was wrong.** Each time the code was right and the test was
+not watching:
+- the private-repository refusal (security rule 1) could be removed with every test green: the
+  fake GitHub refused an anonymous read first, so the resolver's own check never ran. Installation
+  tokens now sit behind an interface a test fills with a token that can see the private repository.
+- the regex-timeout warning was logged after the startup line the test stopped reading at. The
+  state now sits inside that line.
+- path-traversal tests passed without validation, because the fake tree simply lacked those
+  paths. They now assert nothing reached GitHub at all.
+- the "vendor named only in RegisterFormats" Arch rule read calls, and `CodesysProjectFormat.Instance`
+  is a field. Its positive control came back empty; it reads field loads and `newobj` now.
+- two defensive branches in the new renderers (filling gaps between tokens, a line-kind check
+  before a line number) could never run; they were removed and the tokenizer's coverage became
+  a seeded test of its own.
+
+**Later the same day: review, performance and the open items found nine more,** each fixed with
+a test that fails without it:
+- **Random sign-outs about every eight hours.** The page sends four requests at once; near token
+  expiry all four renewed with GitHub's single-use refresh token, three failed, and a failed
+  renewal ends the session. One renewal per session now; across instances, a re-read first.
+- **Layer chips could not show a layer**: an object always opened its primary file.
+- **A pooled-memory leak per GitHub call** (undisposed `JsonDocument`), and network failures
+  during blob reads escaping as 500s.
+- **Resolving a branch downloaded the whole commit** (up to 300 files' patches) to read its SHA.
+- **17 GitHub calls per page load** from simultaneous requests each doing the same work; 9 after
+  coalescing. The test that pins it then found **one blob fetched twice** in a model load.
+- **Rebuilding the page after a change broke the .NET build**: the Web SDK globbed `wwwroot` at
+  evaluation, before Vite replaced the hashed files.
+- **The diagram frame's policy said `script-src 'self'`**, which matches nothing in a sandboxed,
+  opaque origin, so no Mermaid diagram could ever draw.
+- **Unhashed static files cached for an hour**, so a browser kept a stale frame page; and a test
+  overwrote the built frame with a stub that the preview then served.
+- **`NodeFor` walked the whole tree per call**, changed-files times tree-size in a comparison.
+
+**A tooling hazard, for whoever edits next.** Backslash-u escapes typed into the editing tools
+arrived in source as the literal invisible characters: U+2028 broke the build, and the others
+compiled silently, inside the code that guards against hidden characters. The checks are now
+written as code points (`0x202E`) and every new file was checked for non-ASCII.
+
+---
+
 ### The Rendered tab drew a changed source file as if it were untouched, on every vendor
 
 **2026-10-10, the owner, with a screenshot of the FBS scratch repository.** `ST_AlarmSettings`

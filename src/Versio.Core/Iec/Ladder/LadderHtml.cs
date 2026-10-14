@@ -41,13 +41,32 @@ public enum LadderView
     SideBySide,
 }
 
+/// <summary>
+/// What the summary line says when there is nothing to count: the host's words, because only the
+/// host knows what the comparison is against.
+/// </summary>
+/// <param name="Unchanged">Said when nothing changed; empty says nothing.</param>
+/// <param name="NoOldSide">Said when there is no older copy; <c>{0}</c> is the vendor's word for a network.</param>
+/// <remarks>
+/// The desktop always compares with the last commit, and <see cref="Desktop"/> is its wording,
+/// unchanged. The web viewer shows one commit, or two the reader chose, and "since the last
+/// commit" was wrong there in both cases (seen in the browser on 2026-10-11).
+/// </remarks>
+public sealed record LadderWording(string Unchanged, string NoOldSide)
+{
+    public static readonly LadderWording Desktop = new(
+        "No changes since the last commit.",
+        "No committed copy to compare with: every {0} is new.");
+}
+
 public static class LadderHtml
 {
     /// <summary>The fragment for a compared block.</summary>
-    public static string Fragment(LadderComparison comparison, LadderStyle style, LadderView view = LadderView.Merged)
+    public static string Fragment(LadderComparison comparison, LadderStyle style, LadderView view = LadderView.Merged, LadderWording? wording = null)
     {
         ArgumentNullException.ThrowIfNull(comparison);
         ArgumentNullException.ThrowIfNull(style);
+        wording ??= LadderWording.Desktop;
 
         // Side by side only when asked and when there is something to put beside: an unchanged
         // block, or one never committed, is one column, and two identical columns would only
@@ -59,7 +78,7 @@ public static class LadderHtml
             .Append("\" data-changes-only=\"").Append(comparison.HasOldSide && comparison.HasChanges ? "true" : "false")
             .Append("\">\n");
 
-        Summary(html, comparison, style);
+        Summary(html, comparison, style, wording);
 
         html.Append("<div class=\"ld-rows ").Append(twoColumns ? "ld-two" : "ld-one").Append("\">\n");
         foreach (var row in comparison.Rows)
@@ -94,18 +113,21 @@ public static class LadderHtml
         ? $"ld-new-{n.Network.Number}"
         : $"ld-old-{row.Old!.Network.Number}";
 
-    private static void Summary(StringBuilder html, LadderComparison comparison, LadderStyle style)
+    private static void Summary(StringBuilder html, LadderComparison comparison, LadderStyle style, LadderWording wording)
     {
         html.Append("<nav class=\"ld-summary\">");
         var unit = style.UnitName.ToLowerInvariant();
         if (!comparison.HasOldSide)
         {
-            html.Append("<span class=\"ld-note\">No committed copy to compare with: every ")
-                .Append(E(unit)).Append(" is new.</span>");
+            html.Append("<span class=\"ld-note\">")
+                .Append(E(string.Format(CultureInfo.InvariantCulture, wording.NoOldSide, unit))).Append("</span>");
         }
         else if (!comparison.HasChanges)
         {
-            html.Append("<span class=\"ld-note\">No changes since the last commit.</span>");
+            if (wording.Unchanged.Length > 0)
+            {
+                html.Append("<span class=\"ld-note\">").Append(E(wording.Unchanged)).Append("</span>");
+            }
         }
         else
         {

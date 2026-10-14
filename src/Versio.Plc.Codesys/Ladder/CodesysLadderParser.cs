@@ -146,7 +146,7 @@ public static class CodesysLadderParser
         XDocument doc;
         try
         {
-            doc = XDocument.Parse(xml);
+            doc = Versio.Core.Text.SafeXml.Parse(xml);
         }
         catch (XmlException)
         {

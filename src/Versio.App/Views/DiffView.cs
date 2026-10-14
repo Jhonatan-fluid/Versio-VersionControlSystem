@@ -286,7 +286,7 @@ public class DiffView : ListBox
         {
             if (line.Title is { } title)
             {
-                current = Versio.Core.Plc.PlcFormats.SyntaxFor(title.Path) ?? LanguageCatalog.ForPath(title.Path);
+                current = Versio.Core.Plc.PlcFormats.LanguageFor(title.Path);
             }
 
             map[line] = current;
@@ -306,7 +306,7 @@ public class DiffView : ListBox
         var generation = ++_generation;
 
         // A vendor names its own extensions (a .gvl is Structured Text); the catalog the rest.
-        _language = (path is null ? null : Versio.Core.Plc.PlcFormats.SyntaxFor(path)) ?? LanguageCatalog.ForPath(path);
+        _language = Versio.Core.Plc.PlcFormats.LanguageFor(path);
         _fileLanguages = null;
 
         if (SourceRows is { } source)

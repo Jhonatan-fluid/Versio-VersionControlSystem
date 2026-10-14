@@ -1,4 +1,5 @@
 using Versio.App.Mvvm;
+using Versio.Core.Diff;
 using Versio.Core.Projects;
 
 namespace Versio.App.ViewModels;
@@ -53,9 +54,9 @@ public sealed class DiffLayerChoice
     /// a guessed category.
     /// </remarks>
     private static string LabelFor(string path) =>
-        path.EndsWith(".st", StringComparison.OrdinalIgnoreCase)
-            || path.EndsWith(".scl", StringComparison.OrdinalIgnoreCase)
-            || path.EndsWith(".udt", StringComparison.OrdinalIgnoreCase) ? "ST"
+        // Structured Text by whoever claims the file, the rule PrimaryFile uses; this listed the
+        // extensions itself until 2026-10-11.
+        Versio.Core.Plc.PlcFormats.LanguageFor(path) == LanguageCatalog.StructuredText ? "ST"
         : path.EndsWith(LibraryCatalog.FileSuffix, StringComparison.OrdinalIgnoreCase) ? "libraries"
         : path.EndsWith(TaskCatalog.FileSuffix, StringComparison.OrdinalIgnoreCase) ? "tasks"
         : path.EndsWith(DeviceCatalog.FileSuffix, StringComparison.OrdinalIgnoreCase) ? "devices"

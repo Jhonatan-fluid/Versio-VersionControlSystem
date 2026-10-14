@@ -1574,6 +1574,13 @@ enrollment code, or give a role, and every role change is logged and notified.
 
 ### Step 2b — The two renderers
 
+**Shared with Versio Web.** [`../web/PLAN.md`](../web/PLAN.md) (2026-10-11) builds these same
+renderers as its Step 1, for a read-only browser view of a repository. Whichever product starts
+first builds them; the other reuses them. That plan adds two requirements here: stable
+`data-line`, `data-hunk`, `data-network` and `data-element` markers as a tested contract, and
+marking hidden Unicode (Trojan Source). And the .NET line diff below no longer needs a
+library: `LineDiff` has been in Core since 2026-10-10.
+
 The text-diff and member-table HTML renderers in `Versio.Core` (§8), and the .NET line diff
 that feeds `UnifiedDiffParser`. Tested in `Versio.Core.Tests` the way `LadderHtml` is: a known
 pair of files renders a known fragment; every character from a file is escaped; the unified and

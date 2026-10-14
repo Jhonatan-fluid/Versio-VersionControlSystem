@@ -1,0 +1,28 @@
+{
+  "name": "versio-web",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "The Versio Web page: places HTML the server rendered with Versio.Core. Draws no code itself.",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "dompurify": "3.4.16",
+    "react": "18.3.1",
+    "react-dom": "18.3.1",
+    "react-router": "7.18.4"
+  },
+  "devDependencies": {
+    "@types/react": "18.3.12",
+    "@types/react-dom": "18.3.1",
+    "@vitejs/plugin-react": "5.2.0",
+    "jsdom": "30.1.1",
+    "typescript": "5.9.3",
+    "vite": "7.3.6",
+    "vitest": "4.1.11"
+  }
+}

@@ -1,0 +1,13 @@
+# What a container build of Versio Web never needs: build output, the fetched Node and npm
+# packages (the image fetches its own, for Linux), git, and the binary fixtures.
+**/bin/
+**/obj/
+web/.node/
+web/node_modules/
+src/Versio.Web/wwwroot/
+.git/
+.vs/
+fixtures/
+phase0/
+scratch/
+TestResults/

@@ -1,0 +1,119 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <RootNamespace>Versio.Web</RootNamespace>
+    <AssemblyName>Versio.Web</AssemblyName>
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <!-- wwwroot is BUILT (by the BuildWeb target below), so the SDK must not glob it when the
+         project is evaluated: it collected the previous build's hashed file names, Vite then
+         replaced them, and the static-web-assets step failed on names that no longer existed.
+         Found by rebuilding after a page change (2026-10-11). The page's files are added by
+         IncludeBuiltPage once they exist; appsettings.json is listed explicitly below. -->
+    <EnableDefaultContentItems>false</EnableDefaultContentItems>
+    <!-- THE WEB VIEWER (docs/web/PLAN.md). A composition root like Versio.App: it renders with
+         Versio.Core and the three PURE vendor packs, and references no *.Infrastructure pack and
+         no .Host, because nothing here may drive an IDE, start a process or clone. The pure packs
+         are exactly the part that parses a vendor's files; that is all a viewer needs.
+         Versio.Infrastructure is vendor-neutral and is referenced for the rolling log file, the
+         system clock and the one reader of repo.json. -->
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Versio.Core\Versio.Core.csproj" />
+    <ProjectReference Include="..\Versio.Infrastructure\Versio.Infrastructure.csproj" />
+    <ProjectReference Include="..\Versio.Plc.Codesys\Versio.Plc.Codesys.csproj" />
+    <ProjectReference Include="..\Versio.Plc.TiaPortal\Versio.Plc.TiaPortal.csproj" />
+    <ProjectReference Include="..\Versio.Plc.TwinCat\Versio.Plc.TwinCat.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Sessions shared across instances when Web:Redis is set (SessionStore). Pinned to the
+         installed ASP.NET runtime's own version, so no framework assembly is mixed. -->
+    <PackageReference Include="Microsoft.Extensions.Caching.StackExchangeRedis" Version="9.0.19" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Versio.Web.Tests" />
+    <Content Include="appsettings.json" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Mermaid, for diagrams in Markdown: the desktop's own vendored copy, LINKED rather than
+         copied, so both products draw diagrams with one file and one version (its licence is
+         beside it in src/Versio.App/Assets/mermaid/). A file, not a project reference: the
+         server still references no desktop code. -->
+    <EmbeddedResource Include="..\Versio.App\Assets\mermaid\mermaid.min.js" LogicalName="Versio.Web.mermaid.min.js" Link="Assets\mermaid.min.js" />
+  </ItemGroup>
+
+  <!-- ====================================================================================
+       THE PAGE. web/ is a React + TypeScript app (the owner's choice, 2026-10-10); its build
+       lands in wwwroot/ and is served from there. Built here, with the Node pinned in
+       web/node.props, fetched and hash-checked on first use. Nothing global is installed.
+
+       WHEN: every Release build (so `dotnet publish -c Release` always carries the page), and
+       any build given -p:BuildWeb=true. Not a plain Debug build, so the fast test loop never
+       needs the network or Node. Making the test projects pass a "skip" property on their
+       reference was the first idea and was rejected: it makes MSBuild build this project twice
+       in one solution build with different properties, and the two can race on obj/.
+       ==================================================================================== -->
+  <Import Project="..\..\web\node.props" />
+
+  <PropertyGroup>
+    <WebBuildOn Condition="'$(BuildWeb)' == 'true' Or ('$(Configuration)' == 'Release' And '$(BuildWeb)' != 'false')">true</WebBuildOn>
+    <WebDir>$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)..\..\web'))\</WebDir>
+    <NodeHome>$(WebDir).node\</NodeHome>
+    <NodePlatform Condition="$([MSBuild]::IsOSPlatform('Windows'))">win-x64</NodePlatform>
+    <NodePlatform Condition="$([MSBuild]::IsOSPlatform('Linux')) And '$([System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture)' == 'Arm64'">linux-arm64</NodePlatform>
+    <NodePlatform Condition="$([MSBuild]::IsOSPlatform('Linux')) And '$(NodePlatform)' == ''">linux-x64</NodePlatform>
+    <NodeArchive Condition="'$(NodePlatform)' == 'win-x64'">node-v$(NodeVersion)-win-x64.zip</NodeArchive>
+    <NodeArchive Condition="'$(NodePlatform)' != 'win-x64'">node-v$(NodeVersion)-$(NodePlatform).tar.gz</NodeArchive>
+    <NodeExpected Condition="'$(NodePlatform)' == 'win-x64'">$(NodeSha256_win_x64)</NodeExpected>
+    <NodeExpected Condition="'$(NodePlatform)' == 'linux-x64'">$(NodeSha256_linux_x64)</NodeExpected>
+    <NodeExpected Condition="'$(NodePlatform)' == 'linux-arm64'">$(NodeSha256_linux_arm64)</NodeExpected>
+    <NodeRoot>$(NodeHome)node-v$(NodeVersion)-$(NodePlatform)\</NodeRoot>
+    <NodeBin Condition="'$(NodePlatform)' == 'win-x64'">$(NodeRoot)</NodeBin>
+    <NodeBin Condition="'$(NodePlatform)' != 'win-x64'">$(NodeRoot)bin/</NodeBin>
+    <NodeExe Condition="'$(NodePlatform)' == 'win-x64'">$(NodeBin)node.exe</NodeExe>
+    <NodeExe Condition="'$(NodePlatform)' != 'win-x64'">$(NodeBin)node</NodeExe>
+    <NpmCommand Condition="'$(NodePlatform)' == 'win-x64'">"$(NodeBin)npm.cmd"</NpmCommand>
+    <NpmCommand Condition="'$(NodePlatform)' != 'win-x64'">"$(NodeBin)npm"</NpmCommand>
+    <PathSeparator Condition="$([MSBuild]::IsOSPlatform('Windows'))">;</PathSeparator>
+    <PathSeparator Condition="!$([MSBuild]::IsOSPlatform('Windows'))">:</PathSeparator>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <WebSource Include="$(WebDir)src\**\*;$(WebDir)index.html;$(WebDir)package.json;$(WebDir)package-lock.json;$(WebDir)vite.config.ts;$(WebDir)tsconfig.json" />
+  </ItemGroup>
+
+  <Target Name="FetchNode" Condition="'$(WebBuildOn)' == 'true' And !Exists('$(NodeExe)')">
+    <Error Condition="'$(NodeExpected)' == ''" Text="No pinned Node build for this platform ($(NodePlatform)). Add its hash to web/node.props, or build with -p:BuildWeb=false." />
+    <Message Importance="high" Text="Fetching Node $(NodeVersion) ($(NodePlatform)) into web/.node, pinned by web/node.props" />
+    <DownloadFile SourceUrl="https://nodejs.org/dist/v$(NodeVersion)/$(NodeArchive)" DestinationFolder="$(NodeHome)" Retries="2" />
+    <GetFileHash Files="$(NodeHome)$(NodeArchive)" Algorithm="SHA256" HashEncoding="hex">
+      <Output TaskParameter="Hash" PropertyName="NodeActual" />
+    </GetFileHash>
+    <!-- A mismatch deletes the archive and stops: a Node that is not the pinned one never runs. -->
+    <Delete Condition="'$(NodeActual.ToLowerInvariant())' != '$(NodeExpected)'" Files="$(NodeHome)$(NodeArchive)" />
+    <Error Condition="'$(NodeActual.ToLowerInvariant())' != '$(NodeExpected)'" Text="Node archive hash $(NodeActual) does not match the pin in web/node.props ($(NodeExpected)). Refusing to use it." />
+    <Unzip Condition="'$(NodePlatform)' == 'win-x64'" SourceFiles="$(NodeHome)$(NodeArchive)" DestinationFolder="$(NodeHome)" />
+    <Exec Condition="'$(NodePlatform)' != 'win-x64'" Command="tar -xzf &quot;$(NodeHome)$(NodeArchive)&quot; -C &quot;$(NodeHome)&quot;" />
+    <Delete Files="$(NodeHome)$(NodeArchive)" />
+  </Target>
+
+  <Target Name="BuildWeb" BeforeTargets="AssignTargetPaths" DependsOnTargets="FetchNode" Condition="'$(WebBuildOn)' == 'true'"
+          Inputs="@(WebSource)" Outputs="$(MSBuildThisFileDirectory)wwwroot\index.html">
+    <Message Importance="high" Text="Building the page in web/ with Node $(NodeVersion)" />
+    <!-- npm ci: exactly the lockfile, nothing resolved afresh (docs/web/PLAN.md, npm hygiene). -->
+    <Exec Command="$(NpmCommand) ci --no-audit --no-fund" WorkingDirectory="$(WebDir)" EnvironmentVariables="PATH=$([MSBuild]::Escape('$(NodeBin)$(PathSeparator)$(PATH)'))" />
+    <Exec Command="$(NpmCommand) run build" WorkingDirectory="$(WebDir)" EnvironmentVariables="PATH=$([MSBuild]::Escape('$(NodeBin)$(PathSeparator)$(PATH)'))" />
+  </Target>
+
+  <!-- The built page goes out with the server, whether it was just built or built earlier. -->
+  <Target Name="IncludeBuiltPage" AfterTargets="BuildWeb" BeforeTargets="AssignTargetPaths">
+    <ItemGroup>
+      <Content Remove="wwwroot\**" />
+      <Content Include="wwwroot\**" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    </ItemGroup>
+  </Target>
+
+</Project>

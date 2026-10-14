@@ -58,7 +58,7 @@ public static class TiaPortalMemberTableParser
             // committed copy read through `git show` keeps it as a character in front of
             // <?xml, which XDocument rejects - so every changed table compared against
             // nothing and stayed unmarked (owner's demo, 2026-10-05). Same bytes, two readers.
-            doc = XDocument.Parse(content.TrimStart('\uFEFF'));
+            doc = Versio.Core.Text.SafeXml.Parse(content.TrimStart('\uFEFF'));
         }
         catch (System.Xml.XmlException)
         {

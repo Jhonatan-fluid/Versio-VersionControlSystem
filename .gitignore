@@ -140,3 +140,8 @@ fixtures/projects/TC3_PlcSample_reStrText/TC3_PlcSample_reStrText.versio_trash/
 
 # A ladder drawing that differs from its approved file; see TiaPortalLadderTests.
 *.received.html
+
+# The web viewer: the pinned Node fetched by the build, npm packages, and the built page.
+web/.node/
+web/node_modules/
+src/Versio.Web/wwwroot/

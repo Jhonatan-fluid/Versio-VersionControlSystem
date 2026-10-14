@@ -298,7 +298,7 @@ public static class CodesysCatalogs
         try
         {
             var bytes = Convert.FromBase64String(Value(settings, "OptionData").Trim());
-            options = XDocument.Parse(Encoding.Unicode.GetString(bytes).TrimStart('\uFEFF'));
+            options = Versio.Core.Text.SafeXml.Parse(Encoding.Unicode.GetString(bytes).TrimStart('\uFEFF'));
         }
         catch (Exception e) when (e is FormatException or XmlException)
         {

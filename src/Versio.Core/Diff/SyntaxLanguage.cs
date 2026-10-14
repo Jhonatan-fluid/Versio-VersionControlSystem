@@ -237,13 +237,12 @@ public static class LanguageCatalog
     private static readonly Dictionary<string, SyntaxLanguage> ByExtension =
         new(StringComparer.OrdinalIgnoreCase)
         {
+            // The standard's own extension. A vendor's Structured Text under another name (.scl,
+            // .gvl) is that vendor's vocabulary and comes from its format's SyntaxFor, through
+            // PlcFormats.LanguageFor. Three Siemens extensions sat here until 2026-10-11, on the
+            // argument that no vendor was named; the file names named one (found in review), and
+            // ProjectTreeNode.PrimaryFile repeated them. VendorSeamTests now refuses them here.
             [".st"] = StructuredText,
-            // Textual declaration files that are Structured Text under another extension.
-            // Mapping them here, with no vendor name, is what lets the diff highlighter
-            // light up a second vendor's objects without Diff/ learning who wrote them.
-            [".scl"] = StructuredText,
-            [".s7dcl"] = StructuredText,
-            [".udt"] = StructuredText,
             [".cs"] = CSharp,
             [".csx"] = CSharp,
             [".py"] = Python,

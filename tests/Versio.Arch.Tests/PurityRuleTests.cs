@@ -113,6 +113,124 @@ public sealed class PurityRuleTests
         Assert.Equal(ExemptCallers.OrderBy(x => x, StringComparer.Ordinal), callers);
     }
 
+    /// <summary>
+    /// XML from a repository is parsed only through <c>SafeXml</c>, in Core and the pure packs.
+    /// </summary>
+    /// <remarks>
+    /// The web viewer parses files anyone with push access wrote (docs/web/PLAN.md, security
+    /// rule 3). One <c>XDocument.Parse</c> in a parser would bring back entity expansion for
+    /// every view of a hostile file, and nothing about it would look wrong in review. The
+    /// <c>.Host</c> executables are not scanned: they parse XML their own IDE just wrote, on the
+    /// same machine, and the TIA host is net48 and cannot reference Core.
+    /// </remarks>
+    [Theory]
+    [InlineData("Versio.Core")]
+    [InlineData("Versio.Plc.Codesys")]
+    [InlineData("Versio.Plc.TiaPortal")]
+    [InlineData("Versio.Plc.TwinCat")]
+    public void Xml_is_parsed_only_through_SafeXml(string assemblyName)
+    {
+        var offenders = Calls(Assembly.Load(assemblyName))
+            .Where(c => (c.Called is "System.Xml.Linq.XDocument" or "System.Xml.Linq.XElement"
+                         && c.Member is "Parse" or "Load")
+                        || (c.Called == "System.Xml.XmlDocument" && c.Member is "Load" or "LoadXml")
+                        || (c.Called == "System.Xml.XmlReader" && c.Member == "Create"))
+            .Where(c => !c.From.StartsWith("Versio.Core.Text.SafeXml.", StringComparison.Ordinal))
+            .Select(c => $"{c.From} calls {c.Called}.{c.Member} (use Versio.Core.Text.SafeXml.Parse)")
+            .Distinct(StringComparer.Ordinal)
+            .ToList();
+
+        Assert.True(offenders.Count == 0,
+            $"{assemblyName} parses XML around SafeXml:" + Environment.NewLine + string.Join(Environment.NewLine, offenders));
+    }
+
+    /// <summary>
+    /// The web server never starts a process and never touches the disk itself (docs/web/PLAN.md
+    /// Step 5): no clone, no git, no IDE. Its log file and its key ring are written by
+    /// Versio.Infrastructure and ASP.NET, which are not this assembly.
+    /// </summary>
+    [Fact]
+    public void Versio_Web_starts_no_process_and_reads_no_file()
+    {
+        var offenders = Calls(Assembly.Load("Versio.Web"))
+            .Where(c => Forbidden.ContainsKey(c.Called))
+            .Select(c => $"{c.From} calls {c.Called}")
+            .Distinct(StringComparer.Ordinal)
+            .ToList();
+
+        Assert.True(offenders.Count == 0, "Versio.Web reached outside itself:" + Environment.NewLine + string.Join(Environment.NewLine, offenders));
+    }
+
+    /// <summary>
+    /// A vendor is named in Versio.Web in one method: <c>WebHost.RegisterFormats</c>, the web's
+    /// counterpart of the desktop's <c>CodesysPack.Register()</c>. Everything else reaches vendors
+    /// through <c>PlcFormats</c>, so adding a vendor to the viewer is one line there.
+    /// </summary>
+    /// <remarks>
+    /// Reads field loads and <c>newobj</c> as well as calls. The first version read calls only,
+    /// and its positive control came back empty: <c>CodesysProjectFormat.Instance</c> is a static
+    /// field, and loading a field is not a call, so the rule was checking nothing.
+    /// </remarks>
+    [Fact]
+    public void Versio_Web_names_a_vendor_only_where_it_registers_the_formats()
+    {
+        var uses = References(Assembly.Load("Versio.Web")).Where(c => c.Called.StartsWith("Versio.Plc.", StringComparison.Ordinal)).ToList();
+
+        Assert.NotEmpty(uses);
+        Assert.All(uses, c => Assert.Equal("Versio.Web.WebHost.RegisterFormats", c.From));
+    }
+
+    /// <summary>Calls, constructions and field accesses, by the type that declares the member.</summary>
+    private static IEnumerable<Call> References(Assembly assembly)
+    {
+        byte[] methodOps = [CallOp, CallvirtOp, 0x73 /* newobj */];
+        byte[] fieldOps = [0x7B /* ldfld */, 0x7C /* ldflda */, 0x7E /* ldsfld */, 0x7F /* ldsflda */, 0x80 /* stsfld */];
+        var module = assembly.ManifestModule;
+        foreach (var type in assembly.GetTypes())
+        {
+            foreach (var method in Members(type))
+            {
+                if (Body(method) is not { } il)
+                {
+                    continue;
+                }
+
+                for (var i = 0; i + 5 <= il.Length; i++)
+                {
+                    var token = BitConverter.ToInt32(il, i + 1);
+                    MemberInfo? member = methodOps.Contains(il[i]) ? Resolve(module, token)
+                        : fieldOps.Contains(il[i]) ? ResolveField(module, token)
+                        : null;
+                    if (member?.DeclaringType?.FullName is { } owner)
+                    {
+                        yield return new Call($"{type.FullName}.{method.Name}", owner, member.Name);
+                    }
+                }
+            }
+        }
+    }
+
+    private static FieldInfo? ResolveField(Module module, int token)
+    {
+        try
+        {
+            return module.ResolveField(token);
+        }
+        catch (ArgumentException)
+        {
+            return null;
+        }
+    }
+
+    [Fact]
+    public void The_xml_rule_can_see_SafeXml_itself()
+    {
+        // Its positive control: the one allowed caller must be found, or the rule above is
+        // checking an empty set.
+        Assert.Contains(Calls(Core), c => c.From.StartsWith("Versio.Core.Text.SafeXml.", StringComparison.Ordinal)
+                                          && c.Called == "System.Xml.Linq.XDocument" && c.Member == "Load");
+    }
+
     [Fact]
     public void The_scan_can_actually_find_something()
     {

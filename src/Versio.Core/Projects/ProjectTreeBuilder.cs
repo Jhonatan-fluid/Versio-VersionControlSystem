@@ -158,6 +158,41 @@ public sealed record ProjectTreeNode
 
     /// <summary>True when this node or anything under it changed.</summary>
     public bool HasChanges => Status != ChangeKind.Unmodified || ChangedDescendants > 0;
+
+    /// <summary>The file a pane opens for this node, or null when it opens none.</summary>
+    /// <remarks>
+    /// <para>
+    /// The readable layer wins. An object exporting to both <c>.st</c> / <c>.scl</c> and
+    /// <c>.xml</c> opens the Structured Text, because that is the one somebody can review;
+    /// the native XML is there for completeness and reads like a machine wrote it, which
+    /// it did. Matching by suffix rather than sort order is load-bearing for TIA: a data
+    /// block's <c>.scl</c> is the review copy, and falling through to "first file" used
+    /// to open SimaticML whenever the textual suffix was not <c>.st</c>. This is only
+    /// the <i>default</i>: the desktop's diff pane offers the other layers as chips.
+    /// </para>
+    /// <para>
+    /// Null for a project row. A <c>.project</c> is a binary compound document - git can store
+    /// it and cannot diff it, which is the entire reason this tool exists - so the row reports
+    /// its export instead, and the pane says so rather than showing an empty diff.
+    /// </para>
+    /// <para>
+    /// Moved here from the desktop's <c>TreeRow</c> on 2026-10-11 so the web viewer opens the
+    /// same file for the same node; the desktop row now asks this.
+    /// </para>
+    /// </remarks>
+    public string? PrimaryFile =>
+        Kind is ProjectNodeKind.Project or ProjectNodeKind.Folder
+            ? null
+            : Files.FirstOrDefault(IsTextualLayer) ?? Files.FirstOrDefault();
+
+    /// <remarks>
+    /// Structured Text by whoever claims the file: the standard's <c>.st</c> from the catalog, a
+    /// vendor's own extensions from its format. This listed <c>.st</c>, <c>.scl</c> and
+    /// <c>.udt</c> by name until 2026-10-11, two of them Siemens', in a namespace that may not
+    /// learn a vendor (found in review; the seam tests looked for brand names and saw none).
+    /// </remarks>
+    private static bool IsTextualLayer(string path) =>
+        Plc.PlcFormats.LanguageFor(path) == Diff.LanguageCatalog.StructuredText;
 }
 
 /// <summary>
