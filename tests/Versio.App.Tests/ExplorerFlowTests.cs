@@ -27,7 +27,11 @@ public sealed class ExplorerFlowTests
     {
         using var dir = new Scratch();
         var st = Path.Combine(dir.Path, "Simulation.st");
-        File.WriteAllText(st, "PROGRAM Simulation\nEND_PROGRAM\n");
+
+        // With a variable, as a real program has: a memberless block renders as its source
+        // since 2026-10-14 (an empty table is a husk), and this test's subject is the
+        // explorer's route into the pane, not which render a memberless block earns.
+        File.WriteAllText(st, "PROGRAM Simulation\nVAR\n    running : BOOL;\nEND_VAR\nEND_PROGRAM\n");
 
         using var shell = TestShell.Build();
         shell.PreviewRepository(dir.Path);
@@ -38,6 +42,8 @@ public sealed class ExplorerFlowTests
         // A program reads as a TIA block does: its interface as a table, its code under it.
         var shown = Assert.IsType<InterfaceRender>(shell.RenderedContent);
         Assert.Equal("Simulation", shown.Table.Name);
+        Assert.Equal("running",
+            Assert.Single(shown.Table.Members, m => !m.IsSectionHeading).Name);
         Assert.NotNull(shown.Source);
         Assert.StartsWith("@@", shell.SelectedDiff);
         Assert.EndsWith(".st", shell.SelectedDiffPath);

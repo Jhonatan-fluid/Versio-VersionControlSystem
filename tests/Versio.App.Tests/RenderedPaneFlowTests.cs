@@ -67,8 +67,12 @@ public sealed class RenderedPaneFlowTests
         }
         """);
 
+        // Laid out as the exporter lays it out — one member per line. The old one-liner
+        // ("VAR speed : INT; END_VAR") is a shape no export writes and the declaration
+        // parser tables it as zero members, which the clean-file test below survived only
+        // while an empty table still drew as a husk.
         File.WriteAllText(Path.Combine(export, "FB_Motor.st"),
-            "FUNCTION_BLOCK FB_Motor\nVAR speed : INT; END_VAR\nEND_FUNCTION_BLOCK\n");
+            "FUNCTION_BLOCK FB_Motor\nVAR\n    speed : INT;\nEND_VAR\nEND_FUNCTION_BLOCK\n");
         File.WriteAllText(Path.Combine(export, "Library Manager.libraries.yaml"), """
             schema: 1
             vendor: codesys
@@ -286,8 +290,12 @@ public sealed class RenderedPaneFlowTests
         shell.Sync.SelectedNode = await Row(shell, "FB_Motor");
 
         // A block reads as TIA's do since 2026-10-10: its interface as a table, its code under it.
+        // The member is asserted, not just the name: this test once passed on an empty
+        // table husk, which asserting the name alone cannot tell from an interface.
         var shown = Assert.IsType<InterfaceRender>(shell.RenderedContent);
         Assert.Equal("FB_Motor", shown.Table.Name);
+        Assert.Equal("speed",
+            Assert.Single(shown.Table.Members, m => !m.IsSectionHeading).Name);
         var source = Assert.IsType<SourceRender>(shown.Source);
         Assert.True(source.NoChanges);
         Assert.Contains("FUNCTION_BLOCK FB_Motor", source.PseudoDiff);

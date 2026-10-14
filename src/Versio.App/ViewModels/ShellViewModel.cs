@@ -7557,7 +7557,9 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
                             // which is what a type with no members has always got. The
                             // cost is the rare block whose members were ALL deleted: its
                             // struck rows live in Raw rather than a rendered table.
-                            && parsed.Members.Count > 0)
+                            // Section headings do not count — Members carries them as
+                            // rows, and a heading over nothing is the same husk.
+                            && parsed.Members.Any(m => !m.IsSectionHeading))
                         {
                             var table = LinkTypes(parsed, file);
                             _tableSource = (format, file);
