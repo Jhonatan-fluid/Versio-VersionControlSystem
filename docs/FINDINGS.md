@@ -19,7 +19,21 @@ produce a diff touching everything else.
 
 ---
 
-### A parent-GUID cycle made every object in it vanish from the project tree
+### An FBS library file without the metadata header rendered its declaration twice and buried its code
+
+**2026-10-14, branch `ReviewFixes`.** Reported from the running app with a real library:
+`FsLibrary.fbslib` holds `.fb.st` files that open with a `///` doc comment and **no
+`(* METADATA *)` header at all** — every file in the committed fixture has one, which is why the
+gate looked safe. `CodesysFileBasedSource.Sections` answered only for files that open with the
+header, so these fell through to the classic mirror's splitter, which needs Versio's own
+delimiter, and `CodeBody` came back null — the Rendered pane drew the whole file (doc header,
+attributes, `VAR` blocks) under a member table that had already tabled that same declaration,
+with the actual code buried below it.
+
+A path inside a `.fbsproj`/`.fbslib` folder is CODESYS's own statement of the format, header or
+not, so the gate is now header **or** folder; a headerless file outside an FBS tree is still
+refused, because a classic mirror's `.st` must keep the layout it has. Pinned both ways, with
+the reported file reduced to a specimen.
 
 **2026-10-14, branch `ReviewFixes`.** Found by a review pass over `Projects/`; the method's own
 remarks name silent object loss as the one failure the panel must not have, and its cycle story

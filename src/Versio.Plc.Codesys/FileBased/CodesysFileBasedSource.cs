@@ -25,8 +25,14 @@ namespace Versio.Plc.Codesys.FileBased;
 /// </list>
 /// </para>
 /// <para>
-/// <b>Only a file that opens with the header is answered for.</b> A classic mirror's
-/// <c>.st</c> is Versio's own format with its own delimiter, and must keep the layout it has.
+/// <b>A file is File-Based Storage by its header, or by where it lives.</b> The gate used to
+/// be the <c>(* METADATA</c> header alone — every file in the fixture has one — and a real
+/// library (<c>FsLibrary.fbslib</c>, seen 2026-10-14) holds <c>.fb.st</c> files that open with
+/// a <c>///</c> doc comment and no header at all. Refusing those sent them to the classic
+/// mirror's splitter, which needs Versio's own delimiter, so the Rendered pane drew the whole
+/// file under a member table that had already tabled its declaration. A path inside a
+/// <c>.fbsproj</c>/<c>.fbslib</c> folder is CODESYS's own statement of the format, header or
+/// not; a classic mirror's <c>.st</c> never lives in one and keeps the layout it has.
 /// </para>
 /// </remarks>
 public static class CodesysFileBasedSource
@@ -56,18 +62,27 @@ public static class CodesysFileBasedSource
         }
 
         var lines = content.Replace("\r\n", "\n").Split('\n');
-        if (!lines[0].TrimStart('\uFEFF').StartsWith(HeaderOpen, StringComparison.Ordinal))
+        int header;
+        if (lines[0].TrimStart('\uFEFF').StartsWith(HeaderOpen, StringComparison.Ordinal))
+        {
+            var close = Array.FindIndex(lines, l => l.Trim() == HeaderClose);
+            if (close < 0)
+            {
+                return null;
+            }
+
+            header = close + 1;
+        }
+        else if (InFileBasedTree(relativePath))
+        {
+            // No header, but the folder says FBS \u2014 see the class remarks. Everything is
+            // the object's own text, exactly as the IDE shows it.
+            header = 0;
+        }
+        else
         {
             return null;
         }
-
-        var close = Array.FindIndex(lines, l => l.Trim() == HeaderClose);
-        if (close < 0)
-        {
-            return null;
-        }
-
-        var header = close + 1;
 
         // The object's keyword: the first line after the header that is not an attribute, a
         // comment or blank. It decides whether there is a body to look for at all.
@@ -134,6 +149,12 @@ public static class CodesysFileBasedSource
     private static bool IsText(string path) =>
         path.EndsWith(".st", StringComparison.OrdinalIgnoreCase)
         || TextExtensions.Any(e => path.EndsWith(e, StringComparison.OrdinalIgnoreCase));
+
+    /// <summary>True when any folder on the path carries an FBS extension.</summary>
+    private static bool InFileBasedTree(string path) =>
+        path.Replace('\\', '/').Split('/')[..^1].Any(segment =>
+            CodesysFileBasedLayout.Extensions.Any(
+                e => segment.EndsWith(e, StringComparison.OrdinalIgnoreCase)));
 
     /// <summary>The first word, without a <c>_GET</c>/<c>_SET</c> accessor suffix: <c>PROPERTY_Get</c> is a property.</summary>
     private static string Keyword(string line)

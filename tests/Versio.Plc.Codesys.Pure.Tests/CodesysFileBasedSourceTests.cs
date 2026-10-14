@@ -154,4 +154,50 @@ public sealed class CodesysFileBasedSourceTests
         Assert.Null(CodesysProjectFormat.Instance.SyntaxFor("x/PLC_PRG.st"));
         Assert.Null(CodesysProjectFormat.Instance.SyntaxFor("README.md"));
     }
+
+    /// <summary>The file the gate refused, reduced: FsLibrary.fbslib's FB_Template.fb.st.</summary>
+    private const string HeaderlessBlock =
+        "/// Documentation on the Block\n"
+        + "{attribute 'symbol' := 'none'}\n"
+        + "FUNCTION_BLOCK FB_Template IMPLEMENTS I_Template\n"
+        + "VAR_INPUT\n"
+        + "\tHomeFeedback : BOOL;\n"
+        + "END_VAR\n"
+        + "VAR\n"
+        + "\tState : E_TemplateState := E_TemplateState.Off;\n"
+        + "END_VAR\n"
+        + "State := NextState;\n"
+        + "END_FUNCTION_BLOCK\n";
+
+    [Fact]
+    public void A_library_file_with_no_metadata_header_still_splits_by_where_it_lives()
+    {
+        // Seen on a real library on 2026-10-14: FsLibrary.fbslib holds .fb.st files that
+        // open with a /// doc comment and no (* METADATA *) header at all. The gate was
+        // the header alone — every fixture file has one — so these fell through to the
+        // classic mirror's splitter, which needs Versio's own delimiter, and the
+        // Rendered pane drew the whole file under a member table that had already tabled
+        // its declaration. The .fbslib folder on the path is CODESYS's own statement of
+        // the format.
+        var path = "FsLibrary.fbslib/00_Template/FB_Template.fb.st";
+        var sections = CodesysProjectFormat.Instance.SourceSections(path, HeaderlessBlock);
+
+        Assert.NotNull(sections);
+        Assert.Equal(0, sections.HeaderEnd);
+
+        var body = Section(StSourceLayout.Lay(HeaderlessBlock, sections), StSourceLayout.ImplementationLabel);
+        Assert.Equal(["State := NextState;"], body);
+
+        Assert.Equal((9, 10), CodesysProjectFormat.Instance.CodeBody(path, HeaderlessBlock));
+    }
+
+    [Fact]
+    public void A_headerless_file_outside_an_fbs_folder_is_still_not_claimed()
+    {
+        // The other half of the gate: a classic mirror's .st has Versio's own delimiter
+        // and must keep the layout it has. Nothing about its content changed, so nothing
+        // about its answer may.
+        Assert.Null(CodesysProjectFormat.Instance.SourceSections(
+            "Device/Plc Logic/Application/FB_Template.st", HeaderlessBlock));
+    }
 }
