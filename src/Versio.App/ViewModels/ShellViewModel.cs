@@ -8278,16 +8278,6 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
     }
 
     /// <summary>
-    /// Surface a failed command.
-    /// </summary>
-    /// <remarks>
-    /// <b>Cancellation is not a failure.</b> Every operation now runs under a token that a
-    /// user can trip deliberately — by answering "stop it and continue" to a guard — and the
-    /// exception that produces is the mechanism working, not breaking. Reported at Info and
-    /// worded as an outcome, because a red error line for something the user just asked for
-    /// teaches them that the button is broken.
-    /// </remarks>
-    /// <summary>
     /// The repository folder this session already said is gone, or null. Which path, not a
     /// flag: a successful refresh clears it, and a different repository vanishing is its own
     /// news even if the first one never came back.
@@ -8342,6 +8332,16 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         return true;
     }
 
+    /// <summary>
+    /// Surface a failed command.
+    /// </summary>
+    /// <remarks>
+    /// <b>Cancellation is not a failure.</b> Every operation now runs under a token that a
+    /// user can trip deliberately — by answering "stop it and continue" to a guard — and the
+    /// exception that produces is the mechanism working, not breaking. Reported at Info and
+    /// worded as an outcome, because a red error line for something the user just asked for
+    /// teaches them that the button is broken.
+    /// </remarks>
     private void ReportError(Exception ex)
     {
         if (ex is OperationCanceledException)
