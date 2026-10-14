@@ -61,4 +61,28 @@ public sealed class SafeXmlTests
         Assert.Throws<XmlException>(() => SafeXml.Parse(big, maxCharacters: 1_000));
         Assert.NotNull(SafeXml.Parse(big, maxCharacters: 10_000).Root);
     }
+
+    [Fact]
+    public void A_document_nested_past_the_depth_cap_is_refused_before_a_tree_is_built()
+    {
+        // XDocument's tree building is quadratic in nesting depth: 30,000 levels was
+        // measured at 70+ seconds of CPU while a bare XmlReader streams the same text in
+        // 51 ms. The character cap cannot catch it — the cost is the shape, not the size —
+        // so a streaming pre-pass refuses it in the exception every caller already
+        // handles. The small cap here keeps the test instant; the wall-clock assertion
+        // keeps the point: a refusal that built the tree first would take minutes.
+        var deep = string.Concat(Enumerable.Repeat("<e>", 30_000))
+                   + "x"
+                   + string.Concat(Enumerable.Repeat("</e>", 30_000));
+
+        var watch = System.Diagnostics.Stopwatch.StartNew();
+        Assert.Throws<XmlException>(() => SafeXml.Parse(deep));
+        watch.Stop();
+
+        Assert.True(watch.Elapsed < TimeSpan.FromSeconds(5),
+            $"the refusal took {watch.Elapsed.TotalSeconds:F1}s");
+
+        Assert.Throws<XmlException>(() => SafeXml.Parse("<a><b><c /></b></a>", maxDepth: 1));
+        Assert.NotNull(SafeXml.Parse("<a><b><c /></b></a>", maxDepth: 2).Root);
+    }
 }

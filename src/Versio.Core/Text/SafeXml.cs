@@ -33,21 +33,62 @@ public static class SafeXml
     /// <summary>The most characters a document may hold before it is refused.</summary>
     public const long MaxCharacters = 64L * 1024 * 1024;
 
+    /// <summary>
+    /// The deepest element nesting a document may have before it is refused.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Far beyond any real export — CODESYS's archivable format, the deepest nester among the
+    /// vendors, stays two orders of magnitude under it — and a hard requirement all the same:
+    /// <b><see cref="XDocument"/>'s tree building is quadratic in nesting depth.</b> Measured
+    /// on 2026-10-14: a 5 MB document of 30,000 nested elements streams through a bare
+    /// <see cref="XmlReader"/> in 51 ms and takes <see cref="XDocument.Load(XmlReader)"/>
+    /// 70+ seconds of CPU — every setting combination alike, so it is the framework's tree,
+    /// not these options. The character cap cannot catch it, because the cost is in the
+    /// shape, not the size.
+    /// </para>
+    /// <para>
+    /// Refused by a streaming pre-pass, which is what makes the refusal cheap: linear, before
+    /// any tree exists. The pre-pass is paid on every parse, and on an honest document it is
+    /// milliseconds against a load that costs more.
+    /// </para>
+    /// </remarks>
+    public const int MaxDepth = 512;
+
     /// <summary>Parses <paramref name="xml"/>, or throws <see cref="XmlException"/>.</summary>
     /// <param name="maxCharacters">The cap; <see cref="MaxCharacters"/> unless a test needs a small one.</param>
-    public static XDocument Parse(string xml, LoadOptions options = LoadOptions.None, long maxCharacters = MaxCharacters)
+    /// <param name="maxDepth">The nesting cap; <see cref="MaxDepth"/> unless a test needs a small one.</param>
+    public static XDocument Parse(
+        string xml, LoadOptions options = LoadOptions.None, long maxCharacters = MaxCharacters,
+        int maxDepth = MaxDepth)
     {
         ArgumentNullException.ThrowIfNull(xml);
 
         var settings = new XmlReaderSettings
         {
             // Mirrors what XDocument.Parse sets for itself (whitespace below), so the trees are
-            // the same; only the DTD and the cap differ.
+            // the same; only the DTD and the caps differ.
             DtdProcessing = DtdProcessing.Prohibit,
             XmlResolver = null,
             MaxCharactersInDocument = maxCharacters,
             IgnoreWhitespace = (options & LoadOptions.PreserveWhitespace) == 0,
         };
+
+        // The depth pre-pass — see MaxDepth. It also means a malformed document throws here,
+        // before any tree is built, which is the same XmlException the caller already handles.
+        using (var probeText = new StringReader(xml))
+        using (var probe = XmlReader.Create(probeText, settings))
+        {
+            while (probe.Read())
+            {
+                if (probe.Depth > maxDepth)
+                {
+                    throw new XmlException(
+                        $"the document nests more than {maxDepth} elements deep, which no " +
+                        "supported export does");
+                }
+            }
+        }
 
         using var text = new StringReader(xml);
         using var reader = XmlReader.Create(text, settings);
