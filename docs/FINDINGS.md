@@ -19,6 +19,18 @@ produce a diff touching everything else.
 
 ---
 
+### A nested block comment ended at the inner closer and the member table invented rows
+
+**2026-10-14, branch `ReviewFixes`.** `StDeclarationTable.Clean` tracked block comments with a
+flag, not a depth. IEC 61131-3 permits `(* … (* … *) … *)` and CODESYS enables nested comments
+by default, so the comment ended at the first `*)`: everything from there to the real closer was
+treated as code — a commented-out declaration became a live row in the member table — while the
+declaration's genuine tail was swallowed. The table is what a reviewer reads before committing,
+and a table that quietly invents members is the kind of wrong that gets acted on. A depth now;
+pinned by a declaration whose nested comment hides a `nStray : BOOL;` that must not become a row.
+
+---
+
 ### Deep XML: the ladder parser could overflow the stack, and XDocument itself burns minutes first
 
 **2026-10-14, branch `ReviewFixes`.** A review found the first defect by reading; pinning it

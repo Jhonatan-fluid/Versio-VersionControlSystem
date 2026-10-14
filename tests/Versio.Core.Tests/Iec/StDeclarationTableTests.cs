@@ -253,4 +253,27 @@ public class StDeclarationTableTests
         Assert.False(StDeclarationTable.Parse(FbAlarm, "x")!.HasExternalAccess);
         Assert.True(new MemberTable { Members = [new MemberRow { ExternalAccess = "Read" }] }.HasExternalAccess);
     }
+
+    [Fact]
+    public void A_nested_block_comment_ends_at_its_own_closer_not_the_inner_one()
+    {
+        // IEC 61131-3 permits (* … (* … *) … *) and CODESYS enables nested comments by
+        // default. A flag instead of a depth ended the comment at the INNER "*)", so
+        // everything up to the real closer was tabled as members that do not exist —
+        // nStray below used to be a row — while the declaration's real tail was
+        // swallowed. The table is what a reviewer reads before committing.
+        const string source = """
+            FUNCTION_BLOCK FB_Doc
+            VAR_INPUT
+                nReal : INT;
+                (* outer (* inner *) nStray : BOOL; *)
+                nAfter : INT;
+            END_VAR
+            END_FUNCTION_BLOCK
+            """;
+
+        var table = StDeclarationTable.Parse(source, "x")!;
+
+        Assert.Equal(["[Input]", "nReal : INT", "nAfter : INT"], Shape(table));
+    }
 }

@@ -629,7 +629,14 @@ public static class StDeclarationTable
     private static List<Line> Clean(string text)
     {
         var result = new List<Line>();
-        var inBlock = false;
+
+        // A depth, not a flag. IEC 61131-3 permits nested (* … (* … *) … *) and CODESYS
+        // enables nested comments by default, so a bool ended the comment at the FIRST
+        // "*)" — everything after it up to the real closer was tabled as members that do
+        // not exist, while the declaration's real tail was swallowed. The table is what a
+        // reviewer reads before committing, and a table quietly inventing rows is the
+        // kind of wrong that gets acted on.
+        var block = 0;
         var blockText = new StringBuilder();
         foreach (var raw in text.Replace("\r\n", "\n").Split('\n'))
         {
@@ -640,13 +647,27 @@ public static class StDeclarationTable
             for (var i = 0; i < raw.Length; i++)
             {
                 var ch = raw[i];
-                if (inBlock)
+                if (block > 0)
                 {
-                    if (ch == '*' && i + 1 < raw.Length && raw[i + 1] == ')')
+                    if (ch == '(' && i + 1 < raw.Length && raw[i + 1] == '*')
                     {
-                        inBlock = false;
-                        comment.Append(blockText.ToString().Trim());
-                        blockText.Clear();
+                        block++;
+                        blockText.Append("(*");
+                        i++;
+                    }
+                    else if (ch == '*' && i + 1 < raw.Length && raw[i + 1] == ')')
+                    {
+                        block--;
+                        if (block == 0)
+                        {
+                            comment.Append(blockText.ToString().Trim());
+                            blockText.Clear();
+                        }
+                        else
+                        {
+                            blockText.Append("*)");
+                        }
+
                         i++;
                     }
                     else
@@ -676,7 +697,7 @@ public static class StDeclarationTable
                 }
                 else if (ch == '(' && i + 1 < raw.Length && raw[i + 1] == '*')
                 {
-                    inBlock = true;
+                    block = 1;
                     i++;
                 }
                 else if (ch == '{')
@@ -691,7 +712,7 @@ public static class StDeclarationTable
                 }
             }
 
-            if (inBlock)
+            if (block > 0)
             {
                 blockText.Append(' ');
             }
