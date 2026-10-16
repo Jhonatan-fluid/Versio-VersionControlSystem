@@ -145,3 +145,8 @@ fixtures/projects/TC3_PlcSample_reStrText/TC3_PlcSample_reStrText.versio_trash/
 web/.node/
 web/node_modules/
 src/Versio.Web/wwwroot/
+
+# Added by Versio: files the PLC toolchain writes beside a project.
+# The per-user one carries a username and machine name in its filename.
+fixtures/projects/RefrigeratorControl_FBS/RefrigeratorControl.fbsproj/.sidecars/
+fixtures/projects/RefrigeratorControl_FBS/RefrigeratorControl.fbsproj/.auxiliaries/
