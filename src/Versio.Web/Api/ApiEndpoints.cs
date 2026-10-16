@@ -256,6 +256,44 @@ public static partial class ApiEndpoints
                 : Refused(commits.Failure, http);
         });
 
+        // A document's bytes, for the Documentation tab (PLAN.md, "The product shape" item 4):
+        // the PDF the page embeds, and the download behind every Office row. Only paths the
+        // Documents allowlist names, with the content type chosen HERE — never from the file —
+        // and everything but PDF as an attachment; the reasoning is on Documents itself. The
+        // credential, scope and commit rules are Loader's, same as every content route.
+        api.MapGet("/raw", async (string owner, string repo, string? @ref, string? path,
+            HttpContext http, Loader load, IRepoSource source, IVersioLogger log,
+            Microsoft.Extensions.Options.IOptions<WebOptions> options, CancellationToken ct) =>
+        {
+            if (!ValidPath(path) || Documents.DispositionFor(path!) is not { } serve)
+            {
+                return Results.NotFound();
+            }
+
+            var model = await load.ModelAsync(http, owner, repo, @ref, ct).ConfigureAwait(false);
+            if (!model.Ok)
+            {
+                return Refused(model.Failure, http);
+            }
+
+            var (access, m) = model.Value!;
+            if (!m.Files.TryGetValue(path!, out var entry))
+            {
+                return Refused(RepoFailure.NotFound, http);
+            }
+
+            var bytes = await source.GetBlobAsync(access, owner, repo, entry.BlobSha, options.Value.MaxBlobBytes, ct).ConfigureAwait(false);
+            if (!bytes.Ok)
+            {
+                return Refused(bytes.Failure, http);
+            }
+
+            Audit(log, access, m, path!, "raw");
+            return serve.Inline
+                ? Results.File(bytes.Value!, serve.ContentType)
+                : Results.File(bytes.Value!, serve.ContentType, path![(path!.LastIndexOf('/') + 1)..]);
+        });
+
         // The pulls and releases tabs (PLAN.md, "The product shape" item 5). Lists carry the meta
         // only; one body is fetched and rendered when picked, because fifty rendered Markdown
         // bodies per list load would be paid mostly for rows nobody opens. The view routes render

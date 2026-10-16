@@ -149,6 +149,16 @@ button { font: inherit; color: inherit; }
 .open-form { margin: 24px 0 12px; display: flex; flex-direction: column; gap: 6px; }
 .open-row { display: flex; gap: 8px; }
 .open-row input { flex: 1; min-width: 0; padding: 8px 10px; }
+/* The Documentation panel: folder headings, and a format chip on every row. */
+.doc-folder { font: 600 11px var(--ui); letter-spacing: 0.05em; text-transform: uppercase; color: var(--muted);
+  padding: 10px 14px 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.doc-ext { font: 600 10px var(--mono); border: 1px solid var(--border); border-radius: 3px; padding: 0 3px;
+  color: var(--muted); flex: none; min-width: 26px; text-align: center; }
+.doc-ext-pdf { color: var(--danger); border-color: var(--danger); }
+.doc-ext-text { color: var(--accent); border-color: var(--accent); }
+.pane-doc { display: flex; flex-direction: column; overflow: hidden; }
+.doc-frame { flex: 1; width: 100%; min-height: 380px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface-sunken); }
+
 /* The pulls and releases panels: one button per row, title over quiet meta, like the commits. */
 .row-list { list-style: none; margin: 0; padding: 0; }
 .row-pick { display: block; width: 100%; text-align: left; background: none; border: 0; border-bottom: 1px solid var(--border);

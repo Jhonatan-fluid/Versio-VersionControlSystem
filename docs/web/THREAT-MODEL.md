@@ -77,6 +77,7 @@ exactly that).
 | A changed type behind a member reads as an unchanged block | Member types linked; a type changed between versions highlighted and said | `A_type_that_changed_between_the_versions_is_highlighted_and_said` |
 | A Mermaid diagram escapes into the page | Drawn in an iframe sandboxed without same-origin; only text in, only a height out; strict mode; the frame alone allows inline styles | `Only_the_diagram_frame_allows_inline_styles_and_only_this_site_may_frame_it` (page-embedding not observable in the built-in browser; see section 6) |
 | A path or name reshapes the GitHub URL | Inputs validated before anything reaches GitHub; every segment escaped again | `Hygiene_a_path_that_climbs_or_is_absolute_is_not_found` (asserts no GitHub call at all), `A_name_cannot_reshape_the_url` |
+| **A repository file served raw from this origin executes as a page** (the Documentation tab's `/raw`, 2026-10-16) | A narrow extension allowlist (`Documents.cs`); the content type chosen by US from that table, never from the file, with `nosniff` site-wide; nothing served as HTML, SVG or any executable type; everything but PDF an attachment; PDF inline because the browser's viewer renders it out of process and a file lying about being one fails to draw | `RawDocumentTests`: inline PDF's type, the attachment dispositions, off-allowlist 404 |
 
 ### Repudiation
 

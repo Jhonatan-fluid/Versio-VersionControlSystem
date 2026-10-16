@@ -479,11 +479,16 @@ The owner's requirements for the viewer as a product, recorded as given, with wh
 3. **Browse, switch branches, desktop-parity rendering** — this is the viewer as built; the
    known parity gaps are the restructure's phases 2–4 above (commit card, compare as tree marks,
    theme tokens) and the project card.
-4. **A Documentation tab** — scan the commit's tree for documents (`.md`, `.pdf`, `.docx`, …)
-   and show them under their paths in a fourth rail panel. Markdown already renders; PDF can be
-   shown in a sandboxed viewer; `.docx` and friends have no browser rendering and become
-   download rows — converting them server-side would drag heavy dependencies into a server kept
-   deliberately lean, so it is refused for now.
+4. **A Documentation tab — built 2026-10-16.** A Docs rail tile: the commit's tree filtered to
+   documents, grouped under their folders in the panel. Text documents (`.md`, `.txt`, `.csv`)
+   render through the same `/view` as the Project panel; PDF embeds from a new `/raw` route; the
+   Office formats are download rows — converting them server-side was rejected, as planned.
+   `/raw` is the one route serving repository bytes from this origin, so its rules live on
+   `Documents.cs` and in THREAT-MODEL (Tampering): extension allowlist, our content type with
+   `nosniff`, nothing executable, everything but PDF an attachment. **The PDF embed is one more
+   thing the built-in browser cannot show** (no PDF viewer, like its refusal of sub-frames): the
+   frame, URL and content type were verified, the drawing needs the owner's one look in a normal
+   browser, on the same list as Mermaid.
 5. **Open MRs and Releases tabs — built 2026-10-16.** Two rail tiles and four read-only routes
    (`/pulls`, `/pulls/view`, `/releases`, `/releases/view`): the lists carry meta only, one body
    is fetched and rendered — with Core's Markdown, exactly as a README is — when picked, because
@@ -496,6 +501,6 @@ The owner's requirements for the viewer as a product, recorded as given, with wh
    requests: read* for anonymous/Okta readers of PRs.
 
 Still open here: Okta (2's seam is ready for it: the session is the identity, the credential is
-chosen per request), the Documentation tab, the settings UI.
+chosen per request), and the settings UI.
 `VERSIO_WEB_PREVIEW_SCOPED=1` beside `VERSIO_WEB_PREVIEW=1` serves the fixtures scoped, to look
 at the list and the refusal.

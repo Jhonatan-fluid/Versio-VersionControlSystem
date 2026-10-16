@@ -39,6 +39,13 @@ public sealed class FixturePreview
         var repo = github.Add("acme", "plant");
         var files = FakeGitHub.FromDisk(".versio/repo.json", "README.md", "docs/web/PLAN.md", "docs/dev.md",
             "fixtures/projects/MachineWithMembers", "fixtures/projects/RefrigeratorControl", "fixtures/projects/TC3_PlcSample_reStrText/TC3_PlcSample_reStrText");
+
+        // The Documentation tab has one of each kind to look at: the text documents above, a
+        // small generated PDF, and an Office download. The PDF is the one worth a look in the
+        // browser — it is the embedded case, and it must actually DRAW (a first version without
+        // an xref table loaded as a blank white page, which proved only the plumbing).
+        files["docs/Plant manual.pdf"] = TinyPdf("Versio: the plant manual");
+        files["docs/IO list.xlsx"] = [0x50, 0x4B, 0x03, 0x04];
         github.Commit(repo, "main", files);
 
         var changed = new Dictionary<string, byte[]>(files, StringComparer.Ordinal);
@@ -71,5 +78,41 @@ public sealed class FixturePreview
 
         await using var host = await TestHost.StartAsync(github, settings);
         await Task.Delay(TimeSpan.FromMinutes(25));
+    }
+
+    /// <summary>
+    /// One page of Helvetica saying <paramref name="text"/>. The xref offsets are computed, not
+    /// hand-counted — PDFium renders a reconstructed file as blank rather than failing loudly,
+    /// so a broken table here would quietly show nothing.
+    /// </summary>
+    private static byte[] TinyPdf(string text)
+    {
+        var stream = $"BT /F1 18 Tf 24 100 Td ({text}) Tj ET";
+        string[] objects =
+        [
+            "<</Type/Catalog/Pages 2 0 R>>",
+            "<</Type/Pages/Kids[3 0 R]/Count 1>>",
+            "<</Type/Page/Parent 2 0 R/MediaBox[0 0 360 144]/Contents 4 0 R/Resources<</Font<</F1 5 0 R>>>>>>",
+            $"<</Length {stream.Length}>>stream\n{stream}\nendstream",
+            "<</Type/Font/Subtype/Type1/BaseFont/Helvetica>>",
+        ];
+
+        var pdf = new StringBuilder("%PDF-1.4\n");
+        var offsets = new long[objects.Length + 1];
+        for (var i = 1; i <= objects.Length; i++)
+        {
+            offsets[i] = pdf.Length; // ASCII throughout, so characters are bytes
+            pdf.Append(i).Append(" 0 obj").Append(objects[i - 1]).Append("endobj\n");
+        }
+
+        var xref = pdf.Length;
+        pdf.Append("xref\n0 ").Append(objects.Length + 1).Append("\n0000000000 65535 f \n");
+        for (var i = 1; i <= objects.Length; i++)
+        {
+            pdf.Append(offsets[i].ToString("D10", System.Globalization.CultureInfo.InvariantCulture)).Append(" 00000 n \n");
+        }
+
+        pdf.Append("trailer<</Root 1 0 R/Size ").Append(objects.Length + 1).Append(">>\nstartxref\n").Append(xref).Append("\n%%EOF\n");
+        return Encoding.ASCII.GetBytes(pdf.ToString());
     }
 }

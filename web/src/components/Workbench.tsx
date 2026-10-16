@@ -2,11 +2,11 @@ import type { ReactNode } from 'react';
 import { useEffect, useState } from 'react';
 import { Link, useLocation } from 'react-router';
 import type { Branch, Me } from '../api';
-import { compareUrl, historyUrl, pullsUrl, releasesUrl, treeUrl } from '../routes';
+import { compareUrl, docsUrl, historyUrl, pullsUrl, releasesUrl, treeUrl } from '../routes';
 import { Header } from './Header';
 
 /** Which rail tile is lit: the web's read-only views of one repository. */
-export type RailChoice = 'project' | 'history' | 'compare' | 'pulls' | 'releases';
+export type RailChoice = 'project' | 'docs' | 'history' | 'compare' | 'pulls' | 'releases';
 
 interface Props {
   me: Me | null;
@@ -65,6 +65,16 @@ export function Workbench({ me, owner, repo, refName, defaultBranch, branches, b
             {/* A document: the project as the toolchain structures it. */}
             <path d="M4 1.5h5.5L13 5v9.5H4z" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round" />
             <path d="M9.5 1.5V5H13" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round" />
+          </RailTile>
+          <RailTile
+            to={docsUrl(owner, repo, refName)}
+            active={rail === 'docs'}
+            label="Documentation"
+            tooltip="Documentation — every document in the repository, under its path"
+          >
+            {/* An open book. */}
+            <path d="M8 3.5C6.5 2.3 4.5 2 2 2v10.5c2.5 0 4.5.3 6 1.5 1.5-1.2 3.5-1.5 6-1.5V2c-2.5 0-4.5.3-6 1.5z" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round" />
+            <path d="M8 3.5V14" fill="none" stroke="currentColor" strokeWidth="1.3" />
           </RailTile>
           <RailTile
             to={historyUrl(owner, repo, refName)}

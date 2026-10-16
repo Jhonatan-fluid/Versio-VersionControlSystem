@@ -36,6 +36,18 @@ export function historyUrl(owner: string, repo: string, ref: string, path?: stri
   return `${repoUrl(owner, repo)}/history/${seg(ref)}${path ? `/${pathSegments(path)}` : ''}`;
 }
 
+/** The Documentation tab, at one version of the repository; ?path= selects a document. */
+export function docsUrl(owner: string, repo: string, ref: string, path?: string, params?: URLSearchParams): string {
+  const p = new URLSearchParams(params);
+  if (path) {
+    p.set('path', path);
+  } else {
+    p.delete('path');
+  }
+  const q = p.toString() ? `?${p.toString()}` : '';
+  return `${repoUrl(owner, repo)}/docs/${seg(ref)}${q}`;
+}
+
 /** Pull requests are repository-level, so no ref; ?n= selects one. */
 export function pullsUrl(owner: string, repo: string, number?: number): string {
   return `${repoUrl(owner, repo)}/pulls${number ? `?n=${number}` : ''}`;

@@ -178,6 +178,11 @@ export function repoBase(owner: string, repo: string): string {
   return `/api/repos/${e(owner)}/${e(repo)}`;
 }
 
+/** A document's bytes: the PDF the docs tab embeds, the download behind every other row. */
+export function rawUrl(owner: string, repo: string, ref: string, path: string): string {
+  return `${repoBase(owner, repo)}/raw${query({ ref, path })}`;
+}
+
 async function get<T>(url: string, signal?: AbortSignal): Promise<T> {
   const response = await fetch(url, { credentials: 'same-origin', headers: { Accept: 'application/json' }, signal });
   if (!response.ok) {
