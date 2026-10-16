@@ -380,9 +380,11 @@ One list. Reorder it; do not copy it into another file.
      `IAppSigner` and the key ring, and Redis if more than one instance;
    - build the Docker image on a host that has Docker (none on the machine that wrote it);
    - one look in a normal browser at a Markdown page with a Mermaid diagram (the built-in
-     browser refuses sub-frames, so the page embedding the frame was not observed), and at the
-     Docs tab's embedded PDF (the first look found the viewer's own frame lock blocking it —
-     fixed, FINDINGS 2026-10-16 — and the drawing itself is still unconfirmed);
+     browser refuses sub-frames, so the page embedding the frame was not observed; the owner's
+     2026-10-16 look at `dev.md` showed a white box where the diagram belongs, but the preview
+     server had lapsed under that same look, so it proves nothing yet);
+     ~~and at the Docs tab's embedded PDF~~ — **seen drawing in the owner's Chrome 2026-10-16**,
+     after its first look found the viewer's own frame lock blocking it (FINDINGS 2026-10-16);
    - the external penetration test and a cost alarm, once it is deployed;
    - later, on purpose: the desktop drawing with the shared HTML renderers, and the choice of
      renderer moved into Core for both (today mirrored, pinned by a test).
