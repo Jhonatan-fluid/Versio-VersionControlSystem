@@ -379,11 +379,10 @@ One list. Reorder it; do not copy it into another file.
    - decide who hosts it (the same question as Outpost §16); that picks the key vault behind
      `IAppSigner` and the key ring, and Redis if more than one instance;
    - build the Docker image on a host that has Docker (none on the machine that wrote it);
-   - one look in a normal browser at a Markdown page with a Mermaid diagram (the owner's
-     2026-10-16 look found a white box: three stacked defects, all fixed — stub frame files
-     outliving every rebuild, `hidden` losing to `display:block`, a hidden frame measuring
-     itself as 40px; FINDINGS 2026-10-16. Verified by CDP census in headless Chrome — eleven
-     diagrams swapped in at real heights — with the owner's confirming look still pending);
+   - ~~one look in a normal browser at a Markdown page with a Mermaid diagram~~ — **seen
+     drawing in the owner's Chrome 2026-10-16**, after that look found a white box: three
+     stacked defects, all fixed (stub frame files outliving every rebuild, `hidden` losing to
+     `display:block`, a hidden frame measuring itself as 40px; FINDINGS 2026-10-16);
      ~~and at the Docs tab's embedded PDF~~ — **seen drawing in the owner's Chrome 2026-10-16**,
      after its first look found the viewer's own frame lock blocking it (FINDINGS 2026-10-16);
    - the external penetration test and a cost alarm, once it is deployed;
