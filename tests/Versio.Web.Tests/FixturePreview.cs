@@ -93,7 +93,11 @@ public sealed class FixturePreview
             "<</Type/Catalog/Pages 2 0 R>>",
             "<</Type/Pages/Kids[3 0 R]/Count 1>>",
             "<</Type/Page/Parent 2 0 R/MediaBox[0 0 360 144]/Contents 4 0 R/Resources<</Font<</F1 5 0 R>>>>>>",
-            $"<</Length {stream.Length}>>stream\n{stream}\nendstream",
+            // The newline before endobj is load-bearing: without it "endstreamendobj" is one
+            // invalid token, and Chrome's viewer showed its broken-document page (seen by the
+            // owner, 2026-10-16). The dictionary objects end in ">>", a delimiter, so they
+            // need no separator.
+            $"<</Length {stream.Length}>>stream\n{stream}\nendstream\n",
             "<</Type/Font/Subtype/Type1/BaseFont/Helvetica>>",
         ];
 
