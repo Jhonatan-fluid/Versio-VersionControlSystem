@@ -146,8 +146,7 @@ public static partial class ProfileResolver
                 ? new ProfileResolutionResult(ProfileResolution.Resolved, pinnedProfile, all,
                     "using the profile pinned for this project")
                 : new ProfileResolutionResult(ProfileResolution.NoProfileFound, null, all,
-                    $"this project is pinned to profile '{pinnedProfile}', which is not installed. " +
-                    $"Installed: {(all.Count == 0 ? "none" : string.Join(", ", all))}");
+                    NotInstalledExplanation(pinnedProfile, all));
         }
 
         return all.Count switch
@@ -166,4 +165,59 @@ public static partial class ProfileResolver
     public static bool IsMissingProfileError(string? stdoutOrStderr) =>
         stdoutOrStderr is not null &&
         stdoutOrStderr.Contains(MissingProfileMessage, StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// The refusal for a binding whose pinned profile this install does not have, or null
+    /// when it does — or when there is nothing to judge by.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// A binding records the profile it was adopted under, and <c>repo.json</c> is committed,
+    /// so the pin travels to every clone. A machine with a different patch level then launched
+    /// CODESYS with a profile it does not have; CODESYS printed "The version profile '…' is not
+    /// valid." and exited 1 five to eight seconds later, and Versio reported "CODESYS exited
+    /// with code 1" — while the details pane said the toolchain was installed. Seen 2026-10-16:
+    /// SP22 Patch 2 pinned, SP22 Patch 4 installed.
+    /// </para>
+    /// <para>
+    /// <b>Refused, never substituted.</b> Opening a project in a different service pack or
+    /// patch can upgrade it silently, which is the reason <see cref="Resolve"/> refuses a
+    /// missing pin rather than falling back. The same reason applies here.
+    /// </para>
+    /// <para>
+    /// An empty <paramref name="installed"/> list returns null. That means "cannot tell", not
+    /// "nothing is installed": a runner pointed at a path with no Profiles folder beside it, as
+    /// tests do, should not be refused on that evidence. CODESYS still checks for itself.
+    /// </para>
+    /// </remarks>
+    public static string? PinnedButNotInstalled(string? pinned, IReadOnlyList<string> installed) =>
+        string.IsNullOrWhiteSpace(pinned)
+        || installed.Count == 0
+        || installed.Contains(pinned, StringComparer.OrdinalIgnoreCase)
+            ? null
+            : NotInstalledExplanation(pinned, installed);
+
+    /// <summary>
+    /// Recognise CODESYS's own refusal of an unknown profile. This is the backstop for when
+    /// <see cref="PinnedButNotInstalled"/> could not tell in advance.
+    /// </summary>
+    /// <remarks>
+    /// The line it prints, verbatim from V3.5 SP22 Patch 4:
+    /// <c>The version profile 'CODESYS V3.5 SP22 Patch 2' is not valid.</c>
+    /// </remarks>
+    public static bool IsRejectedProfileError(string? stdoutOrStderr) =>
+        stdoutOrStderr is not null &&
+        stdoutOrStderr.Contains("The version profile '", StringComparison.OrdinalIgnoreCase) &&
+        stdoutOrStderr.Contains("is not valid", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// What to say about a pinned profile that is missing: which one, what is installed
+    /// instead, and the two ways out.
+    /// </summary>
+    public static string NotInstalledExplanation(string pinned, IReadOnlyList<string> installed) =>
+        $"this project is pinned to profile '{pinned}', which is not installed. " +
+        $"Installed: {(installed.Count == 0 ? "none" : string.Join(", ", installed))}. " +
+        "Install that version, or change the binding's \"profile\" in .versio/repo.json " +
+        "if this project should move to another one; Versio does not substitute a version " +
+        "itself, because opening a project in a different one can upgrade it";
 }

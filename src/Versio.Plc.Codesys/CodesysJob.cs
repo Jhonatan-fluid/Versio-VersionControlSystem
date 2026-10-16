@@ -360,11 +360,18 @@ public sealed record CodesysResult
     /// distinct, actionable failure rather than a bare non-zero exit.</summary>
     public bool MissingProfile { get; init; }
 
+    /// <summary>Set when the job's profile is not one this install has. The value is the
+    /// full sentence, from <see cref="ProfileResolver.NotInstalledExplanation"/>.</summary>
+    /// <remarks>Usually set before CODESYS is launched at all. When it is set after a launch,
+    /// CODESYS refused the profile itself.</remarks>
+    public string? ProfileNotInstalled { get; init; }
+
     /// <summary>Succeeded means: the process exited cleanly, the script reported rc 0, and
     /// it actually reached its "done" event. A script that dies silently must not count as
     /// success just because the process exited 0.</summary>
     public bool Succeeded =>
-        !TimedOut && ExitCode == 0 && Output.ScriptExitCode is 0 or null && Output.Completed;
+        !TimedOut && ExitCode == 0 && Output.ScriptExitCode is 0 or null && Output.Completed
+        && ProfileNotInstalled is null;
 
     public string? FailureReason
     {
@@ -373,6 +380,11 @@ public sealed record CodesysResult
             if (TimedOut)
             {
                 return $"CODESYS did not finish within the timeout and was terminated";
+            }
+
+            if (ProfileNotInstalled is { Length: > 0 } notInstalled)
+            {
+                return notInstalled;
             }
 
             if (MissingProfile)
