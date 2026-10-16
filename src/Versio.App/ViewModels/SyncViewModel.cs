@@ -438,6 +438,21 @@ public sealed class SyncViewModel : ObservableObject
         private set => SetProperty(ref _stalenessSummary, value);
     }
 
+    /// <summary>Some project is behind and an export would fix it, as opposed to failed.</summary>
+    /// <remarks>
+    /// The Git panel's "a stale PLC export runs before this commit" line used to show whenever
+    /// <see cref="StalenessSummary"/> was non-empty. That includes a failed project, and a failed
+    /// project does not get exported before the commit; the commit is refused until the
+    /// failure is acknowledged.
+    /// </remarks>
+    public bool HasUnexportedChanges
+    {
+        get => _hasUnexportedChanges;
+        private set => SetProperty(ref _hasUnexportedChanges, value);
+    }
+
+    private bool _hasUnexportedChanges;
+
     /// <summary>Live heartbeat text while CODESYS is running, empty otherwise.</summary>
     /// <remarks>
     /// A CODESYS launch costs 17–31 s with nothing on screen to show for it, and silence is
@@ -808,6 +823,7 @@ public sealed class SyncViewModel : ObservableObject
         Summary = "No repository open";
         TreeSummary = string.Empty;
         StalenessSummary = string.Empty;
+        HasUnexportedChanges = false;
         UnexportedCount = 0;
         LockState = string.Empty;
         Activity = string.Empty;
@@ -2017,9 +2033,22 @@ public sealed class SyncViewModel : ObservableObject
                 _staleBindings.Add(id);
             }
 
+            // A failed binding counts as stale, because the gate has to refuse it. But it is
+            // not "a change nobody has exported yet", and calling it one sent people looking
+            // for changes that were not there. Seen 2026-10-16: four exports failed for reasons
+            // that had nothing to do with the projects, which were byte-for-byte HEAD. The
+            // banner said "4 projects have changes that have not been exported", each row said
+            // "not exported", and the Changes panel was rightly empty. So a failure is named
+            // as one, and the reason is on the failure card, one click away.
+            var failed = new HashSet<string>(gate.FailedBindings, StringComparer.Ordinal);
+
             foreach (var row in Projects.Where(p => p.Tracked && !p.Busy))
             {
-                if (stale.Contains(row.BindingId!))
+                if (failed.Contains(row.BindingId!))
+                {
+                    row.State = SyncNarrative.Label(SyncDirection.Failed);
+                }
+                else if (stale.Contains(row.BindingId!))
                 {
                     row.State = "not exported";
                 }
@@ -2027,12 +2056,23 @@ public sealed class SyncViewModel : ObservableObject
 
             // Stated in the panel rather than only in a row, because the whole point is that
             // somebody who has not looked at this project all afternoon still finds out.
-            StalenessSummary = stale.Count switch
+            var behind = stale.Count(id => !failed.Contains(id));
+            HasUnexportedChanges = behind > 0;
+            StalenessSummary = string.Join(" ", new[]
             {
-                0 => string.Empty,
-                1 => "1 project has changes that have not been exported.",
-                var n => $"{n} projects have changes that have not been exported.",
-            };
+                failed.Count switch
+                {
+                    0 => string.Empty,
+                    1 => "1 project failed to sync — select it to see why.",
+                    var n => $"{n} projects failed to sync — select one to see why.",
+                },
+                behind switch
+                {
+                    0 => string.Empty,
+                    1 => "1 project has changes that have not been exported.",
+                    var n => $"{n} projects have changes that have not been exported.",
+                },
+            }.Where(s => s.Length > 0));
 
             if (stale.Count > 0)
             {

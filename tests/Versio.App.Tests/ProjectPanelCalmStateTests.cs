@@ -150,6 +150,44 @@ public sealed class ProjectPanelCalmStateTests
     }
 
     [Fact]
+    public async Task A_failed_export_is_named_as_a_failure_not_as_unexported_changes()
+    {
+        // Seen 2026-10-16: four exports failed for reasons outside the projects, which were
+        // identical to HEAD. The banner said "4 projects have changes that have not been
+        // exported", every row said "not exported", and the Changes panel was correctly
+        // empty. So the user went looking for changes that did not exist.
+        using var repo = new TempRepo(identity: true);
+        GivenACommittedProject(repo);
+
+        using var shell = TestShell.Build(out _, toolchain: new CapturingToolchain
+        {
+            FailWith = "profile 'CODESYS V3.5 SP22 Patch 2' is not installed",
+        });
+
+        // Not OpenAndSettleAsync: that asserts a calm tree, and a failed project rightly
+        // stays in it.
+        await shell.OpenAsync(repo.Path);
+        repo.Git("add -A");
+        repo.Git("commit -q --allow-empty -m settled");
+        await shell.RefreshAsync();
+
+        // The failure is the project's only story: git has nothing to say about it.
+        Assert.Contains(shell.Sync.Tree, r => r.Name == "Machine.project");
+
+        Assert.Contains("failed to sync", shell.Sync.StalenessSummary, StringComparison.Ordinal);
+        Assert.DoesNotContain("have not been exported", shell.Sync.StalenessSummary,
+            StringComparison.Ordinal);
+        Assert.False(shell.Sync.HasUnexportedChanges);
+
+        var row = Assert.Single(shell.Sync.Projects, p => p.BindingId == "b1");
+        Assert.Equal("failed", row.State);
+
+        // And the card says why, in the toolchain's words rather than "export failed" alone.
+        shell.Sync.RefreshFailure(row.Path);
+        Assert.Contains("is not installed", shell.Sync.FailureDetail, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void Leaving_the_repository_empties_the_calm_list()
     {
         // Detach clears the tree; a leftover calm list would name the old repository's
