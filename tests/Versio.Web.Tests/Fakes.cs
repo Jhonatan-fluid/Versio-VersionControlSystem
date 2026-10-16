@@ -68,6 +68,12 @@ internal sealed class FakeGitHub : IRepoSource
 
         /// <summary>User tokens allowed to read it when private. The installation token always can.</summary>
         public HashSet<string> Readers { get; } = new(StringComparer.Ordinal);
+
+        /// <summary>Open pull requests, as the pulls tab lists them, each with its Markdown body.</summary>
+        public List<(PullInfo Info, string Body)> Pulls { get; } = [];
+
+        /// <summary>Published releases, newest first, each with its Markdown notes.</summary>
+        public List<(ReleaseInfo Info, string Body)> Releases { get; } = [];
     }
 
     private readonly Dictionary<string, FakeRepo> _repos = new(StringComparer.OrdinalIgnoreCase);
@@ -222,5 +228,49 @@ internal sealed class FakeGitHub : IRepoSource
         return Task.FromResult(r.Ok
             ? RepoResult<IReadOnlyList<CommitInfo>>.Of(r.Value!.Refs.Select(kv => new CommitInfo(kv.Value, "commit " + kv.Key, "Tester", DateTimeOffset.UnixEpoch)).ToList())
             : r.As<IReadOnlyList<CommitInfo>>());
+    }
+
+    public Task<RepoResult<IReadOnlyList<PullInfo>>> GetPullsAsync(RepoAccess access, string owner, string repo, int limit, CancellationToken ct)
+    {
+        var r = See(access, owner, repo, "pulls");
+        return Task.FromResult(r.Ok
+            ? RepoResult<IReadOnlyList<PullInfo>>.Of(r.Value!.Pulls.Select(p => p.Info).Take(limit).ToList())
+            : r.As<IReadOnlyList<PullInfo>>());
+    }
+
+    public Task<RepoResult<PullDetail>> GetPullAsync(RepoAccess access, string owner, string repo, int number, CancellationToken ct)
+    {
+        var r = See(access, owner, repo, "pull " + number);
+        if (!r.Ok)
+        {
+            return Task.FromResult(r.As<PullDetail>());
+        }
+
+        var found = r.Value!.Pulls.Where(p => p.Info.Number == number).ToList();
+        return Task.FromResult(found.Count == 0
+            ? RepoResult<PullDetail>.Fail(RepoFailure.NotFound)
+            : RepoResult<PullDetail>.Of(new PullDetail(found[0].Info, found[0].Body)));
+    }
+
+    public Task<RepoResult<IReadOnlyList<ReleaseInfo>>> GetReleasesAsync(RepoAccess access, string owner, string repo, int limit, CancellationToken ct)
+    {
+        var r = See(access, owner, repo, "releases");
+        return Task.FromResult(r.Ok
+            ? RepoResult<IReadOnlyList<ReleaseInfo>>.Of(r.Value!.Releases.Select(p => p.Info).Take(limit).ToList())
+            : r.As<IReadOnlyList<ReleaseInfo>>());
+    }
+
+    public Task<RepoResult<ReleaseDetail>> GetReleaseAsync(RepoAccess access, string owner, string repo, string tag, CancellationToken ct)
+    {
+        var r = See(access, owner, repo, "release " + tag);
+        if (!r.Ok)
+        {
+            return Task.FromResult(r.As<ReleaseDetail>());
+        }
+
+        var found = r.Value!.Releases.Where(p => p.Info.Tag == tag).ToList();
+        return Task.FromResult(found.Count == 0
+            ? RepoResult<ReleaseDetail>.Fail(RepoFailure.NotFound)
+            : RepoResult<ReleaseDetail>.Of(new ReleaseDetail(found[0].Info, found[0].Body)));
     }
 }

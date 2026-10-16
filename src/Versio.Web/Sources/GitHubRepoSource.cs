@@ -164,6 +164,53 @@ public sealed class GitHubRepoSource(
         }).ToList(), ct).ConfigureAwait(false);
     }
 
+    /// <remarks>
+    /// Sorted by update, newest first: the list is for "what is waiting for review now". One page
+    /// (the API's cap is 100); a repository with more open pull requests than that shows the
+    /// newest and says the list was cut, as the branch list does.
+    /// </remarks>
+    public Task<RepoResult<IReadOnlyList<PullInfo>>> GetPullsAsync(RepoAccess access, string owner, string repo, int limit, CancellationToken ct) =>
+        GetJsonAsync<IReadOnlyList<PullInfo>>(access,
+            $"repos/{E(owner)}/{E(repo)}/pulls?state=open&sort=updated&direction=desc&per_page={Math.Clamp(limit, 1, 100).ToString(CultureInfo.InvariantCulture)}",
+            root => root.EnumerateArray().Select(Pull).ToList(), ct);
+
+    public Task<RepoResult<PullDetail>> GetPullAsync(RepoAccess access, string owner, string repo, int number, CancellationToken ct) =>
+        GetJsonAsync(access, $"repos/{E(owner)}/{E(repo)}/pulls/{number.ToString(CultureInfo.InvariantCulture)}",
+            root => new PullDetail(Pull(root), Text(root, "body")), ct);
+
+    public Task<RepoResult<IReadOnlyList<ReleaseInfo>>> GetReleasesAsync(RepoAccess access, string owner, string repo, int limit, CancellationToken ct) =>
+        GetJsonAsync<IReadOnlyList<ReleaseInfo>>(access,
+            $"repos/{E(owner)}/{E(repo)}/releases?per_page={Math.Clamp(limit, 1, 100).ToString(CultureInfo.InvariantCulture)}",
+            root => root.EnumerateArray().Where(r => !r.GetProperty("draft").GetBoolean()).Select(Release).ToList(), ct);
+
+    public Task<RepoResult<ReleaseDetail>> GetReleaseAsync(RepoAccess access, string owner, string repo, string tag, CancellationToken ct) =>
+        GetJsonAsync(access, $"repos/{E(owner)}/{E(repo)}/releases/tags/{E(tag)}",
+            root => new ReleaseDetail(Release(root), Text(root, "body")), ct);
+
+    private static PullInfo Pull(JsonElement p) => new(
+        p.GetProperty("number").GetInt32(),
+        p.GetProperty("title").GetString() ?? "",
+        p.GetProperty("user").GetProperty("login").GetString() ?? "",
+        p.GetProperty("updated_at").GetDateTimeOffset(),
+        p.GetProperty("base").GetProperty("ref").GetString() ?? "",
+        p.GetProperty("head").GetProperty("ref").GetString() ?? "",
+        p.GetProperty("head").GetProperty("sha").GetString() ?? "",
+        p.TryGetProperty("draft", out var d) && d.ValueKind == JsonValueKind.True);
+
+    private static ReleaseInfo Release(JsonElement r) => new(
+        r.GetProperty("tag_name").GetString() ?? "",
+        // An untitled release is shown by its tag, which GitHub's own page does too.
+        Text(r, "name") is { Length: > 0 } name ? name : r.GetProperty("tag_name").GetString() ?? "",
+        r.GetProperty("author").GetProperty("login").GetString() ?? "",
+        // published_at is null while a release is a draft; drafts are filtered out, but the
+        // fallback keeps a malformed answer from throwing.
+        r.TryGetProperty("published_at", out var p) && p.ValueKind == JsonValueKind.String ? p.GetDateTimeOffset() : r.GetProperty("created_at").GetDateTimeOffset(),
+        r.GetProperty("prerelease").GetBoolean());
+
+    /// <summary>A string property that may be missing or JSON null, as GitHub's optional bodies are.</summary>
+    private static string Text(JsonElement element, string property) =>
+        element.TryGetProperty(property, out var value) && value.ValueKind == JsonValueKind.String ? value.GetString() ?? "" : "";
+
     private async Task<RepoResult<byte[]>> GetLfsObjectAsync(
         RepoAccess access, string owner, string repo, LfsPointer pointer, long maxBytes, CancellationToken ct)
     {

@@ -484,12 +484,18 @@ The owner's requirements for the viewer as a product, recorded as given, with wh
    shown in a sandboxed viewer; `.docx` and friends have no browser rendering and become
    download rows — converting them server-side would drag heavy dependencies into a server kept
    deliberately lean, so it is refused for now.
-5. **Open MRs and Releases tabs** — two read-only GitHub endpoints and two rail panels. An open
-   PR is `base...head`, so opening one lands in the existing compare view: a PR's PLC changes
-   reviewed as member-table and ladder diffs. Needs the App permission *Pull requests: read*
-   when the App is registered.
+5. **Open MRs and Releases tabs — built 2026-10-16.** Two rail tiles and four read-only routes
+   (`/pulls`, `/pulls/view`, `/releases`, `/releases/view`): the lists carry meta only, one body
+   is fetched and rendered — with Core's Markdown, exactly as a README is — when picked, because
+   fifty rendered bodies per list load would be paid mostly for rows nobody opens. A pull
+   request's **What changed** opens the existing compare view at `base...headSha` — the head
+   COMMIT, not the head ref, because a fork's branch name means nothing in this repository while
+   its commit is reachable — so a PR's PLC changes are reviewed as member-table and ladder
+   diffs. Drafts releases are never listed; an untitled release is shown by its tag; titles,
+   authors and refs are spelled (rule 9). Remember at registration: the App needs *Pull
+   requests: read* for anonymous/Okta readers of PRs.
 
 Still open here: Okta (2's seam is ready for it: the session is the identity, the credential is
-chosen per request), the Documentation tab, the MRs and Releases tabs, the settings UI.
+chosen per request), the Documentation tab, the settings UI.
 `VERSIO_WEB_PREVIEW_SCOPED=1` beside `VERSIO_WEB_PREVIEW=1` serves the fixtures scoped, to look
 at the list and the refusal.

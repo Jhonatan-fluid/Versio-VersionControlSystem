@@ -149,6 +149,17 @@ button { font: inherit; color: inherit; }
 .open-form { margin: 24px 0 12px; display: flex; flex-direction: column; gap: 6px; }
 .open-row { display: flex; gap: 8px; }
 .open-row input { flex: 1; min-width: 0; padding: 8px 10px; }
+/* The pulls and releases panels: one button per row, title over quiet meta, like the commits. */
+.row-list { list-style: none; margin: 0; padding: 0; }
+.row-pick { display: block; width: 100%; text-align: left; background: none; border: 0; border-bottom: 1px solid var(--border);
+  padding: 10px 14px; cursor: pointer; }
+.row-pick:hover { background: var(--surface-sunken); }
+.row-pick.is-selected { background: var(--selected); }
+.row-title { display: block; font-weight: 600; overflow-wrap: anywhere; }
+.row-meta { display: block; margin-top: 2px; font-size: 12px; overflow-wrap: anywhere; }
+.row-badge { font: 600 10px var(--ui); letter-spacing: 0.05em; text-transform: uppercase; color: var(--notice-border);
+  border: 1px solid var(--notice-border); border-radius: 999px; padding: 0 6px; margin-right: 6px; vertical-align: 2px; }
+
 .commits { list-style: none; padding: 0; margin: 0; }
 .commits li { padding: 10px 14px; border-bottom: 1px solid var(--border); }
 .commits li:last-child { border-bottom: 0; }

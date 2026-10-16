@@ -4,6 +4,7 @@ using Versio.Core.Diff;
 using Versio.Core.Iec.Ladder;
 using Versio.Core.Logging;
 using Versio.Core.Projects;
+using Versio.Core.Text;
 using Versio.Web.Auth;
 using Versio.Web.Rendering;
 using Versio.Web.Repo;
@@ -255,6 +256,136 @@ public static partial class ApiEndpoints
                 : Refused(commits.Failure, http);
         });
 
+        // The pulls and releases tabs (PLAN.md, "The product shape" item 5). Lists carry the meta
+        // only; one body is fetched and rendered when picked, because fifty rendered Markdown
+        // bodies per list load would be paid mostly for rows nobody opens. The view routes render
+        // with Core's Markdown, exactly as a README is, so the page places them like any fragment.
+        api.MapGet("/pulls", async (string owner, string repo, HttpContext http, AccessResolver access, IRepoSource source, CancellationToken ct) =>
+        {
+            if (!Valid(owner, repo))
+            {
+                return Results.NotFound();
+            }
+
+            var who = await access.ResolveAsync(http, owner, repo, ct).ConfigureAwait(false);
+            if (!who.Ok)
+            {
+                return Refused(who.Failure, http);
+            }
+
+            // One more than shown, the history idiom: the 51st only says the list was cut.
+            var pulls = await source.GetPullsAsync(who.Value!, owner, repo, ListLimit + 1, ct).ConfigureAwait(false);
+            return pulls.Ok
+                ? Results.Ok(new
+                {
+                    truncated = pulls.Value!.Count > ListLimit,
+                    pulls = pulls.Value.Take(ListLimit).Select(p => new
+                    {
+                        number = p.Number,
+                        title = CodeHtml.Spelled(p.Title),
+                        author = CodeHtml.Spelled(p.Author),
+                        when = p.Updated,
+                        @base = p.BaseRef,
+                        baseLabel = CodeHtml.Spelled(p.BaseRef),
+                        head = p.HeadRef,
+                        headLabel = CodeHtml.Spelled(p.HeadRef),
+                        headSha = p.HeadSha,
+                        draft = p.Draft,
+                    }),
+                })
+                : Refused(pulls.Failure, http);
+        });
+
+        api.MapGet("/pulls/view", async (string owner, string repo, int? number, HttpContext http, AccessResolver access, IRepoSource source, CancellationToken ct) =>
+        {
+            if (!Valid(owner, repo) || number is not (> 0 and <= 100_000_000))
+            {
+                return Results.NotFound();
+            }
+
+            var who = await access.ResolveAsync(http, owner, repo, ct).ConfigureAwait(false);
+            if (!who.Ok)
+            {
+                return Refused(who.Failure, http);
+            }
+
+            var pull = await source.GetPullAsync(who.Value!, owner, repo, number.Value, ct).ConfigureAwait(false);
+            return pull.Ok
+                ? Results.Ok(new
+                {
+                    number = pull.Value!.Pull.Number,
+                    title = CodeHtml.Spelled(pull.Value.Pull.Title),
+                    author = CodeHtml.Spelled(pull.Value.Pull.Author),
+                    when = pull.Value.Pull.Updated,
+                    @base = pull.Value.Pull.BaseRef,
+                    baseLabel = CodeHtml.Spelled(pull.Value.Pull.BaseRef),
+                    headLabel = CodeHtml.Spelled(pull.Value.Pull.HeadRef),
+                    headSha = pull.Value.Pull.HeadSha,
+                    draft = pull.Value.Pull.Draft,
+                    html = MarkdownFragment(pull.Value.Body),
+                })
+                : Refused(pull.Failure, http);
+        });
+
+        api.MapGet("/releases", async (string owner, string repo, HttpContext http, AccessResolver access, IRepoSource source, CancellationToken ct) =>
+        {
+            if (!Valid(owner, repo))
+            {
+                return Results.NotFound();
+            }
+
+            var who = await access.ResolveAsync(http, owner, repo, ct).ConfigureAwait(false);
+            if (!who.Ok)
+            {
+                return Refused(who.Failure, http);
+            }
+
+            var releases = await source.GetReleasesAsync(who.Value!, owner, repo, ListLimit + 1, ct).ConfigureAwait(false);
+            return releases.Ok
+                ? Results.Ok(new
+                {
+                    truncated = releases.Value!.Count > ListLimit,
+                    releases = releases.Value.Take(ListLimit).Select(r => new
+                    {
+                        tag = r.Tag,
+                        tagLabel = CodeHtml.Spelled(r.Tag),
+                        name = CodeHtml.Spelled(r.Name),
+                        author = CodeHtml.Spelled(r.Author),
+                        when = r.When,
+                        prerelease = r.Prerelease,
+                    }),
+                })
+                : Refused(releases.Failure, http);
+        });
+
+        api.MapGet("/releases/view", async (string owner, string repo, string? tag, HttpContext http, AccessResolver access, IRepoSource source, CancellationToken ct) =>
+        {
+            if (!Valid(owner, repo) || tag is null || !ValidRef(tag))
+            {
+                return Results.NotFound();
+            }
+
+            var who = await access.ResolveAsync(http, owner, repo, ct).ConfigureAwait(false);
+            if (!who.Ok)
+            {
+                return Refused(who.Failure, http);
+            }
+
+            var release = await source.GetReleaseAsync(who.Value!, owner, repo, tag, ct).ConfigureAwait(false);
+            return release.Ok
+                ? Results.Ok(new
+                {
+                    tag = release.Value!.Release.Tag,
+                    tagLabel = CodeHtml.Spelled(release.Value.Release.Tag),
+                    name = CodeHtml.Spelled(release.Value.Release.Name),
+                    author = CodeHtml.Spelled(release.Value.Release.Author),
+                    when = release.Value.Release.When,
+                    prerelease = release.Value.Release.Prerelease,
+                    html = MarkdownFragment(release.Value.Body),
+                })
+                : Refused(release.Failure, http);
+        });
+
         // The renderers' stylesheets and script, from the constants in Core, so the page and the
         // desktop draw with the same CSS. Served, never inlined, for the CSP (script from 'self').
         // Five minutes, not a year: these names stay the same when a deploy changes their content.
@@ -379,6 +510,15 @@ public static partial class ApiEndpoints
         RepoFailure.Upstream => Results.Json(new { error = "upstream", message = "GitHub could not be reached. Try again shortly." }, statusCode: 502),
         _ => Results.Json(new { error = "not-found", message = "Not found, or not visible to you." }, statusCode: 404),
     };
+
+    /// <summary>Rows per pulls or releases list: enough for a working set, bounded for the answer.</summary>
+    internal const int ListLimit = 50;
+
+    /// <summary>A pull request's description or a release's notes, rendered exactly as a README is.</summary>
+    private static string MarkdownFragment(string markdown) =>
+        markdown.Length == 0
+            ? ""
+            : "<div class=\"md-page\">" + MarkdownHtml.Fragment(Markdown.Parse(markdown)) + "</div>";
 
     internal static bool Valid(string owner, string repo) => Name().IsMatch(owner) && Name().IsMatch(repo) && repo is not ("." or "..");
 

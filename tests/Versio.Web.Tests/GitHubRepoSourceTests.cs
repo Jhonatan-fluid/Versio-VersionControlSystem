@@ -66,6 +66,43 @@ public sealed class GitHubRepoSourceTests : IAsyncLifetime
         app.MapGet("/repos/acme/endless/branches", (int per_page, int page) =>
             Results.Json(Enumerable.Range(0, per_page).Select(i => new { name = $"p{page}-{i}", commit = new { sha = new string('f', 40) } })));
         app.MapGet("/repos/acme/broken", () => Results.Json(new { unexpected = true }));
+
+        // Pulls and releases in GitHub's own shapes, the odd corners included: a JSON-null body,
+        // a draft release, a release with no name, a draft pull request. Binding `state` makes a
+        // request without it a 400, and answering closed states empty proves state=open is sent.
+        app.MapGet("/repos/acme/plant/pulls", (string state) => state != "open" ? Results.Json(Array.Empty<object>()) : Results.Json(new object[]
+        {
+            new
+            {
+                number = 7, title = "Fix interlock", user = new { login = "jo" }, updated_at = "2026-10-15T10:00:00Z",
+                @base = new { @ref = "main" }, head = new { @ref = "fix-interlock", sha = new string('d', 40) }, draft = true,
+            },
+        }));
+        app.MapGet("/repos/acme/plant/pulls/7", () => Results.Json(new
+        {
+            number = 7, title = "Fix interlock", user = new { login = "jo" }, updated_at = "2026-10-15T10:00:00Z",
+            @base = new { @ref = "main" }, head = new { @ref = "fix-interlock", sha = new string('d', 40) }, draft = true,
+            body = (string?)null,
+        }));
+        app.MapGet("/repos/acme/plant/releases", () => Results.Json(new object[]
+        {
+            new
+            {
+                tag_name = "v2", name = (string?)null, draft = false, prerelease = true,
+                author = new { login = "jo" }, published_at = (string?)"2026-10-01T00:00:00Z", created_at = "2026-09-30T00:00:00Z",
+            },
+            new
+            {
+                tag_name = "next", name = (string?)"unpublished", draft = true, prerelease = false,
+                author = new { login = "jo" }, published_at = (string?)null, created_at = "2026-10-02T00:00:00Z",
+            },
+        }));
+        app.MapGet("/repos/acme/plant/releases/tags/v2", () => Results.Json(new
+        {
+            tag_name = "v2", name = (string?)null, draft = false, prerelease = true,
+            author = new { login = "jo" }, published_at = (string?)"2026-10-01T00:00:00Z", created_at = "2026-09-30T00:00:00Z",
+            body = "## Notes",
+        }));
         app.MapGet("/repos/acme/plant/git/trees/{sha}", (string sha) => Results.Json(new
         {
             sha,
@@ -159,6 +196,27 @@ public sealed class GitHubRepoSourceTests : IAsyncLifetime
         Assert.Equal(["src/Main.st", "big.bin", "lfs.xml"], tree.Value!.Files.Select(f => f.Path));
         Assert.Equal(13, tree.Value.Files[0].Size);
         Assert.All(_requests, r => Assert.Equal("Bearer alice-token", r.Auth));
+    }
+
+    [Fact]
+    public async Task Pulls_and_releases_are_read_from_GitHubs_shapes()
+    {
+        var source = Source();
+
+        var pulls = await source.GetPullsAsync(Alice, "acme", "plant", 51, CancellationToken.None);
+        var pull = await source.GetPullAsync(Alice, "acme", "plant", 7, CancellationToken.None);
+        var releases = await source.GetReleasesAsync(Alice, "acme", "plant", 51, CancellationToken.None);
+        var release = await source.GetReleaseAsync(Alice, "acme", "plant", "v2", CancellationToken.None);
+
+        // One open pull, because the server answers only state=open with a row.
+        var p = Assert.Single(pulls.Value!);
+        Assert.Equal(new PullInfo(7, "Fix interlock", "jo", new DateTimeOffset(2026, 10, 15, 10, 0, 0, TimeSpan.Zero), "main", "fix-interlock", new string('d', 40), true), p);
+        Assert.Equal("", pull.Value!.Body);
+
+        // The draft is never listed; the untitled release is shown by its tag.
+        var r = Assert.Single(releases.Value!);
+        Assert.Equal(new ReleaseInfo("v2", "v2", "jo", new DateTimeOffset(2026, 10, 1, 0, 0, 0, TimeSpan.Zero), true), r);
+        Assert.Equal("## Notes", release.Value!.Body);
     }
 
     [Fact]

@@ -75,6 +75,22 @@ public sealed record TreeSnapshot(string CommitSha, IReadOnlyList<TreeEntry> Fil
 public sealed record CommitInfo(string Sha, string Message, string Author, DateTimeOffset When);
 
 /// <summary>
+/// An open pull request as the list shows it. <paramref name="HeadSha"/> rather than a head ref
+/// for comparing: the head branch may live in a fork, where its NAME means nothing in this
+/// repository, but its commit is reachable here through the pull request itself.
+/// </summary>
+public sealed record PullInfo(int Number, string Title, string Author, DateTimeOffset Updated, string BaseRef, string HeadRef, string HeadSha, bool Draft);
+
+/// <summary>One pull request with its description (Markdown, possibly empty).</summary>
+public sealed record PullDetail(PullInfo Pull, string Body);
+
+/// <summary>A published release as the list shows it. Drafts are never listed.</summary>
+public sealed record ReleaseInfo(string Tag, string Name, string Author, DateTimeOffset When, bool Prerelease);
+
+/// <summary>One release with its notes (Markdown, possibly empty).</summary>
+public sealed record ReleaseDetail(ReleaseInfo Release, string Body);
+
+/// <summary>
 /// Where the viewer reads repositories from. GitHub first; GitHub Enterprise Server is the same
 /// implementation with another base URL; GitLab and Azure DevOps would be new implementations,
 /// with nothing above this interface changing (docs/web/PLAN.md).
@@ -100,4 +116,16 @@ public interface IRepoSource
     Task<RepoResult<byte[]>> GetBlobAsync(RepoAccess access, string owner, string repo, string blobSha, long maxBytes, CancellationToken ct);
 
     Task<RepoResult<IReadOnlyList<CommitInfo>>> GetCommitsAsync(RepoAccess access, string owner, string repo, string reference, string? path, int limit, CancellationToken ct);
+
+    /// <summary>The open pull requests, most recently updated first, up to <paramref name="limit"/>.</summary>
+    Task<RepoResult<IReadOnlyList<PullInfo>>> GetPullsAsync(RepoAccess access, string owner, string repo, int limit, CancellationToken ct);
+
+    /// <summary>One pull request, open or not, with its description.</summary>
+    Task<RepoResult<PullDetail>> GetPullAsync(RepoAccess access, string owner, string repo, int number, CancellationToken ct);
+
+    /// <summary>The published releases, newest first, up to <paramref name="limit"/>.</summary>
+    Task<RepoResult<IReadOnlyList<ReleaseInfo>>> GetReleasesAsync(RepoAccess access, string owner, string repo, int limit, CancellationToken ct);
+
+    /// <summary>One release by its tag, with its notes.</summary>
+    Task<RepoResult<ReleaseDetail>> GetReleaseAsync(RepoAccess access, string owner, string repo, string tag, CancellationToken ct);
 }

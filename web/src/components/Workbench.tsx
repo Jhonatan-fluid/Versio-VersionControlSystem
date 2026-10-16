@@ -2,11 +2,11 @@ import type { ReactNode } from 'react';
 import { useEffect, useState } from 'react';
 import { Link, useLocation } from 'react-router';
 import type { Branch, Me } from '../api';
-import { compareUrl, historyUrl, treeUrl } from '../routes';
+import { compareUrl, historyUrl, pullsUrl, releasesUrl, treeUrl } from '../routes';
 import { Header } from './Header';
 
-/** Which rail tile is lit: the web's three read-only views of one repository. */
-export type RailChoice = 'project' | 'history' | 'compare';
+/** Which rail tile is lit: the web's read-only views of one repository. */
+export type RailChoice = 'project' | 'history' | 'compare' | 'pulls' | 'releases';
 
 interface Props {
   me: Me | null;
@@ -85,6 +85,28 @@ export function Workbench({ me, owner, repo, refName, defaultBranch, branches, b
             {/* Two opposed arrows: older against newer. */}
             <path d="M11 2.5 14 5l-3 2.5M14 5H5" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" />
             <path d="M6 8.5 3 11l3 2.5M3 11h9" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" />
+          </RailTile>
+          <RailTile
+            to={pullsUrl(owner, repo)}
+            active={rail === 'pulls'}
+            label="Merge requests"
+            tooltip="Merge requests — open pull requests, each with its diff"
+          >
+            {/* A branch merging: two dots, the head's line curving into the base's. */}
+            <circle cx="4.5" cy="3.5" r="1.8" fill="none" stroke="currentColor" strokeWidth="1.3" />
+            <circle cx="4.5" cy="12.5" r="1.8" fill="none" stroke="currentColor" strokeWidth="1.3" />
+            <circle cx="12" cy="12.5" r="1.8" fill="none" stroke="currentColor" strokeWidth="1.3" />
+            <path d="M4.5 5.3v5.4M6.5 4.5c3 0 5.5 2 5.5 6" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
+          </RailTile>
+          <RailTile
+            to={releasesUrl(owner, repo)}
+            active={rail === 'releases'}
+            label="Releases"
+            tooltip="Releases — published versions and their notes"
+          >
+            {/* A tag. */}
+            <path d="M2 2h5.5L14 8.5 8.5 14 2 7.5z" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round" />
+            <circle cx="5.5" cy="5.5" r="1.1" fill="currentColor" />
           </RailTile>
         </nav>
         <div className={`workspace${panelOpen ? ' panel-open' : ''}`}>

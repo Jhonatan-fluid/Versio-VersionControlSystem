@@ -1,4 +1,5 @@
 using System.Text;
+using Versio.Web.Sources;
 using Xunit;
 
 namespace Versio.Web.Tests;
@@ -47,7 +48,16 @@ public sealed class FixturePreview
             "Enable				: BOOL := TRUE;", "Enable				: BOOL := FALSE;");
         Edit("fixtures/projects/MachineWithMembers/Device/Plc Logic/Application/Simulation.st",
             "Glob_Var.TempActual-0.1;", "Glob_Var.TempActual-0.2;");
-        github.Commit(repo, "next", changed);
+        var next = github.Commit(repo, "next", changed);
+
+        // The pulls and releases tabs have something to look at: next as an open pull request —
+        // its "What changed" lands on the same two files /compare/main...next shows — and two
+        // releases, one of them a pre-release with no notes.
+        repo.Pulls.Add((new PullInfo(1, "Lower the simulated cooling step", "sam", DateTimeOffset.Now.AddHours(-3), "main", "cooling-step", next, Draft: false),
+            "## Why\n\nThe simulation cooled twice as fast as the plant, so every soak test passed that should not have.\n"));
+        repo.Releases.Add((new ReleaseInfo("v1.1", "Cooling fixes", "sam", DateTimeOffset.Now.AddDays(-2), Prerelease: false),
+            "## Changed\n\n- The alarm defaults\n- The simulation step\n"));
+        repo.Releases.Add((new ReleaseInfo("v1.2-rc1", "Next cut", "sam", DateTimeOffset.Now.AddDays(-1), Prerelease: true), ""));
 
         var settings = new Dictionary<string, string?> { ["urls"] = "http://127.0.0.1:5199" };
 

@@ -36,6 +36,16 @@ export function historyUrl(owner: string, repo: string, ref: string, path?: stri
   return `${repoUrl(owner, repo)}/history/${seg(ref)}${path ? `/${pathSegments(path)}` : ''}`;
 }
 
+/** Pull requests are repository-level, so no ref; ?n= selects one. */
+export function pullsUrl(owner: string, repo: string, number?: number): string {
+  return `${repoUrl(owner, repo)}/pulls${number ? `?n=${number}` : ''}`;
+}
+
+/** Releases are repository-level, so no ref; ?tag= selects one. */
+export function releasesUrl(owner: string, repo: string, tag?: string): string {
+  return `${repoUrl(owner, repo)}/releases${tag ? `?tag=${seg(tag)}` : ''}`;
+}
+
 /** "base...head" back into its two refs. */
 export function parseRange(range: string): { base: string; head: string } | null {
   const at = range.indexOf('...');

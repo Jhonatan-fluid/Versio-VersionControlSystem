@@ -108,6 +108,59 @@ export interface Commit {
   when: string;
 }
 
+/** An open pull request as the list shows it; names spelled by the server (rule 9). */
+export interface Pull {
+  number: number;
+  title: string;
+  author: string;
+  when: string;
+  base: string;
+  baseLabel: string;
+  head: string;
+  headLabel: string;
+  /** For comparing: the head COMMIT, reachable here even when the branch lives in a fork. */
+  headSha: string;
+  draft: boolean;
+}
+
+export interface PullList {
+  truncated: boolean;
+  pulls: Pull[];
+}
+
+/** One pull request: the list's fields plus its description, rendered as a README is. */
+export interface PullView {
+  number: number;
+  title: string;
+  author: string;
+  when: string;
+  base: string;
+  baseLabel: string;
+  headLabel: string;
+  headSha: string;
+  draft: boolean;
+  html: string;
+}
+
+export interface Release {
+  tag: string;
+  tagLabel: string;
+  name: string;
+  author: string;
+  when: string;
+  prerelease: boolean;
+}
+
+export interface ReleaseList {
+  truncated: boolean;
+  releases: Release[];
+}
+
+/** One release: the list's fields plus its notes, rendered as a README is. */
+export interface ReleaseView extends Release {
+  html: string;
+}
+
 export type PaneView = 'rendered' | 'raw';
 export type Layout = 'unified' | 'split';
 
@@ -154,6 +207,12 @@ export const api = {
     get<View>(`${repoBase(owner, repo)}/compare/view${query({ base, head, path, view, layout })}`, signal),
   history: (owner: string, repo: string, ref: string, path?: string, signal?: AbortSignal) =>
     get<Commit[]>(`${repoBase(owner, repo)}/history${query({ ref, path })}`, signal),
+  pulls: (owner: string, repo: string, signal?: AbortSignal) => get<PullList>(`${repoBase(owner, repo)}/pulls`, signal),
+  pullView: (owner: string, repo: string, number: number, signal?: AbortSignal) =>
+    get<PullView>(`${repoBase(owner, repo)}/pulls/view${query({ number: String(number) })}`, signal),
+  releases: (owner: string, repo: string, signal?: AbortSignal) => get<ReleaseList>(`${repoBase(owner, repo)}/releases`, signal),
+  releaseView: (owner: string, repo: string, tag: string, signal?: AbortSignal) =>
+    get<ReleaseView>(`${repoBase(owner, repo)}/releases/view${query({ tag })}`, signal),
 
   /** Sign-out: a POST with the header no cross-site request can send (the server checks it). */
   async logout(): Promise<void> {
