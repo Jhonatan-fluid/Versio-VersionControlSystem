@@ -19,6 +19,65 @@ produce a diff touching everything else.
 
 ---
 
+### Four projects "had changes that had not been exported", and none of them had changed
+
+**2026-10-16, `main`, a fresh clone on a second machine.** The owner opened Versio and saw
+four projects marked *not exported*, an orange banner reading *"4 projects have changes that
+have not been exported"*, an empty Changes panel, and a failure card that said *"export
+failed"* and nothing else. The question was why nothing showed under Changes. Nothing showed
+because nothing had changed. Every other part of the screen was wrong.
+
+**What actually happened, from the log.** The machine had never exported these projects, so
+local `state.json` had empty project hashes and the commit gate rightly asked for an export.
+All four exports failed, for three reasons that had nothing to do with the projects:
+
+- **CODESYS (two projects).** `.versio/repo.json` pins `CODESYS V3.5 SP22 Patch 2`, recorded
+  when the projects were adopted on the first machine. This machine has 3.5.22.40, which is
+  SP22 Patch 4. CODESYS printed *"The version profile 'CODESYS V3.5 SP22 Patch 2' is not
+  valid."* and exited 1 after 5–8 s. That line appeared at Debug only. Versio said *"CODESYS
+  exited with code 1"*, and the details pane said the toolchain was *installed*.
+- **TIA Portal.** The user is not in the `Siemens TIA Openness` Windows group. Portal's own
+  sentence said exactly that, and it reached the log only.
+- **TwinCAT.** XAE is not installed. The probe said so at startup, as a Warn line.
+
+**Three defects stacked on that.**
+
+1. **The failure card never showed the toolchain's words.** `RefreshFailure` shows
+   `SyncNarrative.Describe(Failed)` and then `ReasonFor`, whose comment promises the
+   toolchain's own words. But every failure path called `ApplyAsync` without a reason, so the
+   persisted record held the state machine's "export failed". The sentence that said what to do
+   never left the log. Now the record holds `"<direction> failed — <reason>"` for export and
+   import failures, including the two early import refusals.
+2. **A pinned profile the install lacks was launched anyway.** `ProfileResolver.Resolve`
+   already refused a missing pin, and said so well. Nothing ever passed it one: the toolchain
+   is probed per vendor, and pins are per binding. `LocalCodesysRunner` now reads the Profiles
+   folder beside its executable and refuses the job by name before planning, taking the
+   mutex, or launching. The refusal names the pin, says what is installed instead, and gives
+   the two ways out. CODESYS's own "is not valid" line is recognised as a backstop. **Not
+   substituted:** falling back to the one installed profile is the silent project upgrade that
+   `Resolve` was written to refuse.
+3. **A failure was called "not exported".** The unscoped gate reports failed bindings as stale
+   too, which is right for the gate, since it has to refuse them. The panel turned every stale
+   binding into "has changes that have not been exported". Failed bindings are now named as
+   failures, in the rows (*failed*) and in the banner (*"… failed to sync — select one to see
+   why"*). The Git panel's *"A stale PLC export runs before this commit"* line now keys on a
+   new `HasUnexportedChanges`, because a failed project is refused at commit, not exported
+   before it.
+
+**Evidence.** `versio-2026-10-16.log`, 15:36–16:03, operations `c8629c6e` and `67906c63`.
+Each fix was mutation-checked: dropping the export reason, blinding the preflight, and emptying
+the failed set each turn its new test red. The preflight test uses a fake install whose
+`CODESYS.exe` is an empty file, so a missing preflight shows up as a failed process start.
+
+**Not fixed, on purpose.** The TIA and TwinCAT failures are this machine's, not Versio's:
+the fix is group membership, or installing XAE. The CODESYS pin is the repository's decision:
+install Patch 2, or change the two bindings' `"profile"` if the fixtures should move to
+Patch 4. The details pane's *"Toolchain: installed"* is still true of the vendor and silent
+about the pin; the failure card now carries that half. The CODESYS backstop has no test,
+because reaching it needs a real CODESYS in a non-standard layout.
+
+---
+
 ### The Mermaid frame never drew anywhere, because three defects stacked under one white box
 
 **2026-10-16, branch `ReviewFixes`.** The owner's look at `dev.md` in Chrome showed a white box
