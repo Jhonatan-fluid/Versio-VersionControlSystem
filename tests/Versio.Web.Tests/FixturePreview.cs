@@ -37,8 +37,12 @@ public sealed class FixturePreview
 
         var github = new FakeGitHub();
         var repo = github.Add("acme", "plant");
+        // The TIA export is the one with LAD and FBD blocks, so it is the one that shows the
+        // ladder renderer. It is Git LFS: a clone without the content serves pointer text
+        // instead, and the tree's "could not be read" notice says so rather than anything failing.
         var files = FakeGitHub.FromDisk(".versio/repo.json", "README.md", "docs/web/PLAN.md", "docs/dev.md",
-            "fixtures/projects/MachineWithMembers", "fixtures/projects/RefrigeratorControl", "fixtures/projects/TC3_PlcSample_reStrText/TC3_PlcSample_reStrText");
+            "fixtures/projects/MachineWithMembers", "fixtures/projects/RefrigeratorControl", "fixtures/projects/TC3_PlcSample_reStrText/TC3_PlcSample_reStrText",
+            "fixtures/projects/CleaningStation_V20_V21/CleaningStation_V20_V21");
 
         // The Documentation tab has one of each kind to look at: the text documents above, a
         // small generated PDF, and an Office download. The PDF is the one worth a look in the
