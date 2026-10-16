@@ -54,7 +54,12 @@ export function FragmentHost({ html, path, onOpenPath, line, onLine }: Props) {
       frame.setAttribute('sandbox', 'allow-scripts');
       frame.title = 'Diagram';
       frame.className = 'mermaid-frame';
-      frame.hidden = true;
+      // Born zero-height, NOT hidden. The first version used the hidden attribute, which the
+      // class's display:block silently overrode, so every frame showed as an empty box; hiding
+      // it properly (display:none) then voided the frame's layout, and the diagram measured
+      // itself in a zero-size viewport as the 40px floor. At height 0 the frame still lays out
+      // at full width, so the diagram's reported height is real (FINDINGS 2026-10-16).
+      frame.style.height = '0';
       element.after(frame);
       if (frame.contentWindow) {
         frames.set(frame.contentWindow, { frame, pre: element, id, source });
@@ -74,7 +79,6 @@ export function FragmentHost({ html, path, onOpenPath, line, onLine }: Props) {
         (event.source as Window).postMessage({ id: entry.id, source: entry.source, dark }, '*');
       } else if (data.id === entry.id && typeof data.height === 'number') {
         entry.frame.style.height = `${Math.min(Math.max(data.height, 40), 4000)}px`;
-        entry.frame.hidden = false;
         entry.pre.hidden = true;
       }
     }

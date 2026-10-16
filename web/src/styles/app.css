@@ -200,6 +200,8 @@ button { font: inherit; color: inherit; }
   .user-name { display: none; }
 }
 
-/* Mermaid diagrams, drawn in sandboxed frames (FragmentHost). */
+/* Mermaid diagrams, drawn in sandboxed frames. The frame is born at height 0 and grows to the
+   height its diagram reports — never display:none, which would void the frame's layout and make
+   the diagram measure itself in a zero-size viewport (FragmentHost has the story). */
 .mermaid-frame { width: 100%; border: 0; display: block; margin: 0 0 12px; background: transparent; }
 .md-page pre.mermaid { white-space: pre-wrap; }

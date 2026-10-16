@@ -44,6 +44,7 @@ internal sealed class TestHost : IAsyncDisposable
 
     public static async Task<TestHost> StartAsync(FakeGitHub github, Dictionary<string, string?>? settings = null, Action<IServiceCollection>? services = null)
     {
+        EnsureFramePage();
         var logs = Path.Combine(Path.GetTempPath(), "versio-web-tests", Guid.NewGuid().ToString("N"));
         var args = new List<string> { "--urls=http://127.0.0.1:0", $"--Web:LogDirectory={logs}", "--environment=Development" };
         args.AddRange((settings ?? []).Select(kv => $"--{kv.Key}={kv.Value}"));
@@ -57,6 +58,44 @@ internal sealed class TestHost : IAsyncDisposable
         var address = app.Services.GetRequiredService<IServer>().Features.Get<IServerAddressesFeature>()!.Addresses.First();
         return new TestHost(app, github, new Uri(address)) { LogDirectory = logs };
     }
+
+    /// <summary>
+    /// The diagram frame's REAL files, copied from <c>web/public</c> into this host's wwwroot,
+    /// overwriting whatever is there.
+    /// </summary>
+    /// <remarks>
+    /// Overwriting is the point. The header tests used to write STUBS here when the files were
+    /// missing — and a stub, once written, was newer than the real file, so no copy-if-newer
+    /// ever replaced it: every later preview served a blank white frame page, and the first
+    /// thing to say so was the owner's look in a real browser, after two other explanations had
+    /// each fit the symptom (FINDINGS 2026-10-16). The files are 1.4 KB together; copying them
+    /// on every start costs nothing and retires the staleness reasoning entirely.
+    /// </remarks>
+    public static void EnsureFramePage()
+    {
+        // Once per process, gated: xUnit starts hosts in parallel, and two copies of the same
+        // file collide (the first run of this did, on two tests at once).
+        lock (FramePageGate)
+        {
+            if (_framePageInstalled)
+            {
+                return;
+            }
+
+            var root = Path.Combine(AppContext.BaseDirectory, "wwwroot");
+            Directory.CreateDirectory(root);
+            foreach (var name in new[] { "mermaid-frame.html", "mermaid-frame.js" })
+            {
+                File.Copy(Path.Combine(RepoRoot.Path, "web", "public", name), Path.Combine(root, name), overwrite: true);
+            }
+
+            _framePageInstalled = true;
+        }
+    }
+
+    private static readonly object FramePageGate = new();
+
+    private static bool _framePageInstalled;
 
     /// <summary>A GET with the given cookie header, or none.</summary>
     public Task<HttpResponseMessage> GetAsync(string path, string? cookie = null)

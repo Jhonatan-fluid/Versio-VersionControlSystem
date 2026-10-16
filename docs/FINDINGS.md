@@ -19,6 +19,41 @@ produce a diff touching everything else.
 
 ---
 
+### The Mermaid frame never drew anywhere, because three defects stacked under one white box
+
+**2026-10-16, branch `ReviewFixes`.** The owner's look at `dev.md` in Chrome showed a white box
+where a diagram belongs. Three separate defects produced that one symptom, and each had to fall
+before the next was visible:
+
+1. **The preview served stub frame files.** The header test wrote
+   `<!doctype html><title>Diagram</title>` and `// frame` into the test output's `wwwroot` when
+   the files were missing — a guard added after an earlier version *overwrote* the real files.
+   But a stub, once written, is **newer than the real file**, so no copy-if-newer ever replaced
+   it: the stub outlived every rebuild, and every preview since served a frame page with no
+   scripts, no styles and a white default background. The white box WAS the stub. Same timestamp
+   mechanics as the 2026-10-10 mutation-backup finding: restoring the past without touching the
+   clock makes the build believe it. `TestHost.EnsureFramePage` now installs the REAL files from
+   `web/public` on every start, overwriting; the header test asserts the served page loads
+   Mermaid and the glue, so a stub can never again pass it.
+2. **`hidden` lost to `display: block`.** The frame is born hidden until its diagram reports a
+   height, but `.mermaid-frame { display: block }` overrides the attribute's user-agent rule, so
+   every frame was visible from birth. With defect 1 in place that showed the stub; with it
+   fixed it would have shown empty frames during render.
+3. **A properly hidden frame cannot measure itself.** Fixing 2 with `[hidden] { display: none }`
+   voided the frame's layout, and `scrollHeight` inside a zero-size viewport answered the 40px
+   floor for every diagram. The frame is now born at **height 0 instead of hidden**: laid out at
+   full width, invisible, and the reported heights are real (180–1310px across `dev.md`'s
+   eleven diagrams).
+
+Diagnosed end to end in headless Chrome over CDP, because neither the built-in browser (refuses
+sub-frames) nor screenshots could say *why*: the frame census (pre hidden? frame height?) and an
+evaluation inside one frame (`window.mermaid`, the body's SVG) separated the three. The deeper
+lesson repeats the suite's: this handshake had **never executed anywhere** before today — the
+built-in browser cannot run it, no vitest drives an iframe, and the server tests check headers.
+Code whose first execution is in front of the owner will fail in front of the owner.
+
+---
+
 ### The viewer's own clickjacking lock blocked its own PDF frame, and only a real browser said so
 
 **2026-10-16, branch `ReviewFixes`.** The Docs tab embeds a repository PDF in an iframe from

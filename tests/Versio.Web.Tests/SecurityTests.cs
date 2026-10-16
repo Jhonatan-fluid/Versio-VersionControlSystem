@@ -380,17 +380,8 @@ public sealed class SecurityTests
     {
         // Mermaid needs inline <style>; the page's policy must not allow it. The frame page alone
         // does, may be framed by this site and no other, and its scripts load into an opaque origin.
-        var root = Path.Combine(AppContext.BaseDirectory, "wwwroot");
-        Directory.CreateDirectory(root);
-        // Only when the built page is not there: the first version overwrote the real frame with
-        // this stub, and FixturePreview, which serves from the same folder, then drew nothing.
-        foreach (var (name, stub) in new[] { ("mermaid-frame.html", "<!doctype html><title>Diagram</title>"), ("mermaid-frame.js", "// frame") })
-        {
-            if (!File.Exists(Path.Combine(root, name)))
-            {
-                await File.WriteAllTextAsync(Path.Combine(root, name), stub);
-            }
-        }
+        // TestHost installs the REAL frame files: a stub written here once poisoned every later
+        // preview, because the stub stayed newer than the real file (FINDINGS 2026-10-16).
         await using var host = await TestHost.StartAsync(GitHub(out _, out _));
 
         var frame = await host.GetAsync(SecurityHeaders.MermaidFrame);
@@ -408,6 +399,13 @@ public sealed class SecurityTests
         Assert.Equal("cross-origin", mermaid.Headers.GetValues("Cross-Origin-Resource-Policy").Single());
         Assert.Equal("cross-origin", glue.Headers.GetValues("Cross-Origin-Resource-Policy").Single());
         Assert.Equal("same-origin", page.Headers.GetValues("Cross-Origin-Resource-Policy").Single());
+
+        // The frame page SERVED is the real one: it loads Mermaid and the glue, and the glue is
+        // the handshake, not a stub. The stub poisoning above would fail here first.
+        var served = await frame.Body();
+        Assert.Contains("/assets/mermaid.js", served, StringComparison.Ordinal);
+        Assert.Contains("/mermaid-frame.js", served, StringComparison.Ordinal);
+        Assert.Contains("postMessage", await glue.Body(), StringComparison.Ordinal);
     }
 
     [Fact]
