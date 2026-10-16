@@ -52,6 +52,14 @@ lesson repeats the suite's: this handshake had **never executed anywhere** befor
 built-in browser cannot run it, no vitest drives an iframe, and the server tests check headers.
 Code whose first execution is in front of the owner will fail in front of the owner.
 
+**A fourth, found by the owner the moment the first three fell:** the drawn diagrams sat on an
+opaque white slab in the dark page. The page declares `color-scheme: dark`; the frame document
+declared nothing, so it defaulted to light, and a browser whose iframe disagrees with its
+embedder on colour scheme deliberately paints an opaque white canvas behind it instead of
+honouring transparency. `:root { color-scheme: light dark }` in the frame's own stylesheet makes
+it follow the browser's preference exactly as the page does; verified over CDP with
+`prefers-color-scheme: dark` emulated — transparent frames, dark-theme nodes, no slab.
+
 ---
 
 ### The viewer's own clickjacking lock blocked its own PDF frame, and only a real browser said so

@@ -7,6 +7,12 @@
          Mermaid's inline <style>; see Http/Middleware.cs, FrameCsp. -->
     <title>Diagram</title>
     <style>
+      /* The same scheme as the page, or the transparency below is void: when an iframe's
+         colour scheme disagrees with its embedder's, the browser paints an opaque white canvas
+         behind it on purpose - which put every dark-page diagram on a white slab (seen by the
+         owner, 2026-10-16). "light dark" follows the browser's preference, exactly as the
+         page's own stylesheet does. */
+      :root { color-scheme: light dark; }
       html, body { margin: 0; padding: 0; background: transparent; }
       body { display: flex; justify-content: center; font-family: "Segoe UI", system-ui, sans-serif; }
       svg { max-width: 100%; height: auto; }
