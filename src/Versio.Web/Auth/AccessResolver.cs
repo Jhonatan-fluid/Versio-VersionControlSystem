@@ -187,6 +187,15 @@ public sealed class AccessResolver(
     /// <summary>The credential for reading <paramref name="owner"/>/<paramref name="repo"/> in this request.</summary>
     public async Task<RepoResult<RepoAccess>> ResolveAsync(HttpContext context, string owner, string repo, CancellationToken ct)
     {
+        // The server's scope comes before anybody's credential: a repository the admin left off
+        // the list is "not found" to everyone, signed in or not — the same answer as one that
+        // does not exist, so the refusal confirms nothing (ApiEndpoints' refusal rule). Here and
+        // not per route, because this is already the one gate every repository read passes.
+        if (!options.Value.Shows(owner, repo))
+        {
+            return RepoResult<RepoAccess>.Fail(RepoFailure.NotFound, "not in this server's repository list");
+        }
+
         if (await SessionAsync(context, ct).ConfigureAwait(false) is { } session)
         {
             return RepoResult<RepoAccess>.Of(new RepoAccess(AccessKind.User, sessions.AccessToken(session), session.Login));

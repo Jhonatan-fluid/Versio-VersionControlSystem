@@ -139,6 +139,13 @@ button { font: inherit; color: inherit; }
 
 .home { max-width: 760px; margin: 0 auto; padding: 32px 16px; width: 100%; }
 .home h1 { font-size: 24px; margin: 0 0 8px; }
+.repo-list { list-style: none; margin: 20px 0; padding: 0; background: var(--surface-card); border-radius: 8px; overflow: hidden; }
+.repo-list li + li { border-top: 1px solid var(--border); }
+.repo-row { display: flex; align-items: center; gap: 10px; padding: 12px 16px; text-decoration: none; color: var(--fg); }
+.repo-row:hover { background: var(--selected); }
+.repo-name { font-weight: 600; overflow-wrap: anywhere; }
+.repo-private { font: 600 11px var(--ui); letter-spacing: 0.05em; text-transform: uppercase; color: var(--muted);
+  border: 1px solid var(--border); border-radius: 999px; padding: 1px 8px; }
 .open-form { margin: 24px 0 12px; display: flex; flex-direction: column; gap: 6px; }
 .open-row { display: flex; gap: 8px; }
 .open-row input { flex: 1; min-width: 0; padding: 8px 10px; }

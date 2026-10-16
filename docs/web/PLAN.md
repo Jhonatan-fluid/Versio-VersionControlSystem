@@ -456,3 +456,40 @@ Phase 1's measurements: 22 vitest green unchanged (the rail's visually-hidden "C
 is what keeps the History page's link test true), `tsc` clean, looked at on the fixtures in the
 built-in browser at desktop and phone widths — the drawer closes on navigation from the
 workbench's own effect now, since the pages no longer own that state.
+
+## The product shape (2026-10-16)
+
+The owner's requirements for the viewer as a product, recorded as given, with where each stands:
+
+1. **Sign-in required** — by GitHub, later by Okta too (Fluidstack uses Okta). GitHub sign-in
+   was already built; `Web:AnonymousAccess=false` was already the switch that refuses the
+   signed-out, and the home page is now the gate when it is off. **Okta is the next auth piece**:
+   a second, OIDC sign-in. An Okta user may have no GitHub identity, so their reads will go
+   through the App's installation token restricted to the server's repository scope (below) —
+   for Okta users the admin defines access, not GitHub.
+2. **An admin scopes which repositories the server shows — built 2026-10-16.**
+   `Web:Repositories` (owner/repo, one per index) is the server's whole scope: anything off the
+   list answers "not found" to everyone, enforced in `AccessResolver.ResolveAsync`, the one gate
+   every repository read already passed. `/api/repos` lists the scope **filtered to what the
+   caller's credential can actually read** — a repository they cannot read is left out, never
+   greyed out — and the home page draws it as "Repositories" instead of the open-a-repository
+   form. A malformed entry stops startup, as a malformed trusted proxy does. The settings UI
+   where the admin edits the list in the app is deliberately later: it needs the server to keep
+   writable state for the first time, and the config file proves the model first.
+3. **Browse, switch branches, desktop-parity rendering** — this is the viewer as built; the
+   known parity gaps are the restructure's phases 2–4 above (commit card, compare as tree marks,
+   theme tokens) and the project card.
+4. **A Documentation tab** — scan the commit's tree for documents (`.md`, `.pdf`, `.docx`, …)
+   and show them under their paths in a fourth rail panel. Markdown already renders; PDF can be
+   shown in a sandboxed viewer; `.docx` and friends have no browser rendering and become
+   download rows — converting them server-side would drag heavy dependencies into a server kept
+   deliberately lean, so it is refused for now.
+5. **Open MRs and Releases tabs** — two read-only GitHub endpoints and two rail panels. An open
+   PR is `base...head`, so opening one lands in the existing compare view: a PR's PLC changes
+   reviewed as member-table and ladder diffs. Needs the App permission *Pull requests: read*
+   when the App is registered.
+
+Still open here: Okta (2's seam is ready for it: the session is the identity, the credential is
+chosen per request), the Documentation tab, the MRs and Releases tabs, the settings UI.
+`VERSIO_WEB_PREVIEW_SCOPED=1` beside `VERSIO_WEB_PREVIEW=1` serves the fixtures scoped, to look
+at the list and the refusal.

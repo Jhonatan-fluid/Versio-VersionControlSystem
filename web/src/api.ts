@@ -28,6 +28,16 @@ export interface RepoInfo {
   defaultBranch: string;
 }
 
+/**
+ * The server's repository list. Scoped: the admin configured `Web:Repositories`, and `repos` is
+ * that list filtered to what THIS caller's credential can read. Unscoped: the server shows any
+ * repository the credential can read, and the home page offers its open-a-repository form.
+ */
+export interface RepoList {
+  scoped: boolean;
+  repos: RepoInfo[];
+}
+
 export interface Branch {
   name: string;
   /** The name for display: hidden characters spelled by the server (security rule 9). */
@@ -131,6 +141,7 @@ async function get<T>(url: string, signal?: AbortSignal): Promise<T> {
 
 export const api = {
   me: (signal?: AbortSignal) => get<Me>('/api/me', signal),
+  repos: (signal?: AbortSignal) => get<RepoList>('/api/repos', signal),
   repo: (owner: string, repo: string, signal?: AbortSignal) => get<RepoInfo>(repoBase(owner, repo), signal),
   branches: (owner: string, repo: string, signal?: AbortSignal) => get<BranchList>(`${repoBase(owner, repo)}/branches`, signal),
   tree: (owner: string, repo: string, ref: string, signal?: AbortSignal) =>

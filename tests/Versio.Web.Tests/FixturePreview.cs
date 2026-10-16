@@ -49,7 +49,17 @@ public sealed class FixturePreview
             "Glob_Var.TempActual-0.1;", "Glob_Var.TempActual-0.2;");
         github.Commit(repo, "next", changed);
 
-        await using var host = await TestHost.StartAsync(github, new() { ["urls"] = "http://127.0.0.1:5199" });
+        var settings = new Dictionary<string, string?> { ["urls"] = "http://127.0.0.1:5199" };
+
+        // VERSIO_WEB_PREVIEW_SCOPED=1 besides: the server scoped to the fixtures repository, to
+        // look at the home page's repository list and the off-list refusal ("The product shape"
+        // in PLAN.md). Without it the server is open, and the home page is the open-a-repo form.
+        if (Environment.GetEnvironmentVariable("VERSIO_WEB_PREVIEW_SCOPED") == "1")
+        {
+            settings["Web:Repositories:0"] = "acme/plant";
+        }
+
+        await using var host = await TestHost.StartAsync(github, settings);
         await Task.Delay(TimeSpan.FromMinutes(25));
     }
 }

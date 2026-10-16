@@ -40,6 +40,52 @@ public static partial class ApiEndpoints
     public static void Map(WebApplication app)
     {
         ArgumentNullException.ThrowIfNull(app);
+
+        // The server's repository list (PLAN.md, "The product shape"): the home page's "your
+        // repositories". Each configured repository is checked with THIS caller's credential, so
+        // what each person sees is the admin's scope intersected with their own access — one
+        // they cannot read is left out entirely, never greyed out, because a row's absence must
+        // say no more than a 404 would (security rule 1, applied to a list). An unscoped server
+        // says so, and the page keeps its open-a-repository form instead.
+        app.MapGet("/api/repos", async (HttpContext http, AccessResolver access, IRepoSource source,
+            Microsoft.Extensions.Options.IOptions<WebOptions> options, CancellationToken ct) =>
+        {
+            var scope = options.Value.Repositories;
+            if (scope.Length == 0)
+            {
+                return Results.Ok(new { scoped = false, repos = Array.Empty<object>() });
+            }
+
+            // Signed out on a sign-in-only server: the one refusal the person can act on.
+            if (!options.Value.AnonymousAccess && await access.SessionAsync(http, ct).ConfigureAwait(false) is null)
+            {
+                return Refused(RepoFailure.Unauthorized, http);
+            }
+
+            // In parallel: the list is the admin's and short, and the checks are independent.
+            // Entries were validated at startup (WebHost), so the split cannot fail here.
+            var infos = await Task.WhenAll(scope.Select(async entry =>
+            {
+                var slash = entry.IndexOf('/');
+                var (owner, repo) = (entry[..slash], entry[(slash + 1)..]);
+                var who = await access.ResolveAsync(http, owner, repo, ct).ConfigureAwait(false);
+                if (!who.Ok)
+                {
+                    return null;
+                }
+
+                var info = await source.GetRepoAsync(who.Value!, owner, repo, ct).ConfigureAwait(false);
+                return info.Ok ? info.Value : null;
+            })).ConfigureAwait(false);
+
+            return Results.Ok(new
+            {
+                scoped = true,
+                repos = infos.Where(i => i is not null)
+                    .Select(i => new { owner = i!.Owner, name = i.Name, @private = i.Private, defaultBranch = i.DefaultBranch }),
+            });
+        }).RequireRateLimiting(WebHost.RatePolicy);
+
         var api = app.MapGroup("/api/repos/{owner}/{repo}").RequireRateLimiting(WebHost.RatePolicy);
 
         api.MapGet("", async (string owner, string repo, HttpContext http, AccessResolver access, IRepoSource source, CancellationToken ct) =>

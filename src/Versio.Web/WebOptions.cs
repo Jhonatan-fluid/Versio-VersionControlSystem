@@ -25,6 +25,22 @@ public sealed class WebOptions
     public bool AnonymousAccess { get; set; } = true;
 
     /// <summary>
+    /// The repositories this server shows, each as <c>owner/repo</c>. Empty: any repository the
+    /// caller's credential can read — the open mode a public deployment runs in. Set, it is the
+    /// server's whole scope (PLAN.md, <i>The product shape</i>): everything else answers "not
+    /// found" whoever asks, and <c>/api/repos</c> lists these, filtered to what the caller can
+    /// actually read. Only the host's configuration writes this; there is deliberately no API
+    /// that does, because the server keeps no writable state.
+    /// </summary>
+    public string[] Repositories { get; set; } = [];
+
+    /// <summary>Whether this server shows <paramref name="owner"/>/<paramref name="repo"/> at all.</summary>
+    /// <remarks>Case-insensitive, as GitHub's own names are.</remarks>
+    public bool Shows(string owner, string repo) =>
+        Repositories.Length == 0
+        || Repositories.Any(entry => string.Equals(entry, $"{owner}/{repo}", StringComparison.OrdinalIgnoreCase));
+
+    /// <summary>
     /// Kill switch: bumping this ends every session at once, because a session records the epoch
     /// it was created under and is refused when they differ (security rule 17).
     /// </summary>

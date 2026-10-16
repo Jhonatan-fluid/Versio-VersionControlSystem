@@ -69,13 +69,13 @@ the project file, the IL and every vendor reference (section 7).
 | `GitHubRepoSource.cs` | The GitHub implementation: repo, branches (every page, up to 1,000, and says when it was cut), downloads checked against the LFS pointer's hash, commit SHA, recursive tree, raw blobs, commits; follows Git LFS pointers. Maps GitHub's refusals to what the page can say (a bare 403 is "not found") |
 | `LfsGuard.cs` | Parses LFS pointers; allows LFS downloads only over https to allowlisted hosts; a connect callback that refuses internal addresses at the moment of connecting; no redirects |
 | **`Auth/`** | |
-| `AccessResolver.cs` | **Decides which credential reads a repository for a request.** Signed in: the person's own token. Anonymous: the App's token, only after GitHub says the repository is public |
+| `AccessResolver.cs` | **Decides which credential reads a repository for a request.** First the server's scope (`Web:Repositories`): off the list is "not found" to everyone. Then, signed in: the person's own token. Anonymous: the App's token, only after GitHub says the repository is public |
 | `SessionStore.cs` | Server-side sessions on `IDistributedCache` (in memory, or Redis when `Web:Redis` is set, so instances share them). The browser holds a random id; tokens are encrypted with ASP.NET Data Protection; idle and absolute limits enforced by the cache's expiry (a read refreshes the sliding expiry and never writes the entry, so after sign-in only a token renewal writes a session); an epoch kill switch; one token renewal per session at a time |
 | `GitHubOAuth.cs` | `GitHubOAuth`: authorize URL with PKCE, code exchange, refresh, user, revoke. `AppTokens` (behind `IInstallationTokens`): a JWT signed through `IAppSigner`, then a read-only installation token per repository |
 | `AppSigner.cs` | `IAppSigner`, the seam a key vault plugs into (rule 15); `PemAppSigner` signs with the configured key until the host is chosen |
 | `AuthEndpoints.cs` | `/auth/login`, `/auth/callback`, `/auth/logout` (needs the `X-Versio-Request` header), `/api/me`. `SafeReturn` keeps the return URL on this site |
 | **`Api/`** | |
-| `ApiEndpoints.cs` | `/api/repos/{owner}/{repo}` plus `/branches`, `/tree`, `/view`, `/compare`, `/compare/view`, `/history`, and the three `/assets/…` routes serving Core's CSS and script. Validates every input, writes an audit line per view, turns failures into status codes. `Loader` does credential → commit → model |
+| `ApiEndpoints.cs` | `/api/repos` (the scoped server's list, filtered to what the caller can read), `/api/repos/{owner}/{repo}` plus `/branches`, `/tree`, `/view`, `/compare`, `/compare/view`, `/history`, and the three `/assets/…` routes serving Core's CSS and script. Validates every input, writes an audit line per view, turns failures into status codes. `Loader` does credential → commit → model |
 | **`Repo/`** | |
 | `RepoModel.cs` | `RepoModelLoader` turns one commit into a `RepoModel`: GitHub's file list, `.versio/repo.json`'s bindings, each export's `_manifest.json`, each project's library, task and device catalogs, any File-Based Storage source project, then `RepoExplorerBuilder`. Cached per repository and commit; concurrent loads of one commit share one; each blob fetched once. `NodeFor(path)` is an index; `Objects` is Core's `ObjectIndex`, for type links |
 | `SingleFlight.cs` | Concurrent requests for the same key share one piece of work (model loads, visibility checks, branch resolution) |
@@ -103,7 +103,7 @@ the project file, the IL and every vendor reference (section 7).
 | `src/components/TreePanel.tsx` | The object tree with a filter, the Project panel's content |
 | `src/components/Pane.tsx` | The pane card: the desktop's `PaneHeading` grammar (FILE or DIFF, the name, the folder from the spelled label, the full label as tooltip), Rendered / Raw, Unified / Side by side, layer chips, notices, errors with sign-in when it would help |
 | `src/components/Header.tsx` | The top bar: repository, branch picker, signed-in user. The views moved to the rail |
-| `src/pages/*.tsx` | Home (open a repository), RepoPage (Project panel and pane), ComparePage (pickers and changed files in the panel, diffs in the pane), HistoryPage (commits in the panel, each openable and comparable) |
+| `src/pages/*.tsx` | Home (a scoped server's repository list, the open-a-repository form, or the sign-in gate), RepoPage (Project panel and pane), ComparePage (pickers and changed files in the panel, diffs in the pane), HistoryPage (commits in the panel, each openable and comparable) |
 | `src/styles/app.css` | The workbench around the fragments — cards on a sunken background (`--surface-sunken` / `--surface-card`, the desktop's Surface.Sunken / Surface.Base), light and dark, the panel a drawer under 760 px. Markdown's styles live here because Core emits plain elements for it |
 | `src/fragment.test.ts` | 13 vitest tests: the sanitiser (the ladder's checkbox kept, every other input removed), link rules, URL building |
 | `src/ladderScript.test.ts` | 5: Core's ladder script, read from `LadderPageAssets.cs` itself (Vite `?raw`), run fragment after fragment into one document, counting the listeners it leaves |
@@ -260,6 +260,8 @@ executables, and the whole WPF app. The viewer only reads.
 | Configure sign-in | `Web__GitHub__ClientId`, `ClientSecret`, `AppId`, `PrivateKeyPem`, `AppSlug`, `PublicBaseUrl` from the host's secret store |
 | Ship | `dotnet publish src/Versio.Web -c Release`, or the `Dockerfile` |
 | Run behind a load balancer or CDN | `Web__TrustedProxies__0=10.0.0.0/8` (addresses or CIDR, one per index), or the rate limit counts the balancer as one client; a malformed entry stops startup |
+| Scope the server to chosen repositories | `Web__Repositories__0=owner/repo` (one per index): everything else is "not found", and the home page lists these, filtered per caller; a malformed entry stops startup. With `Web__AnonymousAccess=false` the page is sign-in only |
+| Look at the scoped home page on the fixtures | `VERSIO_WEB_PREVIEW_SCOPED=1` beside `VERSIO_WEB_PREVIEW=1` |
 
 Logs: one daily file in `%LOCALAPPDATA%\VersioUser\logs\web\` (or `Web:LogDirectory`), and the
 same lines on standard output.

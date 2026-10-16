@@ -160,6 +160,7 @@ public static class WebHost
         });
 
         var forwarded = ForwardedFrom(options.TrustedProxies);
+        ValidateRepositories(options.Repositories);
 
         configure?.Invoke(builder);
 
@@ -249,7 +250,8 @@ public static class WebHost
             $"Versio Web starting: {regex}, sign-in {(g.SignInConfigured ? "configured" : "not configured (anonymous, public repositories only)")}, "
             + $"installation tokens {(g.AppConfigured ? "configured" : "not configured")}, anonymous access {(options.AnonymousAccess ? "on" : "off")}, "
             + $"API {g.ApiBaseUrl}, keys {(string.IsNullOrEmpty(keys) ? "in memory (sessions end on restart)" : "persisted")}, "
-            + $"trusted proxies {(options.TrustedProxies.Length == 0 ? "none" : string.Join(' ', options.TrustedProxies))}, log {file.LogDirectory}");
+            + $"trusted proxies {(options.TrustedProxies.Length == 0 ? "none" : string.Join(' ', options.TrustedProxies))}, "
+            + $"repositories {(options.Repositories.Length == 0 ? "any the credential can read" : $"{options.Repositories.Length} listed")}, log {file.LogDirectory}");
 
         return app;
     }
@@ -273,6 +275,24 @@ public static class WebHost
     /// startup rather than trusting less, or more, than was meant.
     /// </para>
     /// </remarks>
+    /// <summary>
+    /// Refuses a malformed <c>Web:Repositories</c> entry at startup, the way a malformed trusted
+    /// proxy is refused: a scope that silently dropped an entry would show less, or more, than the
+    /// admin meant, and nobody would see it until somebody could not open a repository.
+    /// </summary>
+    internal static void ValidateRepositories(IReadOnlyList<string> repositories)
+    {
+        ArgumentNullException.ThrowIfNull(repositories);
+        foreach (var entry in repositories)
+        {
+            var slash = entry.IndexOf('/');
+            if (slash <= 0 || !Api.ApiEndpoints.Valid(entry[..slash], entry[(slash + 1)..]))
+            {
+                throw new InvalidOperationException($"Web:Repositories: '{entry}' is not owner/repo.");
+            }
+        }
+    }
+
     internal static ForwardedHeadersOptions? ForwardedFrom(IReadOnlyList<string> proxies)
     {
         if (proxies.Count == 0)
