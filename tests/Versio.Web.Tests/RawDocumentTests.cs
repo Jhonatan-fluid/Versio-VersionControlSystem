@@ -76,6 +76,27 @@ public sealed class RawDocumentTests
     }
 
     [Fact]
+    public async Task The_raw_route_may_be_framed_by_this_site_and_nothing_else_may_be_framed_at_all()
+    {
+        // Found by the owner in a real browser (2026-10-16): the blanket X-Frame-Options DENY
+        // blocked the viewer's OWN pdf frame, which Chrome draws as "refused to connect" and the
+        // built-in browser as a silent white box. The raw route alone answers SAMEORIGIN.
+        await using var host = await TestHost.StartAsync(GitHub());
+
+        var raw = await host.GetAsync("/api/repos/acme/plant/raw?path=docs%2Fmanual.pdf");
+        Assert.Equal("SAMEORIGIN", raw.Headers.GetValues("X-Frame-Options").Single());
+        Assert.Contains("frame-ancestors 'self'", raw.Headers.GetValues("Content-Security-Policy").Single(), StringComparison.Ordinal);
+
+        // The clickjacking lock stays on everything beside it — including a repository that
+        // happens to be NAMED raw, whose route is one segment shorter.
+        foreach (var locked in new[] { "/api/repos/acme/plant", "/api/repos/acme/raw", "/" })
+        {
+            var response = await host.GetAsync(locked);
+            Assert.Equal("DENY", response.Headers.GetValues("X-Frame-Options").Single());
+        }
+    }
+
+    [Fact]
     public async Task A_private_repositorys_document_is_not_found_anonymously()
     {
         await using var host = await TestHost.StartAsync(GitHub());

@@ -119,7 +119,7 @@ exactly that).
 |---|---|---|
 | The server drives an IDE, starts a process or touches files | References only the pure packs; no `Process`, `File` or `Directory` in its IL | `Versio_Web_references_only_the_pure_packs`, `Versio_Web_starts_no_process_and_reads_no_file` |
 | A forged sign-out | Needs a header no cross-site request can send; no CORS | `Hygiene_logout_without_the_request_header_is_refused_and_ends_nothing` |
-| Clickjacking | `frame-ancestors 'none'` and `X-Frame-Options: DENY` everywhere but the diagram frame, which only this site may frame | Header tests above |
+| Clickjacking | `frame-ancestors 'none'` and `X-Frame-Options: DENY` everywhere but the diagram frame and the raw document route, which only this site may frame (the blanket DENY blocked the viewer's own PDF frame; found by the owner in a real browser, FINDINGS 2026-10-16) | Header tests above; `The_raw_route_may_be_framed_by_this_site_and_nothing_else_may_be_framed_at_all` |
 
 ## 5. Kill switches
 

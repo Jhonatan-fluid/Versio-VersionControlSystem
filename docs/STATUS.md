@@ -21,7 +21,7 @@ UX remainder) is built and tested as of 2026-08-25** — UX-6 find boxes, UX-7 `
 Escape, UX-8 copy-a-commit, UX-12 amend-while-unpushed — and its visual half joins the
 eyeball list in item 2. Do not start from `archive/` or a handoff.
 
-**Tests:** 3,596 across twelve projects (plus 34 vitest in `web/`), last counted 2026-10-16
+**Tests:** 3,597 across twelve projects (plus 34 vitest in `web/`), last counted 2026-10-16
 on `ReviewFixes` — Integration 172 and App 783 after the review fixes; the toolchain-gated
 counts (TIA 5, TwinCAT 6, CODESYS 55) are from their last gate runs, not re-run for the count. **The Rendered view of an ST object reads like the IDE (2026-09-20):** no
 `@@` line, one gutter, a Declaration / Implementation divider, and the implementation
@@ -71,7 +71,7 @@ marking, duplicate-param keys, and the detail-pane lookup. All of them are in
 | `Versio.Plc.TiaPortal.Tests` | 5 | seconds when skipped; minutes when Portal runs the import gate | **real TIA Portal** — skips without Openness membership or LFS content |
 | `Versio.Plc.TwinCat.Pure.Tests` | 23 | instant | nothing |
 | `Versio.Plc.TwinCat.Tests` | 6 | seconds when skipped; ~5 min when XAE runs the import gate | **real TwinCAT XAE** — skips without `TcXaeShell.DTE.17.0` or the fixture |
-| `Versio.Web.Tests` | 177 | a few seconds | nothing — GitHub is faked |
+| `Versio.Web.Tests` | 178 | a few seconds | nothing — GitHub is faked |
 | `web/` (vitest) | 34 | ~20 s | the pinned Node in `web/.node` |
 | `Versio.Plc.Codesys.Tests` | 55 | **~30 min**; 41 m 14 s, 55/55, on 2026-10-11 on `WebViewer` | **real CODESYS** |
 
@@ -381,8 +381,8 @@ One list. Reorder it; do not copy it into another file.
    - build the Docker image on a host that has Docker (none on the machine that wrote it);
    - one look in a normal browser at a Markdown page with a Mermaid diagram (the built-in
      browser refuses sub-frames, so the page embedding the frame was not observed), and at the
-     Docs tab's embedded PDF (the built-in browser has no PDF viewer: the frame, URL and
-     content type were verified, the drawing was not);
+     Docs tab's embedded PDF (the first look found the viewer's own frame lock blocking it —
+     fixed, FINDINGS 2026-10-16 — and the drawing itself is still unconfirmed);
    - the external penetration test and a cost alarm, once it is deployed;
    - later, on purpose: the desktop drawing with the shared HTML renderers, and the choice of
      renderer moved into Core for both (today mirrored, pinned by a test).

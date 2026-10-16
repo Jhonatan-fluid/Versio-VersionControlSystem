@@ -19,6 +19,29 @@ produce a diff touching everything else.
 
 ---
 
+### The viewer's own clickjacking lock blocked its own PDF frame, and only a real browser said so
+
+**2026-10-16, branch `ReviewFixes`.** The Docs tab embeds a repository PDF in an iframe from
+`/api/…/raw`. `SecurityHeaders` sends `X-Frame-Options: DENY` and `frame-ancestors 'none'` on
+every response except the Mermaid frame — including, until now, the very response the viewer's
+own page frames. Chrome draws that refusal as **"127.0.0.1 refused to connect"** inside the
+frame, which reads exactly like a dead server; the built-in browser drew a silent white box,
+which reads like nothing at all. The owner looked in Chrome and reported it; two earlier
+diagnoses (the preview's 25-minute window lapsing, a genuinely malformed fixture PDF — real,
+fixed, but not this) each explained the symptom well enough to survive one round, because the
+server's window really had lapsed on one of the owner's looks. A symptom with two live causes
+hides its third.
+
+The raw route now answers `SAMEORIGIN` and a minimal CSP whose one open door is
+`frame-ancestors 'self'` (`Middleware.RawCsp`); everything else keeps DENY, pinned by
+`The_raw_route_may_be_framed_by_this_site_and_nothing_else_may_be_framed_at_all` — including a
+repository literally named `raw`, whose route is one segment shorter than the document route.
+Why no test caught it: `RawDocumentTests` asserted content type and disposition, and no test —
+or built-in-browser look — can see what only a real browser's frame refusal shows. The owner's
+eyeball list in STATUS exists for exactly this class; the PDF embed is now off it.
+
+---
+
 ### A source project's machine-local folders polluted every change list, because nothing ever wrote their rules
 
 **2026-10-14, branch `ReviewFixes`.** Reported from a real library: an unchanged

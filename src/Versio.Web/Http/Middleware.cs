@@ -51,6 +51,30 @@ public sealed class SecurityHeaders(RequestDelegate next)
         "default-src 'none'; script-src {0}; style-src {0} 'unsafe-inline'; img-src data:; font-src data:; "
         + "base-uri 'none'; form-action 'none'; frame-ancestors 'self'";
 
+    /// <summary>
+    /// The raw document route's policy: inert bytes that the Docs page frames (the embedded
+    /// PDF), so they may be framed by this site — and only this site. Everything else about the
+    /// response stays shut; the content rules themselves are on <c>Documents</c>.
+    /// </summary>
+    /// <remarks>
+    /// <c>'self'</c> works here where the diagram frame needed the origin spelled out: the Docs
+    /// page embeds this route from the site's real origin, not from a sandboxed frame's opaque
+    /// one. Found by the owner in a real browser on 2026-10-16 — the blanket DENY below blocked
+    /// the viewer's own PDF frame, which Chrome reports as "refused to connect" while the
+    /// built-in browser showed a silent white box (FINDINGS).
+    /// </remarks>
+    public const string RawCsp = "default-src 'none'; frame-ancestors 'self'; base-uri 'none'; form-action 'none'";
+
+    /// <summary>
+    /// Whether this is the raw document route: /api/repos/{owner}/{repo}/raw, five segments. A
+    /// repository itself named "raw" has four and keeps the ordinary headers.
+    /// </summary>
+    private static bool IsRawDocument(PathString path) =>
+        path.StartsWithSegments("/api/repos")
+        && path.Value is { } p
+        && p.EndsWith("/raw", StringComparison.OrdinalIgnoreCase)
+        && p.Count(c => c == '/') == 5;
+
     /// <summary>The frame's policy for this request's site.</summary>
     public static string FramePolicy(HttpContext context)
     {
@@ -70,9 +94,10 @@ public sealed class SecurityHeaders(RequestDelegate next)
             var h = context.Response.Headers;
             var path = context.Request.Path;
             var frame = path.Equals(MermaidFrame, StringComparison.OrdinalIgnoreCase);
-            h.ContentSecurityPolicy = frame ? FramePolicy(context) : Csp;
+            var raw = IsRawDocument(path);
+            h.ContentSecurityPolicy = frame ? FramePolicy(context) : raw ? RawCsp : Csp;
             h.XContentTypeOptions = "nosniff";
-            h.XFrameOptions = frame ? "SAMEORIGIN" : "DENY";
+            h.XFrameOptions = frame || raw ? "SAMEORIGIN" : "DENY";
             h["Referrer-Policy"] = "no-referrer";
             h["X-Robots-Tag"] = "noindex, nofollow";
             h["Cross-Origin-Opener-Policy"] = "same-origin";
