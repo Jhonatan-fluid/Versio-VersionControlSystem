@@ -1394,7 +1394,14 @@ public sealed class SyncOrchestrator
             _log.Error(LogCategory.Sync,
                 $"{binding.Id}: export failed after {elapsed.TotalSeconds:F1}s — {reason}");
 
-            await ApplyAsync(binding.Id, SyncTrigger.ExportFailed, string.Empty, ct)
+            // The toolchain's words go on the lock, not just the state machine's "export
+            // failed". ReasonFor is what the failure card shows, and it shows the persisted
+            // record so a failure explains itself after a restart — but nothing ever wrote
+            // the reason into that record, so the card read "export failed" and stopped,
+            // while the sentence that said what to do ("not a member of the windows group
+            // 'Siemens TIA Openness'", "profile … is not installed") reached only the log.
+            await ApplyAsync(binding.Id, SyncTrigger.ExportFailed, string.Empty, ct,
+                    reason: FailedBecause("export", reason))
                 .ConfigureAwait(false);
             return new SyncOutcome
             {
@@ -1681,11 +1688,12 @@ public sealed class SyncOrchestrator
         var mirror = Absolute(binding.ExportPath);
         if (!_fs.DirectoryExists(mirror))
         {
-            await ApplyAsync(binding.Id, SyncTrigger.ImportFailed, string.Empty, ct)
-                .ConfigureAwait(false);
-
             var missing = $"the exported text at {binding.ExportPath} is not there, so there "
                           + "is nothing to import; the project is unchanged";
+
+            await ApplyAsync(binding.Id, SyncTrigger.ImportFailed, string.Empty, ct,
+                    reason: FailedBecause("import", missing))
+                .ConfigureAwait(false);
             _log.Error(LogCategory.Sync, $"{binding.Id}: {missing}");
 
             return new SyncOutcome
@@ -1706,10 +1714,12 @@ public sealed class SyncOrchestrator
         {
             // Refuse rather than proceed. Running the one operation that can destroy the
             // project having failed to make it recoverable is the worst of both.
-            await ApplyAsync(binding.Id, SyncTrigger.ImportFailed, string.Empty, ct)
+            var why = $"could not back up {binding.ProjectPath} before importing: {ex.Message}";
+
+            await ApplyAsync(binding.Id, SyncTrigger.ImportFailed, string.Empty, ct,
+                    reason: FailedBecause("import", why))
                 .ConfigureAwait(false);
 
-            var why = $"could not back up {binding.ProjectPath} before importing: {ex.Message}";
             _log.Error(LogCategory.Sync, why, ex);
 
             return new SyncOutcome
@@ -1784,7 +1794,9 @@ public sealed class SyncOrchestrator
             _log.Error(LogCategory.Sync,
                 $"{binding.Id}: import failed after {elapsed.TotalSeconds:F1}s — {reason}");
 
-            await ApplyAsync(binding.Id, SyncTrigger.ImportFailed, string.Empty, ct)
+            // As for the export: the reason the card shows is the one persisted here.
+            await ApplyAsync(binding.Id, SyncTrigger.ImportFailed, string.Empty, ct,
+                    reason: FailedBecause("import", reason))
                 .ConfigureAwait(false);
             return new SyncOutcome
             {
@@ -2253,6 +2265,14 @@ public sealed class SyncOrchestrator
             Duration = elapsed,
         };
     }
+
+    /// <summary>The lock reason for a failed direction: which one, then the toolchain's words.</summary>
+    /// <remarks>
+    /// The direction stays in front because "export failed" is what every earlier lock
+    /// record said, and the card reads the state, the direction and then why — in that order.
+    /// </remarks>
+    private static string FailedBecause(string direction, string reason) =>
+        $"{direction} failed — {reason}";
 
     private async Task ApplyAsync(string bindingId, SyncTrigger trigger, string projectHash,
                                   CancellationToken ct, string? headCommit = null,

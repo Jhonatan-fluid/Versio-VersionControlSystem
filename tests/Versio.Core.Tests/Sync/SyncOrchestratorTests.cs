@@ -260,6 +260,7 @@ public class SyncOrchestratorTests
         Assert.Contains("back up", outcome.Explanation, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain(h.Codesys.Jobs, j => j.Operation == PlcOperation.Import);
         Assert.Equal(SyncDirection.Failed, h.Orchestrator.StateOf(BindingId));
+        Assert.StartsWith("import failed — could not back up", h.Orchestrator.ReasonFor(BindingId));
     }
 
     [Fact]
@@ -291,6 +292,41 @@ public class SyncOrchestratorTests
         Assert.True(h.Locks.Writes > writesBefore);
         Assert.Equal(SyncDirection.Failed, h.Locks.State!.Bindings[BindingId].Direction);
         Assert.Equal("cancelled on request", h.Locks.State.Bindings[BindingId].Reason);
+    }
+
+    [Fact]
+    public async Task A_failed_export_persists_the_toolchains_reason_not_just_export_failed()
+    {
+        // The failure card shows ReasonFor, read from the persisted lock. Until 2026-10-16 the
+        // lock only ever said "export failed": a TIA install refusing the user for not being in
+        // the Openness group, and a CODESYS profile missing from the machine, both reached the
+        // log and nowhere a person looks.
+        var h = new Harness();
+        h.Codesys.EnqueueFailure("profile 'X' is not installed on this machine");
+
+        var outcome = await h.ProjectChanged();
+
+        Assert.Equal(SyncVerdict.Failed, outcome.Verdict);
+        Assert.Equal(
+            "export failed — profile 'X' is not installed on this machine",
+            h.Orchestrator.ReasonFor(BindingId));
+        Assert.Equal(
+            "export failed — profile 'X' is not installed on this machine",
+            h.Locks.State!.Bindings[BindingId].Reason);
+    }
+
+    [Fact]
+    public async Task A_failed_import_persists_the_toolchains_reason_too()
+    {
+        var h = new Harness();
+        h.Codesys.EnqueueFailure("the script refused the plan");
+
+        var outcome = await h.TextChanged();
+
+        Assert.Equal(SyncVerdict.Failed, outcome.Verdict);
+        Assert.Equal(
+            "import failed — the script refused the plan",
+            h.Orchestrator.ReasonFor(BindingId));
     }
 
     [Fact]
