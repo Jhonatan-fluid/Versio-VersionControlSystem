@@ -28,8 +28,9 @@ failed"* and nothing else. The question was why nothing showed under Changes. No
 because nothing had changed. Every other part of the screen was wrong.
 
 **What actually happened, from the log.** The machine had never exported these projects, so
-local `state.json` had empty project hashes and the commit gate rightly asked for an export.
-All four exports failed, for three reasons that had nothing to do with the projects:
+local `state.json` had empty project hashes, and the commit gate read that as "changed since last
+export". It was not right to ask: see defect 0 below. All four exports failed, for three reasons
+that had nothing to do with the projects:
 
 - **CODESYS (two projects).** `.versio/repo.json` pins `CODESYS V3.5 SP22 Patch 2`, recorded
   when the projects were adopted on the first machine. This machine has 3.5.22.40, which is
@@ -40,8 +41,37 @@ All four exports failed, for three reasons that had nothing to do with the proje
   sentence said exactly that, and it reached the log only.
 - **TwinCAT.** XAE is not installed. The probe said so at startup, as a Warn line.
 
-**Three defects stacked on that.**
+**Four defects, the first underneath the rest.**
 
+0. **A fresh clone exported every project, changed or not.** The owner's question, and the
+   right one: *Versio is supposed to trigger only when something changed.* `RecoverAsync` was
+   fixed long ago to keep `LastSynced` across a restart, because an empty record reads to the
+   gate as "changed since last export", and every launch then re-ran CODESYS over a correct
+   mirror. A fresh clone has no `state.json` at all, so it started from exactly that empty
+   record, and the open-time catch-up exported all four fixtures. Now
+   `SyncOrchestrator.AdoptCommittedStateAsync` runs between recovery and the catch-up. It
+   applies the trust `AdoptExternalStateAsync` already gives a checkout: a project and a mirror
+   that both match HEAD came out of one commit, and the commit gate refuses to record one
+   without the other, so they agree. Narrow on purpose. It takes only Clean bindings with no
+   recorded export. Nothing may be changed or untracked under the project, payload or mirror.
+   And git must *list* both the project and a mirror file, so a gitignored project, or a mirror
+   never committed, is not taken as unchanged just because status is silent about it.
+   Mutation-checked on each guard and on the wiring. **Acknowledging a failure still clears the
+   record** (that is deliberate: a retry should export), so a binding already failed on a
+   machine is adopted at the next open, not at once.
+
+   **Seen working on the real case.** A fresh clone of this repository, opened with the dev
+   build, logged *"no export recorded on this machine; the project and its mirror match HEAD,
+   so that is taken as exported"* for all four bindings, the TIA directory project included.
+   The gate then answered *"every tracked project is exported and up to date"*, the catch-up
+   ran nothing, and there were zero `ERR` lines.
+
+   **Three App tests leaned on the defect.** `A_clean_file_shows_itself_and_says_nothing_changed`
+   and two ladder tests opened an untouched, committed project and looked for an object in the
+   Project tree. The project was there only because it read as "not exported". Each test now
+   changes the project file, so the project is listed for a real reason while the object under
+   test stays clean. The two ladder tests had passed some runs and failed others, and that is
+   unexplained: on the real clone, adoption ran for the TIA project every time.
 1. **The failure card never showed the toolchain's words.** `RefreshFailure` shows
    `SyncNarrative.Describe(Failed)` and then `ReasonFor`, whose comment promises the
    toolchain's own words. But every failure path called `ApplyAsync` without a reason, so the

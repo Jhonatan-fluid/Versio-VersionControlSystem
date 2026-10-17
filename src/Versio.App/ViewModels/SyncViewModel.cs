@@ -1003,6 +1003,50 @@ public sealed class SyncViewModel : ObservableObject
         {
             _logger.Info(LogCategory.Lock, $"{decision.BindingId}: {decision.Explanation}");
         }
+
+        await AdoptCommittedStateAsync(ct).ConfigureAwait(true);
+    }
+
+    /// <summary>
+    /// Before the catch-up decides what is stale: a project this machine never exported, but
+    /// which matches HEAD, is taken as exported rather than run through the toolchain.
+    /// </summary>
+    /// <remarks>
+    /// Here, between recovery and the catch-up, because the catch-up is what turned a fresh
+    /// clone's empty record into an export of every project. Git is asked rather than the
+    /// engine, because <c>Versio.Core</c> never touches the outside world. If git cannot answer,
+    /// nothing is adopted and the catch-up exports as it always has, which is the safe side.
+    /// See <c>SyncOrchestrator.AdoptCommittedStateAsync</c> for why this is sound.
+    /// </remarks>
+    private async Task AdoptCommittedStateAsync(CancellationToken ct)
+    {
+        if (_orchestrator is null || _git is null)
+        {
+            return;
+        }
+
+        try
+        {
+            var status = await _git.StatusAsync(ct).ConfigureAwait(true);
+            var listed = await _git.ListWorkingTreeAsync(ct).ConfigureAwait(true);
+
+            var adopted = await _orchestrator.AdoptCommittedStateAsync(
+                    [.. status.Changes.Select(c => c.Path)], listed, ct)
+                .ConfigureAwait(true);
+
+            if (adopted.Count > 0)
+            {
+                _logger.Info(LogCategory.Sync,
+                    $"{adopted.Count} project(s) never exported on this machine match HEAD; " +
+                    "taken as exported, nothing run");
+            }
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _logger.Warn(LogCategory.Sync,
+                $"could not ask git whether the tracked projects match HEAD; they will be " +
+                $"exported instead: {ex.Message}");
+        }
     }
 
     /// <summary>

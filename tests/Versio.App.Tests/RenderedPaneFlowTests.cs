@@ -284,6 +284,12 @@ public sealed class RenderedPaneFlowTests
         repo.Git("add .");
         repo.Git("commit -qm exported");
 
+        // The PROJECT changed; FB_Motor did not. The Project panel lists only projects with
+        // something to review, and since 2026-10-16 an untouched one opened on a fresh clone is
+        // in sync, not "not exported". This test reached FB_Motor only because that defect kept
+        // the project listed. A real project change keeps it listed now, with the object clean.
+        File.WriteAllBytes(Path.Combine(repo.Path, "plc", "Machine.project"), [0x09, 0x09]);
+
         using var shell = Shell();
         await shell.OpenAsync(repo.Path);
 

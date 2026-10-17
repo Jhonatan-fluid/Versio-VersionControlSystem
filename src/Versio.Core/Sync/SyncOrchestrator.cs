@@ -709,6 +709,116 @@ public sealed class SyncOrchestrator
         return adopted;
     }
 
+    /// <summary>
+    /// Take a committed, untouched project as exported when this machine has no record of
+    /// exporting it.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>The fresh-clone half of the restart fix in <see cref="RecoverAsync"/>.</b> That fix
+    /// keeps <c>LastSynced</c> across a restart, because an empty one reads to the commit gate
+    /// as "the project has changed since it was last exported", and every launch then ran the
+    /// toolchain over a mirror that was already right. A fresh clone has no
+    /// <c>.versio/local/state.json</c> at all, so it started from exactly that empty record.
+    /// Seen 2026-10-16: the first open of this repository on a second machine exported all four
+    /// fixture projects, none of which differed from HEAD by a byte. Three of the exports
+    /// failed, and the user was left with a panel full of "not exported" and an empty Changes
+    /// list, and no reason for either.
+    /// </para>
+    /// <para>
+    /// <b>The same trust <see cref="AdoptExternalStateAsync"/> already extends to a checkout.</b>
+    /// A project and its mirror that both match HEAD came out of one commit, and the commit gate
+    /// refuses to record one without the other, so they agree. Nothing needs running. What
+    /// needs to happen is that the engine stops believing it has never seen them.
+    /// </para>
+    /// <para>
+    /// <b>Narrow on purpose.</b> Only a binding that is Clean and has no recorded export: a
+    /// lock, a failure, or a real record is left exactly as it is. Only when git reports
+    /// nothing changed or untracked under the project, its payload or its mirror. And only
+    /// when git lists both the project and at least one mirror file, so a gitignored project,
+    /// or a mirror that was never committed, is not taken as "unchanged" just because status
+    /// is silent about it. Anything else exports as before.
+    /// </para>
+    /// </remarks>
+    /// <param name="changedPaths">Every path git status reports, repo-relative.</param>
+    /// <param name="listedPaths">Every path git lists, tracked or untracked, gitignored excluded.</param>
+    /// <returns>The bindings adopted.</returns>
+    public async Task<IReadOnlyList<string>> AdoptCommittedStateAsync(
+        IReadOnlyList<string> changedPaths, IReadOnlyList<string> listedPaths,
+        CancellationToken ct)
+    {
+        var adopted = new List<string>();
+
+        foreach (var binding in _bindings.Values.Where(b => b.Enabled))
+        {
+            if (!_locks.TryGetValue(binding.Id, out var current)
+                || current.Direction != SyncDirection.Clean
+                || current.LastSynced.ProjectHash.Length > 0)
+            {
+                continue;
+            }
+
+            var owner = new BindingFreshness
+            {
+                BindingId = binding.Id,
+                ProjectPath = binding.ProjectPath,
+                ExportPath = binding.ExportPath,
+                PayloadPath = PayloadFolderRelative(binding),
+                CurrentProjectHash = string.Empty,
+                ExportedProjectHash = string.Empty,
+            };
+
+            var project = binding.ProjectPath.Replace('\\', '/');
+            var mirror = binding.ExportPath.Replace('\\', '/').TrimEnd('/') + "/";
+
+            var untouched = !changedPaths.Any(p => CommitGate.Owns(owner, p));
+            var projectListed = listedPaths.Any(p => string.Equals(
+                p.Replace('\\', '/'), project, StringComparison.OrdinalIgnoreCase));
+            var mirrorListed = listedPaths.Any(p => p.Replace('\\', '/')
+                .StartsWith(mirror, StringComparison.OrdinalIgnoreCase));
+
+            if (!untouched || !projectListed || !mirrorListed)
+            {
+                _log.Debug(LogCategory.Lock,
+                    $"{binding.Id}: no export recorded on this machine, and not adopted from " +
+                    $"HEAD (untouched={untouched}, project listed={projectListed}, " +
+                    $"mirror listed={mirrorListed}); the next gate exports it");
+                continue;
+            }
+
+            var projectHash = await ProjectHashAsync(binding, ct).ConfigureAwait(false);
+            var mirrorHash = await ExportTreeHashAsync(binding, ct).ConfigureAwait(false);
+
+            _locks[binding.Id] = current with
+            {
+                Baseline = current.Baseline with
+                {
+                    ProjectHash = projectHash,
+                    MirrorHash = mirrorHash,
+                },
+                LastSynced = new SyncedState
+                {
+                    ProjectHash = projectHash,
+                    MirrorHash = mirrorHash,
+                },
+            };
+
+            adopted.Add(binding.Id);
+
+            _log.Info(LogCategory.Lock,
+                $"{binding.Id}: no export recorded on this machine; the project and its mirror " +
+                $"match HEAD, so that is taken as exported (project {Short(projectHash)}, " +
+                $"mirror {Short(mirrorHash)}) without running the toolchain");
+        }
+
+        if (adopted.Count > 0)
+        {
+            await PersistAsync(ct).ConfigureAwait(false);
+        }
+
+        return adopted;
+    }
+
     /// <summary>A change was detected. Decide what, if anything, to do about it.</summary>
     /// <remarks>
     /// The loop is the coalescer's contract, and it used to be missing.

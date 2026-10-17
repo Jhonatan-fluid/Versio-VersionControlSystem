@@ -144,6 +144,74 @@ public class SyncOrchestratorTests
             }, CancellationToken.None);
     }
 
+    // --- a fresh clone: no export recorded on this machine ---------------------
+
+    private static readonly string[] Listed = ["plc/A.project", "plc/A/_manifest.json", "plc/A/Simulation.st"];
+
+    [Fact]
+    public async Task A_fresh_clone_that_matches_HEAD_is_taken_as_exported_without_running_anything()
+    {
+        // 2026-10-16: the first open of a clone exported every fixture, none of which had
+        // changed, because the empty record read to the gate as "changed since last export".
+        var h = new Harness();
+
+        var adopted = await h.Orchestrator.AdoptCommittedStateAsync([], Listed, CancellationToken.None);
+
+        Assert.Equal([BindingId], adopted);
+        Assert.Empty(h.Codesys.Jobs);
+        Assert.Equal(SyncDirection.Clean, h.Orchestrator.StateOf(BindingId));
+
+        var gate = await h.Orchestrator.EvaluateCommitGateAsync(CancellationToken.None);
+        Assert.Equal(GateDecision.Proceed, gate.Decision);
+        Assert.NotEmpty(h.Locks.State!.Bindings[BindingId].LastSynced.ProjectHash);
+    }
+
+    [Theory]
+    [InlineData("plc/A.project")]          // the project was edited
+    [InlineData("plc/A/Simulation.st")]    // the mirror was edited
+    public async Task A_fresh_clone_with_a_change_under_the_binding_still_exports(string changed)
+    {
+        var h = new Harness();
+
+        var adopted = await h.Orchestrator.AdoptCommittedStateAsync([changed], Listed, CancellationToken.None);
+
+        Assert.Empty(adopted);
+        var gate = await h.Orchestrator.EvaluateCommitGateAsync(CancellationToken.None);
+        Assert.Equal(GateDecision.ExportRequired, gate.Decision);
+    }
+
+    [Fact]
+    public async Task A_change_elsewhere_in_the_repository_does_not_stop_adoption()
+    {
+        var h = new Harness();
+
+        var adopted = await h.Orchestrator.AdoptCommittedStateAsync(
+            ["README.md", "plc/AB/x.st"], Listed, CancellationToken.None);
+
+        Assert.Equal([BindingId], adopted);
+    }
+
+    [Theory]
+    [InlineData("plc/A/_manifest.json")]   // project not listed: gitignored
+    [InlineData("plc/A.project")]          // mirror never committed
+    public async Task Silence_from_git_about_an_unlisted_side_is_not_taken_as_unchanged(string onlyListed)
+    {
+        var h = new Harness();
+
+        Assert.Empty(await h.Orchestrator.AdoptCommittedStateAsync([], [onlyListed], CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task A_recorded_export_or_a_failure_is_never_overwritten_by_adoption()
+    {
+        var h = new Harness();
+        h.Codesys.EnqueueFailure("boom");
+        await h.ProjectChanged();
+
+        Assert.Empty(await h.Orchestrator.AdoptCommittedStateAsync([], Listed, CancellationToken.None));
+        Assert.Equal(SyncDirection.Failed, h.Orchestrator.StateOf(BindingId));
+    }
+
     // --- the happy path -------------------------------------------------------
 
     [Fact]

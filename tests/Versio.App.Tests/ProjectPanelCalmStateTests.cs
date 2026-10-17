@@ -150,6 +150,24 @@ public sealed class ProjectPanelCalmStateTests
     }
 
     [Fact]
+    public async Task Opening_a_fresh_clone_that_matches_HEAD_exports_nothing()
+    {
+        // 2026-10-16: no .versio/local/state.json on a second machine, so the catch-up took
+        // every committed, untouched fixture as "changed since last export" and ran the
+        // toolchain over all four. Nothing had changed, so nothing should run.
+        using var repo = new TempRepo(identity: true);
+        GivenACommittedProject(repo);
+
+        var toolchain = new CapturingToolchain();
+        using var shell = TestShell.Build(out _, toolchain: toolchain);
+        await shell.OpenAsync(repo.Path);
+
+        Assert.Empty(toolchain.Jobs);
+        Assert.Equal(0, shell.Sync.UnexportedCount);
+        Assert.Equal(string.Empty, shell.Sync.StalenessSummary);
+    }
+
+    [Fact]
     public async Task A_failed_export_is_named_as_a_failure_not_as_unexported_changes()
     {
         // Seen 2026-10-16: four exports failed for reasons outside the projects, which were
@@ -158,6 +176,10 @@ public sealed class ProjectPanelCalmStateTests
         // empty. So the user went looking for changes that did not exist.
         using var repo = new TempRepo(identity: true);
         GivenACommittedProject(repo);
+
+        // A real change, so the open has an export to attempt. An untouched clone is adopted
+        // from HEAD and runs nothing (the test above).
+        File.WriteAllBytes(Path.Combine(repo.Path, "plc", "Machine.project"), [0x09, 0x09]);
 
         using var shell = TestShell.Build(out _, toolchain: new CapturingToolchain
         {
