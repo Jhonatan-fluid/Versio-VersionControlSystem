@@ -19,6 +19,49 @@ produce a diff touching everything else.
 
 ---
 
+### A library default was exported as though the project set it
+
+**2026-10-16, `main`.** Re-exporting RefrigeratorControl and MachineWithMembers under SP22 Patch 4
+added `MAX_CLIENTS: "20"` to `#System_VisuElemXYChart` in both library manager files of each
+project. Nothing in either project had changed. `CodesysCatalogTests` went red, because the
+File-Based Storage copy of RefrigeratorControl has no such parameter, and that copy was saved by
+the same Patch 4 (`.auxiliaries/savecontext_profile`), so this was not a newer toolchain adding
+something.
+
+**Measured, not inferred** (`tools/codesys/Probe-LibraryParams.ps1`, a read-only copy):
+
+| Manager | Stored (`LibManObject._parameterValues`) | `ref.parameters` reports |
+|---|---|---|
+| Application | `#Util` IBLOCKSIZE=22800, `#System_VisuElemCamDisplayer` GC_POINTS_PER_CAM=100, `#System_VisuElem3DPath` GC_POINTS_PER_POLYGON=100, `#System_VisuElemXYChart` **empty** | the three, **plus MAX_CLIENTS=20** |
+| Top-level | CamDisplayer and 3DPath as above; XYChart **absent** | the same, **plus MAX_CLIENTS=20** |
+
+`ScriptLibraryParameters` exposes only `GetEnumerator` to python. The reference's own LibMan
+item stores no values (`ParametersToSerialize` is empty until a save), and `GetParameterValues()`
+merges the manager's stored overrides with the resolved library's declared defaults. The mirror
+was therefore showing a fact about **the library installed on the exporting machine**. The
+Patch 2 export lacked the line for that reason too, not because the project differed. That is
+the same class as the effective-resolution and `managed_library.version` rows DRIVING §5.6
+already refuses to record.
+
+**Fix.** `versio_export.stored_library_parameters` reads the stored table by reflection: the
+wrapper's private `MyItem`, then `_rootLibManObject`, then `_parameterValues`. It hands the table
+to `versio_libraries`, which stays pure and records only what the table holds. Private names
+can change in a CODESYS update, so when the table cannot be read, the merged view is used and
+`LIBRARY_PARAMETERS_EFFECTIVE` is reported for every reference it gives parameters for. Never
+silently.
+
+**Evidence the fix is right.** The fixed script, run through real CODESYS on copies of both
+projects, produced mirrors **identical to HEAD's** (the Patch 2 exports) except for the
+manifest's `toolchainVersion` line. It reported no fallback warning, and all three real
+overrides were present. Three parity tests pin it: stored values win over defaults, a
+reference missing from the table sets nothing, and the fallback warns. Forcing the merged
+path turns two of them red.
+
+**Rejected:** keeping the effective values and labelling them. A library update would then read
+as a project edit on every machine whose installed library differs.
+
+---
+
 ### Four projects "had changes that had not been exported", and none of them had changed
 
 **2026-10-16, `main`, a fresh clone on a second machine.** The owner opened Versio and saw

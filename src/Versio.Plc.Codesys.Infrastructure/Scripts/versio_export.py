@@ -78,6 +78,55 @@ def safe(fn, default=None):
         return default
 
 
+def _reflect(obj, name, field):
+    """A private property or field by name, walking the base types. None when absent."""
+    from System.Reflection import BindingFlags  # type: ignore
+    flags = (BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic
+             | BindingFlags.DeclaredOnly)
+    t = obj.GetType()
+    while t is not None:
+        member = t.GetField(name, flags) if field else t.GetProperty(name, flags)
+        if member is not None:
+            return member.GetValue(obj) if field else member.GetValue(obj, None)
+        t = t.BaseType
+    return None
+
+
+def stored_library_parameters(libman):
+    """The library parameters this manager STORES, placeholder -> {name: value}.
+
+    None when they cannot be read, which versio_libraries reports as
+    LIBRARY_PARAMETERS_EFFECTIVE and answers from the merged view instead.
+
+    Why reflection: ScriptEngine offers `ref.parameters` and nothing else, and that is
+    the stored overrides MERGED with the resolved library's declared defaults - so a
+    Patch 4 export wrote VisuElemXYChart's MAX_CLIENTS = 20 for a project that sets no
+    such thing (versio_libraries.read_parameters has the measurement). The stored table
+    is LibManObject._parameterValues, the same placeholder-keyed shape File-Based
+    Storage writes as libraryParameters. It is reached from any reference: the wrapper's
+    private MyItem is the LibMan item, whose _rootLibManObject is the manager.
+
+    Private names, so this can break on a CODESYS update. That is why it returns None
+    rather than raising, and why the fallback is loud rather than silent.
+    """
+    try:
+        for ref in safe(lambda: list(libman.references), []) or []:
+            item = _reflect(ref, "MyItem", field=False)
+            root = _reflect(item, "_rootLibManObject", field=True) if item is not None else None
+            table = _reflect(root, "_parameterValues", field=True) if root is not None else None
+            if table is None:
+                continue
+            out = {}
+            for kv in table:
+                inner = kv.Value
+                # str is unicode in IronPython; versio_libraries normalises with text_of.
+                out[str(kv.Key)] = dict((str(k), str(inner[k])) for k in inner.Keys)
+            return out
+    except Exception:
+        return None
+    return None
+
+
 # The open project, so a failure anywhere can still close it.
 #
 # CODESYS writes <project>.~u while it holds a project and removes it on close. A script that
@@ -442,7 +491,8 @@ class Exporter(object):
         """
         refs = versio_libraries.read_references(
             obj, safe,
-            on_error=lambda code, detail: self.warn(code, rel_path, detail))
+            on_error=lambda code, detail: self.warn(code, rel_path, detail),
+            stored_parameters=stored_library_parameters(obj))
 
         name = safe(lambda: obj.get_name(), u"Library Manager")
         text = versio_libraries.catalog_document(versio_yaml, name, obj_path, refs)

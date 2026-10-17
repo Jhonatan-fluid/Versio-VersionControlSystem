@@ -66,7 +66,7 @@ marking, duplicate-param keys, and the detail-pane lookup. All of them are in
 | `Versio.App.Tests` | 790 | 10 m 58 s on 2026-10-16 (idleness not checked); 6 m 35 s on 2026-10-10; 8 m 38 s on 2026-10-05; ~3.6 min on 2026-09-22 | nothing |
 | `Versio.Arch.Tests` | 35 | instant | nothing |
 | `Versio.Plc.Codesys.Pure.Tests` | 378 | under a second | nothing |
-| `Versio.Plc.Codesys.Parity.Tests` | 97 | ~15 s | `python` on PATH — skips cleanly without it, so check the count |
+| `Versio.Plc.Codesys.Parity.Tests` | 100 | ~15 s | `python` on PATH — skips cleanly without it, so check the count |
 | `Versio.Plc.TiaPortal.Pure.Tests` | 96 | instant | nothing |
 | `Versio.Plc.TiaPortal.Tests` | 5 | seconds when skipped; minutes when Portal runs the import gate | **real TIA Portal** — skips without Openness membership or LFS content |
 | `Versio.Plc.TwinCat.Pure.Tests` | 23 | instant | nothing |

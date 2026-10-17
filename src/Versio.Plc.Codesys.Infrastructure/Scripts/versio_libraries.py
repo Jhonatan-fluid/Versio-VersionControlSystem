@@ -156,7 +156,7 @@ def parse_managed_name(name):
     return {"title": title, "version": version, "company": company}
 
 
-def extract_reference(ref, safe, on_error=None):
+def extract_reference(ref, safe, on_error=None, stored_parameters=None):
     """Shape one ScriptLibraryReference into the neutral record.
 
     `safe` is the caller's exception-swallowing probe. The ScriptEngine raises for
@@ -232,19 +232,44 @@ def extract_reference(ref, safe, on_error=None):
     rec["qualifiedOnly"] = bool(safe(lambda: ref.qualified_only, False))
     rec["publishSymbols"] = bool(safe(lambda: ref.publish_symbols_in_container, False))
 
-    params = read_parameters(ref, safe)
+    params = read_parameters(ref, safe, stored_parameters, on_error)
     if params:
         rec["parameters"] = params
 
     return rec
 
 
-def read_parameters(ref, safe):
-    """Library parameters, as a name -> IEC expression map.
+def read_parameters(ref, safe, stored_parameters=None, on_error=None):
+    """Library parameters THE PROJECT SETS, as a name -> IEC expression map.
 
     Real project state and worth diffing: the fixture pins Util's IBLOCKSIZE to 22800,
     and a change to that number changes what the machine does.
+
+    NOT `ref.parameters` when it can be helped. MEASURED 2026-10-16 on SP22 Patch 4
+    (tools/codesys/Probe-LibraryParams.ps1): `ref.parameters` is GetParameterValues(),
+    which merges the overrides the project stores with the defaults the RESOLVED
+    library declares. VisuElemXYChart 4.10 declares MAX_CLIENTS = 20, so every Patch 4
+    export wrote MAX_CLIENTS: "20" for a project whose stored table holds nothing for
+    XYChart. The project had not changed, and File-Based Storage, saved by the same
+    Patch 4, does not have the parameter. A value that follows the library installed on
+    the exporting machine is a false diff on every machine whose library differs.
+
+    `stored_parameters` is the owning manager's own table, placeholder name -> {name:
+    value}, read by the caller, because reading it takes .NET reflection and this
+    module stays pure. When the caller has it, that table is the answer: a reference
+    absent from it sets nothing.
+
+    When it is None the table could not be read, which is a newer CODESYS renaming a
+    private field. The merged view is then the only one there is, and it is used, but
+    LIBRARY_PARAMETERS_EFFECTIVE is reported for every reference it gives parameters
+    for: the mirror may now show a library default as if the project set it, and that
+    must be said rather than discovered in a diff.
     """
+    if stored_parameters is not None:
+        stored = stored_parameters.get(_text(safe(lambda: ref.name)) or u"", {})
+        return dict((_text(k), _text(v) if v is not None else u"")
+                    for k, v in stored.items() if _text(k) is not None)
+
     params = safe(lambda: ref.parameters)
     if params is None:
         return {}
@@ -256,10 +281,13 @@ def read_parameters(ref, safe):
             continue
         value = safe(lambda: params[name])
         out[key] = _text(value) if value is not None else u""
+
+    if out and on_error is not None:
+        on_error("LIBRARY_PARAMETERS_EFFECTIVE", safe(lambda: ref.name))
     return out
 
 
-def read_references(libman, safe, on_error=None):
+def read_references(libman, safe, on_error=None, stored_parameters=None):
     """Every reference in one library manager, in the manager's own order.
 
     NOT SORTED, deliberately. The order is the project's, it was measured stable
@@ -269,6 +297,9 @@ def read_references(libman, safe, on_error=None):
     The collection is iterated rather than indexed: `references[i]` looks up by ID and
     raises for a position, which is how the first attempt at this read zero references
     out of a manager that has 21.
+
+    `stored_parameters` is the manager's stored parameter table, or None when it could
+    not be read; see read_parameters for why it matters.
     """
     refs = safe(lambda: libman.references)
     if refs is None:
@@ -279,7 +310,7 @@ def read_references(libman, safe, on_error=None):
     out = []
     try:
         for ref in refs:
-            out.append(extract_reference(ref, safe, on_error))
+            out.append(extract_reference(ref, safe, on_error, stored_parameters))
     except Exception as e:
         # Report a partial read rather than pretending the shorter list is the truth.
         # A library list that silently loses its tail is worse than one that says it
