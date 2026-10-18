@@ -84,6 +84,15 @@ public sealed record PullInfo(int Number, string Title, string Author, DateTimeO
 /// <summary>One pull request with its description (Markdown, possibly empty).</summary>
 public sealed record PullDetail(PullInfo Pull, string Body);
 
+/// <summary>One changed file as GitHub's own diff reports it.</summary>
+/// <param name="Status">GitHub's word: added, removed, modified, renamed, copied, changed, unchanged.</param>
+/// <param name="PreviousPath">Where a renamed or copied file came from.</param>
+/// <param name="Patch">The unified hunks GitHub computed, or null when it gave none (binary, too large, past its limits).</param>
+public sealed record PullFile(string Path, string Status, string? PreviousPath, string? Patch);
+
+/// <summary>GitHub's changed files for a diff, and whether it stopped listing before the end.</summary>
+public sealed record PullFileList(IReadOnlyList<PullFile> Files, bool Truncated);
+
 /// <summary>A published release as the list shows it. Drafts are never listed.</summary>
 public sealed record ReleaseInfo(string Tag, string Name, string Author, DateTimeOffset When, bool Prerelease);
 
@@ -132,6 +141,19 @@ public interface IRepoSource
     /// landed on the base since the branch was cut as if the pull request reverted it.
     /// </remarks>
     Task<RepoResult<string>> GetMergeBaseAsync(RepoAccess access, string owner, string repo, string baseSha, string headSha, CancellationToken ct);
+
+    /// <summary>
+    /// A pull request's changed files with GitHub's patches, as its LIVE head has them, up to
+    /// GitHub's cap of 3,000.
+    /// </summary>
+    /// <remarks>
+    /// Follows the pull request's current head, not any commit the caller names, so a caller that
+    /// needs one revision checks the head before and after (docs/web/PLAN.md, C1).
+    /// </remarks>
+    Task<RepoResult<PullFileList>> GetPullFilesAsync(RepoAccess access, string owner, string repo, int number, CancellationToken ct);
+
+    /// <summary>The changed files between two commits with GitHub's patches: at most 300, by GitHub's limit.</summary>
+    Task<RepoResult<PullFileList>> GetCompareFilesAsync(RepoAccess access, string owner, string repo, string baseSha, string headSha, CancellationToken ct);
 
     /// <summary>The published releases, newest first, up to <paramref name="limit"/>.</summary>
     Task<RepoResult<IReadOnlyList<ReleaseInfo>>> GetReleasesAsync(RepoAccess access, string owner, string repo, int limit, CancellationToken ct);

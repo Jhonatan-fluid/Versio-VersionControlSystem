@@ -109,6 +109,23 @@ internal sealed class TestHost : IAsyncDisposable
         return Client.SendAsync(request);
     }
 
+    /// <summary>A GET with the given cookie header, or none, and extra request headers.</summary>
+    public Task<HttpResponseMessage> GetAsync(string path, string? cookie, IReadOnlyDictionary<string, string> headers)
+    {
+        var request = new HttpRequestMessage(HttpMethod.Get, path);
+        if (cookie is not null)
+        {
+            request.Headers.Add("Cookie", cookie);
+        }
+
+        foreach (var (name, value) in headers)
+        {
+            request.Headers.TryAddWithoutValidation(name, value);
+        }
+
+        return Client.SendAsync(request);
+    }
+
     /// <summary>The value a response set for <paramref name="name"/>, or null.</summary>
     public static string? SetCookie(HttpResponseMessage response, string name) =>
         response.Headers.TryGetValues("Set-Cookie", out var values)

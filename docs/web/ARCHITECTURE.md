@@ -66,7 +66,7 @@ the project file, the IL and every vendor reference (section 7).
 | `Dockerfile` | Multi-stage container: Release publish (builds the page), then a non-root ASP.NET runtime. **Written, not built** (no Docker where it was written) |
 | **`Sources/`** | |
 | `IRepoSource.cs` | The seam for "where repositories come from": `RepoAccess` (whose credential), `RepoResult<T>` (a value or why not), the tree, blob, commit, pull-request and release records. GitLab or Azure DevOps would be new implementations of this |
-| `GitHubRepoSource.cs` | The GitHub implementation: repo, branches (every page, up to 1,000, and says when it was cut), downloads checked against the LFS pointer's hash, commit SHA, recursive tree, raw blobs, commits; follows Git LFS pointers. Maps GitHub's refusals to what the page can say (a bare 403 is "not found") |
+| `GitHubRepoSource.cs` | The GitHub implementation: repo, branches (every page, up to 1,000, and says when it was cut), downloads checked against the LFS pointer's hash, commit SHA, recursive tree, raw blobs, commits, a pull request's merge-base and changed files (paged to GitHub's 3,000; a compare's stop at 300); follows Git LFS pointers. Maps GitHub's refusals to what the page can say (a bare 403 is "not found") |
 | `LfsGuard.cs` | Parses LFS pointers; allows LFS downloads only over https to allowlisted hosts; a connect callback that refuses internal addresses at the moment of connecting; no redirects |
 | **`Auth/`** | |
 | `AccessResolver.cs` | **Decides which credential reads a repository for a request.** First the server's scope (`Web:Repositories`): off the list is "not found" to everyone. Then, signed in: the person's own token. Anonymous: the App's token, only after GitHub says the repository is public |
@@ -76,10 +76,14 @@ the project file, the IL and every vendor reference (section 7).
 | `AuthEndpoints.cs` | `/auth/login`, `/auth/callback`, `/auth/logout` (needs the `X-Versio-Request` header), `/api/me`. `SafeReturn` keeps the return URL on this site |
 | **`Api/`** | |
 | `ApiEndpoints.cs` | `/api/repos` (the scoped server's list, filtered to what the caller can read), `/api/repos/{owner}/{repo}` plus `/branches`, `/tree`, `/view`, `/compare`, `/compare/view`, `/history`, `/pulls`, `/pulls/view`, `/releases`, `/releases/view` (lists carry meta; one Markdown body is rendered when picked), `/raw` (a document's bytes for the Docs tab, under `Documents.cs`'s rules), and the three `/assets/…` routes serving Core's CSS and script. Validates every input, writes an audit line per view, turns failures into status codes. `Loader` does credential → commit → model |
+| `PullEndpoints.cs` | **Pull request review, read side** (PLAN.md, *Pull request review*). `/pulls/{n}/snapshot` resolves and seals one revision; `/files` and `/files/view` take it in the `X-Versio-Snapshot` header and answer from its SHAs. Every request re-authorises first, then opens the snapshot, which must name this repository, pull request and viewer |
 | `Documents.cs` | What the Documentation tab serves raw, and how: the extension allowlist, the content type chosen by us, inline for PDF alone. The self-XSS reasoning is on the class; the threat row is in THREAT-MODEL (Tampering) |
 | **`Repo/`** | |
 | `RepoModel.cs` | `RepoModelLoader` turns one commit into a `RepoModel`: GitHub's file list, `.versio/repo.json`'s bindings, each export's `_manifest.json`, each project's library, task and device catalogs, any File-Based Storage source project, then `RepoExplorerBuilder`. Cached per repository and commit; concurrent loads of one commit share one; each blob fetched once. `NodeFor(path)` is an index; `Objects` is Core's `ObjectIndex`, for type links |
 | `SingleFlight.cs` | Concurrent requests for the same key share one piece of work (model loads, visibility checks, branch resolution) |
+| **`Review/`** | |
+| `ReviewSnapshot.cs` | `ReviewSnapshot` (base tip, merge-base, head, issued, viewer) and `ReviewSnapshots`, which seals it with Data Protection and opens it only for the same repository, pull request and viewer, within 8 hours. Integrity, never access |
+| `PullReview.cs` | Resolves a pull request to a snapshot, re-reading the head and base until three reads agree; builds the file inventory from Versio's own tree diff, with GitHub's patches (for this revision only) deciding where a line comment may go, and renames only as GitHub reports them |
 | **`Rendering/`** | |
 | `ViewService.cs` | **Turns an object into the fragment the page shows**, for one commit or two. Reads every layer of the object, picks the renderer in the desktop's order, applies the size limits and the time budget, adds notices, caches by content |
 | **`Http/`** | |

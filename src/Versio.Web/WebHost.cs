@@ -16,6 +16,7 @@ using Versio.Web.Auth;
 using Versio.Web.Http;
 using Versio.Web.Rendering;
 using Versio.Web.Repo;
+using Versio.Web.Review;
 using Versio.Web.Sources;
 
 namespace Versio.Web;
@@ -120,6 +121,8 @@ public static class WebHost
         builder.Services.AddSingleton<RepoModelLoader>();
         builder.Services.AddSingleton<ViewService>();
         builder.Services.AddSingleton<ApiEndpoints.Loader>();
+        builder.Services.AddSingleton<ReviewSnapshots>();
+        builder.Services.AddSingleton<PullReview>();
 
         var keys = builder.Configuration["Web:KeysDirectory"];
         var protection = builder.Services.AddDataProtection().SetApplicationName("Versio.Web");
@@ -212,6 +215,7 @@ public static class WebHost
         app.UseRateLimiter();
 
         ApiEndpoints.Map(app);
+        PullEndpoints.Map(app);
         AuthEndpoints.Map(app);
 
         // An unknown API route is a 404, never the page's index.html with a 200.

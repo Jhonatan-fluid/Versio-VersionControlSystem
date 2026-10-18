@@ -78,6 +78,12 @@ internal sealed class FakeGitHub : IRepoSource
         /// </summary>
         public Dictionary<(string Base, string Head), string> MergeBases { get; } = [];
 
+        /// <summary>A pull request's changed files as GitHub lists them for its live head.</summary>
+        public Dictionary<int, PullFileList> PullFiles { get; } = [];
+
+        /// <summary>The changed files GitHub's compare lists between two commits.</summary>
+        public Dictionary<(string Base, string Head), PullFileList> CompareFiles { get; } = [];
+
         /// <summary>Published releases, newest first, each with its Markdown notes.</summary>
         public List<(ReleaseInfo Info, string Body)> Releases { get; } = [];
     }
@@ -86,6 +92,14 @@ internal sealed class FakeGitHub : IRepoSource
     private readonly Dictionary<string, byte[]> _blobs = new(StringComparer.Ordinal);
 
     public ConcurrentQueue<(string Repo, string What, RepoAccess Access)> Reads { get; } = new();
+
+    /// <summary>
+    /// Runs before every pull request read, with how many have been made: a test moves the head
+    /// here to land a push between two reads the server meant to agree.
+    /// </summary>
+    public Action<int>? BeforePullRead { get; set; }
+
+    private int _pullReads;
 
     /// <summary>Blobs whose read fails, and how: a rate limit, an outage, for as long as they stay listed.</summary>
     public ConcurrentDictionary<string, RepoFailure> FailingBlobs { get; } = new(StringComparer.Ordinal);
@@ -246,6 +260,7 @@ internal sealed class FakeGitHub : IRepoSource
 
     public Task<RepoResult<PullDetail>> GetPullAsync(RepoAccess access, string owner, string repo, int number, CancellationToken ct)
     {
+        BeforePullRead?.Invoke(Interlocked.Increment(ref _pullReads));
         var r = See(access, owner, repo, "pull " + number);
         if (!r.Ok)
         {
@@ -269,6 +284,32 @@ internal sealed class FakeGitHub : IRepoSource
         return Task.FromResult(r.Value!.MergeBases.TryGetValue((baseSha, headSha), out var mergeBase)
             ? RepoResult<string>.Of(mergeBase)
             : RepoResult<string>.Fail(RepoFailure.NotFound));
+    }
+
+    public Task<RepoResult<PullFileList>> GetPullFilesAsync(RepoAccess access, string owner, string repo, int number, CancellationToken ct)
+    {
+        var r = See(access, owner, repo, "pull-files " + number);
+        if (!r.Ok)
+        {
+            return Task.FromResult(r.As<PullFileList>());
+        }
+
+        return Task.FromResult(r.Value!.PullFiles.TryGetValue(number, out var files)
+            ? RepoResult<PullFileList>.Of(files)
+            : RepoResult<PullFileList>.Fail(RepoFailure.NotFound));
+    }
+
+    public Task<RepoResult<PullFileList>> GetCompareFilesAsync(RepoAccess access, string owner, string repo, string baseSha, string headSha, CancellationToken ct)
+    {
+        var r = See(access, owner, repo, $"compare-files {baseSha}...{headSha}");
+        if (!r.Ok)
+        {
+            return Task.FromResult(r.As<PullFileList>());
+        }
+
+        return Task.FromResult(r.Value!.CompareFiles.TryGetValue((baseSha, headSha), out var files)
+            ? RepoResult<PullFileList>.Of(files)
+            : RepoResult<PullFileList>.Fail(RepoFailure.NotFound));
     }
 
     public Task<RepoResult<IReadOnlyList<ReleaseInfo>>> GetReleasesAsync(RepoAccess access, string owner, string repo, int limit, CancellationToken ct)

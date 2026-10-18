@@ -198,6 +198,61 @@ public sealed class GitHubRepoSource(
             : RepoResult<string>.Fail(RepoFailure.Upstream, "not a commit id");
     }
 
+    /// <remarks>
+    /// Page by page to GitHub's own cap (30 pages of 100 = 3,000 files), stopping at a short
+    /// page. A thirtieth full page is reported as truncated: GitHub lists no further, so a
+    /// pull request that large may have files this list does not name, and the caller must not
+    /// treat the list as the whole change.
+    /// </remarks>
+    public async Task<RepoResult<PullFileList>> GetPullFilesAsync(RepoAccess access, string owner, string repo, int number, CancellationToken ct)
+    {
+        var all = new List<PullFile>();
+        for (var page = 1; page <= PullFilePages; page++)
+        {
+            var one = await GetJsonAsync<IReadOnlyList<PullFile>>(access,
+                $"repos/{E(owner)}/{E(repo)}/pulls/{number.ToString(CultureInfo.InvariantCulture)}/files?per_page={PullFilePageSize}&page={page.ToString(CultureInfo.InvariantCulture)}",
+                root => root.EnumerateArray().Select(ChangedFile).ToList(), ct).ConfigureAwait(false);
+            if (!one.Ok)
+            {
+                return one.As<PullFileList>();
+            }
+
+            all.AddRange(one.Value!);
+            if (one.Value!.Count < PullFilePageSize)
+            {
+                return RepoResult<PullFileList>.Of(new PullFileList(all, false));
+            }
+        }
+
+        return RepoResult<PullFileList>.Of(new PullFileList(all, true));
+    }
+
+    internal const int PullFilePageSize = 100;
+
+    internal const int PullFilePages = 30;
+
+    /// <remarks>
+    /// GitHub's compare lists at most 300 files and its paging pages COMMITS, not files, so there
+    /// is no asking for more. Exactly 300 is reported as truncated: it is the cap, and GitHub does
+    /// not say whether it stopped there or the change happens to be that size.
+    /// </remarks>
+    public async Task<RepoResult<PullFileList>> GetCompareFilesAsync(RepoAccess access, string owner, string repo, string baseSha, string headSha, CancellationToken ct)
+    {
+        var files = await GetJsonAsync<IReadOnlyList<PullFile>>(access, $"repos/{E(owner)}/{E(repo)}/compare/{E(baseSha)}...{E(headSha)}?per_page=1",
+            root => root.TryGetProperty("files", out var f) ? f.EnumerateArray().Select(ChangedFile).ToList() : [], ct).ConfigureAwait(false);
+        return files.Ok
+            ? RepoResult<PullFileList>.Of(new PullFileList(files.Value!, files.Value!.Count >= CompareFileCap))
+            : files.As<PullFileList>();
+    }
+
+    internal const int CompareFileCap = 300;
+
+    private static PullFile ChangedFile(JsonElement f) => new(
+        f.GetProperty("filename").GetString() ?? "",
+        f.GetProperty("status").GetString() ?? "",
+        Text(f, "previous_filename") is { Length: > 0 } previous ? previous : null,
+        Text(f, "patch") is { Length: > 0 } patch ? patch : null);
+
     public Task<RepoResult<IReadOnlyList<ReleaseInfo>>> GetReleasesAsync(RepoAccess access, string owner, string repo, int limit, CancellationToken ct) =>
         GetJsonAsync<IReadOnlyList<ReleaseInfo>>(access,
             $"repos/{E(owner)}/{E(repo)}/releases?per_page={Math.Clamp(limit, 1, 100).ToString(CultureInfo.InvariantCulture)}",

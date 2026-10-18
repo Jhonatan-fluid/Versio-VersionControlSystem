@@ -593,7 +593,7 @@ public static partial class ApiEndpoints
     internal const int ListLimit = 50;
 
     /// <summary>A pull request's description or a release's notes, rendered exactly as a README is.</summary>
-    private static string MarkdownFragment(string markdown) =>
+    internal static string MarkdownFragment(string markdown) =>
         markdown.Length == 0
             ? ""
             : "<div class=\"md-page\">" + MarkdownHtml.Fragment(Markdown.Parse(markdown)) + "</div>";
@@ -609,12 +609,12 @@ public static partial class ApiEndpoints
         && !path.Split('/').Any(s => s is "" or "." or "..")
         && !path.Any(char.IsControl);
 
-    private static PaneView Pane(string? view) => string.Equals(view, "raw", StringComparison.OrdinalIgnoreCase) ? PaneView.Raw : PaneView.Rendered;
+    internal static PaneView Pane(string? view) => string.Equals(view, "raw", StringComparison.OrdinalIgnoreCase) ? PaneView.Raw : PaneView.Rendered;
 
-    private static bool SideBySide(string? layout) => string.Equals(layout, "split", StringComparison.OrdinalIgnoreCase);
+    internal static bool SideBySide(string? layout) => string.Equals(layout, "split", StringComparison.OrdinalIgnoreCase);
 
     /// <summary>The audit trail of who viewed what (security rule 13). A person's login, never a token.</summary>
-    private static void Audit(IVersioLogger log, RepoAccess access, RepoModel model, string path, string? view) =>
+    internal static void Audit(IVersioLogger log, RepoAccess access, RepoModel model, string path, string? view) =>
         log.Info(LogCategory.Web, $"view {access} {model.Owner}/{model.Repo}@{model.CommitSha[..Math.Min(8, model.CommitSha.Length)]} {path} {view ?? "rendered"}");
 
     private static TreeNodeDto Dto(ProjectTreeNode node) =>

@@ -84,12 +84,23 @@ public sealed class GitHubRepoSourceTests : IAsyncLifetime
             @base = new { @ref = "main" }, head = new { @ref = "fix-interlock", sha = new string('d', 40) }, draft = true,
             body = (string?)null,
         }));
-        // The compare answer, trimmed to what the merge-base read uses. A head of 'e's answers a
-        // merge-base that is not a commit id, which must be refused rather than compared against.
+        // A pull request's files in GitHub's pages: 7 has 150 (a full page, then a short one), 8 has
+        // a full page on every page, as a pull request past GitHub's 3,000 cap answers.
+        app.MapGet("/repos/acme/plant/pulls/{number:int}/files", (int number, int per_page, int page) =>
+        {
+            var total = number == 8 ? int.MaxValue : 150;
+            var start = (page - 1) * per_page;
+            return Results.Json(Enumerable.Range(start, Math.Max(0, Math.Min(per_page, total - start))).Select(i => i == 0
+                ? (object)new { filename = "src/New.st", status = "renamed", previous_filename = "src/Old.st", patch = (string?)null }
+                : new { filename = $"f{i}.st", status = "modified", patch = "@@ -1 +1 @@\n-a\n+b" }));
+        });
+        // The compare answer. A head of 'e's answers a merge-base that is not a commit id, which
+        // must be refused rather than compared against; a base starting "full" lists GitHub's cap.
         app.MapGet("/repos/acme/plant/compare/{range}", (string range) => Results.Json(new
         {
             merge_base_commit = new { sha = range.EndsWith(new string('e', 40), StringComparison.Ordinal) ? "not-a-sha" : new string('B', 40) },
-            files = Array.Empty<object>(),
+            files = Enumerable.Range(0, range.StartsWith("full", StringComparison.Ordinal) ? 300 : 2)
+                .Select(i => new { filename = $"c{i}.st", status = "added", patch = "@@ -0,0 +1 @@\n+x" }),
         }));
         app.MapGet("/repos/acme/plant/releases", () => Results.Json(new object[]
         {
@@ -238,6 +249,46 @@ public sealed class GitHubRepoSourceTests : IAsyncLifetime
         Assert.Equal(new string('b', 40), found.Value);
         Assert.Equal(RepoFailure.Upstream, malformed.Failure);
         Assert.Contains(_requests, r => r.Path == $"/repos/acme/plant/compare/{new string('a', 40)}...{new string('d', 40)}?per_page=1");
+    }
+
+    [Fact]
+    public async Task A_pull_requests_files_are_read_across_GitHubs_pages_with_renames_and_missing_patches()
+    {
+        var source = Source();
+
+        var files = await source.GetPullFilesAsync(Alice, "acme", "plant", 7, CancellationToken.None);
+
+        Assert.Equal(150, files.Value!.Files.Count);
+        Assert.False(files.Value.Truncated);
+        Assert.Equal(new PullFile("src/New.st", "renamed", "src/Old.st", null), files.Value.Files[0]);
+        Assert.Equal("@@ -1 +1 @@\n-a\n+b", files.Value.Files[1].Patch);
+    }
+
+    /// <summary>GitHub lists no further than 30 pages; a thirtieth full page is said, not passed off as the whole change.</summary>
+    [Fact]
+    public async Task A_pull_request_past_GitHubs_3000_file_cap_is_reported_cut()
+    {
+        var source = Source();
+
+        var files = await source.GetPullFilesAsync(Alice, "acme", "plant", 8, CancellationToken.None);
+
+        Assert.Equal(3000, files.Value!.Files.Count);
+        Assert.True(files.Value.Truncated);
+        Assert.Equal(30, _requests.Count(r => r.Path.StartsWith("/repos/acme/plant/pulls/8/files", StringComparison.Ordinal)));
+    }
+
+    [Fact]
+    public async Task A_compares_files_stop_at_GitHubs_300_and_the_cap_is_reported_cut()
+    {
+        var source = Source();
+
+        var some = await source.GetCompareFilesAsync(Alice, "acme", "plant", new string('a', 40), new string('d', 40), CancellationToken.None);
+        var full = await source.GetCompareFilesAsync(Alice, "acme", "plant", "full" + new string('a', 36), new string('d', 40), CancellationToken.None);
+
+        Assert.Equal(2, some.Value!.Files.Count);
+        Assert.False(some.Value.Truncated);
+        Assert.Equal(300, full.Value!.Files.Count);
+        Assert.True(full.Value.Truncated);
     }
 
     [Fact]
