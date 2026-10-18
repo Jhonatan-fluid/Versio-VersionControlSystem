@@ -35,6 +35,19 @@ public sealed record CommitGateResult
     /// </summary>
     public IReadOnlyList<string> BlockedPaths { get; init; } = [];
 
+    /// <summary>
+    /// Every relevant binding that has NOT failed and whose project changed since it was last
+    /// exported, whatever the decision.
+    /// </summary>
+    /// <remarks>
+    /// <see cref="StaleBindings"/> cannot answer this: when anything has failed, the gate
+    /// stops at the failure and reports only the failed bindings there, which is right for a
+    /// commit and wrong for a panel. With A failed and B changed, the panel cleared its
+    /// "unexported" state and named only A, so B's pending export was invisible until A was
+    /// dealt with (review, 2026-10-17). Computed independently, for every decision.
+    /// </remarks>
+    public IReadOnlyList<string> UnexportedBindings { get; init; } = [];
+
     public required string Explanation { get; init; }
 
     public bool CanCommit => Decision == GateDecision.Proceed;
@@ -110,6 +123,25 @@ public static class CommitGate
     public static CommitGateResult Evaluate(
         IReadOnlyList<BindingFreshness> bindings,
         IReadOnlyList<string>? includePaths = null)
+    {
+        var decided = Decide(bindings, includePaths);
+
+        var relevant = bindings.Where(b => b.Enabled
+            && (includePaths is null || includePaths.Any(p => Owns(b, p))));
+
+        return decided with
+        {
+            UnexportedBindings = [.. relevant
+                .Where(b => !b.InFailedState
+                            && !string.Equals(b.CurrentProjectHash, b.ExportedProjectHash,
+                                              StringComparison.Ordinal))
+                .Select(b => b.BindingId)],
+        };
+    }
+
+    private static CommitGateResult Decide(
+        IReadOnlyList<BindingFreshness> bindings,
+        IReadOnlyList<string>? includePaths)
     {
         var enabled = bindings.Where(b => b.Enabled).ToList();
         if (enabled.Count == 0)

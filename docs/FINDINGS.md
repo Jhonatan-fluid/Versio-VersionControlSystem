@@ -19,6 +19,46 @@ produce a diff touching everything else.
 
 ---
 
+### Adoption raced the lock and the disk, and a failure hid another project's pending export
+
+**2026-10-17, `main`, second review of the unpushed commits through `9097409`.** Four more,
+all reproduced by the reviewer. Three are in the matches-HEAD adoption, and each recorded
+something as exported that was not.
+
+1. **A lock taken while adoption was hashing was overwritten.** Adoption read the lock,
+   awaited the hashes, and wrote the stale copy back. A text edit that made the binding
+   TextAuthoritative in that window came out Clean. The write is now a compare-and-swap: the
+   lock is replaced only if it is still the exact instance that was read. It runs under a new
+   `_lockWrite` monitor, which ApplyAsync's write now shares, so the check and the write cannot
+   interleave with a transition. **Not fixed, and noted:** ApplyAsync's own read, await, write
+   predates this and has the same shape. The monitor makes the swap atomic; it does not make
+   ApplyAsync's read current.
+2. **A save after the status was adopted.** A clean status proved the files matched HEAD when
+   git looked, and the hash came later. The orchestrator now takes the status as a function
+   and asks twice: status, hash, status, hash. Both statuses must be clean for the binding and
+   both hashes must agree. A save before the second status shows up in it, and a save after it
+   shows up in the second hash.
+3. **A mirror git lists but the disk does not have.** A sparse checkout leaves skip-worktree
+   files listed and absent, and the reviewer confirmed it both in Core and at app startup.
+   Every listed mirror file, and the project file, must exist on disk.
+4. **One failed project hid another's pending export.** Unscoped, the gate stops at a failure
+   and its `StaleBindings` names only the failures. That is right for a commit, but the panel
+   read the same list, so with A failed and B changed it cleared `HasUnexportedChanges` and
+   named only A. `CommitGateResult.UnexportedBindings` now lists every relevant non-failed
+   binding that is behind, for every decision, and the panel counts from it.
+
+**Evidence.** One regression test per finding: four in Core, and an App test that seeds the
+test repository's own `state.json` with A failed. Each was mutation-checked: compare-and-swap
+disabled, second status ignored, second hash ignored, disk check removed, `UnexportedBindings`
+emptied, and the panel reverted to `StaleBindings`. Each turned its test red. Core 1,786.
+
+**Lesson, again.** The first review's fixes were tested against the holes that review named,
+and the second review found four the first missed. The adoption check is a "decide nothing
+changed" function, and those deserve the same adversarial reading as an import: what changes
+between the reads, what is listed but absent, and who else writes the same record.
+
+---
+
 ### The matches-HEAD check trusted a status git never produced, and missed renames
 
 **2026-10-17, `main`, from review of `373a3e9` and `0a4bb92`.** Three findings, all confirmed,

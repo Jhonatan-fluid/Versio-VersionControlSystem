@@ -2080,7 +2080,12 @@ public sealed class SyncViewModel : ObservableObject
             var gate = await _orchestrator.EvaluateCommitGateAsync(CancellationToken.None)
                 .ConfigureAwait(true);
 
-            var stale = new HashSet<string>(gate.StaleBindings, StringComparer.Ordinal);
+            // The failed bindings the gate stops at, AND every other binding that is behind.
+            // StaleBindings alone lists only the failures once anything has failed, so a second
+            // project with a real pending export disappeared from the panel behind the first
+            // one's failure (review, 2026-10-17). UnexportedBindings is computed regardless.
+            var stale = new HashSet<string>(
+                gate.StaleBindings.Concat(gate.UnexportedBindings), StringComparer.Ordinal);
             UnexportedCount = stale.Count;
 
             // Kept, not just counted: the tree needs to know WHICH bindings are behind, so a
@@ -2116,7 +2121,7 @@ public sealed class SyncViewModel : ObservableObject
 
             // Stated in the panel rather than only in a row, because the whole point is that
             // somebody who has not looked at this project all afternoon still finds out.
-            var behind = stale.Count(id => !failed.Contains(id));
+            var behind = gate.UnexportedBindings.Count(id => !failed.Contains(id));
             HasUnexportedChanges = behind > 0;
             StalenessSummary = string.Join(" ", new[]
             {

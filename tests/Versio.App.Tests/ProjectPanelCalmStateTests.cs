@@ -213,6 +213,64 @@ public sealed class ProjectPanelCalmStateTests
     }
 
     [Fact]
+    public async Task A_failed_project_does_not_hide_another_projects_pending_export()
+    {
+        // Review, 2026-10-17: with A failed and B changed, the panel read the gate's
+        // StaleBindings, which lists only the failures once anything has failed. B's pending
+        // export vanished: HasUnexportedChanges was false and the banner named only A.
+        using var repo = new TempRepo(identity: true);
+        var versio = Path.Combine(repo.Path, ".versio");
+        Directory.CreateDirectory(Path.Combine(versio, "local"));
+        File.WriteAllText(Path.Combine(versio, "repo.json"), """
+        {
+          "schema": 1,
+          "bindings": [
+            { "id": "a", "projectPath": "plc/A.project", "exportPath": "plc/A", "enabled": true },
+            { "id": "b", "projectPath": "plc/B.project", "exportPath": "plc/B", "enabled": true }
+          ]
+        }
+        """);
+        foreach (var name in new[] { "A", "B" })
+        {
+            Directory.CreateDirectory(Path.Combine(repo.Path, "plc", name));
+            File.WriteAllBytes(Path.Combine(repo.Path, "plc", name + ".project"), [0x01]);
+            File.WriteAllText(Path.Combine(repo.Path, "plc", name, "Main.st"), "PROGRAM Main\n");
+        }
+
+        repo.Git("add -A");
+        repo.Git("commit -q -m tracked");
+
+        // A failed in an earlier session, on another machine, so recovery re-adopts it.
+        File.WriteAllText(Path.Combine(versio, "local", "state.json"), """
+        {
+          "Schema": 3,
+          "RepoPath": "x",
+          "Owner": { "Machine": "ELSEWHERE", "User": "u", "SessionId": "s", "ProcessId": 1,
+                     "BootId": "2026-01-01T00:00:00+00:00", "RenewedUtc": "2026-01-01T00:00:00+00:00" },
+          "Bindings": {
+            "a": { "Direction": "Failed", "AcquiredUtc": "2026-01-01T00:00:00+00:00",
+                   "Reason": "export failed — the toolchain refused",
+                   "Baseline": { "HeadCommit": "", "ProjectHash": "", "MirrorHash": "" },
+                   "LastSynced": { "ProjectHash": "", "MirrorHash": "" } }
+          }
+        }
+        """);
+
+        // B has a real change, so it is not adopted from HEAD and has an export pending.
+        File.WriteAllBytes(Path.Combine(repo.Path, "plc", "B.project"), [0x02]);
+
+        using var shell = TestShell.Build(out _, toolchain: new CapturingToolchain());
+        await shell.OpenAsync(repo.Path);
+        await shell.RefreshAsync();
+
+        Assert.True(shell.Sync.HasUnexportedChanges,
+            $"summary: '{shell.Sync.StalenessSummary}' rows: " +
+            string.Join(", ", shell.Sync.Projects.Select(p => $"{p.BindingId}={p.State}")));
+        Assert.Contains("failed to sync", shell.Sync.StalenessSummary, StringComparison.Ordinal);
+        Assert.Contains("have not been exported", shell.Sync.StalenessSummary, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task A_failed_export_is_named_as_a_failure_not_as_unexported_changes()
     {
         // Seen 2026-10-16: four exports failed for reasons outside the projects, which were
