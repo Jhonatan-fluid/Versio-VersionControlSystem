@@ -186,6 +186,17 @@ public sealed class ScriptContractTests(ITestOutputHelper output)
             // from a placeholder that never had one.
             "LIBRARY_MANAGED_NAME_UNPARSED",
             "LIBRARY_REFERENCE_UNCLASSIFIED",
+
+            // The stored-parameter table could not be read (a CODESYS update renaming the
+            // private LibManObject._parameterValues), so the reference's parameters came from
+            // ScriptEngine's merged view and may include a library DEFAULT the project does not
+            // set (FINDINGS 2026-10-16, MAX_CLIENTS). The reference and its manager's file are
+            // still written and recorded: nothing is lost, the content may say MORE than the
+            // project holds. That is the "content you cannot fully trust" kind above, not the
+            // losing kind, and the warning is what tells a reviewer to doubt that one line.
+            // Missed when the code was added (commit 0a4bb92, the pure suite was not rerun),
+            // and caught by this test in review, which is exactly its job.
+            "LIBRARY_PARAMETERS_EFFECTIVE",
         ];
 
         foreach (var code in codes)
