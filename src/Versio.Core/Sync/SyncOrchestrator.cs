@@ -1,6 +1,7 @@
 using System.Globalization;
 using Versio.Core.Abstractions;
 using Versio.Core.Bindings;
+using Versio.Core.Git;
 using Versio.Core.Guarding;
 using Versio.Core.Plc;
 using Versio.Core.Locking;
@@ -710,6 +711,20 @@ public sealed class SyncOrchestrator
     }
 
     /// <summary>
+    /// Some enabled binding is Clean with no export recorded on this machine: the only state
+    /// <see cref="AdoptCommittedStateAsync"/> acts on.
+    /// </summary>
+    /// <remarks>
+    /// Public so the caller can skip asking git for a file listing on every refresh when there
+    /// is nothing to decide, which is almost always.
+    /// </remarks>
+    public bool HasUnrecordedBindings => _bindings.Values.Any(b =>
+        b.Enabled
+        && _locks.TryGetValue(b.Id, out var l)
+        && l.Direction == SyncDirection.Clean
+        && l.LastSynced.ProjectHash.Length == 0);
+
+    /// <summary>
     /// Take a committed, untouched project as exported when this machine has no record of
     /// exporting it.
     /// </summary>
@@ -740,14 +755,46 @@ public sealed class SyncOrchestrator
     /// is silent about it. Anything else exports as before.
     /// </para>
     /// </remarks>
-    /// <param name="changedPaths">Every path git status reports, repo-relative.</param>
+    /// <para>
+    /// <b>Two holes review found in the first version (2026-10-17), both of which adopted a
+    /// changed project as exported.</b> It took a list of changed paths, and the caller built
+    /// it from a status that may never have been read: <c>git status</c> failing came back as
+    /// an empty status, so "git said nothing" was taken as "nothing changed". The status is
+    /// taken whole now, and one that was not read adopts nothing. And it looked only at each
+    /// change's destination, so moving <c>plc/A/Simulation.st</c> to <c>archive/</c> removed
+    /// a file from the mirror while every reported path sat outside the binding. A rename
+    /// counts on both ends.
+    /// </para>
+    /// <param name="status">What git status reported; nothing is adopted unless it was read.</param>
     /// <param name="listedPaths">Every path git lists, tracked or untracked, gitignored excluded.</param>
     /// <returns>The bindings adopted.</returns>
     public async Task<IReadOnlyList<string>> AdoptCommittedStateAsync(
-        IReadOnlyList<string> changedPaths, IReadOnlyList<string> listedPaths,
-        CancellationToken ct)
+        GitStatus status, IReadOnlyList<string> listedPaths, CancellationToken ct)
     {
         var adopted = new List<string>();
+
+        if (!HasUnrecordedBindings)
+        {
+            return adopted;
+        }
+
+        if (!status.WasRead)
+        {
+            // Said once, at Info: the safe outcome (the gate exports instead) is also the
+            // costly one, and a run of exports nobody asked for should have an explanation.
+            _log.Info(LogCategory.Lock,
+                $"not adopting anything from HEAD: git status could not be read ({status.Failure}); " +
+                "projects with no export recorded here will be exported instead");
+            return adopted;
+        }
+
+        // Both ends of a rename or copy. The destination alone misses a file moved OUT of a
+        // mirror, which is a change to that binding even though nothing new appears in it.
+        var changedPaths = status.Changes
+            .SelectMany(c => c.OriginalPath is { Length: > 0 } from
+                ? new[] { c.Path, from }
+                : new[] { c.Path })
+            .ToList();
 
         foreach (var binding in _bindings.Values.Where(b => b.Enabled))
         {

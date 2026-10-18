@@ -184,6 +184,30 @@ public sealed class GitCliClientTests(ITestOutputHelper output) : IDisposable
     }
 
     [SkippableFact]
+    public async Task A_status_git_could_not_produce_says_so_rather_than_reading_as_clean()
+    {
+        Skip.IfNot(GitAvailable, "git not on PATH");
+
+        // Not a repository, so `git status` exits 128 with nothing on stdout. The parse of
+        // that is an empty status, which IsClean calls clean; the adoption check treated it as
+        // "nothing changed" (review, 2026-10-17). The failure has to travel with it.
+        var status = await Client.StatusAsync(CancellationToken.None);
+
+        Assert.False(status.WasRead);
+        Assert.False(string.IsNullOrWhiteSpace(status.Failure));
+        output.WriteLine(status.Failure);
+    }
+
+    [SkippableFact]
+    public async Task A_status_git_did_produce_is_marked_as_read()
+    {
+        Skip.IfNot(GitAvailable, "git not on PATH");
+        await InitAsync();
+
+        Assert.True((await Client.StatusAsync(CancellationToken.None)).WasRead);
+    }
+
+    [SkippableFact]
     public async Task A_fresh_repo_reports_an_unborn_branch()
     {
         Skip.IfNot(GitAvailable, "git not on PATH");

@@ -99,6 +99,21 @@ public sealed record GitStatus
     public required BranchInfo Branch { get; init; }
     public IReadOnlyList<FileChange> Changes { get; init; } = [];
 
+    /// <summary>Why git could not report the status, or null when it did.</summary>
+    /// <remarks>
+    /// A failed <c>git status</c> used to come back as an empty status, which is
+    /// indistinguishable from a clean tree. That is harmless for a list that redraws on the
+    /// next refresh, and wrong for anything that DECIDES on "nothing changed": the
+    /// matches-HEAD adoption took a failed status plus a successful file listing as proof
+    /// that a modified project was untouched, and recorded it as exported (review,
+    /// 2026-10-17). Set by the client; null for every status that was actually read, which
+    /// is also the default for a status built by hand.
+    /// </remarks>
+    public string? Failure { get; init; }
+
+    /// <summary>True when git actually answered.</summary>
+    public bool WasRead => Failure is null;
+
     public bool IsClean => Changes.Count == 0;
     public bool HasConflicts => Changes.Any(c => c.IsConflicted);
     public bool HasStagedChanges => Changes.Any(c => c.IsStaged);

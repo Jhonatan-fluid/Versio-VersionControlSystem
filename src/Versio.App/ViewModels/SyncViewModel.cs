@@ -1020,18 +1020,24 @@ public sealed class SyncViewModel : ObservableObject
     /// </remarks>
     private async Task AdoptCommittedStateAsync(CancellationToken ct)
     {
-        if (_orchestrator is null || _git is null)
+        // Nothing to decide is the usual case, and it costs no git call. Held off while git
+        // rewrites the tree, for the reason AdoptExternalStateAsync runs only after it: a
+        // half-written checkout is not a state anybody committed.
+        if (_orchestrator is null || _git is null
+            || !_orchestrator.HasUnrecordedBindings
+            || _orchestrator.IsExternalWriteInProgress)
         {
             return;
         }
 
         try
         {
+            // The whole status, not its paths: the orchestrator refuses one git could not
+            // read, and counts both ends of a rename.
             var status = await _git.StatusAsync(ct).ConfigureAwait(true);
             var listed = await _git.ListWorkingTreeAsync(ct).ConfigureAwait(true);
 
-            var adopted = await _orchestrator.AdoptCommittedStateAsync(
-                    [.. status.Changes.Select(c => c.Path)], listed, ct)
+            var adopted = await _orchestrator.AdoptCommittedStateAsync(status, listed, ct)
                 .ConfigureAwait(true);
 
             if (adopted.Count > 0)
