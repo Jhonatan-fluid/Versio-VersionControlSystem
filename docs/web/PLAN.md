@@ -411,9 +411,12 @@ NuGet, with Dependabot.
 3. **One web app with Outpost or two?** The recommendation is one React codebase with two areas
    (Repositories, Devices) later. For now, ship the viewer alone. It is the smaller, safer half and
    it proves the renderers Outpost needs.
-4. **Merge reviews (later): comments in Versio or on GitHub?** Posting comments back to GitHub
+4. ~~**Merge reviews (later): comments in Versio or on GitHub?** Posting comments back to GitHub
    needs `Pull requests: write` on the App, and each organisation has to approve that again.
-   Keeping them in Versio needs our own store. Not decided now. Step 1's markers serve both.
+   Keeping them in Versio needs our own store. Not decided now. Step 1's markers serve both.~~
+   **Decided by the owner 2026-10-17: on GitHub, in the person's own name.** See *Pull request
+   review* below; the markers turned out to carry identity but not the file lines GitHub anchors
+   comments to, so that section adds them.
 
 Not open, but easy to forget: **npm hygiene.** A committed lockfile, exact versions, as few
 dependencies as possible. Node is needed in the web build only, never in the desktop build.
@@ -504,3 +507,109 @@ Still open here: Okta (2's seam is ready for it: the session is the identity, th
 chosen per request), and the settings UI.
 `VERSIO_WEB_PREVIEW_SCOPED=1` beside `VERSIO_WEB_PREVIEW=1` serves the fixtures scoped, to look
 at the list and the refusal.
+
+
+## Pull request review (2026-10-17)
+
+The owner's next requirement: **review pull requests in Versio Web**, with everything a GitHub
+pull request does — create one, see its status and running checks, comment inline, resolve
+threads, approve, request changes, merge, close — but with "Files changed" drawn as PLC code.
+This turns a read-only viewer into something that writes, so the design was put through two
+external reviews before any code; both are folded in below. Built on branch `PrReview`, slice by
+slice; each slice's state is in STATUS item 10.
+
+**Owner decisions.** Every review action is **the person's own**: writes use the signed-in user's
+GitHub App user token, never an installation token or a bot, so approvals count toward branch
+protection and GitHub's history names them (an Okta-only user, when Okta exists, reads and must
+link GitHub to write). **Comments live on GitHub**: one placed on a rendered element is posted at
+a valid diff line or at file level, with a hidden Versio anchor tag so Versio can put it back.
+Versio keeps no comment store.
+
+**What GitHub cannot do, which the design is shaped around.** Compare lists at most 300 files
+(paging pages commits); `pulls/{n}/files` reaches 3,000 but follows the live head; patches are
+omitted for large or binary files. Submitting a pending review takes no commit — the commit is
+fixed at *creation*. One pending review per person per pull request. Deleting a ref has no
+expected-SHA precondition. Resolving threads, `isOutdated`, `reviewDecision` and
+`mergeStateStatus` are GraphQL only.
+
+### The concepts
+
+- **C1, the review snapshot.** `{owner, repo, number, baseRef, baseSha, mergeBaseSha, headSha,
+  issuedAt, userId}`, sealed with a MAC (Data Protection). The MAC proves integrity, **not
+  access**: every request is re-authorised in full, the token's repository and number must equal
+  the URL's and its user the session's, and it expires with the user token (8 h). The changed-file
+  inventory is **Versio's own tree diff** `mergeBase → head`, complete whatever GitHub's patches
+  cover; commentable lines come from `pulls/{n}/files` only when the live head equals the
+  snapshot's before and after paging, else from compare (≤ 300 files); a file with no patch is
+  listed and drawn, with inline positions unavailable. Threads and comments are paged to
+  completion. A head or base move shows "reload" and keeps drafts — never a mix of revisions.
+  Writes re-check head and base just before mutating; that narrows the race, it cannot close it.
+- **C2, what an approval guarantees.** A review is bound to the commit it was **created** on: a
+  one-shot review is one REST call with `commit_id`; a pending review is created with
+  `commitOID`. Not guaranteed, and not claimed: that the head did not move between our check and
+  GitHub's submit (branch protection's "dismiss stale approvals" covers that; the page reports the
+  move). A pending review is resumed only if it is the viewer's and on the snapshot's head. One on
+  an older commit can be submitted **as historical** (its own route, its commit named), moved to
+  the current head by copy, verify, then delete (the original survives every failure before the
+  delete; deferred if GitHub refuses a second pending review), or opened on GitHub.
+- **C3, placement spans and semantic anchors.** Each drawn element carries the span of **the layer
+  file it was parsed from** — not the file on screen, because `ViewService` draws a table or a
+  ladder from any layer of the object. An anchor is `{kind, sourcePath, side, revision, container,
+  key, fingerprint}`. Matching is Exact (same path, side, container and key, plus same revision or
+  same fingerprint), Moved (same fingerprint, **one** candidate, **inside the same container**),
+  else Ambiguous or Gone, which go to an outdated/unplaced list. Identical rungs are common, so two
+  candidates are never a pick. Only renames GitHub reports are followed. A tag never silently beats
+  a disagreeing current line.
+- **C4, coverage: claim only what is proven.** Spans place comments; they prove nothing about what
+  the drawing shows. A change is **represented** only when the renderer names the specific field
+  it displays and that field differs; anything else — including an ignored attribute on the same
+  XML line as a shown one — is **unknown** and listed as "may not show — check Raw". A renderer
+  without field evidence labels its view **partial**. No percentages until the evidence exists.
+- **C5, uncertain writes.** An operation key per write, reserved atomically before calling
+  GitHub, with its payload hash and a state (pending, then succeeded, failed or unknown). No blind
+  retries: a lost response or a crash is reconciled (Versio's `versio:op` tag in bodies, or a
+  re-read of state), never re-sent. An abandoned pending entry is reconciled first; an expired key
+  is refused, never re-executed. Writes need durable storage (Redis with persistence) unless the
+  server is declared single-instance, whose weaker guarantee is stated.
+- **C6, the host seam.** Spans, anchors, matching and coverage are pure and live in Core;
+  GitHub's hunks, line translation, tag format, REST/GraphQL and the pending-review lifecycle live
+  in `Versio.Web`. No "GitHub" in Core's `Review` namespace — the vendor-seam rule, one level up.
+
+### The safety rules (each has a test)
+
+S1 user tokens only (installation, anonymous and Okta-only callers get 401). S2 installation
+tokens stay minted read-only — the `permissions` field is what stops GitHub granting every App
+permission. S3 two Apps recommended: a write-capable one for user sign-in **whose private key the
+server never holds**, and a read-only Reader for installation tokens, configured whenever a mode
+needs them. S4 every write needs `X-Versio-Request`, JSON, and same-origin by `Sec-Fetch-Site` or
+`Origin`; one `MapWrite` registers every write route and a test fails on any that bypasses it. S5
+no page with controls can be framed. S6 untrusted content (anyone who can comment writes PR
+bodies, comments, check output, labels, branch names) cannot run script: Markdown through Core and
+DOMPurify, check output as text, the CSP unchanged, the Mermaid frame without `allow-same-origin`.
+S7 a GraphQL node id is checked to belong to the URL's repository and pull request before any
+mutation — node ids are not scoped by the URL. S8 per-user limits, body caps, refusals by
+GitHub's message only. S9 `Web:Writes` and `Web:WritableRepositories`, off by default. S10 an
+audit line per write, never bodies or tokens. S11 merge is its own tier (`Web:Writes:Merge`), the
+only use of Contents write; **no admin bypass, ever**.
+
+### Delivery: vertical slices, each closed by a real-GitHub gate
+
+1. Correct, snapshot-consistent, read-only review: the merge-base fix (done 2026-10-17, FINDINGS),
+   C1, the PR page (Conversation / Commits / Checks / Files changed), threads on the Raw diff,
+   rendered views labelled partial.
+2. Conversation and raw inline comments with C5 recovery; the write seam and S1–S4, S7, S9, S10.
+3. Rendered anchors with provenance (C3, C6), parser line info in the pure packs, the markers
+   contract (the drifted `data-network` / `data-element` names reconciled with the code's
+   `data-net` / `data-key`).
+4. Coverage evidence (C4), pending reviews, approval and request changes (C2).
+5. Pull request creation (same-repository branches) and metadata.
+6. Merge, update-branch and auto-merge (with `expectedHeadOid`; it is a *future* merge of this
+   exact commit, described as such) — a separate release gate. **Branch deletion deferred**: no
+   atomic precondition exists, and read-then-delete could lose pushed work; the repository's
+   "Automatically delete head branches" setting does it instead.
+
+Release gates: each slice's mutation checks red when broken; writes on one throwaway repository
+first, merge last; the external penetration test with writes on, before anyone but the owner has
+them. **Later, on purpose:** applying suggestions, re-running checks, atomic branch deletion,
+webhooks, reactions, milestones and projects, fork-head creation, conflict resolution in the
+browser, single-commit review ranges, threads in the desktop app.
