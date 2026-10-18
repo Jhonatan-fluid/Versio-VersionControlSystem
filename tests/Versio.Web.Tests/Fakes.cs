@@ -72,6 +72,12 @@ internal sealed class FakeGitHub : IRepoSource
         /// <summary>Open pull requests, as the pulls tab lists them, each with its Markdown body.</summary>
         public List<(PullInfo Info, string Body)> Pulls { get; } = [];
 
+        /// <summary>
+        /// The merge-base of (base commit, head commit). The fake has no commit graph, so a test
+        /// that compares a pull request says what git would answer; a pair not listed has none.
+        /// </summary>
+        public Dictionary<(string Base, string Head), string> MergeBases { get; } = [];
+
         /// <summary>Published releases, newest first, each with its Markdown notes.</summary>
         public List<(ReleaseInfo Info, string Body)> Releases { get; } = [];
     }
@@ -250,6 +256,19 @@ internal sealed class FakeGitHub : IRepoSource
         return Task.FromResult(found.Count == 0
             ? RepoResult<PullDetail>.Fail(RepoFailure.NotFound)
             : RepoResult<PullDetail>.Of(new PullDetail(found[0].Info, found[0].Body)));
+    }
+
+    public Task<RepoResult<string>> GetMergeBaseAsync(RepoAccess access, string owner, string repo, string baseSha, string headSha, CancellationToken ct)
+    {
+        var r = See(access, owner, repo, $"merge-base {baseSha}...{headSha}");
+        if (!r.Ok)
+        {
+            return Task.FromResult(r.As<string>());
+        }
+
+        return Task.FromResult(r.Value!.MergeBases.TryGetValue((baseSha, headSha), out var mergeBase)
+            ? RepoResult<string>.Of(mergeBase)
+            : RepoResult<string>.Fail(RepoFailure.NotFound));
     }
 
     public Task<RepoResult<IReadOnlyList<ReleaseInfo>>> GetReleasesAsync(RepoAccess access, string owner, string repo, int limit, CancellationToken ct)

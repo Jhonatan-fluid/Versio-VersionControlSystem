@@ -178,6 +178,26 @@ public sealed class GitHubRepoSource(
         GetJsonAsync(access, $"repos/{E(owner)}/{E(repo)}/pulls/{number.ToString(CultureInfo.InvariantCulture)}",
             root => new PullDetail(Pull(root), Text(root, "body")), ct);
 
+    /// <remarks>
+    /// The compare endpoint is the only REST answer that names the merge-base. It also carries up
+    /// to 300 files' patches, which this read discards; <c>per_page=1</c> at least keeps its
+    /// commit list to one. An answer whose merge-base is not a commit id is "upstream", so a
+    /// malformed reply can never be compared against as if it were one.
+    /// </remarks>
+    public async Task<RepoResult<string>> GetMergeBaseAsync(RepoAccess access, string owner, string repo, string baseSha, string headSha, CancellationToken ct)
+    {
+        var result = await GetJsonAsync(access, $"repos/{E(owner)}/{E(repo)}/compare/{E(baseSha)}...{E(headSha)}?per_page=1",
+            root => root.GetProperty("merge_base_commit").GetProperty("sha").GetString() ?? "", ct).ConfigureAwait(false);
+        if (!result.Ok)
+        {
+            return result;
+        }
+
+        return result.Value!.Length == 40 && result.Value.All(Uri.IsHexDigit)
+            ? RepoResult<string>.Of(result.Value.ToLowerInvariant())
+            : RepoResult<string>.Fail(RepoFailure.Upstream, "not a commit id");
+    }
+
     public Task<RepoResult<IReadOnlyList<ReleaseInfo>>> GetReleasesAsync(RepoAccess access, string owner, string repo, int limit, CancellationToken ct) =>
         GetJsonAsync<IReadOnlyList<ReleaseInfo>>(access,
             $"repos/{E(owner)}/{E(repo)}/releases?per_page={Math.Clamp(limit, 1, 100).ToString(CultureInfo.InvariantCulture)}",

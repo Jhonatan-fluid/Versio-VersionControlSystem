@@ -52,6 +52,43 @@ public sealed class PullsReleasesTests
         Assert.Contains("The delay was wrong.", html, StringComparison.Ordinal);
     }
 
+    /// <summary>
+    /// GitHub's diff is three-dot. Until 2026-10-17 the page compared the base branch's tip with the
+    /// head, so commits merged to main after the branch was cut showed as reverted by the pull
+    /// request (FINDINGS 2026-10-17). The view now names the merge-base of the base's tip and the
+    /// head, and the page compares from it.
+    /// </summary>
+    [Fact]
+    public async Task The_view_names_the_merge_base_of_the_base_branchs_tip_and_the_head()
+    {
+        var github = GitHub(out var plant);
+        var mergeBase = new string('b', 40);
+        plant.MergeBases[(plant.Refs["main"], new string('d', 40))] = mergeBase;
+        await using var host = await TestHost.StartAsync(github);
+
+        var shown = Json(await (await host.GetAsync("/api/repos/acme/plant/pulls/view?number=12")).Body());
+
+        Assert.Equal(mergeBase, shown.GetProperty("mergeBase").GetString());
+        Assert.Contains(github.Reads, r => r.What == $"merge-base {plant.Refs["main"]}...{new string('d', 40)}");
+    }
+
+    /// <summary>
+    /// No merge-base is null, never the tip: falling back would bring back exactly the wrong
+    /// comparison. The description still shows.
+    /// </summary>
+    [Fact]
+    public async Task Without_a_merge_base_the_view_says_null_and_still_shows_the_description()
+    {
+        await using var host = await TestHost.StartAsync(GitHub(out _));
+
+        var response = await host.GetAsync("/api/repos/acme/plant/pulls/view?number=12");
+
+        response.AssertStatus(HttpStatusCode.OK);
+        var shown = Json(await response.Body());
+        Assert.Equal(JsonValueKind.Null, shown.GetProperty("mergeBase").ValueKind);
+        Assert.Contains("The delay was wrong.", shown.GetProperty("html").GetString()!, StringComparison.Ordinal);
+    }
+
     [Fact]
     public async Task The_releases_list_carries_the_meta_spelled_and_an_empty_body_is_an_empty_fragment()
     {

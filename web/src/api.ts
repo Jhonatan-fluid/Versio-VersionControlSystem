@@ -138,6 +138,8 @@ export interface PullView {
   baseLabel: string;
   headLabel: string;
   headSha: string;
+  /** Where the changes are measured from (GitHub's three-dot diff); null when GitHub could not say. */
+  mergeBase: string | null;
   draft: boolean;
   html: string;
 }

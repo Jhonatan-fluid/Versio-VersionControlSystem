@@ -84,6 +84,13 @@ public sealed class GitHubRepoSourceTests : IAsyncLifetime
             @base = new { @ref = "main" }, head = new { @ref = "fix-interlock", sha = new string('d', 40) }, draft = true,
             body = (string?)null,
         }));
+        // The compare answer, trimmed to what the merge-base read uses. A head of 'e's answers a
+        // merge-base that is not a commit id, which must be refused rather than compared against.
+        app.MapGet("/repos/acme/plant/compare/{range}", (string range) => Results.Json(new
+        {
+            merge_base_commit = new { sha = range.EndsWith(new string('e', 40), StringComparison.Ordinal) ? "not-a-sha" : new string('B', 40) },
+            files = Array.Empty<object>(),
+        }));
         app.MapGet("/repos/acme/plant/releases", () => Results.Json(new object[]
         {
             new
@@ -217,6 +224,20 @@ public sealed class GitHubRepoSourceTests : IAsyncLifetime
         var r = Assert.Single(releases.Value!);
         Assert.Equal(new ReleaseInfo("v2", "v2", "jo", new DateTimeOffset(2026, 10, 1, 0, 0, 0, TimeSpan.Zero), true), r);
         Assert.Equal("## Notes", release.Value!.Body);
+    }
+
+    [Fact]
+    public async Task The_merge_base_is_read_from_the_three_dot_compare_and_must_be_a_commit_id()
+    {
+        var source = Source();
+
+        var found = await source.GetMergeBaseAsync(Alice, "acme", "plant", new string('a', 40), new string('d', 40), CancellationToken.None);
+        var malformed = await source.GetMergeBaseAsync(Alice, "acme", "plant", new string('a', 40), new string('e', 40), CancellationToken.None);
+
+        // Lower-cased, as every other commit id the server hands on is.
+        Assert.Equal(new string('b', 40), found.Value);
+        Assert.Equal(RepoFailure.Upstream, malformed.Failure);
+        Assert.Contains(_requests, r => r.Path == $"/repos/acme/plant/compare/{new string('a', 40)}...{new string('d', 40)}?per_page=1");
     }
 
     [Fact]

@@ -96,8 +96,14 @@ export function PullsPage({ me }: { me: Me | null }) {
             <div className="pane-tools">
               {/* The whole point of the tab: the PR's changes in the compare view, drawn as the
                   desktop draws them. The head SHA, not the head ref: a fork's branch name means
-                  nothing here, its commit does. */}
-              <Link className="button" to={compareUrl(owner, repo, pull.value.base, pull.value.headSha)}>What changed</Link>
+                  nothing here, its commit does. From the merge-base, never the base branch's tip:
+                  the tip makes every later commit on the base look reverted by this PR. With no
+                  merge-base there is no honest comparison to open, so none is offered. */}
+              {pull.value.mergeBase ? (
+                <Link className="button" to={compareUrl(owner, repo, pull.value.mergeBase, pull.value.headSha)}>What changed</Link>
+              ) : (
+                <span className="muted">What changed is unavailable: GitHub did not say where this branch started.</span>
+              )}
             </div>
           </header>
           <p className="muted">

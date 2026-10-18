@@ -123,6 +123,16 @@ public interface IRepoSource
     /// <summary>One pull request, open or not, with its description.</summary>
     Task<RepoResult<PullDetail>> GetPullAsync(RepoAccess access, string owner, string repo, int number, CancellationToken ct);
 
+    /// <summary>
+    /// The best common ancestor of two commits: what a pull request's changes are measured from.
+    /// </summary>
+    /// <remarks>
+    /// GitHub's "Files changed" is a three-dot diff, <c>base...head</c>: the head against the
+    /// merge-base, not against the base branch's tip. Comparing to the tip shows every commit that
+    /// landed on the base since the branch was cut as if the pull request reverted it.
+    /// </remarks>
+    Task<RepoResult<string>> GetMergeBaseAsync(RepoAccess access, string owner, string repo, string baseSha, string headSha, CancellationToken ct);
+
     /// <summary>The published releases, newest first, up to <paramref name="limit"/>.</summary>
     Task<RepoResult<IReadOnlyList<ReleaseInfo>>> GetReleasesAsync(RepoAccess access, string owner, string repo, int limit, CancellationToken ct);
 

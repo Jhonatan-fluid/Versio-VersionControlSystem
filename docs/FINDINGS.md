@@ -19,6 +19,37 @@ produce a diff touching everything else.
 
 ---
 
+### A pull request's "What changed" compared against the base branch's tip, so later commits on the base read as reverted
+
+**2026-10-17, branch `PrReview`.** Found while planning pull request review for Versio Web
+(`docs/web/PLAN.md`, *Pull request review*), before any of it was built: the MRs tab's "What
+changed" opened `compareUrl(pull.base, pull.headSha)`, where `pull.base` is the base *branch
+name*. The compare view resolves that name to the branch's current tip and runs a **two-dot**
+tree diff (`ViewService.ChangedPaths`) between it and the head. GitHub's "Files changed" is
+**three-dot**: the head against the *merge-base*. The two agree only while nothing has landed on
+the base since the branch was cut. After that, every commit merged to the base showed up in the
+pull request as something the pull request *removes* — a reviewer of PLC code was shown member
+tables and ladder networks changing that the pull request never touched, and GitHub's own diff
+disagreed with ours line for line, which inline review comments (which GitHub anchors to its own
+hunks) could not have survived.
+
+**Fix.** `IRepoSource.GetMergeBaseAsync` reads the merge-base from
+`compare/{baseTip}...{headSha}` (`merge_base_commit.sha`; the only REST answer that names it,
+asked with `per_page=1` because the rest of that answer is discarded; a value that is not forty
+hex characters is "upstream"). `/pulls/view` resolves the base branch to its tip with the
+caller's credential, asks for the merge-base, and returns it as `mergeBase`; the page compares
+`mergeBase...headSha`.
+
+**No merge-base is null, never the tip.** Falling back would quietly bring back exactly the wrong
+answer; the page says the comparison is unavailable and offers no link, and the description still
+shows. `Without_a_merge_base_the_view_says_null_and_still_shows_the_description` holds that:
+mutating `MergeBaseAsync` to return the tip on failure turns it red (checked 2026-10-17, file
+restored and touched).
+
+**Not fixed here, on purpose:** the plain compare view between two refs is still two-dot, which
+is right for "these two commits"; only a pull request's comparison is a question about a branch
+point. Rename detection is the next slice's (`pulls/{n}/files` reports `previous_filename`).
+
 ### The Mermaid frame never drew anywhere, because three defects stacked under one white box
 
 **2026-10-16, branch `ReviewFixes`.** The owner's look at `dev.md` in Chrome showed a white box

@@ -334,7 +334,7 @@ public static partial class ApiEndpoints
                 : Refused(pulls.Failure, http);
         });
 
-        api.MapGet("/pulls/view", async (string owner, string repo, int? number, HttpContext http, AccessResolver access, IRepoSource source, CancellationToken ct) =>
+        api.MapGet("/pulls/view", async (string owner, string repo, int? number, HttpContext http, AccessResolver access, IRepoSource source, IVersioLogger log, CancellationToken ct) =>
         {
             if (!Valid(owner, repo) || number is not (> 0 and <= 100_000_000))
             {
@@ -348,21 +348,27 @@ public static partial class ApiEndpoints
             }
 
             var pull = await source.GetPullAsync(who.Value!, owner, repo, number.Value, ct).ConfigureAwait(false);
-            return pull.Ok
-                ? Results.Ok(new
-                {
-                    number = pull.Value!.Pull.Number,
-                    title = CodeHtml.Spelled(pull.Value.Pull.Title),
-                    author = CodeHtml.Spelled(pull.Value.Pull.Author),
-                    when = pull.Value.Pull.Updated,
-                    @base = pull.Value.Pull.BaseRef,
-                    baseLabel = CodeHtml.Spelled(pull.Value.Pull.BaseRef),
-                    headLabel = CodeHtml.Spelled(pull.Value.Pull.HeadRef),
-                    headSha = pull.Value.Pull.HeadSha,
-                    draft = pull.Value.Pull.Draft,
-                    html = MarkdownFragment(pull.Value.Body),
-                })
-                : Refused(pull.Failure, http);
+            if (!pull.Ok)
+            {
+                return Refused(pull.Failure, http);
+            }
+
+            var mergeBase = await MergeBaseAsync(source, who.Value!, owner, repo, pull.Value!.Pull, log, ct).ConfigureAwait(false);
+            var p = pull.Value.Pull;
+            return Results.Ok(new
+            {
+                number = p.Number,
+                title = CodeHtml.Spelled(p.Title),
+                author = CodeHtml.Spelled(p.Author),
+                when = p.Updated,
+                @base = p.BaseRef,
+                baseLabel = CodeHtml.Spelled(p.BaseRef),
+                headLabel = CodeHtml.Spelled(p.HeadRef),
+                headSha = p.HeadSha,
+                mergeBase,
+                draft = p.Draft,
+                html = MarkdownFragment(pull.Value.Body),
+            });
         });
 
         api.MapGet("/releases", async (string owner, string repo, HttpContext http, AccessResolver access, IRepoSource source, CancellationToken ct) =>
@@ -548,6 +554,40 @@ public static partial class ApiEndpoints
         RepoFailure.Upstream => Results.Json(new { error = "upstream", message = "GitHub could not be reached. Try again shortly." }, statusCode: 502),
         _ => Results.Json(new { error = "not-found", message = "Not found, or not visible to you." }, statusCode: 404),
     };
+
+    /// <summary>
+    /// What a pull request's changes are measured from: the merge-base of its base branch's tip
+    /// and its head commit, or null when GitHub could not say.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Until 2026-10-17 "What changed" compared the base branch's TIP with the head, a two-dot
+    /// diff. Every commit merged to the base after the branch was cut then appeared in the pull
+    /// request as reverted, so a reviewer saw changes the pull request does not make, and GitHub's
+    /// own diff (three-dot, from the merge-base) disagreed with ours line for line (FINDINGS
+    /// 2026-10-17).
+    /// </para>
+    /// <para>
+    /// <b>Null, never the tip, when the merge-base cannot be had.</b> Falling back to the tip
+    /// would quietly bring back exactly the wrong answer this exists to remove; the page says
+    /// the comparison is unavailable instead. The description still shows: one failed read must
+    /// not hide what the pull request says about itself.
+    /// </para>
+    /// </remarks>
+    private static async Task<string?> MergeBaseAsync(IRepoSource source, RepoAccess who, string owner, string repo, PullInfo pull, IVersioLogger log, CancellationToken ct)
+    {
+        var baseTip = await source.ResolveCommitAsync(who, owner, repo, pull.BaseRef, ct).ConfigureAwait(false);
+        var mergeBase = baseTip.Ok
+            ? await source.GetMergeBaseAsync(who, owner, repo, baseTip.Value!, pull.HeadSha, ct).ConfigureAwait(false)
+            : baseTip;
+        if (!mergeBase.Ok)
+        {
+            log.Warn(LogCategory.Web, $"pull {owner}/{repo}#{pull.Number}: no merge-base ({mergeBase.Failure}); its comparison is unavailable");
+            return null;
+        }
+
+        return mergeBase.Value;
+    }
 
     /// <summary>Rows per pulls or releases list: enough for a working set, bounded for the answer.</summary>
     internal const int ListLimit = 50;
