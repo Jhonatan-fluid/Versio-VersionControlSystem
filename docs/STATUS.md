@@ -21,7 +21,7 @@ UX remainder) is built and tested as of 2026-08-25** — UX-6 find boxes, UX-7 `
 Escape, UX-8 copy-a-commit, UX-12 amend-while-unpushed — and its visual half joins the
 eyeball list in item 2. Do not start from `archive/` or a handoff.
 
-**Tests:** 3,625 across twelve projects (plus 35 vitest in `web/`), last counted 2026-10-17
+**Tests:** 3,625 across twelve projects (plus 42 vitest in `web/`), last counted 2026-10-17
 on `ReviewFixes` — Integration 172 and App 783 after the review fixes; the toolchain-gated
 counts (TIA 5, TwinCAT 6, CODESYS 55) are from their last gate runs, not re-run for the count. **The Rendered view of an ST object reads like the IDE (2026-09-20):** no
 `@@` line, one gutter, a Declaration / Implementation divider, and the implementation
@@ -72,7 +72,7 @@ marking, duplicate-param keys, and the detail-pane lookup. All of them are in
 | `Versio.Plc.TwinCat.Pure.Tests` | 23 | instant | nothing |
 | `Versio.Plc.TwinCat.Tests` | 6 | seconds when skipped; ~5 min when XAE runs the import gate | **real TwinCAT XAE** — skips without `TcXaeShell.DTE.17.0` or the fixture |
 | `Versio.Web.Tests` | 206 | a few seconds | nothing — GitHub is faked |
-| `web/` (vitest) | 35 | ~20 s | the pinned Node in `web/.node` |
+| `web/` (vitest) | 42 | ~20 s | the pinned Node in `web/.node` |
 | `Versio.Plc.Codesys.Tests` | 55 | **~30 min**; 41 m 14 s, 55/55, on 2026-10-11 on `WebViewer` | **real CODESYS** |
 
 The first ten are the loop to work in — about thirty seconds plus the UI suite. The last is
@@ -377,7 +377,17 @@ One list. Reorder it; do not copy it into another file.
    safety rules and six slices in [`web/PLAN.md`](web/PLAN.md), *Pull request review*; reviews
    and approvals in the person's own name, comments kept on GitHub. Done so far: **the merge-base
    fix** — "What changed" compared against the base branch's tip, so later base commits read as
-   reverted (FINDINGS 2026-10-17). Next: the review snapshot (C1) and the PR page's read side.
+   reverted (FINDINGS 2026-10-17). **Then slice 1, read-only review, built:** the sealed review
+   snapshot (C1: re-read until head, base and merge-base agree; re-authorised on every use;
+   expires with the user token), the file inventory from Versio's own tree diff with GitHub's
+   patches deciding where line comments may go, the live state polled for "stale", checks (ETag
+   polled), threads paged to completion at both levels, the conversation and commits, and the
+   page — `/owner/repo/pull/N`, threads under their lines on Raw, rendered views labelled partial.
+   Twenty mutations, each killed. Looked at in the built-in browser on the fixture preview
+   (`/acme/plant/pull/1`), desktop and phone. **Its real-GitHub gate is the owner's**: register
+   the App (read permissions are enough for slice 1, plus Pull requests and Checks read) and look
+   at a real pull request whose base moved after branching. Next: slice 2, conversation and raw
+   inline comments with write recovery.
    **Left, all needing the owner or a deployment:**
    - **register the GitHub App** (on GitHub: read-only Contents and Metadata, a callback at
      `/auth/callback`) and run sign-in against real GitHub; until then the server runs

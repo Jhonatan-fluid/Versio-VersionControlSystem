@@ -163,6 +163,118 @@ export interface ReleaseView extends Release {
   html: string;
 }
 
+/**
+ * One revision of a pull request, sealed by the server (docs/web/PLAN.md, *Pull request review*,
+ * C1). Every other review call carries `token`, so everything the page combines describes these
+ * SHAs; the token proves only that the server made it, and grants nothing.
+ */
+export interface ReviewSnapshot {
+  token: string;
+  number: number;
+  title: string;
+  author: string;
+  when: string;
+  draft: boolean;
+  baseRef: string;
+  baseLabel: string;
+  headLabel: string;
+  baseSha: string;
+  mergeBaseSha: string;
+  headSha: string;
+  issuedAt: string;
+  html: string;
+}
+
+/** Why a file takes file-level comments only; null when its lines can take them. */
+export type InlineUnavailable = 'no-patch' | 'list-cut' | 'not-in-github-diff' | 'github-unavailable';
+
+export interface ReviewFile {
+  path: string;
+  label: string;
+  change: 'added' | 'modified' | 'deleted' | 'renamed';
+  previousPath: string | null;
+  previousLabel: string | null;
+  object: string | null;
+  inline: boolean;
+  inlineUnavailable: InlineUnavailable | null;
+}
+
+export interface ReviewFiles {
+  patchSource: 'pull' | 'compare' | 'none';
+  githubListCut: boolean;
+  total: number;
+  truncated: boolean;
+  files: ReviewFile[];
+}
+
+/** A changed file's drawing, and how far it can be trusted: "partial" until its renderer proves coverage (C4). */
+export interface ReviewFileView {
+  view: View;
+  coverage: 'partial' | 'raw';
+}
+
+export interface ReviewStatus {
+  /** The pull request's live head or base is no longer the snapshot's. */
+  stale: boolean;
+  headMoved: boolean;
+  baseMoved: boolean;
+  summaryError: string | null;
+  summary: {
+    state: string;
+    draft: boolean;
+    merged: boolean;
+    mergeable: string;
+    reviewDecision: string | null;
+    labels: { name: string; color: string }[];
+    assignees: string[];
+    reviewers: { login: string; state: string }[];
+  } | null;
+  checksError: string | null;
+  checks: { name: string; status: string; conclusion: string | null; url: string | null; source: string }[] | null;
+}
+
+export interface ReviewComment {
+  id: string;
+  author: string;
+  when: string;
+  /** Core's rendering of untrusted Markdown; the page sanitises it again before placing it. */
+  html: string;
+  commit: string | null;
+  originalCommit: string | null;
+}
+
+export interface ReviewThread {
+  id: string;
+  path: string;
+  pathLabel: string;
+  resolved: boolean;
+  outdated: boolean;
+  /** GitHub's current line, or null when outdated or on the file. */
+  line: number | null;
+  startLine: number | null;
+  side: 'LEFT' | 'RIGHT';
+  originalLine: number | null;
+  subject: 'LINE' | 'FILE';
+  truncated: boolean;
+  comments: ReviewComment[];
+}
+
+export interface ReviewThreads {
+  truncated: boolean;
+  threads: ReviewThread[];
+}
+
+export interface ReviewTimeline {
+  truncated: boolean;
+  items: { kind: string; actor: string; when: string; html: string | null; text: string | null; state: string | null; sha: string | null }[];
+}
+
+export interface ReviewCommits {
+  truncated: boolean;
+  headFound: boolean;
+  commits: { sha: string; headline: string; author: string; when: string; inSnapshot: boolean }[];
+}
+
 export type PaneView = 'rendered' | 'raw';
 export type Layout = 'unified' | 'split';
 
@@ -180,13 +292,22 @@ export function repoBase(owner: string, repo: string): string {
   return `/api/repos/${e(owner)}/${e(repo)}`;
 }
 
+function reviewBase(owner: string, repo: string, number: number): string {
+  return `${repoBase(owner, repo)}/pulls/${number}`;
+}
+
+/** The snapshot rides in a header, never the URL: it stays out of history and any logged query. */
+function sealed(s: ReviewSnapshot): Record<string, string> {
+  return { 'X-Versio-Snapshot': s.token };
+}
+
 /** A document's bytes: the PDF the docs tab embeds, the download behind every other row. */
 export function rawUrl(owner: string, repo: string, ref: string, path: string): string {
   return `${repoBase(owner, repo)}/raw${query({ ref, path })}`;
 }
 
-async function get<T>(url: string, signal?: AbortSignal): Promise<T> {
-  const response = await fetch(url, { credentials: 'same-origin', headers: { Accept: 'application/json' }, signal });
+async function get<T>(url: string, signal?: AbortSignal, headers?: Record<string, string>): Promise<T> {
+  const response = await fetch(url, { credentials: 'same-origin', headers: { Accept: 'application/json', ...headers }, signal });
   if (!response.ok) {
     let body: { error?: string; message?: string } = {};
     try {
@@ -217,6 +338,22 @@ export const api = {
   pulls: (owner: string, repo: string, signal?: AbortSignal) => get<PullList>(`${repoBase(owner, repo)}/pulls`, signal),
   pullView: (owner: string, repo: string, number: number, signal?: AbortSignal) =>
     get<PullView>(`${repoBase(owner, repo)}/pulls/view${query({ number: String(number) })}`, signal),
+  review: {
+    snapshot: (owner: string, repo: string, number: number, signal?: AbortSignal) =>
+      get<ReviewSnapshot>(`${reviewBase(owner, repo, number)}/snapshot`, signal),
+    files: (owner: string, repo: string, s: ReviewSnapshot, signal?: AbortSignal) =>
+      get<ReviewFiles>(`${reviewBase(owner, repo, s.number)}/files`, signal, sealed(s)),
+    fileView: (owner: string, repo: string, s: ReviewSnapshot, path: string, view: PaneView, layout: Layout, signal?: AbortSignal) =>
+      get<ReviewFileView>(`${reviewBase(owner, repo, s.number)}/files/view${query({ path, view, layout })}`, signal, sealed(s)),
+    status: (owner: string, repo: string, s: ReviewSnapshot, signal?: AbortSignal) =>
+      get<ReviewStatus>(`${reviewBase(owner, repo, s.number)}/status`, signal, sealed(s)),
+    threads: (owner: string, repo: string, s: ReviewSnapshot, signal?: AbortSignal) =>
+      get<ReviewThreads>(`${reviewBase(owner, repo, s.number)}/threads`, signal, sealed(s)),
+    timeline: (owner: string, repo: string, s: ReviewSnapshot, signal?: AbortSignal) =>
+      get<ReviewTimeline>(`${reviewBase(owner, repo, s.number)}/timeline`, signal, sealed(s)),
+    commits: (owner: string, repo: string, s: ReviewSnapshot, signal?: AbortSignal) =>
+      get<ReviewCommits>(`${reviewBase(owner, repo, s.number)}/commits`, signal, sealed(s)),
+  },
   releases: (owner: string, repo: string, signal?: AbortSignal) => get<ReleaseList>(`${repoBase(owner, repo)}/releases`, signal),
   releaseView: (owner: string, repo: string, tag: string, signal?: AbortSignal) =>
     get<ReleaseView>(`${repoBase(owner, repo)}/releases/view${query({ tag })}`, signal),

@@ -596,7 +596,12 @@ only use of Contents write; **no admin bypass, ever**.
 
 1. Correct, snapshot-consistent, read-only review: the merge-base fix (done 2026-10-17, FINDINGS),
    C1, the PR page (Conversation / Commits / Checks / Files changed), threads on the Raw diff,
-   rendered views labelled partial.
+   rendered views labelled partial. **Built 2026-10-17; its real-GitHub gate waits for the App.**
+   Two things moved from this slice: drawing a renamed file against its old path (the tree diff
+   sees a delete and an add; GitHub's rename joins them in the list, but `ViewService` reads one
+   path) goes to slice 3 with the anchors, which need the same old-to-new path mapping; and a
+   rendered view's threads are listed rather than placed, because its row numbers are section
+   lines, not the file lines GitHub means — placing by them would put a comment on the wrong line.
 2. Conversation and raw inline comments with C5 recovery; the write seam and S1–S4, S7, S9, S10.
 3. Rendered anchors with provenance (C3, C6), parser line info in the pure packs, the markers
    contract (the drifted `data-network` / `data-element` names reconciled with the code's

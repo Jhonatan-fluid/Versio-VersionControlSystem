@@ -327,9 +327,15 @@ internal sealed class FakeGitHub : IRepoSource
             : RepoResult<PullFileList>.Fail(RepoFailure.NotFound));
     }
 
+    /// <summary>
+    /// The fixture preview only: answer GraphQL without a token, so a signed-out preview shows
+    /// threads. Every test leaves it off, because GitHub never does this.
+    /// </summary>
+    public bool PreviewGraphWithoutToken { get; set; }
+
     /// <summary>GitHub's GraphQL refuses a caller without a token outright; so does this.</summary>
     private RepoResult<FakeRepo> SeeGraph(RepoAccess access, string owner, string repo, string what) =>
-        access.Token is null ? RepoResult<FakeRepo>.Fail(RepoFailure.Unauthorized) : See(access, owner, repo, what);
+        access.Token is null && !PreviewGraphWithoutToken ? RepoResult<FakeRepo>.Fail(RepoFailure.Unauthorized) : See(access, owner, repo, what);
 
     public Task<RepoResult<PullSummary>> GetPullSummaryAsync(RepoAccess access, string owner, string repo, int number, CancellationToken ct)
     {

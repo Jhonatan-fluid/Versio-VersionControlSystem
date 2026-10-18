@@ -21,8 +21,8 @@ namespace Versio.Web.Tests;
 /// <para>
 /// and open http://127.0.0.1:5199/acme/plant. Branch <c>main</c> is the fixtures as committed;
 /// <c>next</c> changes one struct default and one program line, so
-/// /acme/plant/compare/main...next has something to show. It serves for 25 minutes; stop the
-/// run to end it sooner.
+/// /acme/plant/compare/main...next has something to show, and /acme/plant/pull/1 is a whole
+/// review of it. It serves for 25 minutes; stop the run to end it sooner.
 /// </para>
 /// </remarks>
 public sealed class FixturePreview
@@ -66,6 +66,47 @@ public sealed class FixturePreview
         // releases, one of them a pre-release with no notes.
         repo.Pulls.Add((new PullInfo(1, "Lower the simulated cooling step", "sam", DateTimeOffset.Now.AddHours(-3), "main", "cooling-step", next, Draft: false),
             "## Why\n\nThe simulation cooled twice as fast as the plant, so every soak test passed that should not have.\n"));
+        // The review page (/acme/plant/pull/1) has a whole review to look at: the merge-base,
+        // GitHub's patches, a thread on each side of the changed simulation line (placed under
+        // their rows on Raw), one outdated thread (listed, not placed), a hostile comment that
+        // must draw as text, checks in three states and a conversation.
+        var simulation = "fixtures/projects/MachineWithMembers/Device/Plc Logic/Application/Simulation.st";
+        var alarm = "fixtures/projects/RefrigeratorControl/Device/Plc Logic/Application/Library/Alarm/DUTs/ST_AlarmSettings.st";
+        repo.MergeBases[(repo.Refs["main"], next)] = repo.Refs["main"];
+        repo.PullFiles[1] = new PullFileList(
+        [
+            new PullFile(alarm, "modified", null, "@@ -9 +9 @@\n-\tEnable\t\t\t\t: BOOL := TRUE;\n+\tEnable\t\t\t\t: BOOL := FALSE;"),
+            new PullFile(simulation, "modified", null, "@@ -22 +22 @@\n-x\n+y"),
+        ], false);
+        var when = DateTimeOffset.Now.AddHours(-2);
+        repo.Threads[1] = new ReviewThreadList(
+        [
+            new ReviewThread("T-new", simulation, false, false, 22, null, "RIGHT", 22, "LINE",
+            [
+                new ReviewComment("C1", "sam", "Half the step: is **0.2** right for the plant's cooling, or is that the soak rig?", when, next, next),
+                new ReviewComment("C2", "jo", "Plant data: 0.2/s. The rig was 0.1.\n\n<script>alert('this must draw as text')</script>", when.AddMinutes(9), next, next),
+            ], false),
+            new ReviewThread("T-old", simulation, true, false, 22, null, "LEFT", 22, "LINE",
+                [new ReviewComment("C3", "sam", "This old value is the bug.", when, next, next)], false),
+            new ReviewThread("T-gone", alarm, false, true, null, null, "RIGHT", 4, "LINE",
+                [new ReviewComment("C4", "sam", "An earlier remark on a line that has since moved.", when.AddDays(-1), null, next)], false),
+        ], false);
+        repo.Checks[next] =
+        [
+            new CheckInfo("build", "completed", "success", "https://github.com/acme/plant/actions/runs/1", "check-run"),
+            new CheckInfo("plc-compile", "completed", "failure", "https://github.com/acme/plant/actions/runs/2", "check-run"),
+            new CheckInfo("soak-test", "in_progress", null, null, "check-run"),
+        ];
+        repo.Timelines[1] = new Timeline(
+        [
+            new TimelineItem("commit", "sam", when, "Lower the simulated cooling step", null, next),
+            new TimelineItem("comment", "jo", when.AddMinutes(20), "Soak tests went green with this. **Please check** the interlock still trips.", null, null),
+            new TimelineItem("review", "lee", when.AddMinutes(40), "", "CHANGES_REQUESTED", null),
+        ], false);
+        repo.PullCommits[1] = new PullCommitList([new PullCommit(next, "Lower the simulated cooling step", "sam", when)], false);
+        repo.PullPeople[1] = ([new PullLabel("plc", "1a7f37"), new PullLabel("needs-soak", "9a6700")], [new PullReviewer("lee", "CHANGES_REQUESTED"), new PullReviewer("controls", "REQUESTED")]);
+        github.PreviewGraphWithoutToken = true;
+
         repo.Releases.Add((new ReleaseInfo("v1.1", "Cooling fixes", "sam", DateTimeOffset.Now.AddDays(-2), Prerelease: false),
             "## Changed\n\n- The alarm defaults\n- The simulation step\n"));
         repo.Releases.Add((new ReleaseInfo("v1.2-rc1", "Next cut", "sam", DateTimeOffset.Now.AddDays(-1), Prerelease: true), ""));

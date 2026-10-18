@@ -1,7 +1,20 @@
-import { useEffect, useMemo, useRef } from 'react';
+import type { ReactNode } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { hasLadder, linkTarget, mermaidBlocks, sanitize } from '../fragment';
 
 let ladderRun = 0;
+
+/**
+ * Something the page draws BETWEEN the fragment's rows — a review thread under its line — placed
+ * after the row that `selector` finds. The selector is built by the page from the renderers'
+ * data-* markers, never from text a fragment carries.
+ */
+export interface Annotation {
+  key: string;
+  selector: string;
+  content: ReactNode;
+}
 
 interface Props {
   html: string;
@@ -13,6 +26,10 @@ interface Props {
   line: number | null;
   /** Called with a line number when its gutter is clicked, to put it in the URL. */
   onLine: (line: number) => void;
+  /** Drawn after the rows they name; see {@link Annotation}. */
+  annotations?: Annotation[];
+  /** Which annotations found their row, so the page can list the rest rather than lose them. */
+  onPlaced?: (keys: string[]) => void;
 }
 
 /**
@@ -20,9 +37,45 @@ interface Props {
  * fragment is sanitised (the third wall), placed, and then only read, through the data-* markers
  * the renderers promise.
  */
-export function FragmentHost({ html, path, onOpenPath, line, onLine }: Props) {
+export function FragmentHost({ html, path, onOpenPath, line, onLine, annotations, onPlaced }: Props) {
   const host = useRef<HTMLDivElement>(null);
   const clean = useMemo(() => sanitize(html), [html]);
+  const [slots, setSlots] = useState<Map<string, HTMLElement>>(() => new Map());
+  const placedReport = useRef(onPlaced);
+  placedReport.current = onPlaced;
+  const wanted = annotations ?? [];
+  const wantedKey = wanted.map((a) => `${a.key}\u0000${a.selector}`).join('\u0001');
+
+  // Annotations: an empty slot is inserted after each named row, and React draws the content
+  // into it through a portal. React still draws nothing INSIDE the fragment — the slots sit
+  // between its rows, the renderers' markup is untouched, and the slots go when the fragment
+  // does. A selector that finds nothing is reported, never dropped: a thread whose line is not
+  // in this drawing must still be shown somewhere (docs/web/PLAN.md, C3's unplaced list).
+  useLayoutEffect(() => {
+    const root = host.current;
+    const made = new Map<string, HTMLElement>();
+    if (root) {
+      for (const a of wanted) {
+        const target = root.querySelector<HTMLElement>(a.selector);
+        if (!target) {
+          continue;
+        }
+        let after: Element = target.closest('.cd-drow, .cd-split, .cd-row') ?? target;
+        // Several threads on one row stack in the order given.
+        while (after.nextElementSibling?.classList.contains('thread-slot')) {
+          after = after.nextElementSibling;
+        }
+        const slot = document.createElement('div');
+        slot.className = 'thread-slot';
+        after.after(slot);
+        made.set(a.key, slot);
+      }
+    }
+    setSlots(made);
+    placedReport.current?.([...made.keys()]);
+    return () => made.forEach((slot) => slot.remove());
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [clean, wantedKey]);
 
   // The ladder's navigation script works over the .ld-page it finds when it runs, and a page
   // like this places fragments long after load. It is re-run per fragment, from this origin, as
@@ -141,5 +194,13 @@ export function FragmentHost({ html, path, onOpenPath, line, onLine }: Props) {
     }
   }
 
-  return <div ref={host} className="fragment" onClick={onClick} dangerouslySetInnerHTML={{ __html: clean }} />;
+  return (
+    <>
+      <div ref={host} className="fragment" onClick={onClick} dangerouslySetInnerHTML={{ __html: clean }} />
+      {wanted.map((a) => {
+        const slot = slots.get(a.key);
+        return slot ? createPortal(a.content, slot, a.key) : null;
+      })}
+    </>
+  );
 }

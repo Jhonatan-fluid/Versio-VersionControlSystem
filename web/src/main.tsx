@@ -8,6 +8,7 @@ import { RepoPage } from './pages/RepoPage';
 import { ComparePage } from './pages/ComparePage';
 import { DocsPage } from './pages/DocsPage';
 import { HistoryPage } from './pages/HistoryPage';
+import { PullPage } from './pages/PullPage';
 import { PullsPage } from './pages/PullsPage';
 import { ReleasesPage } from './pages/ReleasesPage';
 import './styles/app.css';
@@ -25,6 +26,7 @@ function App() {
       <Route path="/:owner/:repo/history/:ref/*" element={<HistoryPage me={who} />} />
       <Route path="/:owner/:repo/docs/:ref" element={<DocsPage me={who} />} />
       <Route path="/:owner/:repo/pulls" element={<PullsPage me={who} />} />
+      <Route path="/:owner/:repo/pull/:number" element={<PullPage me={who} />} />
       <Route path="/:owner/:repo/releases" element={<ReleasesPage me={who} />} />
       <Route path="*" element={<Home me={who} />} />
     </Routes>

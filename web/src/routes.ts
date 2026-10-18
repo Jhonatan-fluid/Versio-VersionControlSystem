@@ -53,6 +53,24 @@ export function pullsUrl(owner: string, repo: string, number?: number): string {
   return `${repoUrl(owner, repo)}/pulls${number ? `?n=${number}` : ''}`;
 }
 
+/**
+ * One pull request's review. ?tab= picks Conversation, Commits, Checks or Files changed; on
+ * Files changed, ?path= picks the file. The revision is not in the URL on purpose: a pasted link
+ * opens the pull request as it is NOW, and says so if that is not what the sender saw.
+ */
+export function pullUrl(owner: string, repo: string, number: number, tab?: string, path?: string, params?: URLSearchParams): string {
+  const p = new URLSearchParams(params);
+  for (const [key, value] of [['tab', tab], ['path', path]] as const) {
+    if (value) {
+      p.set(key, value);
+    } else {
+      p.delete(key);
+    }
+  }
+  const q = p.toString() ? `?${p.toString()}` : '';
+  return `${repoUrl(owner, repo)}/pull/${number}${q}`;
+}
+
 /** Releases are repository-level, so no ref; ?tag= selects one. */
 export function releasesUrl(owner: string, repo: string, tag?: string): string {
   return `${repoUrl(owner, repo)}/releases${tag ? `?tag=${seg(tag)}` : ''}`;

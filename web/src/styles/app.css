@@ -189,6 +189,40 @@ button { font: inherit; color: inherit; }
 .md-page th { background: var(--surface-sunken); text-align: left; }
 .md-page a[data-href] { color: var(--accent); cursor: pointer; text-decoration: underline; }
 
+/* Pull request review (docs/web/PLAN.md, *Pull request review*). */
+.button-quiet { display: inline-block; border: 1px solid var(--border); border-radius: 6px; padding: 5px 12px; color: var(--fg); text-decoration: none; background: var(--surface-card); }
+.button-quiet:hover { background: var(--surface-sunken); }
+.change-renamed { color: var(--accent); }
+.review-tabs { display: flex; flex-direction: column; border-bottom: 1px solid var(--border); padding: 4px 0; }
+.review-count { margin-left: auto; font-size: 11px; border: 1px solid var(--border); border-radius: 999px; padding: 0 6px; }
+.review-flag { font-size: 11px; margin-left: 4px; }
+.review-summary p { margin: 0 0 6px; }
+.review-revision { font-size: 12px; margin: 0 0 8px; }
+.review-heading { font: 600 13px var(--ui); margin: 20px 0 8px; }
+.review-file { font: 600 14px var(--ui); margin: 0; overflow-wrap: anywhere; }
+.review-labels { display: flex; flex-wrap: wrap; gap: 4px; }
+.label { border: 1px solid var(--border); border-radius: 999px; padding: 0 8px; font-size: 12px; }
+.state { font: 600 12px var(--ui); border-radius: 999px; padding: 2px 10px; color: var(--accent-fg); background: var(--muted); }
+.state-open { background: #1a7f37; }
+.state-merged { background: #8250df; }
+.state-closed { background: var(--danger); }
+.timeline { list-style: none; margin: 0; padding: 0; border-left: 2px solid var(--border); }
+.timeline li { padding: 6px 0 10px 14px; }
+.timeline-meta { display: block; font-size: 13px; }
+.timeline-text { display: block; overflow-wrap: anywhere; }
+.commit-new { background: var(--notice-bg); }
+.checks li { display: flex; gap: 10px; align-items: baseline; padding: 6px 0; border-bottom: 1px solid var(--border); }
+.check-name { font-weight: 600; flex: 1; overflow-wrap: anywhere; }
+.check-success .check-mark { color: #1a7f37; }
+.check-failure .check-mark, .check-timed_out .check-mark, .check-cancelled .check-mark, .check-action_required .check-mark, .check-error .check-mark { color: var(--danger); }
+.thread-slot { margin: 4px 0 8px 48px; max-width: 900px; }
+.thread { border: 1px solid var(--border); border-radius: 6px; background: var(--surface-card); padding: 6px 10px; margin: 0 0 8px; font-family: var(--ui); white-space: normal; }
+.thread.is-resolved { opacity: 0.75; }
+.thread-head { font-size: 12px; margin-bottom: 4px; }
+.thread-comment + .thread-comment { border-top: 1px solid var(--border); margin-top: 6px; padding-top: 6px; }
+.thread-meta { display: block; font-size: 12px; }
+.unplaced { margin: 0 0 12px; }
+
 /* Phone width: the panel becomes a drawer over the pane, opened from the header. The rail
    stays — it is 46 px, and it is the only navigation between the three views. */
 @media (max-width: 760px) {

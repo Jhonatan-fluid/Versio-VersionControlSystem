@@ -4,7 +4,7 @@ import { api } from '../api';
 import { FragmentHost } from '../components/FragmentHost';
 import { ErrorPanel } from '../components/Pane';
 import { Workbench } from '../components/Workbench';
-import { blobUrl, compareUrl, treeUrl } from '../routes';
+import { blobUrl, compareUrl, pullUrl, treeUrl } from '../routes';
 import { useAsync } from '../useAsync';
 
 /**
@@ -99,8 +99,11 @@ export function PullsPage({ me }: { me: Me | null }) {
                   nothing here, its commit does. From the merge-base, never the base branch's tip:
                   the tip makes every later commit on the base look reverted by this PR. With no
                   merge-base there is no honest comparison to open, so none is offered. */}
+              {/* The review: every file drawn, with its threads, checks and conversation, all read
+                  against one revision. "What changed" stays for a quick look at the diff alone. */}
+              <Link className="button" to={pullUrl(owner, repo, pull.value.number)}>Review</Link>
               {pull.value.mergeBase ? (
-                <Link className="button" to={compareUrl(owner, repo, pull.value.mergeBase, pull.value.headSha)}>What changed</Link>
+                <Link className="button-quiet" to={compareUrl(owner, repo, pull.value.mergeBase, pull.value.headSha)}>What changed</Link>
               ) : (
                 <span className="muted">What changed is unavailable: GitHub did not say where this branch started.</span>
               )}
