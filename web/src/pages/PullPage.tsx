@@ -5,6 +5,7 @@ import { ApiError, api } from '../api';
 import type { Annotation } from '../components/FragmentHost';
 import { FragmentHost } from '../components/FragmentHost';
 import { ErrorPanel } from '../components/Pane';
+import { ActionButton, CommentBox } from '../components/ReviewWrite';
 import { Workbench } from '../components/Workbench';
 import { blobUrl, pullUrl, pullsUrl, treeUrl } from '../routes';
 import type { Async } from '../useAsync';
@@ -68,6 +69,21 @@ function usePolled<T>(load: ((signal: AbortSignal) => Promise<T>) | null, key: s
 
 const never = () => new Promise<never>(() => {});
 
+/**
+ * What a write control needs: where to post, how to say the page should re-read, and how to say the
+ * pull request moved. Null when nothing may be written (writes off, or signed out): then no control
+ * is drawn at all (S9).
+ */
+interface Writer {
+  owner: string;
+  repo: string;
+  snap: ReviewSnapshot;
+  /** Prefix for draft slots: one pull request's drafts never land in another's boxes. */
+  slots: string;
+  onChanged: () => void;
+  onStale: () => void;
+}
+
 /** Where a thread sits in a Raw text diff: GitHub's side and line are the diff rows' own markers. */
 export function threadSelector(thread: ReviewThread): string | null {
   if (thread.subject !== 'LINE' || thread.line === null || !Number.isInteger(thread.line)) {
@@ -96,6 +112,10 @@ export function PullPage({ me }: { me: Me | null }) {
   const view: PaneView = search.get('view') === 'raw' ? 'raw' : 'rendered';
   const layout: Layout = search.get('layout') === 'split' ? 'split' : 'unified';
   const [loads, setLoads] = useState(0);
+  // Bumped by every successful write, so threads and the conversation are read again.
+  const [changed, setChanged] = useState(0);
+  // A write was refused because the pull request moved: the same banner as the poll's.
+  const [staleWrite, setStaleWrite] = useState(false);
 
   const info = useAsync((s) => api.repo(owner, repo, s), [owner, repo]);
   const branches = useAsync((s) => api.branches(owner, repo, s), [owner, repo]);
@@ -106,8 +126,8 @@ export function PullPage({ me }: { me: Me | null }) {
 
   const status = usePolled(snap ? (s) => api.review.status(owner, repo, snap, s) : null, token);
   const files = useAsync((s) => (snap ? api.review.files(owner, repo, snap, s) : never()), [token]);
-  const threads = useAsync((s) => (snap ? api.review.threads(owner, repo, snap, s) : never()), [token]);
-  const timeline = useAsync((s) => (snap && tab === 'conversation' ? api.review.timeline(owner, repo, snap, s) : never()), [token, tab]);
+  const threads = useAsync((s) => (snap ? api.review.threads(owner, repo, snap, s) : never()), [token, changed]);
+  const timeline = useAsync((s) => (snap && tab === 'conversation' ? api.review.timeline(owner, repo, snap, s) : never()), [token, tab, changed]);
   const commits = useAsync((s) => (snap && tab === 'commits' ? api.review.commits(owner, repo, snap, s) : never()), [token, tab]);
   const fileView = useAsync(
     (s) => (snap && tab === 'files' && path ? api.review.fileView(owner, repo, snap, path, view, layout, s) : never()),
@@ -115,7 +135,13 @@ export function PullPage({ me }: { me: Me | null }) {
   );
 
   const signIn = me?.signInAvailable && !me.signedIn ? api.signInUrl(location.pathname + location.search) : null;
-  const reload = () => setLoads((x) => x + 1);
+  const reload = () => {
+    setStaleWrite(false);
+    setLoads((x) => x + 1);
+  };
+  const writer: Writer | null = snap?.writable
+    ? { owner, repo, snap, slots: `versio:draft:${owner}/${repo}#${n}`, onChanged: () => setChanged((x) => x + 1), onStale: () => setStaleWrite(true) }
+    : null;
   const expired = [files, threads, timeline, commits, fileView].some((a) => a.state === 'error' && needsReload(a.error));
 
   function go(nextTab: Tab, nextPath?: string) {
@@ -197,11 +223,11 @@ export function PullPage({ me }: { me: Me | null }) {
               <Link className="button-quiet" to={pullsUrl(owner, repo, n)}>All merge requests</Link>
             </div>
           </header>
-          {(status?.stale || expired) && (
+          {(status?.stale || staleWrite || expired) && (
             <p className="notice review-stale" role="status">
               {expired
                 ? 'This review was loaded too long ago to go on with. '
-                : `This pull request changed after you opened it${status?.headMoved ? ' (new commits)' : ''}${status?.baseMoved ? ` (${snap!.baseLabel} moved)` : ''}. What you see is still the version you opened; nothing is mixed. `}
+                : `This pull request changed after you opened it${status?.headMoved ? ' (new commits)' : ''}${status?.baseMoved ? ` (${snap!.baseLabel} moved)` : ''}. What you see is still the version you opened; nothing is mixed, and your drafts are kept. `}
               <button type="button" className="button" onClick={reload}>Load the latest</button>
             </p>
           )}
@@ -213,12 +239,14 @@ export function PullPage({ me }: { me: Me | null }) {
           <p className="muted review-revision" title={`base ${snap!.baseSha}\nmerge-base ${snap!.mergeBaseSha}\nhead ${snap!.headSha}`}>
             Reviewing {snap!.headSha.slice(0, 8)}, compared from where it branched ({snap!.mergeBaseSha.slice(0, 8)}).
           </p>
-          {tab === 'conversation' && <Conversation snap={snap!} timeline={timeline} onOpenPath={(p) => navigate(blobUrl(owner, repo, snap!.headSha, p))} />}
+          {tab === 'conversation' && <Conversation snap={snap!} timeline={timeline} writer={writer} onOpenPath={(p) => navigate(blobUrl(owner, repo, snap!.headSha, p))} />}
           {tab === 'commits' && <Commits commits={commits} />}
           {tab === 'checks' && <Checks status={status} />}
           {tab === 'files' && (
             path ? (
               <FileReview
+                writer={writer}
+                path={path}
                 file={files.state === 'ok' ? files.value.files.find((f) => f.path === path) ?? null : null}
                 result={fileView}
                 threads={fileThreads(path)}
@@ -290,7 +318,8 @@ function Summary({ status }: { status: ReviewStatus | null }) {
   );
 }
 
-function Conversation({ snap, timeline, onOpenPath }: { snap: ReviewSnapshot; timeline: Async<ReviewTimeline>; onOpenPath: (p: string) => void }) {
+function Conversation({ snap, timeline, writer, onOpenPath }: { snap: ReviewSnapshot; timeline: Async<ReviewTimeline>; writer: Writer | null; onOpenPath: (p: string) => void }) {
+  const [editing, setEditing] = useState<string | null>(null);
   return (
     <>
       <p className="muted">{snap.draft ? 'Draft, ' : ''}opened by {snap.author}, updated {new Date(snap.when).toLocaleString()}</p>
@@ -315,12 +344,27 @@ function Conversation({ snap, timeline, onOpenPath }: { snap: ReviewSnapshot; ti
                 <span className="muted">{new Date(item.when).toLocaleString()}</span>
               </span>
               {item.text && <span className="timeline-text">{item.text} {item.sha && <code className="muted">{item.sha.slice(0, 8)}</code>}</span>}
-              {item.html && <FragmentHost html={item.html} path="" onOpenPath={onOpenPath} line={null} onLine={() => {}} />}
+              {writer && item.id && editing === item.id ? (
+                <CommentBox owner={writer.owner} repo={writer.repo} snap={writer.snap} slot={`${writer.slots}:edit:${item.id}`} path={`/comments/${encodeURIComponent(item.id)}`} method="PATCH"
+                  initial={item.markdown ?? ''} submitLabel="Save" onCancel={() => setEditing(null)} onDone={() => { setEditing(null); writer.onChanged(); }} onStale={writer.onStale} />
+              ) : (
+                item.html && <FragmentHost html={item.html} path="" onOpenPath={onOpenPath} line={null} onLine={() => {}} />
+              )}
+              {writer && item.id && editing !== item.id && (item.canEdit || item.canDelete) && (
+                <span className="comment-tools">
+                  {item.canEdit && <button type="button" className="link-button" onClick={() => setEditing(item.id)}>Edit</button>}
+                  {item.canDelete && <ActionButton owner={writer.owner} repo={writer.repo} snap={writer.snap} path={`/comments/${encodeURIComponent(item.id)}/delete`} label="Delete" confirm="Delete this comment on GitHub?" onDone={writer.onChanged} />}
+                </span>
+              )}
             </li>
           ))}
         </ol>
       )}
       {timeline.state === 'ok' && timeline.value.truncated && <p className="muted">The conversation continues on GitHub.</p>}
+      {writer && (
+        <CommentBox owner={writer.owner} repo={writer.repo} snap={writer.snap} slot={`${writer.slots}:conversation`} path="/comments"
+          submitLabel="Comment" onDone={writer.onChanged} onStale={writer.onStale} />
+      )}
     </>
   );
 }
@@ -375,6 +419,8 @@ function Checks({ status }: { status: ReviewStatus | null }) {
 }
 
 interface FileReviewProps {
+  writer: Writer | null;
+  path: string;
   file: ReviewFile | null;
   result: Async<ReviewFileView>;
   threads: ReviewThread[];
@@ -393,17 +439,39 @@ interface FileReviewProps {
  * threads. On Raw, a thread sits under its line; anything that cannot be placed — outdated, on the
  * file, or on a line this drawing does not show — is listed above, never dropped.
  */
-function FileReview({ file, result, threads, threadsState, view, layout, onView, onLayout, onLayer, onOpenPath, signInUrl }: FileReviewProps) {
+function FileReview({ writer, path, file, result, threads, threadsState, view, layout, onView, onLayout, onLayer, onOpenPath, signInUrl }: FileReviewProps) {
   const [placed, setPlaced] = useState<string[]>([]);
-  const annotations: Annotation[] = useMemo(
-    () => (view === 'raw'
-      ? threads.flatMap((t) => {
-          const selector = threadSelector(t);
-          return selector ? [{ key: t.id, selector, content: <Thread thread={t} onOpenPath={onOpenPath} /> }] : [];
-        })
-      : []),
-    [threads, view, onOpenPath],
-  );
+  // A new line comment being written: on Raw only, where rows are file lines GitHub understands,
+  // and only on a file GitHub takes line comments on.
+  const [drafting, setDrafting] = useState<{ side: 'LEFT' | 'RIGHT'; line: number } | null>(null);
+  const [fileComment, setFileComment] = useState(false);
+  useEffect(() => setDrafting(null), [path, view]);
+  const canLine = writer !== null && view === 'raw' && file?.inline === true;
+  const annotations: Annotation[] = useMemo(() => {
+    if (view !== 'raw') {
+      return [];
+    }
+    const placedThreads: Annotation[] = threads.flatMap((t) => {
+      const selector = threadSelector(t);
+      return selector ? [{ key: t.id, selector, content: <Thread thread={t} writer={writer} onOpenPath={onOpenPath} /> }] : [];
+    });
+    if (drafting && writer) {
+      const where = `${drafting.side}:${drafting.line}`;
+      placedThreads.push({
+        key: `draft:${where}`,
+        selector: drafting.side === 'LEFT' ? `[data-old-line="${drafting.line}"]` : `[data-line="${drafting.line}"]`,
+        content: (
+          <div className="thread thread-draft">
+            <header className="thread-head muted">New comment on {drafting.side === 'LEFT' ? 'old' : 'new'} line {drafting.line}</header>
+            <CommentBox owner={writer.owner} repo={writer.repo} snap={writer.snap} slot={`${writer.slots}:line:${path}:${where}`} path="/line-comments"
+              payload={{ path, line: drafting.line, side: drafting.side }} submitLabel="Comment" onCancel={() => setDrafting(null)}
+              onDone={() => { setDrafting(null); writer.onChanged(); }} onStale={writer.onStale} />
+          </div>
+        ),
+      });
+    }
+    return placedThreads;
+  }, [threads, view, onOpenPath, drafting, writer, path]);
   const unplaced = threads.filter((t) => !placed.includes(t.id));
 
   if (result.state === 'loading') {
@@ -453,6 +521,18 @@ function FileReview({ file, result, threads, threadsState, view, layout, onView,
         <p key={note} className="notice" role="note">{note}</p>
       ))}
       {threadsState.state === 'error' && <p className="muted">Review threads are not shown: {threadsState.error.message}</p>}
+      {writer && (
+        <div className="file-comment">
+          {canLine && <span className="muted">Click a line number to comment on that line. </span>}
+          {writer && view === 'raw' && file && !file.inline && <span className="muted">Comments on this file go on the whole file. </span>}
+          {fileComment ? (
+            <CommentBox owner={writer.owner} repo={writer.repo} snap={writer.snap} slot={`${writer.slots}:file:${path}`} path="/line-comments" payload={{ path }}
+              submitLabel="Comment on the file" onCancel={() => setFileComment(false)} onDone={() => { setFileComment(false); writer.onChanged(); }} onStale={writer.onStale} />
+          ) : (
+            <button type="button" className="link-button" onClick={() => setFileComment(true)}>Comment on the whole file</button>
+          )}
+        </div>
+      )}
       {unplaced.length > 0 && (
         <section className="unplaced" aria-label="Comments not on a line shown here">
           <h3 className="panel-title">
@@ -460,15 +540,25 @@ function FileReview({ file, result, threads, threadsState, view, layout, onView,
                 are slice 3), so every thread is listed; Raw places the ones on a current line. */}
             {view === 'raw' ? 'Comments not on a line shown here' : 'Comments on this file — Raw shows the ones on a current line in place'}
           </h3>
-          {unplaced.map((t) => <Thread key={t.id} thread={t} onOpenPath={onOpenPath} />)}
+          {unplaced.map((t) => <Thread key={t.id} thread={t} writer={writer} onOpenPath={onOpenPath} />)}
         </section>
       )}
-      <FragmentHost html={v.html} path={v.path} onOpenPath={onOpenPath} line={null} onLine={() => {}} annotations={annotations} onPlaced={setPlaced} />
+      <FragmentHost html={v.html} path={v.path} onOpenPath={onOpenPath} line={null} onLine={() => {}} annotations={annotations} onPlaced={setPlaced}
+        onRowPick={canLine ? (row) => {
+          // A context row has both numbers: it is commented on the new side, as GitHub does.
+          const side = row.line !== null ? 'RIGHT' : 'LEFT';
+          const line = row.line ?? row.oldLine;
+          if (line !== null) {
+            setDrafting({ side, line });
+          }
+        } : undefined} />
     </div>
   );
 }
 
-function Thread({ thread, onOpenPath }: { thread: ReviewThread; onOpenPath: (p: string) => void }) {
+function Thread({ thread, writer, onOpenPath }: { thread: ReviewThread; writer: Writer | null; onOpenPath: (p: string) => void }) {
+  const [replying, setReplying] = useState(false);
+  const [editing, setEditing] = useState<string | null>(null);
   const where = thread.subject === 'FILE' ? 'on the file'
     : thread.line !== null ? `${thread.side === 'LEFT' ? 'old' : 'new'} line ${thread.startLine && thread.startLine !== thread.line ? `${thread.startLine}–` : ''}${thread.line}`
     : `was on line ${thread.originalLine ?? '?'}`;
@@ -478,14 +568,39 @@ function Thread({ thread, onOpenPath }: { thread: ReviewThread; onOpenPath: (p: 
         {thread.resolved && <span className="row-badge">resolved</span>}
         {thread.outdated && <span className="row-badge">outdated</span>}
         {where}
+        {writer && (thread.resolved ? thread.canUnresolve : thread.canResolve) && (
+          <span className="thread-tools">
+            <ActionButton owner={writer.owner} repo={writer.repo} snap={writer.snap} path={`/threads/${encodeURIComponent(thread.id)}/resolve`}
+              payload={{ resolved: !thread.resolved }} label={thread.resolved ? 'Unresolve' : 'Resolve'} onDone={writer.onChanged} />
+          </span>
+        )}
       </header>
       {thread.comments.map((c) => (
         <div key={c.id} className="thread-comment">
-          <span className="thread-meta"><strong>{c.author}</strong> <span className="muted">{new Date(c.when).toLocaleString()}</span></span>
-          <FragmentHost html={c.html} path="" onOpenPath={onOpenPath} line={null} onLine={() => {}} />
+          <span className="thread-meta">
+            <strong>{c.author}</strong> <span className="muted">{new Date(c.when).toLocaleString()}</span>
+            {writer && editing !== c.id && (
+              <span className="comment-tools">
+                {c.canEdit && <button type="button" className="link-button" onClick={() => setEditing(c.id)}>Edit</button>}
+                {c.canDelete && <ActionButton owner={writer.owner} repo={writer.repo} snap={writer.snap} path={`/comments/${encodeURIComponent(c.id)}/delete`} label="Delete" confirm="Delete this comment on GitHub?" onDone={writer.onChanged} />}
+              </span>
+            )}
+          </span>
+          {writer && editing === c.id ? (
+            <CommentBox owner={writer.owner} repo={writer.repo} snap={writer.snap} slot={`${writer.slots}:edit:${c.id}`} path={`/comments/${encodeURIComponent(c.id)}`} method="PATCH"
+              initial={c.markdown ?? ''} submitLabel="Save" onCancel={() => setEditing(null)} onDone={() => { setEditing(null); writer.onChanged(); }} onStale={writer.onStale} />
+          ) : (
+            <FragmentHost html={c.html} path="" onOpenPath={onOpenPath} line={null} onLine={() => {}} />
+          )}
         </div>
       ))}
       {thread.truncated && <p className="muted">More replies on GitHub.</p>}
+      {writer && thread.canReply && (replying ? (
+        <CommentBox owner={writer.owner} repo={writer.repo} snap={writer.snap} slot={`${writer.slots}:reply:${thread.id}`} path={`/threads/${encodeURIComponent(thread.id)}/replies`}
+          submitLabel="Reply" placeholder="Reply" onCancel={() => setReplying(false)} onDone={() => { setReplying(false); writer.onChanged(); }} onStale={writer.onStale} />
+      ) : (
+        <button type="button" className="link-button thread-reply" onClick={() => setReplying(true)}>Reply</button>
+      ))}
     </article>
   );
 }

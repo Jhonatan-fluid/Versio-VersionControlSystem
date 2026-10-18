@@ -14,7 +14,7 @@ penetration test (rule 19), and revised after it.
 | Asset | Why it matters | Where it lives |
 |---|---|---|
 | **Private PLC programs** | A customer's machine logic: intellectual property, and a map of a plant's control for anyone planning harm | GitHub; in this server only as cached blobs and rendered fragments, in memory |
-| **GitHub user tokens** | Read every repository the person can see that the App is installed on, for 8 hours (refresh tokens: months) | Session store, encrypted with Data Protection |
+| **GitHub user tokens** | Read every repository the person can see that the App is installed on, for 8 hours (refresh tokens: months). **Since pull request review (slice 2, 2026-10-17), also comment, reply and resolve in the person's name** wherever the App's permissions and the person's own allow — a stolen session now writes | Session store, encrypted with Data Protection |
 | **The App's private key** | Mints installation tokens for every installation of the App | Configuration today; a key vault through `IAppSigner` (rule 15) |
 | **The client secret** | With a stolen code, completes someone else's sign-in | Configuration |
 | **The Data Protection key ring** | Decrypts every stored token and every login cookie | Memory, or `Web:KeysDirectory` |
@@ -27,6 +27,7 @@ penetration test (rule 19), and revised after it.
 |---|---|---|
 | **Anonymous visitor** | Reach every public URL, send any request | Private programs; a foothold |
 | **Signed-in user** | Everything a visitor can, with a session for their own GitHub account | Another person's or another company's programs |
+| **Anyone who can comment on a pull request** | Write pull request bodies, comments, review summaries, check output (through CI), branch and label names — every one of them drawn by the review page | Run script in a reviewer's browser, which would now approve or comment in the reviewer's name; mislead a reviewer with a forged Versio tag |
 | **Repository author** | Push any content to a repository someone views: files, LFS pointers, `.gitattributes`, `repo.json`, manifests | Run script in a viewer's browser; make the server attack itself or its network; hide a malicious PLC change from a reviewer; exhaust the server |
 | **Network attacker** | Watch or alter traffic between the browser and the server | Steal a session |
 | **Insider with host access** | Read memory, logs, configuration | Tokens, keys, programs |
@@ -64,6 +65,7 @@ exactly that).
 | A session id planted before sign-in is reused after it (fixation) | New random 256-bit id per sign-in; the browser's earlier session removed | `Rule14_each_sign_in_gets_a_new_unguessable_session_id`, `Signing_in_again_ends_the_browsers_earlier_session` |
 | A subdomain sets or overwrites the session cookie | `__Host-` cookie: Secure, Path=/, no Domain | Cookie flags asserted in the round-trip test |
 | Sign-in used as an open redirect | `returnUrl` must be a path on this site | `SignIn_returns_only_to_this_sites_own_pages` |
+| **A review comment posted in someone else's name, or a bot's** (S1) | Writes take the signed-in person's user token and nothing else: anonymous, installation and (later) Okta-only callers get 401 before any call, and the writer refuses a non-person credential again as a second wall | `PullWriteTests.Signed_out_nothing_is_written`, `GitHubWriterTests.An_installation_or_anonymous_credential_is_refused_before_anything_is_sent` |
 
 ### Tampering
 
@@ -77,6 +79,10 @@ exactly that).
 | A changed type behind a member reads as an unchanged block | Member types linked; a type changed between versions highlighted and said | `A_type_that_changed_between_the_versions_is_highlighted_and_said` |
 | A Mermaid diagram escapes into the page | Drawn in an iframe sandboxed without same-origin; only text in, only a height out; strict mode; the frame alone allows inline styles | `Only_the_diagram_frame_allows_inline_styles_and_only_this_site_may_frame_it` (page-embedding not observable in the built-in browser; see section 6) |
 | A path or name reshapes the GitHub URL | Inputs validated before anything reaches GitHub; every segment escaped again | `Hygiene_a_path_that_climbs_or_is_absolute_is_not_found` (asserts no GitHub call at all), `A_name_cannot_reshape_the_url` |
+| **A forged request writes in a reviewer's name** (S4) | Every write needs `X-Versio-Request: 1` (a preflight this server never answers), a JSON body (a form post never matches a write route; the `/api` fallback answers 404), and `Sec-Fetch-Site: same-origin`, or an `Origin` that is this site's; checked by middleware before any body is read, for every route `MapWrite` registered, and a test fails on any non-GET route registered otherwise | `PullWriteTests.A_request_that_could_be_forged_is_refused` (each check alone), `Every_route_that_is_not_a_GET_goes_through_MapWrite` |
+| **A node id from another repository acted on through this one** (S7) | GraphQL node ids are global; before any mutation names one, the node is read and must belong to the URL's repository and pull request and be of the expected kind, else 404 | `A_thread_from_another_repository_cannot_be_replied_to_or_resolved_through_this_one`, `An_edit_and_a_delete_reach_only_comments_of_this_pull_request` |
+| **A forged Versio tag in a comment** | Tags only recognise a write this person's page already asked for, under its own key and author; every `versio:` tag is stripped before anything is drawn | `ReviewTagsAndHunksTests`, `Threads_and_comments_arrive_without_any_versio_tag_...`, `Reconciliation_finds_only_the_viewers_own_tagged_comment` |
+| **A comment placed on a revision the reviewer is not looking at** | Every read and write carries the sealed review snapshot; a line comment is refused (409) when the pull request moved, checked against GitHub's own hunks for that snapshot, and pinned to the snapshot's head by `commit_id` | `PullReviewTests` (C1), `A_line_comment_on_a_snapshot_the_pull_request_has_moved_past_is_refused`, `A_line_GitHub_would_refuse_is_refused_here_with_the_reason` |
 | **A repository file served raw from this origin executes as a page** (the Documentation tab's `/raw`, 2026-10-16) | A narrow extension allowlist (`Documents.cs`); the content type chosen by US from that table, never from the file, with `nosniff` site-wide; nothing served as HTML, SVG or any executable type; everything but PDF an attachment; PDF inline because the browser's viewer renders it out of process and a file lying about being one fails to draw | `RawDocumentTests`: inline PDF's type, the attachment dispositions, off-allowlist 404 |
 
 ### Repudiation
@@ -84,6 +90,7 @@ exactly that).
 | Threat | Mitigation | Proof |
 |---|---|---|
 | Nobody can say who viewed a private program | One audit line per view: login, repository, commit, path; sign-in, refresh and sign-out logged | `Rule13_a_view_is_audited_and_no_secret_ever_reaches_the_log` (reads the file the host wrote) |
+| Nobody can say who wrote what through Versio (S10) | One audit line per write: login, action, repository, pull request, snapshot head, operation key, outcome, and the rule a refusal fell under; never a body or a token. GitHub's own record names the person, because the write is theirs | Seen in the preview log; the line is written by `PullWriteEndpoints.Writes.Audit` |
 
 ### Information disclosure
 
@@ -99,7 +106,7 @@ exactly that).
 | Stored tokens readable from a store dump | Encrypted with Data Protection | `Rule7_tokens_are_encrypted_at_rest_in_the_session_store` |
 | **The server fetches its own cloud credentials (SSRF through LFS)** | LFS downloads: https, allowlisted hosts, no redirects, internal addresses refused at connect time | `LfsGuardTests`, `An_LFS_download_pointed_at_the_metadata_service_is_refused_before_any_connection`, `..._that_resolves_internal_is_refused_at_connect` |
 | An LFS download host answers with other bytes than the commit's file | The download must match the pointer's SHA-256 and size, or it is refused | `An_LFS_download_is_the_file_only_when_it_matches_its_pointer` |
-| Compression leaks a secret (BREACH) | No response body carries a secret | Design argument (WebHost); nothing to test |
+| Compression leaks a secret (BREACH) | No response body carries a secret. The review snapshot token and operation keys are not secrets: a snapshot grants nothing without a session that may read the repository, and is re-authorised on every use; the write forgery guard is a header, not a token in a page | Design argument (WebHost, ReviewSnapshots); `A_valid_snapshot_grants_nothing_access_is_decided_first` |
 
 ### Denial of service
 
@@ -111,12 +118,15 @@ exactly that).
 | A file that makes a vendor parser throw | The same plain-text fallback, its own notice, uncached; the log names the exception's type, never its message (it can quote the file) | `A_parser_that_throws_gives_the_plain_text_not_an_error` |
 | A rate-limited reader hides a change | A side that could not be read is said, never drawn as everything new; an answer built from a failed read is not cached; a failure stays with the credential that received it | `A_compare_whose_older_copy_could_not_be_read_says_so_...`, `A_read_that_failed_is_not_remembered_...`, `A_load_that_failed_for_one_credential_...` |
 | A comparison of two enormous commits | 2,000 files listed, the rest counted | `Rule8_a_comparison_lists_at_most_its_cap_and_says_how_many_there_were` |
+| **A double click or a retry posts a comment twice; a lost answer turns into a duplicate** (C5) | Every write is reserved under the page's operation key before GitHub is called (atomic); a duplicate returns the first outcome; a lost answer or a crash is reconciled by finding the comment's own tag, never re-sent; an old key is refused by its own timestamp. Durable across restarts and instances only with Redis (persistence on) — the server refuses writes without it unless declared single-instance | `PullWriteTests` (same key twice, two at once, lost answer found, unknown stays unknown, crash then retry, expired key), `Startup_refuses_writes_without_a_shared_ledger_...` |
+| One person floods a pull request or spends their GitHub write limit (S8) | Writes per session per minute (30 by default), in place of the per-address limit on write routes (only sessions reach them: the gate refuses the rest first); 64 KB bodies, refused before they are read | `A_body_past_the_cap_is_refused_before_it_is_read` |
 | Request floods, or spending the App's GitHub quota | Per-client rate limit; behind a load balancer the client is what a proxy in `Web:TrustedProxies` forwarded, and a forwarded header from anyone else is ignored (with none configured the forwarding middleware does not run at all, because ASP.NET's empty lists mean "trust everyone"); anonymous access can be switched off | `Rule8_a_client_over_its_rate_is_refused`, `Rule8_behind_a_trusted_proxy_each_client_has_its_own_rate`, `Rule8_a_forwarded_header_from_anyone_not_trusted_chooses_nothing`, `Rule17_anonymous_access_switched_off_asks_everyone_to_sign_in` |
 
 ### Elevation of privilege
 
 | Threat | Mitigation | Proof |
 |---|---|---|
+| **Something other than the writer changes a repository** | Only `GitHubWriter` sends a GraphQL `mutation` or a PUT, PATCH or DELETE (sign-out's token revocation excepted); the reader's GraphQL calls are queries | `PurityRuleTests.Only_the_writer_sends_a_mutation_to_GitHub` |
 | The server drives an IDE, starts a process or touches files | References only the pure packs; no `Process`, `File` or `Directory` in its IL | `Versio_Web_references_only_the_pure_packs`, `Versio_Web_starts_no_process_and_reads_no_file` |
 | A forged sign-out | Needs a header no cross-site request can send; no CORS | `Hygiene_logout_without_the_request_header_is_refused_and_ends_nothing` |
 | Clickjacking | `frame-ancestors 'none'` and `X-Frame-Options: DENY` everywhere but the diagram frame and the raw document route, which only this site may frame (the blanket DENY blocked the viewer's own PDF frame; found by the owner in a real browser, FINDINGS 2026-10-16) | Header tests above; `The_raw_route_may_be_framed_by_this_site_and_nothing_else_may_be_framed_at_all` |
@@ -127,6 +137,7 @@ exactly that).
 |---|---|
 | A session key or the store may be compromised | Bump `Web:SessionEpoch`: every session ends at once |
 | Anonymous use is being abused | `Web:AnonymousAccess=false` |
+| Writes are being abused, or anything about them is in doubt | `Web:Writes:Enabled=false` (every write route answers 404 and the page draws no write control), or take one repository out of `Web:Writes:Repositories`; takes effect on restart |
 | The App key may be compromised | Revoke and regenerate it on GitHub; the server picks up the new key from configuration |
 | The client secret may be compromised | Regenerate it on GitHub |
 

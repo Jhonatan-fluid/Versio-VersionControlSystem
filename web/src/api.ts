@@ -170,6 +170,8 @@ export interface ReleaseView extends Release {
  */
 export interface ReviewSnapshot {
   token: string;
+  /** Whether to draw write controls: writes on for this repository and a signed-in person. */
+  writable: boolean;
   number: number;
   title: string;
   author: string;
@@ -183,6 +185,19 @@ export interface ReviewSnapshot {
   headSha: string;
   issuedAt: string;
   html: string;
+}
+
+/**
+ * How a write ended, as the server reports it (docs/web/PLAN.md, C5): done; still in flight; or
+ * unknown — it may or may not have been posted, and the page keeps the draft and says so. Errors
+ * carry the server's code (snapshot-stale, line-not-in-diff, operation-expired, github-refused...).
+ */
+export interface WriteAnswer {
+  status: number;
+  outcome?: 'done' | 'pending' | 'unknown';
+  id?: string;
+  error?: string;
+  message?: string;
 }
 
 /** Why a file takes file-level comments only; null when its lines can take them. */
@@ -237,6 +252,10 @@ export interface ReviewComment {
   id: string;
   author: string;
   when: string;
+  /** The text to edit, Versio's tags removed; only when the viewer may edit. */
+  markdown: string | null;
+  canEdit: boolean;
+  canDelete: boolean;
   /** Core's rendering of untrusted Markdown; the page sanitises it again before placing it. */
   html: string;
   commit: string | null;
@@ -256,6 +275,9 @@ export interface ReviewThread {
   originalLine: number | null;
   subject: 'LINE' | 'FILE';
   truncated: boolean;
+  canReply: boolean;
+  canResolve: boolean;
+  canUnresolve: boolean;
   comments: ReviewComment[];
 }
 
@@ -266,7 +288,10 @@ export interface ReviewThreads {
 
 export interface ReviewTimeline {
   truncated: boolean;
-  items: { kind: string; actor: string; when: string; html: string | null; text: string | null; state: string | null; sha: string | null }[];
+  items: {
+    kind: string; actor: string; when: string; html: string | null; text: string | null; state: string | null; sha: string | null;
+    id: string | null; markdown: string | null; canEdit: boolean; canDelete: boolean;
+  }[];
 }
 
 export interface ReviewCommits {
@@ -353,6 +378,37 @@ export const api = {
       get<ReviewTimeline>(`${reviewBase(owner, repo, s.number)}/timeline`, signal, sealed(s)),
     commits: (owner: string, repo: string, s: ReviewSnapshot, signal?: AbortSignal) =>
       get<ReviewCommits>(`${reviewBase(owner, repo, s.number)}/commits`, signal, sealed(s)),
+
+    /**
+     * A write. Never throws on a refusal: every answer — done, pending, unknown, refused — is the
+     * page's to word. The header no cross-site request can send, a JSON body, and the snapshot.
+     */
+    async write(owner: string, repo: string, s: ReviewSnapshot, path: string, method: 'POST' | 'PATCH', body: unknown): Promise<WriteAnswer> {
+      let response: Response;
+      try {
+        response = await fetch(`${reviewBase(owner, repo, s.number)}${path}`, {
+          method,
+          credentials: 'same-origin',
+          headers: { Accept: 'application/json', 'Content-Type': 'application/json', 'X-Versio-Request': '1', ...sealed(s) },
+          body: JSON.stringify(body),
+        });
+      } catch {
+        // The request may or may not have reached the server: exactly the unknown case.
+        return { status: 0, outcome: 'unknown', message: 'The connection dropped. This may or may not have been posted; refresh to check.' };
+      }
+      let json: Omit<WriteAnswer, 'status'> = {};
+      try {
+        json = await response.json();
+      } catch {
+        // A proxy's error page: the status says enough.
+      }
+      return { status: response.status, ...json };
+    },
+
+    preview: async (owner: string, repo: string, s: ReviewSnapshot, body: string): Promise<string> => {
+      const answer = await api.review.write(owner, repo, s, '/markdown', 'POST', { body });
+      return (answer as unknown as { html?: string }).html ?? '';
+    },
   },
   releases: (owner: string, repo: string, signal?: AbortSignal) => get<ReleaseList>(`${repoBase(owner, repo)}/releases`, signal),
   releaseView: (owner: string, repo: string, tag: string, signal?: AbortSignal) =>

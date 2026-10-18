@@ -21,7 +21,7 @@ UX remainder) is built and tested as of 2026-08-25** — UX-6 find boxes, UX-7 `
 Escape, UX-8 copy-a-commit, UX-12 amend-while-unpushed — and its visual half joins the
 eyeball list in item 2. Do not start from `archive/` or a handoff.
 
-**Tests:** 3,625 across twelve projects (plus 42 vitest in `web/`), last counted 2026-10-17
+**Tests:** 3,667 across twelve projects (plus 49 vitest in `web/`), last counted 2026-10-17
 on `ReviewFixes` — Integration 172 and App 783 after the review fixes; the toolchain-gated
 counts (TIA 5, TwinCAT 6, CODESYS 55) are from their last gate runs, not re-run for the count. **The Rendered view of an ST object reads like the IDE (2026-09-20):** no
 `@@` line, one gutter, a Declaration / Implementation divider, and the implementation
@@ -64,15 +64,15 @@ marking, duplicate-param keys, and the detail-pane lookup. All of them are in
 | `Versio.Core.Tests` | 1,770 | under a second | nothing |
 | `Versio.Integration.Tests` | 174 | ~10 s | real git |
 | `Versio.App.Tests` | 789 | 6 m 35 s on 2026-10-10; 8 m 38 s on 2026-10-05; ~3.6 min on 2026-09-22 | nothing |
-| `Versio.Arch.Tests` | 35 | instant | nothing |
+| `Versio.Arch.Tests` | 36 | instant | nothing |
 | `Versio.Plc.Codesys.Pure.Tests` | 369 | under a second | nothing |
 | `Versio.Plc.Codesys.Parity.Tests` | 97 | ~15 s | `python` on PATH — skips cleanly without it, so check the count |
 | `Versio.Plc.TiaPortal.Pure.Tests` | 96 | instant | nothing |
 | `Versio.Plc.TiaPortal.Tests` | 5 | seconds when skipped; minutes when Portal runs the import gate | **real TIA Portal** — skips without Openness membership or LFS content |
 | `Versio.Plc.TwinCat.Pure.Tests` | 23 | instant | nothing |
 | `Versio.Plc.TwinCat.Tests` | 6 | seconds when skipped; ~5 min when XAE runs the import gate | **real TwinCAT XAE** — skips without `TcXaeShell.DTE.17.0` or the fixture |
-| `Versio.Web.Tests` | 206 | a few seconds | nothing — GitHub is faked |
-| `web/` (vitest) | 42 | ~20 s | the pinned Node in `web/.node` |
+| `Versio.Web.Tests` | 247 | a few seconds | nothing — GitHub is faked |
+| `web/` (vitest) | 49 | ~20 s | the pinned Node in `web/.node` |
 | `Versio.Plc.Codesys.Tests` | 55 | **~30 min**; 41 m 14 s, 55/55, on 2026-10-11 on `WebViewer` | **real CODESYS** |
 
 The first ten are the loop to work in — about thirty seconds plus the UI suite. The last is
@@ -386,8 +386,17 @@ One list. Reorder it; do not copy it into another file.
    Twenty mutations, each killed. Looked at in the built-in browser on the fixture preview
    (`/acme/plant/pull/1`), desktop and phone. **Its real-GitHub gate is the owner's**: register
    the App (read permissions are enough for slice 1, plus Pull requests and Checks read) and look
-   at a real pull request whose base moved after branching. Next: slice 2, conversation and raw
-   inline comments with write recovery.
+   at a real pull request whose base moved after branching. **Slice 2 built the same day**:
+   conversation comments, line comments from a gutter click on Raw (checked against GitHub's own
+   hunks for the snapshot, refused when the pull request moved), file-level comments, replies,
+   edits, deletions and resolving threads — each in the person's own name, behind the kill switch
+   (off by default, opted in per repository), the forgery checks, the node-id scope check and a
+   per-session limit, reserved in the operation ledger so a duplicate is one write and a lost answer
+   is reconciled, never re-sent. Twenty-seven mutations (twenty server-side, seven on the page), each
+   killed or explained (the body cap has a second wall). Looked at in the preview with a signed-in preview session. **Its real-GitHub gate is
+   the owner's**: the App needs Pull requests and Issues write; then post, lose the network
+   mid-post, and resolve on a throwaway repository. Not run yet: `RedisOperationLedger` against a
+   real Redis. Next: slice 3, rendered anchors.
    **Left, all needing the owner or a deployment:**
    - **register the GitHub App** (on GitHub: read-only Contents and Metadata, a callback at
      `/auth/callback`) and run sign-in against real GitHub; until then the server runs

@@ -1,4 +1,6 @@
 using System.Text;
+using Microsoft.Extensions.DependencyInjection;
+using Versio.Web.Auth;
 using Versio.Web.Sources;
 using Xunit;
 
@@ -76,18 +78,19 @@ public sealed class FixturePreview
         repo.PullFiles[1] = new PullFileList(
         [
             new PullFile(alarm, "modified", null, "@@ -9 +9 @@\n-\tEnable\t\t\t\t: BOOL := TRUE;\n+\tEnable\t\t\t\t: BOOL := FALSE;"),
-            new PullFile(simulation, "modified", null, "@@ -22 +22 @@\n-x\n+y"),
+            // Shaped like GitHub's: three lines of context each side, so lines 19-25 take comments.
+            new PullFile(simulation, "modified", null, "@@ -19,7 +19,7 @@\n a\n b\n c\n-x\n+y\n d\n e\n f"),
         ], false);
         var when = DateTimeOffset.Now.AddHours(-2);
         repo.Threads[1] = new ReviewThreadList(
         [
             new ReviewThread("T-new", simulation, false, false, 22, null, "RIGHT", 22, "LINE",
             [
-                new ReviewComment("C1", "sam", "Half the step: is **0.2** right for the plant's cooling, or is that the soak rig?", when, next, next),
+                new ReviewComment("C1", "sam", "Half the step: is **0.2** right for the plant's cooling, or is that the soak rig?", when, next, next, CanEdit: true, CanDelete: true),
                 new ReviewComment("C2", "jo", "Plant data: 0.2/s. The rig was 0.1.\n\n<script>alert('this must draw as text')</script>", when.AddMinutes(9), next, next),
-            ], false),
+            ], false, CanReply: true, CanResolve: true),
             new ReviewThread("T-old", simulation, true, false, 22, null, "LEFT", 22, "LINE",
-                [new ReviewComment("C3", "sam", "This old value is the bug.", when, next, next)], false),
+                [new ReviewComment("C3", "sam", "This old value is the bug.", when, next, next, CanEdit: true, CanDelete: true)], false, CanReply: true, CanUnresolve: true),
             new ReviewThread("T-gone", alarm, false, true, null, null, "RIGHT", 4, "LINE",
                 [new ReviewComment("C4", "sam", "An earlier remark on a line that has since moved.", when.AddDays(-1), null, next)], false),
         ], false);
@@ -121,7 +124,30 @@ public sealed class FixturePreview
             settings["Web:Repositories:0"] = "acme/plant";
         }
 
-        await using var host = await TestHost.StartAsync(github, settings);
+        // VERSIO_WEB_PREVIEW_WRITES=1 besides: writes on for the fixtures repository, a fake GitHub
+        // writer, and a signed-in session for "sam" whose id is written to
+        // %TEMP%/versio-web-preview-session.txt — set it as the __Host-versio cookie in the browser
+        // to look at the comment boxes, replies and resolve buttons. Posts land in the fake
+        // writer, so a new comment does not appear in the threads afterwards; the boxes' outcomes do.
+        var writes = Environment.GetEnvironmentVariable("VERSIO_WEB_PREVIEW_WRITES") == "1";
+        var writer = new FakeWriter();
+        writer.Threads["T-new"] = ("acme/plant", 1, false);
+        writer.Threads["T-old"] = ("acme/plant", 1, true);
+        if (writes)
+        {
+            settings["Web:Writes:Enabled"] = "true";
+            settings["Web:Writes:Repositories:0"] = "acme/plant";
+            settings["Web:Writes:SingleInstance"] = "true";
+        }
+
+        await using var host = await TestHost.StartAsync(github, settings, writes ? s => s.AddSingleton<IRepoWriter>(writer) : null);
+        if (writes)
+        {
+            var sessions = host.Services.GetRequiredService<SessionStore>();
+            var session = await sessions.CreateAsync(7, "sam", "sam", "", "preview-token", DateTimeOffset.UtcNow.AddHours(8), null, DateTimeOffset.UtcNow.AddMonths(1));
+            await File.WriteAllTextAsync(Path.Combine(Path.GetTempPath(), "versio-web-preview-session.txt"), session.Id);
+        }
+
         await Task.Delay(TimeSpan.FromMinutes(25));
     }
 

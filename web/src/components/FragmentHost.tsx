@@ -30,6 +30,11 @@ interface Props {
   annotations?: Annotation[];
   /** Which annotations found their row, so the page can list the rest rather than lose them. */
   onPlaced?: (keys: string[]) => void;
+  /**
+   * A gutter click on a diff row, with both of its file lines: the new side's (data-line) and the
+   * old side's (data-old-line). A review comment needs the side; a link to a line does not.
+   */
+  onRowPick?: (row: { line: number | null; oldLine: number | null }) => void;
 }
 
 /**
@@ -37,7 +42,7 @@ interface Props {
  * fragment is sanitised (the third wall), placed, and then only read, through the data-* markers
  * the renderers promise.
  */
-export function FragmentHost({ html, path, onOpenPath, line, onLine, annotations, onPlaced }: Props) {
+export function FragmentHost({ html, path, onOpenPath, line, onLine, annotations, onPlaced, onRowPick }: Props) {
   const host = useRef<HTMLDivElement>(null);
   const clean = useMemo(() => sanitize(html), [html]);
   const [slots, setSlots] = useState<Map<string, HTMLElement>>(() => new Map());
@@ -188,6 +193,12 @@ export function FragmentHost({ html, path, onOpenPath, line, onLine, annotations
 
     const gutter = element.closest<HTMLElement>('.cd-num');
     const row = gutter?.parentElement;
+    if (row && onRowPick) {
+      // In a side-by-side diff the gutter sits in a cell, and the cell carries its own side's line.
+      const n = (v: string | undefined) => (v && /^\d+$/.test(v) ? Number(v) : null);
+      onRowPick({ line: n(row.dataset.line), oldLine: n(row.dataset.oldLine) });
+      return;
+    }
     const number = row?.dataset.line;
     if (number) {
       onLine(Number(number));

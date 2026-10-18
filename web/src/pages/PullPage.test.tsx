@@ -29,16 +29,19 @@ const hostile = '<div class="md-page"><p>Why?<img src="x" onerror="window.__pwne
 
 interface Options {
   stale?: boolean;
+  writable?: boolean;
+  /** What each write answers, by path suffix; done by default. */
+  writes?: Record<string, { status: number; body: unknown }>;
 }
 
-let calls: { url: string; snapshot: string | null }[] = [];
+let calls: { url: string; snapshot: string | null; method: string; csrf: string | null; body: Record<string, unknown> | null }[] = [];
 
 function answer(url: string, o: Options): unknown {
   if (url.endsWith('/snapshot')) {
     return {
       token, number: 12, title: 'Fix interlock', author: 'jo', when: '2026-10-17T09:00:00Z', draft: false,
       baseRef: 'main', baseLabel: 'main', headLabel: 'fix', baseSha: 'c'.repeat(40), mergeBaseSha: 'b'.repeat(40), headSha: head,
-      issuedAt: '2026-10-17T09:00:00Z', html: '<div class="md-page"><p>The delay was wrong.</p></div>',
+      issuedAt: '2026-10-17T09:00:00Z', html: '<div class="md-page"><p>The delay was wrong.</p></div>', writable: o.writable ?? false,
     };
   }
   if (url.endsWith('/status')) {
@@ -62,13 +65,14 @@ function answer(url: string, o: Options): unknown {
     };
   }
   if (url.endsWith('/threads')) {
-    const comment = (id: string, html: string) => ({ id, author: 'sam', when: '2026-10-17T09:00:00Z', html, commit: head, originalCommit: head });
+    const comment = (id: string, html: string) => ({ id, author: 'sam', when: '2026-10-17T09:00:00Z', html, markdown: 'text', commit: head, originalCommit: head, canEdit: true, canDelete: true });
+    const may = { canReply: true, canResolve: true, canUnresolve: true };
     return {
       truncated: false,
       threads: [
-        { id: 'NEW3', path: 'src/Pump.st', pathLabel: 'src/Pump.st', resolved: false, outdated: false, line: 3, startLine: null, side: 'RIGHT', originalLine: 3, subject: 'LINE', truncated: false, comments: [comment('c1', hostile)] },
-        { id: 'OLD3', path: 'src/Pump.st', pathLabel: 'src/Pump.st', resolved: true, outdated: false, line: 3, startLine: null, side: 'LEFT', originalLine: 3, subject: 'LINE', truncated: false, comments: [comment('c2', '<p>was it ever?</p>')] },
-        { id: 'GONE', path: 'src/Pump.st', pathLabel: 'src/Pump.st', resolved: false, outdated: true, line: null, startLine: null, side: 'RIGHT', originalLine: 9, subject: 'LINE', truncated: false, comments: [comment('c3', '<p>an old remark</p>')] },
+        { id: 'NEW3', path: 'src/Pump.st', pathLabel: 'src/Pump.st', resolved: false, outdated: false, line: 3, startLine: null, side: 'RIGHT', originalLine: 3, subject: 'LINE', truncated: false, ...may, comments: [comment('c1', hostile)] },
+        { id: 'OLD3', path: 'src/Pump.st', pathLabel: 'src/Pump.st', resolved: true, outdated: false, line: 3, startLine: null, side: 'LEFT', originalLine: 3, subject: 'LINE', truncated: false, ...may, comments: [comment('c2', '<p>was it ever?</p>')] },
+        { id: 'GONE', path: 'src/Pump.st', pathLabel: 'src/Pump.st', resolved: false, outdated: true, line: null, startLine: null, side: 'RIGHT', originalLine: 9, subject: 'LINE', truncated: false, ...may, comments: [comment('c3', '<p>an old remark</p>')] },
       ],
     };
   }
@@ -91,7 +95,14 @@ async function render(path: string, o: Options = {}) {
   calls = [];
   vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
     const headers = (init?.headers ?? {}) as Record<string, string>;
-    calls.push({ url, snapshot: headers['X-Versio-Snapshot'] ?? null });
+    const method = init?.method ?? 'GET';
+    const body = typeof init?.body === 'string' ? (JSON.parse(init.body) as Record<string, unknown>) : null;
+    calls.push({ url, snapshot: headers['X-Versio-Snapshot'] ?? null, method, csrf: headers['X-Versio-Request'] ?? null, body });
+    if (method !== 'GET') {
+      const scripted = Object.entries(o.writes ?? {}).find(([suffix]) => url.endsWith(suffix))?.[1];
+      const reply = scripted ?? { status: 200, body: url.endsWith('/markdown') ? { html: '<p>preview</p>' } : { outcome: 'done', id: 'NEW' } };
+      return new Response(JSON.stringify(reply.body), { status: reply.status, headers: { 'Content-Type': 'application/json' } });
+    }
     return new Response(JSON.stringify(answer(url, o)), { status: 200, headers: { 'Content-Type': 'application/json' } });
   }));
   const host = document.createElement('div');
@@ -203,12 +214,139 @@ describe('PullPage', () => {
 });
 
 describe('threadSelector', () => {
-  const base = { id: 't', path: 'a', pathLabel: 'a', resolved: false, outdated: false, startLine: null, originalLine: 1, truncated: false, comments: [] };
+  const base = { id: 't', path: 'a', pathLabel: 'a', resolved: false, outdated: false, startLine: null, originalLine: 1, truncated: false, canReply: false, canResolve: false, canUnresolve: false, comments: [] };
 
   it('uses the new side for RIGHT, the old for LEFT, and nothing for files or outdated threads', () => {
     expect(threadSelector({ ...base, line: 4, side: 'RIGHT', subject: 'LINE' })).toBe('[data-line="4"]');
     expect(threadSelector({ ...base, line: 4, side: 'LEFT', subject: 'LINE' })).toBe('[data-old-line="4"]');
     expect(threadSelector({ ...base, line: null, side: 'RIGHT', subject: 'LINE' })).toBeNull();
     expect(threadSelector({ ...base, line: 4, side: 'RIGHT', subject: 'FILE' })).toBeNull();
+  });
+});
+
+describe('PullPage writes', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    document.body.innerHTML = '';
+    sessionStorage.clear();
+  });
+
+  async function type(textarea: HTMLTextAreaElement, text: string) {
+    await act(async () => {
+      const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')!.set!;
+      setter.call(textarea, text);
+      textarea.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+  }
+
+  async function click(element: Element, host: HTMLElement) {
+    await act(async () => {
+      (element as HTMLElement).click();
+    });
+    await settle(host, () => false);
+  }
+
+  const button = (root: ParentNode, label: string) => Array.from(root.querySelectorAll('button')).find((b) => b.textContent === label)!;
+  const writes = () => calls.filter((c) => c.method !== 'GET' && !c.url.endsWith('/markdown'));
+
+  it('draws no write control when the snapshot says nothing may be written', async () => {
+    const { host, root } = await render('/acme/plant/pull/12?tab=files&path=src%2FPump.st&view=raw');
+
+    expect(host.querySelector('.comment-box')).toBeNull();
+    expect(button(host, 'Reply')).toBeUndefined();
+    expect(button(host, 'Resolve')).toBeUndefined();
+    act(() => root.unmount());
+  });
+
+  it('posts a conversation comment with the forgery header, an operation key and the snapshot, then re-reads', async () => {
+    const { host, root } = await render('/acme/plant/pull/12', { writable: true });
+    const box = host.querySelector('.comment-box')!;
+    const before = calls.filter((c) => c.url.endsWith('/timeline')).length;
+
+    await type(box.querySelector('textarea')!, 'Looks right.');
+    await click(button(box, 'Comment'), host);
+
+    const posted = writes()[0]!;
+    expect(posted.url.endsWith('/pulls/12/comments')).toBe(true);
+    expect(posted.csrf).toBe('1');
+    expect(posted.snapshot).toBe(token);
+    expect(posted.body?.body).toBe('Looks right.');
+    expect(String(posted.body?.opKey)).toMatch(/^\d{13}-[A-Za-z0-9]{16,}$/);
+    expect(calls.filter((c) => c.url.endsWith('/timeline')).length).toBeGreaterThan(before);
+    expect(host.querySelector<HTMLTextAreaElement>('.comment-box textarea')!.value).toBe('');
+    act(() => root.unmount());
+  });
+
+  it('keeps the draft when the outcome is unknown, and the retry carries the same key', async () => {
+    const unknown = { status: 202, body: { outcome: 'unknown', message: 'This may or may not have been posted.' } };
+    const { host, root } = await render('/acme/plant/pull/12', { writable: true, writes: { '/comments': unknown } });
+    const box = host.querySelector('.comment-box')!;
+
+    await type(box.querySelector('textarea')!, 'Maybe.');
+    await click(button(box, 'Comment'), host);
+    expect(host.querySelector('.comment-note')?.textContent).toContain('may or may not');
+    expect(host.querySelector<HTMLTextAreaElement>('.comment-box textarea')!.value).toBe('Maybe.');
+    await click(button(host.querySelector('.comment-box')!, 'Try again'), host);
+
+    const [first, second] = writes();
+    expect(first!.body?.opKey).toBe(second!.body?.opKey);
+    act(() => root.unmount());
+  });
+
+  it('writes a line comment from a gutter click on Raw, on the side of the row clicked', async () => {
+    const { host, root } = await render('/acme/plant/pull/12?tab=files&path=src%2FPump.st&view=raw', { writable: true });
+    const oldRow = Array.from(host.querySelectorAll('.cd-drow')).find((r) => r.getAttribute('data-old-line') === '3' && !r.hasAttribute('data-line'))!;
+
+    await click(oldRow.querySelector('.cd-num')!, host);
+    const draft = host.querySelector('.thread-draft')!;
+    expect(draft.textContent).toContain('old line 3');
+    await type(draft.querySelector('textarea')!, 'Was this ever right?');
+    await click(button(draft, 'Comment'), host);
+
+    const posted = writes()[0]!;
+    expect(posted.url.endsWith('/line-comments')).toBe(true);
+    expect(posted.body).toMatchObject({ path: 'src/Pump.st', line: 3, side: 'LEFT', body: 'Was this ever right?' });
+    act(() => root.unmount());
+  });
+
+  it('after a refusal nothing was posted, so the text unlocks and the next submission is a new operation', async () => {
+    const refused = { status: 422, body: { error: 'line-not-in-diff', message: 'GitHub only takes comments on lines shown in its diff of this file.' } };
+    const { host, root } = await render('/acme/plant/pull/12', { writable: true, writes: { '/comments': refused } });
+    const box = host.querySelector('.comment-box')!;
+
+    await type(box.querySelector('textarea')!, 'First try.');
+    await click(button(box, 'Comment'), host);
+    const textarea = host.querySelector<HTMLTextAreaElement>('.comment-box textarea')!;
+    expect(textarea.readOnly).toBe(false);
+    expect(button(host.querySelector('.comment-box')!, 'Comment')).toBeDefined();
+    await click(button(host.querySelector('.comment-box')!, 'Comment'), host);
+
+    const [first, second] = writes();
+    expect(first!.body?.opKey).not.toBe(second!.body?.opKey);
+    act(() => root.unmount());
+  });
+
+  it('says the pull request moved when a write is refused as stale, and keeps the draft', async () => {
+    const stale = { status: 409, body: { error: 'snapshot-stale', message: 'This pull request changed after you opened it.' } };
+    const { host, root } = await render('/acme/plant/pull/12', { writable: true, writes: { '/comments': stale } });
+    const box = host.querySelector('.comment-box')!;
+
+    await type(box.querySelector('textarea')!, 'Hold on.');
+    await click(button(box, 'Comment'), host);
+
+    expect(host.querySelector('.review-stale')?.textContent).toContain('drafts are kept');
+    expect(host.querySelector<HTMLTextAreaElement>('.comment-box textarea')!.value).toBe('Hold on.');
+    act(() => root.unmount());
+  });
+
+  it('resolves a thread with one click, naming the thread and the state wanted', async () => {
+    const { host, root } = await render('/acme/plant/pull/12?tab=files&path=src%2FPump.st&view=raw', { writable: true });
+
+    await click(button(host.querySelector('[data-thread="NEW3"]')!, 'Resolve'), host);
+
+    const posted = writes()[0]!;
+    expect(posted.url.endsWith('/threads/NEW3/resolve')).toBe(true);
+    expect(posted.body?.resolved).toBe(true);
+    act(() => root.unmount());
   });
 });

@@ -603,6 +603,17 @@ only use of Contents write; **no admin bypass, ever**.
    rendered view's threads are listed rather than placed, because its row numbers are section
    lines, not the file lines GitHub means — placing by them would put a comment on the wrong line.
 2. Conversation and raw inline comments with C5 recovery; the write seam and S1–S4, S7, S9, S10.
+   **Built 2026-10-17; its real-GitHub gate waits for the App with Pull requests and Issues write.**
+   As built, differences from the plan worth knowing: the switch is `Web:Writes:Enabled` with
+   `Web:Writes:Repositories` (opt-in per repository; empty means none), `Web:Writes:SingleInstance`
+   and `PerSessionPerMinute`; there is no startup sweep of abandoned operations, because reconciling
+   one needs the person's own token — an abandoned one is reconciled when its key comes back, which
+   the page's kept draft makes happen; only line comments re-check the snapshot against the live pull
+   request (replies, edits and resolutions are not positions in a revision); and the forgery gate is
+   middleware rather than an endpoint filter, because filters run after the body is bound (a form post
+   got the framework's answer, and with writes off a malformed body answered before the kill switch).
+   `RedisOperationLedger` is written and not yet run against a real Redis: the in-memory ledger carries
+   every test, and a multi-instance deployment needs that one look first.
 3. Rendered anchors with provenance (C3, C6), parser line info in the pure packs, the markers
    contract (the drifted `data-network` / `data-element` names reconciled with the code's
    `data-net` / `data-key`).
