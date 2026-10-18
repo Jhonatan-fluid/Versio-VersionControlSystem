@@ -19,6 +19,47 @@ produce a diff touching everything else.
 
 ---
 
+### The matches-HEAD check trusted a status git never produced, and missed renames
+
+**2026-10-17, `main`, from review of `373a3e9` and `0a4bb92`.** Three findings, all confirmed,
+two of which recorded a changed project as exported, which skips the export the commit gate
+exists to force.
+
+1. **A failed `git status` read as a clean tree.** `GitCliClient.StatusAsync` parsed stdout
+   without checking whether git succeeded, so a failure came back as an empty status. With
+   `ListWorkingTreeAsync` succeeding, `AdoptCommittedStateAsync` saw "nothing changed under the
+   binding, and both sides listed", and adopted a modified project. `GitStatus` now carries
+   `Failure` (`WasRead` is its negation): set by the client when git fails, and null by default
+   so every status built by hand still reads as read. Adoption refuses an unread status, and
+   says why at Info, because the safe outcome (exporting instead) is also the costly one. The
+   other four `StatusAsync` callers are unchanged. They draw lists that redraw on the next
+   refresh, but whether any of them **decides** on `IsClean` is worth a separate look.
+2. **Rename sources were ignored.** Only each change's destination was matched against the
+   binding, so `plc/A/Simulation.st` moved to `archive/` removed a file from the mirror while
+   every reported path sat outside it. `OriginalPath` counts too now.
+3. **`LIBRARY_PARAMETERS_EFFECTIVE` was not classified**, so
+   `Every_exporter_warning_is_classified_as_losing_an_object_or_not` failed every run.
+   `0a4bb92` was committed after the parity and arch suites, but **not the pure suite**. It is
+   recorded-anyway: the file is still written, and its content may say more than the project
+   holds.
+
+**And the owner's rule, carried through.** "A project with no changes and a valid mirror should
+not be detected, even if sync has never run on this computer" was implemented in `373a3e9` only
+at open. Discard clears the export record on purpose, so two CODESYS projects discarded back to
+HEAD on 2026-10-17 would have been exported by the next commit. The check now runs at the top of
+`RefreshStalenessAsync`, which every "what is stale" question goes through. It costs no git call
+unless some binding is Clean with no record (`HasUnrecordedBindings`), and it is held off while
+git rewrites the tree.
+
+**Two test lessons.** The first App test for the every-refresh wiring discarded the **project
+file**. Discard releases a binding only for files inside its **mirror**
+(`BindingConventions.OwnerOf`), so the record was never cleared, and the test stayed green
+with the wiring deleted. It discards a mirror file now, and goes red without the call. Second,
+after the mutation runs, a `--no-build` pass ran the mutants' binaries and showed two reds
+that a rebuild cleared: the 2026-10-10 timestamp trap from the other side.
+
+---
+
 ### A library default was exported as though the project set it
 
 **2026-10-16, `main`.** Re-exporting RefrigeratorControl and MachineWithMembers under SP22 Patch 4

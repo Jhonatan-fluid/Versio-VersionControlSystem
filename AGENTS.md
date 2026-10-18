@@ -252,9 +252,9 @@ stays that way.
 
 | Suite | Count | Time | Needs |
 |---|---|---|---|
-| `Versio.Core.Tests` | 1,779 | under a second | nothing |
-| `Versio.Integration.Tests` | 174 | ~10 s | real git |
-| `Versio.App.Tests` | 790 | ~3.6 min on 2026-09-22, 8 m 38 s on 2026-10-05 (idleness not checked); STA, no window shown; it was ~50 s once | nothing |
+| `Versio.Core.Tests` | 1,781 | under a second | nothing |
+| `Versio.Integration.Tests` | 176 | ~10 s | real git |
+| `Versio.App.Tests` | 791 | ~3.6 min on 2026-09-22, 8 m 38 s on 2026-10-05 (idleness not checked); STA, no window shown; it was ~50 s once | nothing |
 | `Versio.Arch.Tests` | 35 | instant | nothing — it reads assembly metadata, IL and the `.csproj` files |
 | `Versio.Plc.Codesys.Pure.Tests` | 378 | under a second | nothing — the planner, the codecs, the protocol |
 | `Versio.Plc.Codesys.Parity.Tests` | 100 | ~15 s | `python` on PATH — **skips cleanly without it, so check the count, not the colour** |

@@ -2065,6 +2065,15 @@ public sealed class SyncViewModel : ObservableObject
             return;
         }
 
+        // Before the gate, on every refresh rather than only at open. A project that is
+        // untouched and matches HEAD is not stale, whenever it got there: a fresh clone, but
+        // also a discard (which clears the export record on purpose) that leaves the mirror
+        // back at HEAD. Seen 2026-10-17: two discarded CODESYS projects, clean and identical
+        // to HEAD, would have been re-exported by the next commit because the check ran only
+        // when the repository was opened. Every caller that asks "what is stale" comes
+        // through here, so this is the one place it has to be.
+        await AdoptCommittedStateAsync(CancellationToken.None).ConfigureAwait(true);
+
         try
         {
             var gate = await _orchestrator.EvaluateCommitGateAsync(CancellationToken.None)

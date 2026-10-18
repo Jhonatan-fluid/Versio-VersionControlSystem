@@ -168,6 +168,51 @@ public sealed class ProjectPanelCalmStateTests
     }
 
     [Fact]
+    public async Task A_discard_that_leaves_the_project_at_HEAD_is_not_reported_as_unexported()
+    {
+        // 2026-10-17: Discard clears the export record on purpose, and the matches-HEAD check
+        // ran only when the repository was opened, so two discarded projects - untouched and
+        // identical to HEAD - would have been exported by the next commit. It runs on every
+        // staleness refresh now.
+        using var repo = new TempRepo(identity: true);
+        GivenACommittedProject(repo);
+
+        var toolchain = new CapturingToolchain();
+        using var shell = TestShell.Build(out _, toolchain: toolchain);
+
+        // Settled first, as a real repository is: opening writes the .gitattributes and
+        // .gitignore rules, and a project file restored under an uncommitted LFS rule is a
+        // different test.
+        await OpenAndSettleAsync(repo, shell);
+        Assert.Equal(0, shell.Sync.UnexportedCount);
+
+        // A MIRROR file, as on 2026-10-17: Discard releases a binding only for files inside
+        // its mirror (BindingConventions.OwnerOf), and that release is what clears the record.
+        // An earlier version of this test discarded the project file, never reached the
+        // release, and stayed green with the wiring deleted.
+        const string mirrorFile = "plc/Machine/Application/FB_Motor.st";
+        File.WriteAllText(Path.Combine(repo.Path, "plc", "Machine", "Application", "FB_Motor.st"),
+            "FUNCTION_BLOCK FB_Motor\nVAR x : INT; END_VAR\n");
+        await shell.RefreshAsync();
+        await Eventually.Until(() => shell.Pending.Any(r => r.Path == mirrorFile),
+            "the mirror edit is listed");
+
+        shell.Pending.Single(r => r.Path == mirrorFile).IsSelected = true;
+        shell.Asked().Destructive = _ => true;
+        var jobsBefore = toolchain.Jobs.Count;
+        await Eventually.Press(shell.DiscardCommand, "discard");
+        await Eventually.Until(() => shell.Pending.All(r => r.Path != mirrorFile),
+            "the mirror edit was discarded",
+            () => $"pending: {string.Join(", ", shell.Pending.Select(r => r.Path + (r.IsSelected ? "*" : "")))} | " +
+                  $"status: {shell.StatusSummary} | jobs: {toolchain.Jobs.Count}");
+        await shell.RefreshAsync();
+
+        Assert.Equal(0, shell.Sync.UnexportedCount);
+        Assert.Equal(string.Empty, shell.Sync.StalenessSummary);
+        Assert.Equal(jobsBefore, toolchain.Jobs.Count);
+    }
+
+    [Fact]
     public async Task A_failed_export_is_named_as_a_failure_not_as_unexported_changes()
     {
         // Seen 2026-10-16: four exports failed for reasons outside the projects, which were
