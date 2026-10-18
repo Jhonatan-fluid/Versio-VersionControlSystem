@@ -1032,12 +1032,13 @@ public sealed class SyncViewModel : ObservableObject
 
         try
         {
-            // The whole status, not its paths: the orchestrator refuses one git could not
-            // read, and counts both ends of a rename.
-            var status = await _git.StatusAsync(ct).ConfigureAwait(true);
-            var listed = await _git.ListWorkingTreeAsync(ct).ConfigureAwait(true);
+            // The status as a question, not an answer: the orchestrator asks it before and
+            // after hashing, so a save in between is not recorded as exported, and it refuses
+            // a status git could not read.
+            var git = _git;
+            var listed = await git.ListWorkingTreeAsync(ct).ConfigureAwait(true);
 
-            var adopted = await _orchestrator.AdoptCommittedStateAsync(status, listed, ct)
+            var adopted = await _orchestrator.AdoptCommittedStateAsync(git.StatusAsync, listed, ct)
                 .ConfigureAwait(true);
 
             if (adopted.Count > 0)

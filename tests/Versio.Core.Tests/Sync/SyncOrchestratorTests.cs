@@ -149,6 +149,10 @@ public class SyncOrchestratorTests
 
     private static readonly string[] Listed = ["plc/A.project", "plc/A/_manifest.json", "plc/A/Simulation.st"];
 
+    /// <summary>A status reader that answers the same status every time it is asked.</summary>
+    private static Func<CancellationToken, Task<GitStatus>> Fixed(GitStatus status) =>
+        _ => Task.FromResult(status);
+
     /// <summary>A status git actually read, reporting these working-tree changes.</summary>
     private static GitStatus Status(params string[] modified) => new()
     {
@@ -166,7 +170,7 @@ public class SyncOrchestratorTests
         // changed, because the empty record read to the gate as "changed since last export".
         var h = new Harness();
 
-        var adopted = await h.Orchestrator.AdoptCommittedStateAsync(Status(), Listed, CancellationToken.None);
+        var adopted = await h.Orchestrator.AdoptCommittedStateAsync(Fixed(Status()), Listed, CancellationToken.None);
 
         Assert.Equal([BindingId], adopted);
         Assert.Empty(h.Codesys.Jobs);
@@ -184,7 +188,7 @@ public class SyncOrchestratorTests
     {
         var h = new Harness();
 
-        var adopted = await h.Orchestrator.AdoptCommittedStateAsync(Status(changed), Listed, CancellationToken.None);
+        var adopted = await h.Orchestrator.AdoptCommittedStateAsync(Fixed(Status(changed)), Listed, CancellationToken.None);
 
         Assert.Empty(adopted);
         var gate = await h.Orchestrator.EvaluateCommitGateAsync(CancellationToken.None);
@@ -196,8 +200,7 @@ public class SyncOrchestratorTests
     {
         var h = new Harness();
 
-        var adopted = await h.Orchestrator.AdoptCommittedStateAsync(
-            Status("README.md", "plc/AB/x.st"), Listed, CancellationToken.None);
+        var adopted = await h.Orchestrator.AdoptCommittedStateAsync(Fixed(Status("README.md", "plc/AB/x.st")), Listed, CancellationToken.None);
 
         Assert.Equal([BindingId], adopted);
     }
@@ -209,7 +212,7 @@ public class SyncOrchestratorTests
     {
         var h = new Harness();
 
-        Assert.Empty(await h.Orchestrator.AdoptCommittedStateAsync(Status(), [onlyListed], CancellationToken.None));
+        Assert.Empty(await h.Orchestrator.AdoptCommittedStateAsync(Fixed(Status()), [onlyListed], CancellationToken.None));
     }
 
     [Fact]
@@ -221,7 +224,7 @@ public class SyncOrchestratorTests
         var h = new Harness();
         var unread = Status() with { Failure = "fatal: index file corrupt" };
 
-        Assert.Empty(await h.Orchestrator.AdoptCommittedStateAsync(unread, Listed, CancellationToken.None));
+        Assert.Empty(await h.Orchestrator.AdoptCommittedStateAsync(Fixed(unread), Listed, CancellationToken.None));
         var gate = await h.Orchestrator.EvaluateCommitGateAsync(CancellationToken.None);
         Assert.Equal(GateDecision.ExportRequired, gate.Decision);
     }
@@ -245,7 +248,85 @@ public class SyncOrchestratorTests
             ],
         };
 
-        Assert.Empty(await h.Orchestrator.AdoptCommittedStateAsync(renamed, Listed, CancellationToken.None));
+        Assert.Empty(await h.Orchestrator.AdoptCommittedStateAsync(Fixed(renamed), Listed, CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task A_lock_taken_while_adoption_was_checking_is_not_overwritten()
+    {
+        // Review, 2026-10-17: the lock was read, the files hashed, and the stale copy written
+        // back, so a direction taken in that window came out Clean. The second status read is
+        // after the first hash, so taking the lock there lands exactly in that window.
+        var h = new Harness();
+        h.Codesys.EnqueueSuccess("plc/A/Main.st");
+        var asked = 0;
+
+        var adopted = await h.Orchestrator.AdoptCommittedStateAsync(async ct =>
+        {
+            if (++asked == 2)
+            {
+                await h.ProjectChanged();
+            }
+
+            return Status();
+        }, Listed, CancellationToken.None);
+
+        Assert.Equal(2, asked);
+        Assert.Empty(adopted);
+        Assert.Equal(SyncDirection.ProjectAuthoritative, h.Orchestrator.StateOf(BindingId));
+    }
+
+    [Fact]
+    public async Task A_save_after_the_first_status_is_not_recorded_as_exported()
+    {
+        // Review, 2026-10-17: the clean status was taken as proof for files hashed later. A
+        // save in between now shows up in the second status.
+        var h = new Harness();
+        var asked = 0;
+
+        var adopted = await h.Orchestrator.AdoptCommittedStateAsync(_ =>
+        {
+            if (++asked == 1)
+            {
+                h.SetProject("v2, saved just after git looked");
+                return Task.FromResult(Status());
+            }
+
+            return Task.FromResult(Status("plc/A.project"));
+        }, Listed, CancellationToken.None);
+
+        Assert.Empty(adopted);
+        var gate = await h.Orchestrator.EvaluateCommitGateAsync(CancellationToken.None);
+        Assert.Equal(GateDecision.ExportRequired, gate.Decision);
+    }
+
+    [Fact]
+    public async Task A_save_after_the_second_status_is_caught_by_the_second_hash()
+    {
+        var h = new Harness();
+        var asked = 0;
+
+        var adopted = await h.Orchestrator.AdoptCommittedStateAsync(_ =>
+        {
+            if (++asked == 2)
+            {
+                h.SetProject("v2, saved just after git looked again");
+            }
+
+            return Task.FromResult(Status());
+        }, Listed, CancellationToken.None);
+
+        Assert.Empty(adopted);
+    }
+
+    [Fact]
+    public async Task A_mirror_git_lists_but_the_disk_does_not_have_is_not_adopted()
+    {
+        // Review, 2026-10-17: a sparse checkout leaves skip-worktree files listed and absent.
+        var h = new Harness();
+        string[] listed = [.. Listed, "plc/A/Absent.st"];
+
+        Assert.Empty(await h.Orchestrator.AdoptCommittedStateAsync(Fixed(Status()), listed, CancellationToken.None));
     }
 
     [Fact]
@@ -255,7 +336,7 @@ public class SyncOrchestratorTests
         h.Codesys.EnqueueFailure("boom");
         await h.ProjectChanged();
 
-        Assert.Empty(await h.Orchestrator.AdoptCommittedStateAsync(Status(), Listed, CancellationToken.None));
+        Assert.Empty(await h.Orchestrator.AdoptCommittedStateAsync(Fixed(Status()), Listed, CancellationToken.None));
         Assert.Equal(SyncDirection.Failed, h.Orchestrator.StateOf(BindingId));
     }
 
