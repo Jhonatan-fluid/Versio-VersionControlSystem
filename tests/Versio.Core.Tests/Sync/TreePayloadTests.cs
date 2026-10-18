@@ -1,3 +1,4 @@
+using Versio.Core.Git;
 using Versio.Core.Abstractions;
 using Versio.Core.Bindings;
 using Versio.Core.Locking;
@@ -49,6 +50,44 @@ public sealed class TreePayloadTests
         h.Runner.EnqueueSuccess("plc/plant-export/Main.scl");
         var moved = await h.ProjectChanged();
         Assert.Equal(SyncVerdict.Completed, moved.Verdict);
+    }
+
+    private static Func<CancellationToken, Task<GitStatus>> Clean() =>
+        _ => Task.FromResult(new GitStatus { Branch = new BranchInfo { Name = "main", IsCurrent = true } });
+
+    private static readonly string[] Listed =
+    [
+        "plc/plant/Station.treeproj",
+        "plc/plant/System/program.bin",
+        "plc/plant/Logs/session.log",
+        "plc/plant-export/_manifest.json",
+        "plc/plant-export/Main.scl",
+    ];
+
+    [Fact]
+    public async Task A_directory_project_whose_listed_program_is_absent_is_not_adopted()
+    {
+        // Third review, 2026-10-17: a sparse checkout kept the pointer and the mirror and
+        // dropped the program beside the pointer. Git still listed System/program.bin, the hash
+        // was taken over what was left, and adoption recorded it as exported; the gate said
+        // Proceed. Listed payload files that count toward the hash must be on disk.
+        var h = Harness.Create();
+
+        Assert.Empty(await h.Orchestrator.AdoptCommittedStateAsync(Clean(), Listed, CancellationToken.None));
+        var gate = await h.Orchestrator.EvaluateCommitGateAsync(CancellationToken.None);
+        Assert.Equal(GateDecision.ExportRequired, gate.Decision);
+    }
+
+    [Fact]
+    public async Task A_listed_payload_file_that_does_not_count_toward_the_hash_does_not_refuse()
+    {
+        // The same predicate the hash uses: a missing log changes nothing about the program,
+        // so it must not cost an export.
+        var h = Harness.Create();
+        h.WritePayload("System/program.bin", "the program");
+
+        Assert.Equal([BindingId],
+            await h.Orchestrator.AdoptCommittedStateAsync(Clean(), Listed, CancellationToken.None));
     }
 
     [Fact]

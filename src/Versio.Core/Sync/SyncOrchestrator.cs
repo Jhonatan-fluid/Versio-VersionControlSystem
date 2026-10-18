@@ -856,9 +856,28 @@ public sealed class SyncOrchestrator
 
             // On disk, not just listed: skip-worktree files in a sparse checkout are listed and
             // absent, and an absent mirror is the one thing this must never call exported.
+            //
+            // The PAYLOAD too, for a directory project. Its pointer and its mirror can both be
+            // present while the program files beside the pointer are not; the project hash is
+            // then taken over whatever is left, and was adopted as exported (third review,
+            // 2026-10-17, System/program.bin listed and absent, gate Proceed). Every listed
+            // payload file that counts toward the project hash must exist, judged by the same
+            // CountsTowardProjectHash the hash uses, so a missing log file does not refuse.
+            var payload = owner.PayloadPath.Replace('\\', '/').TrimEnd('/');
+            var format = _formats(binding.ProjectPath);
+            var payloadFiles = payload.Length == 0
+                ? []
+                : listed
+                    .Where(p => p.StartsWith(payload + "/", StringComparison.OrdinalIgnoreCase)
+                                && !string.Equals(p, project, StringComparison.OrdinalIgnoreCase)
+                                && (format is null
+                                    || format.CountsTowardProjectHash(p[(payload.Length + 1)..])))
+                    .ToList();
+
             var onDisk = _fs.FileExists(Absolute(project))
                          && mirrorFiles.Count > 0
-                         && mirrorFiles.All(p => _fs.FileExists(Absolute(p)));
+                         && mirrorFiles.All(p => _fs.FileExists(Absolute(p)))
+                         && payloadFiles.All(p => _fs.FileExists(Absolute(p)));
 
             if (!untouched || !projectListed || !onDisk)
             {

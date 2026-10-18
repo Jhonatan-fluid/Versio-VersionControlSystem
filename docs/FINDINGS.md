@@ -47,6 +47,15 @@ something as exported that was not.
    named only A. `CommitGateResult.UnexportedBindings` now lists every relevant non-failed
    binding that is behind, for every decision, and the panel counts from it.
 
+5. **A directory project's payload was not checked (third review, same day).** The disk check
+   covered the pointer and the mirror, and not the program files beside the pointer. A sparse
+   checkout kept the first two and dropped `System/program.bin`: git still listed it, the
+   project hash was taken over what was left, adoption recorded it, and the gate said Proceed.
+   Every listed payload file that counts toward the project hash must now exist. It is judged
+   by the same `CountsTowardProjectHash` the hash uses, so a missing log does not cost an export.
+   Two tests in `TreePayloadTests`, one per side of that predicate, and each goes red when its
+   half is removed.
+
 **Evidence.** One regression test per finding: four in Core, and an App test that seeds the
 test repository's own `state.json` with A failed. Each was mutation-checked: compare-and-swap
 disabled, second status ignored, second hash ignored, disk check removed, `UnexportedBindings`
