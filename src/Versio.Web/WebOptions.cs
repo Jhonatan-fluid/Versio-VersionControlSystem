@@ -85,6 +85,14 @@ public sealed class GitHubOptions
     /// <summary>The REST API. GitHub Enterprise Server: <c>https://host/api/v3</c>. Configuration only, never user input.</summary>
     public string ApiBaseUrl { get; set; } = "https://api.github.com";
 
+    /// <summary>
+    /// The GraphQL endpoint, which review threads, their resolved and outdated state and the
+    /// review decision are only available from. Empty: <see cref="ApiBaseUrl"/> + <c>/graphql</c>,
+    /// right for github.com; GitHub Enterprise Server's is <c>https://host/api/graphql</c>, beside
+    /// rather than under its REST base, so it is set there. Configuration only, never user input.
+    /// </summary>
+    public string GraphQlUrl { get; set; } = string.Empty;
+
     /// <summary>Where sign-in and LFS live. GitHub Enterprise Server: <c>https://host</c>.</summary>
     public string WebBaseUrl { get; set; } = "https://github.com";
 

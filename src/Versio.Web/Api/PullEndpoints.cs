@@ -84,6 +84,8 @@ public static class PullEndpoints
             });
         });
 
+        MapLive(pulls);
+
         pulls.MapGet("/files", async (string owner, string repo, int number, HttpContext http, AccessResolver access,
             ReviewSnapshots snapshots, ApiEndpoints.Loader load, PullReview review, IOptions<WebOptions> options, CancellationToken ct) =>
         {
@@ -156,6 +158,173 @@ public static class PullEndpoints
                 : ApiEndpoints.Refused(result.Failure, http);
         });
     }
+
+    /// <summary>The live state, threads, conversation and commits: each against the snapshot it is read for.</summary>
+    private static void MapLive(RouteGroupBuilder pulls)
+    {
+        // Polled every 30 s while the page is open. "stale" is the whole point: the pull request's
+        // live head or base is no longer the snapshot's, so the page stops combining and offers a
+        // reload. The checks are the SNAPSHOT head's, because that is the code under review.
+        pulls.MapGet("/status", async (string owner, string repo, int number, HttpContext http, AccessResolver access,
+            ReviewSnapshots snapshots, IRepoSource source, CancellationToken ct) =>
+        {
+            var opened = await OpenAsync(owner, repo, number, http, access, snapshots, ct).ConfigureAwait(false);
+            if (opened.Refusal is { } refusal)
+            {
+                return refusal;
+            }
+
+            var s = opened.Snapshot!;
+            var summary = await source.GetPullSummaryAsync(opened.Access!, owner, repo, number, ct).ConfigureAwait(false);
+            var checks = await source.GetChecksAsync(opened.Access!, owner, repo, s.HeadSha, ct).ConfigureAwait(false);
+            var live = summary.Ok ? summary.Value! : null;
+            return Results.Ok(new
+            {
+                // Unknown is not "unchanged": without the live state, the page cannot vouch for the
+                // snapshot either, and says so rather than staying quiet.
+                stale = live is not null && (live.HeadSha != s.HeadSha || live.BaseRef != s.BaseRef || (live.BaseTipSha is { } tip && tip != s.BaseSha)),
+                headMoved = live is not null && live.HeadSha != s.HeadSha,
+                baseMoved = live is not null && (live.BaseRef != s.BaseRef || (live.BaseTipSha is { } t && t != s.BaseSha)),
+                summaryError = summary.Ok ? null : Problem(summary.Failure),
+                summary = live is null ? null : new
+                {
+                    state = live.State,
+                    draft = live.Draft,
+                    merged = live.Merged,
+                    mergeable = live.Mergeable,
+                    reviewDecision = live.ReviewDecision,
+                    labels = live.Labels.Select(l => new { name = CodeHtml.Spelled(l.Name), color = l.Color }),
+                    assignees = live.Assignees.Select(CodeHtml.Spelled),
+                    reviewers = live.Reviewers.Select(r => new { login = CodeHtml.Spelled(r.Login), state = r.State }),
+                },
+                checksError = checks.Ok ? null : Problem(checks.Failure),
+                checks = checks.Ok
+                    ? checks.Value!.Select(c => new { name = CodeHtml.Spelled(c.Name), status = c.Status, conclusion = c.Conclusion, url = c.Url, source = c.Source })
+                    : null,
+            });
+        });
+
+        pulls.MapGet("/threads", async (string owner, string repo, int number, HttpContext http, AccessResolver access,
+            ReviewSnapshots snapshots, IRepoSource source, CancellationToken ct) =>
+        {
+            var opened = await OpenAsync(owner, repo, number, http, access, snapshots, ct).ConfigureAwait(false);
+            if (opened.Refusal is { } refusal)
+            {
+                return refusal;
+            }
+
+            var threads = await source.GetReviewThreadsAsync(opened.Access!, owner, repo, number, ct).ConfigureAwait(false);
+            if (!threads.Ok)
+            {
+                return ApiEndpoints.Refused(threads.Failure, http);
+            }
+
+            return Results.Ok(new
+            {
+                truncated = threads.Value!.Truncated,
+                threads = threads.Value.Threads.Select(t => new
+                {
+                    id = t.Id,
+                    path = t.Path,
+                    pathLabel = CodeHtml.Spelled(t.Path),
+                    resolved = t.Resolved,
+                    outdated = t.Outdated,
+                    line = t.Line,
+                    startLine = t.StartLine,
+                    side = t.Side,
+                    originalLine = t.OriginalLine,
+                    subject = t.SubjectType,
+                    truncated = t.Truncated,
+                    comments = t.Comments.Select(c => new
+                    {
+                        id = c.Id,
+                        author = CodeHtml.Spelled(c.Author),
+                        when = c.When,
+                        html = ApiEndpoints.MarkdownFragment(c.Body),
+                        commit = c.Commit,
+                        originalCommit = c.OriginalCommit,
+                    }),
+                }),
+            });
+        });
+
+        pulls.MapGet("/timeline", async (string owner, string repo, int number, HttpContext http, AccessResolver access,
+            ReviewSnapshots snapshots, IRepoSource source, CancellationToken ct) =>
+        {
+            var opened = await OpenAsync(owner, repo, number, http, access, snapshots, ct).ConfigureAwait(false);
+            if (opened.Refusal is { } refusal)
+            {
+                return refusal;
+            }
+
+            var timeline = await source.GetTimelineAsync(opened.Access!, owner, repo, number, ct).ConfigureAwait(false);
+            return timeline.Ok
+                ? Results.Ok(new
+                {
+                    truncated = timeline.Value!.Truncated,
+                    items = timeline.Value.Items.Select(i => new
+                    {
+                        kind = i.Kind,
+                        actor = CodeHtml.Spelled(i.Actor),
+                        when = i.When,
+                        // Comments and reviews are Markdown by anyone who can comment: rendered by
+                        // Core and sanitised by the page, as every body is. A commit's headline is
+                        // text, spelled.
+                        html = i.Kind is "comment" or "review" && !string.IsNullOrEmpty(i.Body) ? ApiEndpoints.MarkdownFragment(i.Body) : null,
+                        text = i.Kind == "commit" ? CodeHtml.Spelled(i.Body ?? "") : null,
+                        state = i.State,
+                        sha = i.Sha,
+                    }),
+                })
+                : ApiEndpoints.Refused(timeline.Failure, http);
+        });
+
+        pulls.MapGet("/commits", async (string owner, string repo, int number, HttpContext http, AccessResolver access,
+            ReviewSnapshots snapshots, IRepoSource source, CancellationToken ct) =>
+        {
+            var opened = await OpenAsync(owner, repo, number, http, access, snapshots, ct).ConfigureAwait(false);
+            if (opened.Refusal is { } refusal)
+            {
+                return refusal;
+            }
+
+            var commits = await source.GetPullCommitsAsync(opened.Access!, owner, repo, number, ct).ConfigureAwait(false);
+            if (!commits.Ok)
+            {
+                return ApiEndpoints.Refused(commits.Failure, http);
+            }
+
+            // The list is the branch's live commits, oldest first. Those after the snapshot's head
+            // arrived since the review loaded: marked, not hidden, so nobody mistakes them for
+            // reviewed. With the head not in the list at all (a force-push replaced it), none can be
+            // vouched for, and none is marked as in the snapshot.
+            var list = commits.Value!.Commits;
+            var head = list.ToList().FindIndex(c => c.Sha == opened.Snapshot!.HeadSha);
+            return Results.Ok(new
+            {
+                truncated = commits.Value.Truncated,
+                headFound = head >= 0,
+                commits = list.Select((c, i) => new
+                {
+                    sha = c.Sha,
+                    headline = CodeHtml.Spelled(c.Headline),
+                    author = CodeHtml.Spelled(c.Author),
+                    when = c.When,
+                    inSnapshot = head >= 0 && i <= head,
+                }),
+            });
+        });
+    }
+
+    /// <summary>A failure the page words in place, without failing the whole answer.</summary>
+    private static string Problem(RepoFailure failure) => failure switch
+    {
+        RepoFailure.Unauthorized => "sign-in",
+        RepoFailure.RateLimited => "rate-limit",
+        RepoFailure.SsoRequired => "sso",
+        RepoFailure.NotFound => "not-found",
+        _ => "upstream",
+    };
 
     /// <summary>Who a snapshot is sealed for: a signed-in person by login, everyone else alike.</summary>
     /// <remarks>

@@ -93,6 +93,83 @@ public sealed record PullFile(string Path, string Status, string? PreviousPath, 
 /// <summary>GitHub's changed files for a diff, and whether it stopped listing before the end.</summary>
 public sealed record PullFileList(IReadOnlyList<PullFile> Files, bool Truncated);
 
+/// <summary>A label on a pull request. <paramref name="Color"/> is six hex digits, or empty when GitHub sent anything else.</summary>
+public sealed record PullLabel(string Name, string Color);
+
+/// <summary>A reviewer's standing: REQUESTED, or their latest APPROVED, CHANGES_REQUESTED, COMMENTED or DISMISSED review.</summary>
+public sealed record PullReviewer(string Login, string State);
+
+/// <summary>
+/// A pull request's live state, as of the read: what the page polls to notice that the review's
+/// revision is no longer the pull request's.
+/// </summary>
+/// <param name="State">OPEN, CLOSED or MERGED.</param>
+/// <param name="Mergeable">MERGEABLE, CONFLICTING or UNKNOWN (GitHub computes it lazily).</param>
+/// <param name="ReviewDecision">APPROVED, CHANGES_REQUESTED, REVIEW_REQUIRED, or null when no review is required.</param>
+/// <param name="BaseTipSha">The base branch's live tip, or null when the branch is gone.</param>
+public sealed record PullSummary(
+    string State,
+    bool Draft,
+    bool Merged,
+    string Mergeable,
+    string? ReviewDecision,
+    string HeadSha,
+    string BaseRef,
+    string? BaseTipSha,
+    IReadOnlyList<PullLabel> Labels,
+    IReadOnlyList<string> Assignees,
+    IReadOnlyList<PullReviewer> Reviewers);
+
+/// <summary>One comment in a review thread. <paramref name="Body"/> is Markdown written by anyone who can comment: untrusted.</summary>
+public sealed record ReviewComment(string Id, string Author, string Body, DateTimeOffset When, string? Commit, string? OriginalCommit);
+
+/// <summary>A review thread on a file, as GitHub anchors it.</summary>
+/// <param name="Line">The line in GitHub's CURRENT diff, or null when the thread is outdated or on the file.</param>
+/// <param name="Side">LEFT (the old file) or RIGHT (the new one).</param>
+/// <param name="OriginalLine">Where it was written, in the diff of <see cref="ReviewComment.OriginalCommit"/>.</param>
+/// <param name="SubjectType">LINE or FILE.</param>
+/// <param name="Truncated">More comments than were read (the work is bounded); the rest are on GitHub.</param>
+public sealed record ReviewThread(
+    string Id,
+    string Path,
+    bool Resolved,
+    bool Outdated,
+    int? Line,
+    int? StartLine,
+    string Side,
+    int? OriginalLine,
+    string SubjectType,
+    IReadOnlyList<ReviewComment> Comments,
+    bool Truncated);
+
+/// <summary>A pull request's review threads, every page, and whether a bound stopped the reading.</summary>
+public sealed record ReviewThreadList(IReadOnlyList<ReviewThread> Threads, bool Truncated);
+
+/// <summary>
+/// One entry in a pull request's conversation.
+/// </summary>
+/// <param name="Kind">comment, review, commit, force-push, merged, closed, reopened, ready, draft.</param>
+/// <param name="Body">Markdown for comments and reviews (untrusted); the headline for a commit.</param>
+/// <param name="State">A review's APPROVED, CHANGES_REQUESTED, COMMENTED or DISMISSED.</param>
+public sealed record TimelineItem(string Kind, string Actor, DateTimeOffset When, string? Body, string? State, string? Sha);
+
+/// <summary>A pull request's conversation in order, and whether it was cut.</summary>
+public sealed record Timeline(IReadOnlyList<TimelineItem> Items, bool Truncated);
+
+/// <summary>A commit on a pull request's branch.</summary>
+public sealed record PullCommit(string Sha, string Headline, string Author, DateTimeOffset When);
+
+/// <summary>A pull request's commits, oldest first, and whether GitHub's 250 cut them.</summary>
+public sealed record PullCommitList(IReadOnlyList<PullCommit> Commits, bool Truncated);
+
+/// <summary>
+/// One check on a commit: a check run (GitHub Actions and Apps) or a commit status (older CI).
+/// </summary>
+/// <param name="Status">queued, in_progress or completed for a run; pending or completed for a status.</param>
+/// <param name="Conclusion">success, failure, neutral, cancelled, skipped, timed_out, action_required, stale, error; null while running.</param>
+/// <param name="Url">Where its log is, https only, or null: a CI's link is not ours to vouch for, so it is only ever opened, never fetched.</param>
+public sealed record CheckInfo(string Name, string Status, string? Conclusion, string? Url, string Source);
+
 /// <summary>A published release as the list shows it. Drafts are never listed.</summary>
 public sealed record ReleaseInfo(string Tag, string Name, string Author, DateTimeOffset When, bool Prerelease);
 
@@ -154,6 +231,21 @@ public interface IRepoSource
 
     /// <summary>The changed files between two commits with GitHub's patches: at most 300, by GitHub's limit.</summary>
     Task<RepoResult<PullFileList>> GetCompareFilesAsync(RepoAccess access, string owner, string repo, string baseSha, string headSha, CancellationToken ct);
+
+    /// <summary>A pull request's live state. GraphQL: it needs a token, so an anonymous reader without the App gets <see cref="RepoFailure.Unauthorized"/>.</summary>
+    Task<RepoResult<PullSummary>> GetPullSummaryAsync(RepoAccess access, string owner, string repo, int number, CancellationToken ct);
+
+    /// <summary>Every review thread with every comment, paged to completion within a bound.</summary>
+    Task<RepoResult<ReviewThreadList>> GetReviewThreadsAsync(RepoAccess access, string owner, string repo, int number, CancellationToken ct);
+
+    /// <summary>The conversation: comments, reviews, commits and state changes, oldest first, within a bound.</summary>
+    Task<RepoResult<Timeline>> GetTimelineAsync(RepoAccess access, string owner, string repo, int number, CancellationToken ct);
+
+    /// <summary>The pull request's commits, oldest first, up to GitHub's 250.</summary>
+    Task<RepoResult<PullCommitList>> GetPullCommitsAsync(RepoAccess access, string owner, string repo, int number, CancellationToken ct);
+
+    /// <summary>Every check run and commit status on one commit.</summary>
+    Task<RepoResult<IReadOnlyList<CheckInfo>>> GetChecksAsync(RepoAccess access, string owner, string repo, string commitSha, CancellationToken ct);
 
     /// <summary>The published releases, newest first, up to <paramref name="limit"/>.</summary>
     Task<RepoResult<IReadOnlyList<ReleaseInfo>>> GetReleasesAsync(RepoAccess access, string owner, string repo, int limit, CancellationToken ct);

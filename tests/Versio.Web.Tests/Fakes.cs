@@ -84,6 +84,21 @@ internal sealed class FakeGitHub : IRepoSource
         /// <summary>The changed files GitHub's compare lists between two commits.</summary>
         public Dictionary<(string Base, string Head), PullFileList> CompareFiles { get; } = [];
 
+        /// <summary>Labels and reviewers per pull request, for the live summary.</summary>
+        public Dictionary<int, (IReadOnlyList<PullLabel> Labels, IReadOnlyList<PullReviewer> Reviewers)> PullPeople { get; } = [];
+
+        /// <summary>Review threads per pull request.</summary>
+        public Dictionary<int, ReviewThreadList> Threads { get; } = [];
+
+        /// <summary>The conversation per pull request.</summary>
+        public Dictionary<int, Timeline> Timelines { get; } = [];
+
+        /// <summary>The branch's commits per pull request, oldest first.</summary>
+        public Dictionary<int, PullCommitList> PullCommits { get; } = [];
+
+        /// <summary>Check runs and statuses per commit.</summary>
+        public Dictionary<string, IReadOnlyList<CheckInfo>> Checks { get; } = new(StringComparer.Ordinal);
+
         /// <summary>Published releases, newest first, each with its Markdown notes.</summary>
         public List<(ReleaseInfo Info, string Body)> Releases { get; } = [];
     }
@@ -310,6 +325,59 @@ internal sealed class FakeGitHub : IRepoSource
         return Task.FromResult(r.Value!.CompareFiles.TryGetValue((baseSha, headSha), out var files)
             ? RepoResult<PullFileList>.Of(files)
             : RepoResult<PullFileList>.Fail(RepoFailure.NotFound));
+    }
+
+    /// <summary>GitHub's GraphQL refuses a caller without a token outright; so does this.</summary>
+    private RepoResult<FakeRepo> SeeGraph(RepoAccess access, string owner, string repo, string what) =>
+        access.Token is null ? RepoResult<FakeRepo>.Fail(RepoFailure.Unauthorized) : See(access, owner, repo, what);
+
+    public Task<RepoResult<PullSummary>> GetPullSummaryAsync(RepoAccess access, string owner, string repo, int number, CancellationToken ct)
+    {
+        var r = SeeGraph(access, owner, repo, "summary " + number);
+        if (!r.Ok)
+        {
+            return Task.FromResult(r.As<PullSummary>());
+        }
+
+        var found = r.Value!.Pulls.Where(p => p.Info.Number == number).Select(p => p.Info).ToList();
+        if (found.Count == 0)
+        {
+            return Task.FromResult(RepoResult<PullSummary>.Fail(RepoFailure.NotFound));
+        }
+
+        var p = found[0];
+        var people = r.Value.PullPeople.TryGetValue(number, out var known) ? known : ([], []);
+        return Task.FromResult(RepoResult<PullSummary>.Of(new PullSummary(
+            "OPEN", p.Draft, false, "MERGEABLE", null, p.HeadSha, p.BaseRef,
+            r.Value.Refs.TryGetValue(p.BaseRef, out var tip) ? tip : null, people.Labels, [], people.Reviewers)));
+    }
+
+    public Task<RepoResult<ReviewThreadList>> GetReviewThreadsAsync(RepoAccess access, string owner, string repo, int number, CancellationToken ct)
+    {
+        var r = SeeGraph(access, owner, repo, "threads " + number);
+        return Task.FromResult(!r.Ok ? r.As<ReviewThreadList>()
+            : RepoResult<ReviewThreadList>.Of(r.Value!.Threads.TryGetValue(number, out var t) ? t : new ReviewThreadList([], false)));
+    }
+
+    public Task<RepoResult<Timeline>> GetTimelineAsync(RepoAccess access, string owner, string repo, int number, CancellationToken ct)
+    {
+        var r = SeeGraph(access, owner, repo, "timeline " + number);
+        return Task.FromResult(!r.Ok ? r.As<Timeline>()
+            : RepoResult<Timeline>.Of(r.Value!.Timelines.TryGetValue(number, out var t) ? t : new Timeline([], false)));
+    }
+
+    public Task<RepoResult<PullCommitList>> GetPullCommitsAsync(RepoAccess access, string owner, string repo, int number, CancellationToken ct)
+    {
+        var r = See(access, owner, repo, "pull-commits " + number);
+        return Task.FromResult(!r.Ok ? r.As<PullCommitList>()
+            : RepoResult<PullCommitList>.Of(r.Value!.PullCommits.TryGetValue(number, out var c) ? c : new PullCommitList([], false)));
+    }
+
+    public Task<RepoResult<IReadOnlyList<CheckInfo>>> GetChecksAsync(RepoAccess access, string owner, string repo, string commitSha, CancellationToken ct)
+    {
+        var r = See(access, owner, repo, "checks " + commitSha);
+        return Task.FromResult(!r.Ok ? r.As<IReadOnlyList<CheckInfo>>()
+            : RepoResult<IReadOnlyList<CheckInfo>>.Of(r.Value!.Checks.TryGetValue(commitSha, out var c) ? c : []));
     }
 
     public Task<RepoResult<IReadOnlyList<ReleaseInfo>>> GetReleasesAsync(RepoAccess access, string owner, string repo, int limit, CancellationToken ct)

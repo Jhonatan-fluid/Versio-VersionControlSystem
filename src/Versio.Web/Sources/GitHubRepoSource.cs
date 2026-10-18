@@ -1,8 +1,10 @@
 using System.Globalization;
 using System.Net;
 using System.Net.Http.Headers;
+using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Options;
 using Versio.Core.Logging;
 
@@ -261,6 +263,508 @@ public sealed class GitHubRepoSource(
     public Task<RepoResult<ReleaseDetail>> GetReleaseAsync(RepoAccess access, string owner, string repo, string tag, CancellationToken ct) =>
         GetJsonAsync(access, $"repos/{E(owner)}/{E(repo)}/releases/tags/{E(tag)}",
             root => new ReleaseDetail(Release(root), Text(root, "body")), ct);
+
+    // ---- review reads (docs/web/PLAN.md, *Pull request review*, slice 1) ------------------------
+
+    private const string SummaryQuery = """
+        query($owner: String!, $repo: String!, $number: Int!) {
+          repository(owner: $owner, name: $repo) {
+            pullRequest(number: $number) {
+              state isDraft merged mergeable reviewDecision headRefOid baseRefName
+              baseRef { target { oid } }
+              labels(first: 30) { nodes { name color } }
+              assignees(first: 20) { nodes { login } }
+              reviewRequests(first: 30) { nodes { requestedReviewer { __typename ... on User { login } ... on Team { name } } } }
+              latestOpinionatedReviews(first: 30) { nodes { author { login } state } }
+            }
+          }
+        }
+        """;
+
+    /// <remarks>
+    /// <c>mergeStateStatus</c> (what blocks a merge) is not asked for yet: the merge box is slice
+    /// 6, and a field GitHub still gates behind a preview would fail the whole query, taking the
+    /// "this pull request changed" signal down with it.
+    /// </remarks>
+    public Task<RepoResult<PullSummary>> GetPullSummaryAsync(RepoAccess access, string owner, string repo, int number, CancellationToken ct) =>
+        GraphAsync(access, SummaryQuery, new { owner, repo, number }, data =>
+        {
+            var p = PullRequestNode(data);
+            var reviewers = new List<PullReviewer>();
+            foreach (var r in p.GetProperty("latestOpinionatedReviews").GetProperty("nodes").EnumerateArray())
+            {
+                reviewers.Add(new PullReviewer(Login(r, "author"), r.GetProperty("state").GetString() ?? ""));
+            }
+
+            foreach (var r in p.GetProperty("reviewRequests").GetProperty("nodes").EnumerateArray())
+            {
+                var who = r.GetProperty("requestedReviewer");
+                var name = who.ValueKind == JsonValueKind.Object
+                    ? Text(who, "login") is { Length: > 0 } login ? login : Text(who, "name")
+                    : "";
+                if (name.Length > 0 && reviewers.All(x => x.Login != name))
+                {
+                    reviewers.Add(new PullReviewer(name, "REQUESTED"));
+                }
+            }
+
+            var baseRef = p.GetProperty("baseRef");
+            return new PullSummary(
+                p.GetProperty("state").GetString() ?? "",
+                p.GetProperty("isDraft").GetBoolean(),
+                p.GetProperty("merged").GetBoolean(),
+                p.GetProperty("mergeable").GetString() ?? "UNKNOWN",
+                Text(p, "reviewDecision") is { Length: > 0 } decision ? decision : null,
+                p.GetProperty("headRefOid").GetString() ?? "",
+                p.GetProperty("baseRefName").GetString() ?? "",
+                baseRef.ValueKind == JsonValueKind.Object ? Text(baseRef.GetProperty("target"), "oid") : null,
+                p.GetProperty("labels").GetProperty("nodes").EnumerateArray()
+                    .Select(l => new PullLabel(l.GetProperty("name").GetString() ?? "", HexColor(Text(l, "color")))).ToList(),
+                p.GetProperty("assignees").GetProperty("nodes").EnumerateArray().Select(a => Text(a, "login")).ToList(),
+                reviewers);
+        }, ct);
+
+    private const string ThreadsQuery = """
+        query($owner: String!, $repo: String!, $number: Int!, $after: String) {
+          repository(owner: $owner, name: $repo) {
+            pullRequest(number: $number) {
+              reviewThreads(first: 50, after: $after) {
+                pageInfo { hasNextPage endCursor }
+                nodes {
+                  id path isResolved isOutdated line startLine originalLine diffSide subjectType
+                  comments(first: 50) {
+                    pageInfo { hasNextPage endCursor }
+                    nodes { id author { login } body createdAt commit { oid } originalCommit { oid } }
+                  }
+                }
+              }
+            }
+          }
+        }
+        """;
+
+    private const string ThreadCommentsQuery = """
+        query($id: ID!, $after: String) {
+          node(id: $id) {
+            ... on PullRequestReviewThread {
+              comments(first: 100, after: $after) {
+                pageInfo { hasNextPage endCursor }
+                nodes { id author { login } body createdAt commit { oid } originalCommit { oid } }
+              }
+            }
+          }
+        }
+        """;
+
+    /// <summary>Threads read before stopping (security rule 8: every read is bounded).</summary>
+    internal const int MaxThreads = 2000;
+
+    /// <summary>Comments read per thread before stopping.</summary>
+    internal const int MaxCommentsPerThread = 1000;
+
+    /// <remarks>
+    /// <para>
+    /// <b>To completion, within a bound.</b> GitHub pages threads and, inside each, comments. The
+    /// first version of a list here read one page and was silent past it; a review that drops
+    /// threads past the hundredth hides the discussion a reviewer most needs. Both levels are
+    /// paged until GitHub says there is no more, or until <see cref="MaxThreads"/> /
+    /// <see cref="MaxCommentsPerThread"/>, and a cut list says so.
+    /// </para>
+    /// </remarks>
+    public async Task<RepoResult<ReviewThreadList>> GetReviewThreadsAsync(RepoAccess access, string owner, string repo, int number, CancellationToken ct)
+    {
+        var threads = new List<ReviewThread>();
+        string? after = null;
+        while (true)
+        {
+            var page = await GraphAsync(access, ThreadsQuery, new { owner, repo, number, after }, data =>
+            {
+                var list = PullRequestNode(data).GetProperty("reviewThreads");
+                var info = list.GetProperty("pageInfo");
+                var read = list.GetProperty("nodes").EnumerateArray().Select(t =>
+                {
+                    var comments = t.GetProperty("comments");
+                    var more = comments.GetProperty("pageInfo");
+                    return (Thread: new ReviewThread(
+                        t.GetProperty("id").GetString() ?? "",
+                        t.GetProperty("path").GetString() ?? "",
+                        t.GetProperty("isResolved").GetBoolean(),
+                        t.GetProperty("isOutdated").GetBoolean(),
+                        Int(t, "line"),
+                        Int(t, "startLine"),
+                        Text(t, "diffSide") is { Length: > 0 } side ? side : "RIGHT",
+                        Int(t, "originalLine"),
+                        Text(t, "subjectType") is { Length: > 0 } subject ? subject : "LINE",
+                        comments.GetProperty("nodes").EnumerateArray().Select(Comment).ToList(),
+                        false), MoreComments: more.GetProperty("hasNextPage").GetBoolean() ? Text(more, "endCursor") : null);
+                }).ToList();
+                return (read, Next: info.GetProperty("hasNextPage").GetBoolean() ? Text(info, "endCursor") : null);
+            }, ct).ConfigureAwait(false);
+            if (!page.Ok)
+            {
+                return page.As<ReviewThreadList>();
+            }
+
+            foreach (var (thread, moreComments) in page.Value.read)
+            {
+                threads.Add(moreComments is null ? thread : await RestOfThreadAsync(access, thread, moreComments, ct).ConfigureAwait(false));
+            }
+
+            after = page.Value.Next;
+            if (after is null || after.Length == 0)
+            {
+                return RepoResult<ReviewThreadList>.Of(new ReviewThreadList(threads, false));
+            }
+
+            if (threads.Count >= MaxThreads)
+            {
+                log.Warn(LogCategory.Web, $"review threads {owner}/{repo}#{number}: stopped at {threads.Count}; the rest are on GitHub");
+                return RepoResult<ReviewThreadList>.Of(new ReviewThreadList(threads, true));
+            }
+        }
+    }
+
+    /// <summary>A thread's comments past its first page. A failed page leaves the thread marked cut, never dropped.</summary>
+    private async Task<ReviewThread> RestOfThreadAsync(RepoAccess access, ReviewThread thread, string after, CancellationToken ct)
+    {
+        var comments = thread.Comments.ToList();
+        string? cursor = after;
+        while (cursor is { Length: > 0 } && comments.Count < MaxCommentsPerThread)
+        {
+            var page = await GraphAsync(access, ThreadCommentsQuery, new { id = thread.Id, after = cursor }, data =>
+            {
+                var list = data.GetProperty("node").GetProperty("comments");
+                var info = list.GetProperty("pageInfo");
+                return (Comments: list.GetProperty("nodes").EnumerateArray().Select(Comment).ToList(),
+                    Next: info.GetProperty("hasNextPage").GetBoolean() ? Text(info, "endCursor") : null);
+            }, ct).ConfigureAwait(false);
+            if (!page.Ok)
+            {
+                return thread with { Comments = comments, Truncated = true };
+            }
+
+            comments.AddRange(page.Value.Comments);
+            cursor = page.Value.Next;
+        }
+
+        return thread with { Comments = comments, Truncated = cursor is { Length: > 0 } };
+    }
+
+    private static ReviewComment Comment(JsonElement c) => new(
+        c.GetProperty("id").GetString() ?? "",
+        Login(c, "author"),
+        Text(c, "body"),
+        c.GetProperty("createdAt").GetDateTimeOffset(),
+        Oid(c, "commit"),
+        Oid(c, "originalCommit"));
+
+    private const string TimelineQuery = """
+        query($owner: String!, $repo: String!, $number: Int!, $after: String) {
+          repository(owner: $owner, name: $repo) {
+            pullRequest(number: $number) {
+              timelineItems(first: 100, after: $after, itemTypes: [ISSUE_COMMENT, PULL_REQUEST_REVIEW, PULL_REQUEST_COMMIT,
+                HEAD_REF_FORCE_PUSHED_EVENT, MERGED_EVENT, CLOSED_EVENT, REOPENED_EVENT, READY_FOR_REVIEW_EVENT, CONVERT_TO_DRAFT_EVENT]) {
+                pageInfo { hasNextPage endCursor }
+                nodes {
+                  __typename
+                  ... on IssueComment { author { login } body createdAt }
+                  ... on PullRequestReview { author { login } body state submittedAt createdAt }
+                  ... on PullRequestCommit { commit { oid messageHeadline committedDate author { name user { login } } } }
+                  ... on HeadRefForcePushedEvent { actor { login } createdAt afterCommit { oid } }
+                  ... on MergedEvent { actor { login } createdAt commit { oid } }
+                  ... on ClosedEvent { actor { login } createdAt }
+                  ... on ReopenedEvent { actor { login } createdAt }
+                  ... on ReadyForReviewEvent { actor { login } createdAt }
+                  ... on ConvertToDraftEvent { actor { login } createdAt }
+                }
+              }
+            }
+          }
+        }
+        """;
+
+    /// <summary>Timeline pages read before stopping: 300 items, the rest on GitHub.</summary>
+    internal const int TimelinePages = 3;
+
+    public async Task<RepoResult<Timeline>> GetTimelineAsync(RepoAccess access, string owner, string repo, int number, CancellationToken ct)
+    {
+        var items = new List<TimelineItem>();
+        string? after = null;
+        for (var page = 1; page <= TimelinePages; page++)
+        {
+            var one = await GraphAsync(access, TimelineQuery, new { owner, repo, number, after }, data =>
+            {
+                var list = PullRequestNode(data).GetProperty("timelineItems");
+                var info = list.GetProperty("pageInfo");
+                return (Items: list.GetProperty("nodes").EnumerateArray().Select(TimelineEntry).Where(i => i is not null).Select(i => i!).ToList(),
+                    Next: info.GetProperty("hasNextPage").GetBoolean() ? Text(info, "endCursor") : null);
+            }, ct).ConfigureAwait(false);
+            if (!one.Ok)
+            {
+                return one.As<Timeline>();
+            }
+
+            items.AddRange(one.Value.Items);
+            after = one.Value.Next;
+            if (after is null || after.Length == 0)
+            {
+                return RepoResult<Timeline>.Of(new Timeline(items, false));
+            }
+        }
+
+        return RepoResult<Timeline>.Of(new Timeline(items, true));
+    }
+
+    private static TimelineItem? TimelineEntry(JsonElement n)
+    {
+        DateTimeOffset At(string property) => n.GetProperty(property).GetDateTimeOffset();
+        return n.GetProperty("__typename").GetString() switch
+        {
+            "IssueComment" => new TimelineItem("comment", Login(n, "author"), At("createdAt"), Text(n, "body"), null, null),
+            "PullRequestReview" => new TimelineItem("review", Login(n, "author"),
+                n.TryGetProperty("submittedAt", out var s) && s.ValueKind == JsonValueKind.String ? s.GetDateTimeOffset() : At("createdAt"),
+                Text(n, "body"), Text(n, "state"), null),
+            "PullRequestCommit" => Commit(n.GetProperty("commit")),
+            "HeadRefForcePushedEvent" => new TimelineItem("force-push", Login(n, "actor"), At("createdAt"), null, null, Oid(n, "afterCommit")),
+            "MergedEvent" => new TimelineItem("merged", Login(n, "actor"), At("createdAt"), null, null, Oid(n, "commit")),
+            "ClosedEvent" => new TimelineItem("closed", Login(n, "actor"), At("createdAt"), null, null, null),
+            "ReopenedEvent" => new TimelineItem("reopened", Login(n, "actor"), At("createdAt"), null, null, null),
+            "ReadyForReviewEvent" => new TimelineItem("ready", Login(n, "actor"), At("createdAt"), null, null, null),
+            "ConvertToDraftEvent" => new TimelineItem("draft", Login(n, "actor"), At("createdAt"), null, null, null),
+            _ => null,
+        };
+
+        static TimelineItem Commit(JsonElement c)
+        {
+            var author = c.GetProperty("author");
+            var user = author.TryGetProperty("user", out var u) && u.ValueKind == JsonValueKind.Object ? Text(u, "login") : "";
+            return new TimelineItem("commit", user.Length > 0 ? user : Text(author, "name"), c.GetProperty("committedDate").GetDateTimeOffset(),
+                Text(c, "messageHeadline"), null, Text(c, "oid"));
+        }
+    }
+
+    /// <summary>GitHub's cap on a pull request's listed commits.</summary>
+    internal const int MaxPullCommits = 250;
+
+    public async Task<RepoResult<PullCommitList>> GetPullCommitsAsync(RepoAccess access, string owner, string repo, int number, CancellationToken ct)
+    {
+        var all = new List<PullCommit>();
+        for (var page = 1; page <= 3; page++)
+        {
+            var one = await GetJsonAsync<IReadOnlyList<PullCommit>>(access,
+                $"repos/{E(owner)}/{E(repo)}/pulls/{number.ToString(CultureInfo.InvariantCulture)}/commits?per_page=100&page={page.ToString(CultureInfo.InvariantCulture)}",
+                root => root.EnumerateArray().Select(c =>
+                {
+                    var commit = c.GetProperty("commit");
+                    var author = commit.GetProperty("author");
+                    var login = c.TryGetProperty("author", out var a) && a.ValueKind == JsonValueKind.Object ? Text(a, "login") : "";
+                    var message = commit.GetProperty("message").GetString() ?? "";
+                    return new PullCommit(
+                        c.GetProperty("sha").GetString() ?? "",
+                        message.Split('\n')[0],
+                        login.Length > 0 ? login : author.GetProperty("name").GetString() ?? "",
+                        author.GetProperty("date").GetDateTimeOffset());
+                }).ToList(), ct).ConfigureAwait(false);
+            if (!one.Ok)
+            {
+                return one.As<PullCommitList>();
+            }
+
+            all.AddRange(one.Value!);
+            if (one.Value!.Count < 100)
+            {
+                break;
+            }
+        }
+
+        return RepoResult<PullCommitList>.Of(new PullCommitList(all, all.Count >= MaxPullCommits));
+    }
+
+    /// <remarks>
+    /// <para>
+    /// <b>Polled, so conditional.</b> The page asks every 30 seconds while it is open. Both reads
+    /// send the ETag of their last answer: a 304 costs nothing against GitHub's rate limit and
+    /// returns the answer kept, so an idle review page polls for free.
+    /// </para>
+    /// <para>
+    /// <b>Links are https or nothing.</b> A check's <c>html_url</c> and a status's
+    /// <c>target_url</c> are whatever the CI said; anything but https is dropped rather than handed
+    /// to the page as a link (security rule 6 of *Pull request review*).
+    /// </para>
+    /// </remarks>
+    public async Task<RepoResult<IReadOnlyList<CheckInfo>>> GetChecksAsync(RepoAccess access, string owner, string repo, string commitSha, CancellationToken ct)
+    {
+        var runs = await GetConditionalAsync<IReadOnlyList<CheckInfo>>(access, $"repos/{E(owner)}/{E(repo)}/commits/{E(commitSha)}/check-runs?per_page=100",
+            root => root.GetProperty("check_runs").EnumerateArray().Select(r => new CheckInfo(
+                r.GetProperty("name").GetString() ?? "",
+                r.GetProperty("status").GetString() ?? "",
+                Text(r, "conclusion") is { Length: > 0 } c ? c : null,
+                Https(Text(r, "html_url")),
+                "check-run")).ToList(), ct).ConfigureAwait(false);
+        if (!runs.Ok)
+        {
+            return runs;
+        }
+
+        var statuses = await GetConditionalAsync<IReadOnlyList<CheckInfo>>(access, $"repos/{E(owner)}/{E(repo)}/commits/{E(commitSha)}/status",
+            root => root.GetProperty("statuses").EnumerateArray().Select(s =>
+            {
+                var state = s.GetProperty("state").GetString() ?? "";
+                return new CheckInfo(
+                    s.GetProperty("context").GetString() ?? "",
+                    state == "pending" ? "pending" : "completed",
+                    state == "pending" ? null : state,
+                    Https(Text(s, "target_url")),
+                    "status");
+            }).ToList(), ct).ConfigureAwait(false);
+        return statuses.Ok ? RepoResult<IReadOnlyList<CheckInfo>>.Of([.. runs.Value!, .. statuses.Value!]) : statuses;
+    }
+
+    private static string? Https(string url) =>
+        Uri.TryCreate(url, UriKind.Absolute, out var u) && u.Scheme == Uri.UriSchemeHttps ? u.AbsoluteUri : null;
+
+    private static string HexColor(string color) => color.Length == 6 && color.All(Uri.IsHexDigit) ? color.ToLowerInvariant() : "";
+
+    private static string Login(JsonElement element, string property) =>
+        element.TryGetProperty(property, out var who) && who.ValueKind == JsonValueKind.Object ? Text(who, "login") is { Length: > 0 } l ? l : "ghost" : "ghost";
+
+    private static string? Oid(JsonElement element, string property) =>
+        element.TryGetProperty(property, out var c) && c.ValueKind == JsonValueKind.Object && Text(c, "oid") is { Length: > 0 } oid ? oid : null;
+
+    private static int? Int(JsonElement element, string property) =>
+        element.TryGetProperty(property, out var v) && v.ValueKind == JsonValueKind.Number ? v.GetInt32() : null;
+
+    /// <summary>The pull request under <c>data.repository</c>; a missing one is GitHub's "not found".</summary>
+    private static JsonElement PullRequestNode(JsonElement data)
+    {
+        var repository = data.GetProperty("repository");
+        if (repository.ValueKind != JsonValueKind.Object || repository.GetProperty("pullRequest") is not { ValueKind: JsonValueKind.Object } pull)
+        {
+            throw new GraphNotFoundException();
+        }
+
+        return pull;
+    }
+
+    private sealed class GraphNotFoundException : Exception;
+
+    /// <summary>
+    /// One GraphQL query, read with <paramref name="read"/> while its document is alive.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Needs a token.</b> GitHub's GraphQL refuses anonymous callers outright, so without one
+    /// the answer is <see cref="RepoFailure.Unauthorized"/> before any call: the page says to sign
+    /// in to see review threads, which is true.
+    /// </para>
+    /// <para>
+    /// <b>A 200 can carry a refusal.</b> GraphQL reports "not found" and "forbidden" as
+    /// <c>errors</c> in a successful response, with <c>data</c> null or partial. They are mapped
+    /// as the REST refusals are — both are "not found", so a private repository's existence does
+    /// not leak — and nothing is read from a response that carries errors.
+    /// </para>
+    /// </remarks>
+    private async Task<RepoResult<T>> GraphAsync<T>(RepoAccess access, string query, object variables, Func<JsonElement, T> read, CancellationToken ct)
+    {
+        if (access.Token is null)
+        {
+            return RepoResult<T>.Fail(RepoFailure.Unauthorized, "GraphQL needs a token");
+        }
+
+        var url = GitHub.GraphQlUrl.Length > 0 ? new Uri(GitHub.GraphQlUrl) : Api("graphql");
+        using var request = Request(access, HttpMethod.Post, url);
+        request.Content = new StringContent(JsonSerializer.Serialize(new { query, variables }), Encoding.UTF8, "application/json");
+        try
+        {
+            using var response = await clients.CreateClient(ApiClient).SendAsync(request, ct).ConfigureAwait(false);
+            if (Failure(response) is { } failed)
+            {
+                return RepoResult<T>.Fail(failed, "graphql");
+            }
+
+            await using var stream = await response.Content.ReadAsStreamAsync(ct).ConfigureAwait(false);
+            using var document = await JsonDocument.ParseAsync(stream, cancellationToken: ct).ConfigureAwait(false);
+            if (document.RootElement.TryGetProperty("errors", out var errors) && errors.ValueKind == JsonValueKind.Array && errors.GetArrayLength() > 0)
+            {
+                var type = errors[0].TryGetProperty("type", out var t) ? t.GetString() : null;
+                return RepoResult<T>.Fail(type switch
+                {
+                    "NOT_FOUND" or "FORBIDDEN" => RepoFailure.NotFound,
+                    "RATE_LIMITED" => RepoFailure.RateLimited,
+                    _ => RepoFailure.Upstream,
+                }, "graphql " + type);
+            }
+
+            return RepoResult<T>.Of(read(document.RootElement.GetProperty("data")));
+        }
+        catch (GraphNotFoundException)
+        {
+            return RepoResult<T>.Fail(RepoFailure.NotFound, "graphql");
+        }
+        catch (HttpRequestException e)
+        {
+            log.Warn(LogCategory.Web, $"GitHub GraphQL unreachable: {e.Message}");
+            return RepoResult<T>.Fail(RepoFailure.Upstream);
+        }
+        catch (Exception e) when (e is JsonException or KeyNotFoundException or InvalidOperationException or FormatException)
+        {
+            log.Warn(LogCategory.Web, $"GitHub GraphQL answered in an unexpected shape: {e.GetType().Name}");
+            return RepoResult<T>.Fail(RepoFailure.Upstream);
+        }
+    }
+
+    /// <summary>
+    /// ETags and the answers they name, per credential and URL: never shared across people, because
+    /// the key is a hash of the token (security rule 2), and bounded, because it only saves calls.
+    /// </summary>
+    private readonly MemoryCache _conditional = new(new MemoryCacheOptions { SizeLimit = 4096 });
+
+    /// <summary>A GET that sends the last answer's ETag and, on 304, returns that answer.</summary>
+    private async Task<RepoResult<T>> GetConditionalAsync<T>(RepoAccess access, string relative, Func<JsonElement, T> read, CancellationToken ct)
+    {
+        var credential = access.Token is null ? "anonymous" : Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(access.Token)));
+        var key = credential + ":" + relative;
+        _conditional.TryGetValue(key, out (string ETag, T Value) known);
+        using var request = Request(access, HttpMethod.Get, Api(relative));
+        if (known.ETag is { Length: > 0 })
+        {
+            request.Headers.TryAddWithoutValidation("If-None-Match", known.ETag);
+        }
+
+        try
+        {
+            using var response = await clients.CreateClient(ApiClient).SendAsync(request, ct).ConfigureAwait(false);
+            if (response.StatusCode == HttpStatusCode.NotModified && known.ETag is { Length: > 0 })
+            {
+                return RepoResult<T>.Of(known.Value);
+            }
+
+            if (Failure(response) is { } failed)
+            {
+                return RepoResult<T>.Fail(failed, Redact(relative));
+            }
+
+            await using var stream = await response.Content.ReadAsStreamAsync(ct).ConfigureAwait(false);
+            using var document = await JsonDocument.ParseAsync(stream, cancellationToken: ct).ConfigureAwait(false);
+            var value = read(document.RootElement);
+            if (response.Headers.ETag?.ToString() is { Length: > 0 } etag)
+            {
+                _conditional.Set(key, (etag, value), new MemoryCacheEntryOptions { Size = 1, SlidingExpiration = TimeSpan.FromMinutes(10) });
+            }
+
+            return RepoResult<T>.Of(value);
+        }
+        catch (HttpRequestException e)
+        {
+            log.Warn(LogCategory.Web, $"GitHub unreachable for {Redact(relative)}: {e.Message}");
+            return RepoResult<T>.Fail(RepoFailure.Upstream);
+        }
+        catch (Exception e) when (e is JsonException or KeyNotFoundException or InvalidOperationException or FormatException)
+        {
+            log.Warn(LogCategory.Web, $"GitHub answered {Redact(relative)} in an unexpected shape: {e.GetType().Name}");
+            return RepoResult<T>.Fail(RepoFailure.Upstream);
+        }
+    }
 
     private static PullInfo Pull(JsonElement p) => new(
         p.GetProperty("number").GetInt32(),

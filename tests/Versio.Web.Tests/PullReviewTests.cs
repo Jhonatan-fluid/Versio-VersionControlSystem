@@ -333,6 +333,131 @@ public sealed class PullReviewTests
     }
 
     /// <summary>
+    /// The page polls status to notice that its revision is no longer the pull request's: a push
+    /// moves the head, a merge to main moves the base — either one is "stale", and says which.
+    /// </summary>
+    [Fact]
+    public async Task Status_says_stale_when_the_head_or_the_base_moves_after_the_review_loaded()
+    {
+        var w = Build();
+        await using var host = await TestHost.StartAsync(w.GitHub);
+        var alice = SignIn(host);
+        var (token, _) = await SnapshotAsync(host, alice);
+
+        var fresh = Json(await (await WithSnapshot(host, "/api/repos/acme/plant/pulls/12/status", token, alice)).Body());
+        w.Repo.Refs["main"] = w.Start;
+        var baseMoved = Json(await (await WithSnapshot(host, "/api/repos/acme/plant/pulls/12/status", token, alice)).Body());
+        w.Repo.Refs["main"] = w.MainTip;
+        w.Open(new string('7', 40));
+        var headMoved = Json(await (await WithSnapshot(host, "/api/repos/acme/plant/pulls/12/status", token, alice)).Body());
+
+        Assert.False(fresh.GetProperty("stale").GetBoolean());
+        Assert.True(baseMoved.GetProperty("stale").GetBoolean());
+        Assert.True(baseMoved.GetProperty("baseMoved").GetBoolean());
+        Assert.False(baseMoved.GetProperty("headMoved").GetBoolean());
+        Assert.True(headMoved.GetProperty("stale").GetBoolean());
+        Assert.True(headMoved.GetProperty("headMoved").GetBoolean());
+    }
+
+    /// <summary>
+    /// GraphQL needs a token. Signed out, the live summary is unknown and says why; unknown is never
+    /// passed off as "unchanged". The checks — REST — still answer, for the snapshot's head.
+    /// </summary>
+    [Fact]
+    public async Task Signed_out_the_summary_is_unknown_and_says_why_while_the_checks_still_answer()
+    {
+        var w = Build();
+        w.Repo.Checks[w.Head] = [new CheckInfo("build", "completed", "success", "https://ci.example/1", "check-run")];
+        await using var host = await TestHost.StartAsync(w.GitHub);
+        var (token, _) = await SnapshotAsync(host);
+
+        var status = Json(await (await WithSnapshot(host, "/api/repos/acme/plant/pulls/12/status", token)).Body());
+
+        Assert.Equal("sign-in", status.GetProperty("summaryError").GetString());
+        Assert.Equal(JsonValueKind.Null, status.GetProperty("summary").ValueKind);
+        Assert.Equal("success", status.GetProperty("checks")[0].GetProperty("conclusion").GetString());
+    }
+
+    /// <summary>
+    /// Thread bodies are Markdown by anyone who can comment. They arrive rendered by Core — script
+    /// escaped, never a tag — with authors and paths spelled.
+    /// </summary>
+    [Fact]
+    public async Task Threads_arrive_rendered_by_Core_with_their_anchors_and_no_live_markup()
+    {
+        var w = Build();
+        w.Repo.Threads[12] = new ReviewThreadList(
+        [
+            new ReviewThread("T1", "src/Pump.st", false, false, 3, null, "RIGHT", 3, "LINE",
+                [new ReviewComment("C1", "bo‮b", "<script>alert(1)</script> **Why TRUE?**", When, w.Head, w.Head)], false),
+            new ReviewThread("T2", "src/Logo.bin", true, false, null, null, "RIGHT", null, "FILE", [new ReviewComment("C2", "jo", "binary?", When, w.Head, w.Head)], false),
+        ], false);
+        await using var host = await TestHost.StartAsync(w.GitHub);
+        var alice = SignIn(host);
+        var (token, _) = await SnapshotAsync(host, alice);
+
+        var body = Json(await (await WithSnapshot(host, "/api/repos/acme/plant/pulls/12/threads", token, alice)).Body());
+
+        var threads = body.GetProperty("threads").EnumerateArray().ToList();
+        Assert.Equal(3, threads[0].GetProperty("line").GetInt32());
+        Assert.Equal("RIGHT", threads[0].GetProperty("side").GetString());
+        Assert.Equal("FILE", threads[1].GetProperty("subject").GetString());
+        Assert.True(threads[1].GetProperty("resolved").GetBoolean());
+        var comment = threads[0].GetProperty("comments")[0];
+        Assert.Equal("boU+202Eb", comment.GetProperty("author").GetString());
+        var html = comment.GetProperty("html").GetString()!;
+        Assert.DoesNotContain("<script", html, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("<strong>Why TRUE?</strong>", html, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// The branch's commits are live; the ones after the snapshot's head arrived since the review
+    /// loaded. They are marked, so nobody mistakes them for reviewed.
+    /// </summary>
+    [Fact]
+    public async Task Commits_after_the_snapshots_head_are_marked_as_not_in_the_review()
+    {
+        var w = Build();
+        var later = new string('8', 40);
+        w.Repo.PullCommits[12] = new PullCommitList(
+        [
+            new PullCommit(w.Head, "Fix the default", "jo", When),
+            new PullCommit(later, "And another", "jo", When.AddMinutes(5)),
+        ], false);
+        await using var host = await TestHost.StartAsync(w.GitHub);
+        var (token, _) = await SnapshotAsync(host);
+
+        var body = Json(await (await WithSnapshot(host, "/api/repos/acme/plant/pulls/12/commits", token)).Body());
+
+        var commits = body.GetProperty("commits").EnumerateArray().ToList();
+        Assert.True(body.GetProperty("headFound").GetBoolean());
+        Assert.True(commits[0].GetProperty("inSnapshot").GetBoolean());
+        Assert.False(commits[1].GetProperty("inSnapshot").GetBoolean());
+    }
+
+    [Fact]
+    public async Task The_timeline_renders_comments_and_reviews_and_spells_commit_headlines()
+    {
+        var w = Build();
+        w.Repo.Timelines[12] = new Timeline(
+        [
+            new TimelineItem("comment", "jo", When, "Looks **fine**", null, null),
+            new TimelineItem("commit", "jo", When, "Fix‮default", null, w.Head),
+            new TimelineItem("review", "sam", When, "", "APPROVED", null),
+        ], false);
+        await using var host = await TestHost.StartAsync(w.GitHub);
+        var alice = SignIn(host);
+        var (token, _) = await SnapshotAsync(host, alice);
+
+        var items = Json(await (await WithSnapshot(host, "/api/repos/acme/plant/pulls/12/timeline", token, alice)).Body()).GetProperty("items").EnumerateArray().ToList();
+
+        Assert.Contains("<strong>fine</strong>", items[0].GetProperty("html").GetString()!, StringComparison.Ordinal);
+        Assert.Equal("FixU+202Edefault", items[1].GetProperty("text").GetString());
+        Assert.Equal("APPROVED", items[2].GetProperty("state").GetString());
+        Assert.Equal(JsonValueKind.Null, items[2].GetProperty("html").ValueKind);
+    }
+
+    /// <summary>
     /// The drawing comes from the snapshot's commits, not the branch: a push after the review loaded
     /// changes nothing the page combines until it reloads.
     /// </summary>

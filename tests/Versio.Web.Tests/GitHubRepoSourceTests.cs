@@ -40,6 +40,8 @@ public sealed class GitHubRepoSourceTests : IAsyncLifetime
     private string _lfsHref = "https://169.254.169.254/latest/meta-data/";
     private readonly ConcurrentQueue<string> _appJwts = new();
     private readonly ConcurrentQueue<string> _mintBodies = new();
+    private readonly ConcurrentQueue<string> _graphQueries = new();
+    private int _notModified;
     private readonly TaskCompletionSource _releaseHeld = new();
 
     public async Task InitializeAsync()
@@ -101,6 +103,68 @@ public sealed class GitHubRepoSourceTests : IAsyncLifetime
             merge_base_commit = new { sha = range.EndsWith(new string('e', 40), StringComparison.Ordinal) ? "not-a-sha" : new string('B', 40) },
             files = Enumerable.Range(0, range.StartsWith("full", StringComparison.Ordinal) ? 300 : 2)
                 .Select(i => new { filename = $"c{i}.st", status = "added", patch = "@@ -0,0 +1 @@\n+x" }),
+        }));
+        // GraphQL in GitHub's shapes. Threads come in two pages, and the first thread's comments
+        // overflow into a node query, so both levels of paging are exercised. Pull request 404
+        // answers as GitHub does: 200 with a NOT_FOUND error.
+        app.MapPost("/graphql", async (HttpContext http) =>
+        {
+            using var doc = await System.Text.Json.JsonDocument.ParseAsync(http.Request.Body);
+            var query = doc.RootElement.GetProperty("query").GetString()!;
+            var variables = doc.RootElement.GetProperty("variables");
+            _graphQueries.Enqueue(query);
+            object Comment(string id) => new { id, author = new { login = "jo" }, body = "c " + id, createdAt = "2026-10-17T09:00:00Z", commit = new { oid = new string('d', 40) }, originalCommit = (object?)null };
+            if (variables.TryGetProperty("number", out var n) && n.GetInt32() == 404)
+            {
+                return Results.Json(new { data = new { repository = new { pullRequest = (object?)null } }, errors = new[] { new { type = "NOT_FOUND", message = "Could not resolve" } } });
+            }
+
+            if (query.Contains("node(id:", StringComparison.Ordinal))
+            {
+                return Results.Json(new { data = new { node = new { comments = new { pageInfo = new { hasNextPage = false, endCursor = (string?)null }, nodes = new[] { Comment("C3") } } } } });
+            }
+
+            if (query.Contains("reviewThreads", StringComparison.Ordinal))
+            {
+                var second = variables.TryGetProperty("after", out var a) && a.ValueKind == System.Text.Json.JsonValueKind.String;
+                var thread = second
+                    ? (object)new { id = "T2", path = "b.st", isResolved = true, isOutdated = true, line = (int?)null, startLine = (int?)null, originalLine = 4, diffSide = "LEFT", subjectType = "LINE",
+                        comments = new { pageInfo = new { hasNextPage = false, endCursor = (string?)null }, nodes = new[] { Comment("C9") } } }
+                    : new { id = "T1", path = "a.st", isResolved = false, isOutdated = false, line = 3, startLine = 2, originalLine = 3, diffSide = "RIGHT", subjectType = "LINE",
+                        comments = new { pageInfo = new { hasNextPage = true, endCursor = "c-cursor" }, nodes = new[] { Comment("C1"), Comment("C2") } } };
+                return Results.Json(new { data = new { repository = new { pullRequest = new { reviewThreads = new
+                {
+                    pageInfo = new { hasNextPage = !second, endCursor = second ? null : "t-cursor" },
+                    nodes = new[] { thread },
+                } } } } });
+            }
+
+            return Results.Json(new { data = new { repository = new { pullRequest = new
+            {
+                state = "OPEN", isDraft = false, merged = false, mergeable = "MERGEABLE", reviewDecision = (string?)null,
+                headRefOid = new string('d', 40), baseRefName = "main", baseRef = new { target = new { oid = new string('c', 40) } },
+                labels = new { nodes = new[] { new { name = "plc", color = "FF0000" }, new { name = "odd", color = "red;x" } } },
+                assignees = new { nodes = new[] { new { login = "jo" } } },
+                reviewRequests = new { nodes = new object[] { new { requestedReviewer = new { __typename = "Team", name = "controls" } } } },
+                latestOpinionatedReviews = new { nodes = new[] { new { author = new { login = "sam" }, state = "APPROVED" } } },
+            } } } });
+        });
+
+        // Checks with an ETag: a request carrying it gets 304, as GitHub answers an unchanged poll.
+        app.MapGet("/repos/acme/plant/commits/{sha}/check-runs", (HttpContext http) =>
+        {
+            if (http.Request.Headers.IfNoneMatch.ToString() == "\"runs-1\"")
+            {
+                Interlocked.Increment(ref _notModified);
+                return Results.StatusCode(304);
+            }
+
+            http.Response.Headers.ETag = "\"runs-1\"";
+            return Results.Json(new { check_runs = new[] { new { name = "build", status = "completed", conclusion = "success", html_url = "https://ci.example/1" } } });
+        });
+        app.MapGet("/repos/acme/plant/commits/{sha}/status", () => Results.Json(new
+        {
+            statuses = new[] { new { context = "legacy", state = "pending", target_url = "javascript:alert(1)" } },
         }));
         app.MapGet("/repos/acme/plant/releases", () => Results.Json(new object[]
         {
@@ -289,6 +353,69 @@ public sealed class GitHubRepoSourceTests : IAsyncLifetime
         Assert.False(some.Value.Truncated);
         Assert.Equal(300, full.Value!.Files.Count);
         Assert.True(full.Value.Truncated);
+    }
+
+    /// <summary>Both levels of paging: a second page of threads, and a thread whose comments overflow into a node query.</summary>
+    [Fact]
+    public async Task Review_threads_are_read_to_completion_across_both_levels_of_GitHubs_paging()
+    {
+        var source = Source();
+
+        var threads = await source.GetReviewThreadsAsync(Alice, "acme", "plant", 7, CancellationToken.None);
+
+        Assert.False(threads.Value!.Truncated);
+        Assert.Equal(["T1", "T2"], threads.Value.Threads.Select(t => t.Id));
+        Assert.Equal(["C1", "C2", "C3"], threads.Value.Threads[0].Comments.Select(c => c.Id));
+        Assert.Equal((3, 2, "RIGHT"), (threads.Value.Threads[0].Line!.Value, threads.Value.Threads[0].StartLine!.Value, threads.Value.Threads[0].Side));
+        Assert.True(threads.Value.Threads[1].Outdated);
+        Assert.Null(threads.Value.Threads[1].Line);
+        Assert.Equal("LEFT", threads.Value.Threads[1].Side);
+    }
+
+    [Fact]
+    public async Task A_GraphQL_not_found_inside_a_200_is_not_found_and_no_token_means_no_query()
+    {
+        var source = Source();
+
+        var missing = await source.GetPullSummaryAsync(Alice, "acme", "plant", 404, CancellationToken.None);
+        var anonymous = await source.GetReviewThreadsAsync(RepoAccess.Anonymous, "acme", "plant", 7, CancellationToken.None);
+
+        Assert.Equal(RepoFailure.NotFound, missing.Failure);
+        Assert.Equal(RepoFailure.Unauthorized, anonymous.Failure);
+        Assert.Single(_graphQueries);
+    }
+
+    [Fact]
+    public async Task The_summary_reads_live_head_and_base_tip_with_reviewers_requested_or_reviewed_and_safe_label_colours()
+    {
+        var source = Source();
+
+        var summary = (await source.GetPullSummaryAsync(Alice, "acme", "plant", 7, CancellationToken.None)).Value!;
+
+        Assert.Equal(new string('d', 40), summary.HeadSha);
+        Assert.Equal(new string('c', 40), summary.BaseTipSha);
+        Assert.Equal([new PullReviewer("sam", "APPROVED"), new PullReviewer("controls", "REQUESTED")], summary.Reviewers);
+        // A colour is six hex digits or nothing: it ends up in a style attribute on the page.
+        Assert.Equal([new PullLabel("plc", "ff0000"), new PullLabel("odd", "")], summary.Labels);
+    }
+
+    /// <summary>
+    /// Polled every 30 s: the second read sends the ETag, gets 304, and returns the kept answer,
+    /// which costs nothing against the rate limit. A link that is not https is dropped.
+    /// </summary>
+    [Fact]
+    public async Task Checks_are_polled_with_their_ETag_and_only_https_links_survive()
+    {
+        var source = Source();
+
+        var first = await source.GetChecksAsync(Alice, "acme", "plant", new string('d', 40), CancellationToken.None);
+        var second = await source.GetChecksAsync(Alice, "acme", "plant", new string('d', 40), CancellationToken.None);
+
+        Assert.Equal(first.Value, second.Value);
+        Assert.Equal("https://ci.example/1", first.Value![0].Url);
+        Assert.Equal(("legacy", "pending", (string?)null, (string?)null), (first.Value[1].Name, first.Value[1].Status, first.Value[1].Conclusion, first.Value[1].Url));
+        Assert.Equal(2, _requests.Count(r => r.Path.Contains("/check-runs", StringComparison.Ordinal)));
+        Assert.Equal(1, _notModified);
     }
 
     [Fact]
