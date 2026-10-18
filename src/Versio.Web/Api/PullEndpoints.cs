@@ -44,7 +44,7 @@ public static class PullEndpoints
 
         // The review's first call: resolve the pull request to one revision and seal it.
         pulls.MapGet("/snapshot", async (string owner, string repo, int number, HttpContext http, AccessResolver access,
-            PullReview review, ReviewSnapshots snapshots, CancellationToken ct) =>
+            PullReview review, ReviewSnapshots snapshots, IOptions<WebOptions> options, CancellationToken ct) =>
         {
             if (!ApiEndpoints.Valid(owner, repo) || !ValidNumber(number))
             {
@@ -80,7 +80,11 @@ public static class PullEndpoints
                 mergeBaseSha = s.MergeBaseSha,
                 headSha = s.HeadSha,
                 issuedAt = s.IssuedAt,
-                html = ApiEndpoints.MarkdownFragment(pull.Body),
+                html = ApiEndpoints.MarkdownFragment(ReviewTags.Strip(pull.Body)),
+                // Whether to draw write controls at all: writes on for this repository (S9) and a
+                // signed-in person (S1). The routes check both again; this only spares the page from
+                // offering what would be refused.
+                writable = options.Value.Writable(owner, repo) && who.Value!.Kind == AccessKind.User,
             });
         });
 
@@ -235,14 +239,21 @@ public static class PullEndpoints
                     originalLine = t.OriginalLine,
                     subject = t.SubjectType,
                     truncated = t.Truncated,
+                    canReply = t.CanReply,
+                    canResolve = t.CanResolve,
+                    canUnresolve = t.CanUnresolve,
                     comments = t.Comments.Select(c => new
                     {
                         id = c.Id,
                         author = CodeHtml.Spelled(c.Author),
                         when = c.When,
-                        html = ApiEndpoints.MarkdownFragment(c.Body),
+                        html = ApiEndpoints.MarkdownFragment(ReviewTags.Strip(c.Body)),
+                        // The text to edit, tags removed: only ever a textarea's value on the page, never markup.
+                        markdown = c.CanEdit ? ReviewTags.Strip(c.Body) : null,
                         commit = c.Commit,
                         originalCommit = c.OriginalCommit,
+                        canEdit = c.CanEdit,
+                        canDelete = c.CanDelete,
                     }),
                 }),
             });
@@ -270,10 +281,14 @@ public static class PullEndpoints
                         // Comments and reviews are Markdown by anyone who can comment: rendered by
                         // Core and sanitised by the page, as every body is. A commit's headline is
                         // text, spelled.
-                        html = i.Kind is "comment" or "review" && !string.IsNullOrEmpty(i.Body) ? ApiEndpoints.MarkdownFragment(i.Body) : null,
+                        html = i.Kind is "comment" or "review" && !string.IsNullOrEmpty(i.Body) ? ApiEndpoints.MarkdownFragment(ReviewTags.Strip(i.Body)) : null,
                         text = i.Kind == "commit" ? CodeHtml.Spelled(i.Body ?? "") : null,
                         state = i.State,
                         sha = i.Sha,
+                        id = i.Id,
+                        markdown = i.CanEdit ? ReviewTags.Strip(i.Body ?? "") : null,
+                        canEdit = i.CanEdit,
+                        canDelete = i.CanDelete,
                     }),
                 })
                 : ApiEndpoints.Refused(timeline.Failure, http);

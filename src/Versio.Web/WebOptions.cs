@@ -77,6 +77,48 @@ public sealed class WebOptions
     public string LogDirectory { get; set; } = string.Empty;
 
     public GitHubOptions GitHub { get; set; } = new();
+
+    /// <summary>What may be written, and how safely (docs/web/PLAN.md, *Pull request review*, S9 and C5).</summary>
+    public WriteOptions Writes { get; set; } = new();
+
+    /// <summary>
+    /// Whether a person may write to <paramref name="owner"/>/<paramref name="repo"/> through this
+    /// server at all: writes on, the repository named in <see cref="WriteOptions.Repositories"/>, and
+    /// shown by the server. Case-insensitive, as GitHub's names are.
+    /// </summary>
+    public bool Writable(string owner, string repo) =>
+        Writes.Enabled
+        && Shows(owner, repo)
+        && Writes.Repositories.Any(entry => string.Equals(entry, $"{owner}/{repo}", StringComparison.OrdinalIgnoreCase));
+}
+
+/// <summary>
+/// The kill switch and limits for writing to GitHub. Off by default: a server that was a viewer
+/// yesterday stays one until its host says otherwise (S9).
+/// </summary>
+public sealed class WriteOptions
+{
+    /// <summary>The kill switch. False: every write route answers 404 and the page draws no write control.</summary>
+    public bool Enabled { get; set; }
+
+    /// <summary>
+    /// The repositories writes are allowed on, each <c>owner/repo</c>, opted in one by one. Empty
+    /// means none, even with <see cref="Enabled"/>: the rollout starts on one throwaway repository.
+    /// When <see cref="WebOptions.Repositories"/> is set, every entry must also be there.
+    /// </summary>
+    public string[] Repositories { get; set; } = [];
+
+    /// <summary>
+    /// True declares that exactly one instance runs, so the operation ledger may live in memory.
+    /// Without it, writes need <c>Web:Redis</c> (C5); WebHost refuses to start otherwise.
+    /// </summary>
+    public bool SingleInstance { get; set; }
+
+    /// <summary>Writes per minute per signed-in session, below GitHub's own content-creation limit (S8).</summary>
+    public int PerSessionPerMinute { get; set; } = 30;
+
+    /// <summary>The largest write request body accepted (S8). GitHub's own comment cap is 65,536 characters.</summary>
+    public int MaxBodyBytes { get; set; } = 64 * 1024;
 }
 
 /// <summary>The GitHub App and the hosts the viewer may talk to.</summary>

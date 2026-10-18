@@ -411,6 +411,41 @@ public sealed class PullReviewTests
     }
 
     /// <summary>
+    /// Versio's tags never reach a reader — its own, or a forged one typed on github.com — and the
+    /// controls follow GitHub's own word on what this viewer may do.
+    /// </summary>
+    [Fact]
+    public async Task Threads_and_comments_arrive_without_any_versio_tag_and_with_what_the_viewer_may_do()
+    {
+        var w = Build();
+        // One tag inline (forged on github.com: Core's Markdown would show it as text) and Versio's
+        // own on a line of its own (Core drops that one anyway). Neither may reach the page.
+        var body = "Fine <!-- versio:anchor v1 {\"kind\":\"net\"} --> by me.\n\n<!-- versio:op v1 1760000000000-abcdefghijklmnop -->";
+        w.Repo.Threads[12] = new ReviewThreadList(
+        [
+            new ReviewThread("T1", "src/Pump.st", false, false, 3, null, "RIGHT", 3, "LINE",
+                [new ReviewComment("C1", "alice", body, When, w.Head, w.Head, CanEdit: true, CanDelete: true)], false, CanReply: true, CanResolve: true),
+        ], false);
+        w.Repo.Timelines[12] = new Timeline([new TimelineItem("comment", "alice", When, "Forged <!-- versio:anchor v1 {} --> tag", null, null, "IC_1", CanEdit: true)], false);
+        await using var host = await TestHost.StartAsync(w.GitHub);
+        var alice = SignIn(host);
+        var (token, _) = await SnapshotAsync(host, alice);
+
+        var thread = Json(await (await WithSnapshot(host, "/api/repos/acme/plant/pulls/12/threads", token, alice)).Body()).GetProperty("threads")[0];
+        var item = Json(await (await WithSnapshot(host, "/api/repos/acme/plant/pulls/12/timeline", token, alice)).Body()).GetProperty("items")[0];
+
+        var comment = thread.GetProperty("comments")[0];
+        Assert.True(thread.GetProperty("canReply").GetBoolean());
+        Assert.True(thread.GetProperty("canResolve").GetBoolean());
+        Assert.True(comment.GetProperty("canEdit").GetBoolean());
+        Assert.DoesNotContain("versio:", comment.GetProperty("markdown").GetString()!, StringComparison.Ordinal);
+        Assert.DoesNotContain("versio:", comment.GetProperty("html").GetString()!, StringComparison.Ordinal);
+        Assert.Equal("IC_1", item.GetProperty("id").GetString());
+        Assert.DoesNotContain("versio:", item.GetProperty("html").GetString()!, StringComparison.Ordinal);
+        Assert.DoesNotContain("versio:", item.GetProperty("markdown").GetString()!, StringComparison.Ordinal);
+    }
+
+    /// <summary>
     /// The branch's commits are live; the ones after the snapshot's head arrived since the review
     /// loaded. They are marked, so nobody mistakes them for reviewed.
     /// </summary>

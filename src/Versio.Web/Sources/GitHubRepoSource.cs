@@ -331,10 +331,10 @@ public sealed class GitHubRepoSource(
               reviewThreads(first: 50, after: $after) {
                 pageInfo { hasNextPage endCursor }
                 nodes {
-                  id path isResolved isOutdated line startLine originalLine diffSide subjectType
+                  id path isResolved isOutdated line startLine originalLine diffSide subjectType viewerCanReply viewerCanResolve viewerCanUnresolve
                   comments(first: 50) {
                     pageInfo { hasNextPage endCursor }
-                    nodes { id author { login } body createdAt commit { oid } originalCommit { oid } }
+                    nodes { id author { login } body createdAt commit { oid } originalCommit { oid } viewerCanUpdate viewerCanDelete }
                   }
                 }
               }
@@ -349,7 +349,7 @@ public sealed class GitHubRepoSource(
             ... on PullRequestReviewThread {
               comments(first: 100, after: $after) {
                 pageInfo { hasNextPage endCursor }
-                nodes { id author { login } body createdAt commit { oid } originalCommit { oid } }
+                nodes { id author { login } body createdAt commit { oid } originalCommit { oid } viewerCanUpdate viewerCanDelete }
               }
             }
           }
@@ -396,7 +396,10 @@ public sealed class GitHubRepoSource(
                         Int(t, "originalLine"),
                         Text(t, "subjectType") is { Length: > 0 } subject ? subject : "LINE",
                         comments.GetProperty("nodes").EnumerateArray().Select(Comment).ToList(),
-                        false), MoreComments: more.GetProperty("hasNextPage").GetBoolean() ? Text(more, "endCursor") : null);
+                        false,
+                        Bool(t, "viewerCanReply"),
+                        Bool(t, "viewerCanResolve"),
+                        Bool(t, "viewerCanUnresolve")), MoreComments: more.GetProperty("hasNextPage").GetBoolean() ? Text(more, "endCursor") : null);
                 }).ToList();
                 return (read, Next: info.GetProperty("hasNextPage").GetBoolean() ? Text(info, "endCursor") : null);
             }, ct).ConfigureAwait(false);
@@ -456,7 +459,9 @@ public sealed class GitHubRepoSource(
         Text(c, "body"),
         c.GetProperty("createdAt").GetDateTimeOffset(),
         Oid(c, "commit"),
-        Oid(c, "originalCommit"));
+        Oid(c, "originalCommit"),
+        Bool(c, "viewerCanUpdate"),
+        Bool(c, "viewerCanDelete"));
 
     private const string TimelineQuery = """
         query($owner: String!, $repo: String!, $number: Int!, $after: String) {
@@ -467,7 +472,7 @@ public sealed class GitHubRepoSource(
                 pageInfo { hasNextPage endCursor }
                 nodes {
                   __typename
-                  ... on IssueComment { author { login } body createdAt }
+                  ... on IssueComment { id author { login } body createdAt viewerCanUpdate viewerCanDelete }
                   ... on PullRequestReview { author { login } body state submittedAt createdAt }
                   ... on PullRequestCommit { commit { oid messageHeadline committedDate author { name user { login } } } }
                   ... on HeadRefForcePushedEvent { actor { login } createdAt afterCommit { oid } }
@@ -520,7 +525,8 @@ public sealed class GitHubRepoSource(
         DateTimeOffset At(string property) => n.GetProperty(property).GetDateTimeOffset();
         return n.GetProperty("__typename").GetString() switch
         {
-            "IssueComment" => new TimelineItem("comment", Login(n, "author"), At("createdAt"), Text(n, "body"), null, null),
+            "IssueComment" => new TimelineItem("comment", Login(n, "author"), At("createdAt"), Text(n, "body"), null, null,
+                Text(n, "id") is { Length: > 0 } id ? id : null, Bool(n, "viewerCanUpdate"), Bool(n, "viewerCanDelete")),
             "PullRequestReview" => new TimelineItem("review", Login(n, "author"),
                 n.TryGetProperty("submittedAt", out var s) && s.ValueKind == JsonValueKind.String ? s.GetDateTimeOffset() : At("createdAt"),
                 Text(n, "body"), Text(n, "state"), null),
@@ -630,6 +636,9 @@ public sealed class GitHubRepoSource(
 
     private static string? Oid(JsonElement element, string property) =>
         element.TryGetProperty(property, out var c) && c.ValueKind == JsonValueKind.Object && Text(c, "oid") is { Length: > 0 } oid ? oid : null;
+
+    private static bool Bool(JsonElement element, string property) =>
+        element.TryGetProperty(property, out var v) && v.ValueKind == JsonValueKind.True;
 
     private static int? Int(JsonElement element, string property) =>
         element.TryGetProperty(property, out var v) && v.ValueKind == JsonValueKind.Number ? v.GetInt32() : null;

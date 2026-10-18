@@ -121,7 +121,8 @@ public sealed record PullSummary(
     IReadOnlyList<PullReviewer> Reviewers);
 
 /// <summary>One comment in a review thread. <paramref name="Body"/> is Markdown written by anyone who can comment: untrusted.</summary>
-public sealed record ReviewComment(string Id, string Author, string Body, DateTimeOffset When, string? Commit, string? OriginalCommit);
+/// <param name="CanEdit">GitHub's own word on whether the viewer may edit it (viewerCanUpdate); controls follow it, GitHub still decides.</param>
+public sealed record ReviewComment(string Id, string Author, string Body, DateTimeOffset When, string? Commit, string? OriginalCommit, bool CanEdit = false, bool CanDelete = false);
 
 /// <summary>A review thread on a file, as GitHub anchors it.</summary>
 /// <param name="Line">The line in GitHub's CURRENT diff, or null when the thread is outdated or on the file.</param>
@@ -140,7 +141,10 @@ public sealed record ReviewThread(
     int? OriginalLine,
     string SubjectType,
     IReadOnlyList<ReviewComment> Comments,
-    bool Truncated);
+    bool Truncated,
+    bool CanReply = false,
+    bool CanResolve = false,
+    bool CanUnresolve = false);
 
 /// <summary>A pull request's review threads, every page, and whether a bound stopped the reading.</summary>
 public sealed record ReviewThreadList(IReadOnlyList<ReviewThread> Threads, bool Truncated);
@@ -151,7 +155,8 @@ public sealed record ReviewThreadList(IReadOnlyList<ReviewThread> Threads, bool 
 /// <param name="Kind">comment, review, commit, force-push, merged, closed, reopened, ready, draft.</param>
 /// <param name="Body">Markdown for comments and reviews (untrusted); the headline for a commit.</param>
 /// <param name="State">A review's APPROVED, CHANGES_REQUESTED, COMMENTED or DISMISSED.</param>
-public sealed record TimelineItem(string Kind, string Actor, DateTimeOffset When, string? Body, string? State, string? Sha);
+/// <param name="Id">A conversation comment's node id, for editing and deleting it; null for everything else.</param>
+public sealed record TimelineItem(string Kind, string Actor, DateTimeOffset When, string? Body, string? State, string? Sha, string? Id = null, bool CanEdit = false, bool CanDelete = false);
 
 /// <summary>A pull request's conversation in order, and whether it was cut.</summary>
 public sealed record Timeline(IReadOnlyList<TimelineItem> Items, bool Truncated);

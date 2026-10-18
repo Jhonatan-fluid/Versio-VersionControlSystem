@@ -41,6 +41,8 @@ public static class WebHost
 {
     public const string RatePolicy = "per-client";
 
+    public const string WritePolicy = "per-session-writes";
+
     /// <summary>The longest any one regular expression match may run, anywhere in the process.</summary>
     public static readonly TimeSpan RegexTimeout = TimeSpan.FromSeconds(2);
 
@@ -123,6 +125,21 @@ public static class WebHost
         builder.Services.AddSingleton<ApiEndpoints.Loader>();
         builder.Services.AddSingleton<ReviewSnapshots>();
         builder.Services.AddSingleton<PullReview>();
+        builder.Services.AddSingleton<IRepoWriter, GitHubWriter>();
+        builder.Services.AddSingleton<PullWriteEndpoints.Writes>();
+
+        // The operation ledger (C5): durable and shared through Redis when it is configured, in
+        // memory only when the host has declared a single instance. ValidateWrites refuses the
+        // combination that would silently lose reservations across instances.
+        if (!string.IsNullOrEmpty(redis))
+        {
+            builder.Services.AddSingleton<StackExchange.Redis.IConnectionMultiplexer>(_ => StackExchange.Redis.ConnectionMultiplexer.Connect(redis));
+            builder.Services.AddSingleton<IOperationLedger, RedisOperationLedger>();
+        }
+        else
+        {
+            builder.Services.AddSingleton<IOperationLedger, MemoryOperationLedger>();
+        }
 
         var keys = builder.Configuration["Web:KeysDirectory"];
         var protection = builder.Services.AddDataProtection().SetApplicationName("Versio.Web");
@@ -152,6 +169,20 @@ public static class WebHost
         builder.Services.AddRateLimiter(o =>
         {
             o.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+            // Writes per signed-in session (S8, and rule 8's per-user half): a session is one person,
+            // so one person cannot spend their GitHub limit through us or flood a pull request. It
+            // REPLACES the per-address policy on write routes — an endpoint's own policy wins over its
+            // group's — which is the right bound there: WriteGate refuses everyone without a session
+            // before the limiter runs, so only sessions ever reach it (an earlier comment here claimed
+            // both applied; caught on the second pass).
+            o.AddPolicy(WritePolicy, http => RateLimitPartition.GetFixedWindowLimiter(
+                "session:" + (http.Request.Cookies[AccessResolver.SessionCookie] ?? http.Connection.RemoteIpAddress?.ToString() ?? "unknown"),
+                _ => new FixedWindowRateLimiterOptions
+                {
+                    PermitLimit = Math.Max(1, options.Writes.PerSessionPerMinute),
+                    Window = TimeSpan.FromMinutes(1),
+                    QueueLimit = 0,
+                }));
             o.AddPolicy(RatePolicy, http => RateLimitPartition.GetFixedWindowLimiter(
                 http.Connection.RemoteIpAddress?.ToString() ?? "unknown",
                 _ => new FixedWindowRateLimiterOptions
@@ -164,6 +195,7 @@ public static class WebHost
 
         var forwarded = ForwardedFrom(options.TrustedProxies);
         ValidateRepositories(options.Repositories);
+        ValidateWrites(options, redis);
 
         configure?.Invoke(builder);
 
@@ -212,10 +244,14 @@ public static class WebHost
         };
         app.UseStaticFiles(staticFiles);
         app.UseRouting();
+        // Before the rate limiter: a forged or switched-off write is refused without spending
+        // anybody's write budget, and before any endpoint reads a body (PullWriteEndpoints.WriteGate).
+        app.UseMiddleware<PullWriteEndpoints.WriteGate>();
         app.UseRateLimiter();
 
         ApiEndpoints.Map(app);
         PullEndpoints.Map(app);
+        PullWriteEndpoints.Map(app);
         AuthEndpoints.Map(app);
 
         // An unknown API route is a 404, never the page's index.html with a 200.
@@ -294,6 +330,35 @@ public static class WebHost
             {
                 throw new InvalidOperationException($"Web:Repositories: '{entry}' is not owner/repo.");
             }
+        }
+    }
+
+    /// <summary>
+    /// Refuses to start with writes configured unsafely: a malformed entry, a writable repository the
+    /// server does not even show, or writes on more than one possible instance without a shared
+    /// ledger (C5) — the last would let two instances each reserve the same operation and post twice.
+    /// </summary>
+    internal static void ValidateWrites(WebOptions options, string? redis)
+    {
+        ArgumentNullException.ThrowIfNull(options);
+        foreach (var entry in options.Writes.Repositories)
+        {
+            var slash = entry.IndexOf('/');
+            if (slash <= 0 || !Api.ApiEndpoints.Valid(entry[..slash], entry[(slash + 1)..]))
+            {
+                throw new InvalidOperationException($"Web:Writes:Repositories: '{entry}' is not owner/repo.");
+            }
+
+            if (!options.Shows(entry[..slash], entry[(slash + 1)..]))
+            {
+                throw new InvalidOperationException($"Web:Writes:Repositories: '{entry}' is not in Web:Repositories, so the server would never show it.");
+            }
+        }
+
+        if (options.Writes.Enabled && string.IsNullOrEmpty(redis) && !options.Writes.SingleInstance)
+        {
+            throw new InvalidOperationException(
+                "Web:Writes:Enabled needs Web:Redis (a shared, durable operation ledger), or Web:Writes:SingleInstance=true to declare that only one instance runs.");
         }
     }
 

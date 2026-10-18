@@ -1,0 +1,386 @@
+using System.Globalization;
+using System.Net;
+using System.Net.Http.Headers;
+using System.Text;
+using System.Text.Json;
+using Microsoft.Extensions.Options;
+using Versio.Core.Logging;
+
+namespace Versio.Web.Sources;
+
+/// <summary>
+/// Writes to GitHub with the person's own token: REST for new comments, GraphQL for replies,
+/// edits, deletions and resolving threads (resolution exists only there).
+/// </summary>
+/// <remarks>
+/// <para>
+/// <b>The only class that sends a mutation</b> — POST, PATCH, PUT or DELETE with a body that
+/// changes something, or a GraphQL <c>mutation</c>. The reader's GraphQL calls are queries; an Arch
+/// test holds the line between the two (docs/web/PLAN.md, *Pull request review*, S1 and C6).
+/// </para>
+/// <para>
+/// <b>Three outcomes, not two.</b> A 4xx means GitHub refused and nothing was written. But a
+/// timeout, a dropped connection or a 5xx after the request left means GitHub may have done it:
+/// that is <see cref="WriteOutcome.Unknown"/>, and the caller reconciles rather than retrying
+/// (C5). Treating those as failures is how a retry posts a comment twice.
+/// </para>
+/// <para>
+/// <b>Never an automatic retry, and never an installation token.</b> The first is C5; the second is
+/// S1, and the caller enforces it before anything reaches here — this class refuses a credential
+/// that is not a person's as a second wall.
+/// </para>
+/// </remarks>
+public sealed class GitHubWriter(IHttpClientFactory clients, IOptions<WebOptions> options, IVersioLogger log) : IRepoWriter
+{
+    private GitHubOptions GitHub => options.Value.GitHub;
+
+    public async Task<WriteResult<string>> AddConversationCommentAsync(RepoAccess access, string owner, string repo, int number, string body, CancellationToken ct) =>
+        await RestAsync(access, HttpMethod.Post, $"repos/{E(owner)}/{E(repo)}/issues/{N(number)}/comments", new { body },
+            root => root.GetProperty("node_id").GetString() ?? "", ct).ConfigureAwait(false);
+
+    public async Task<WriteResult<string>> AddLineCommentAsync(RepoAccess access, string owner, string repo, int number, LineComment c, CancellationToken ct)
+    {
+        // A file-level comment has no line; a range starts at StartLine on the same side.
+        object payload = c.Line is null
+            ? new { body = c.Body, commit_id = c.Commit, path = c.Path, subject_type = "file" }
+            : c.StartLine is { } start && start != c.Line
+                ? new { body = c.Body, commit_id = c.Commit, path = c.Path, line = c.Line, side = c.Side, start_line = start, start_side = c.Side }
+                : new { body = c.Body, commit_id = c.Commit, path = c.Path, line = c.Line, side = c.Side };
+        return await RestAsync(access, HttpMethod.Post, $"repos/{E(owner)}/{E(repo)}/pulls/{N(number)}/comments", payload,
+            root => root.GetProperty("node_id").GetString() ?? "", ct).ConfigureAwait(false);
+    }
+
+    private const string ReplyMutation = """
+        mutation($thread: ID!, $body: String!) {
+          addPullRequestReviewThreadReply(input: { pullRequestReviewThreadId: $thread, body: $body }) { comment { id } }
+        }
+        """;
+
+    public Task<WriteResult<string>> ReplyAsync(RepoAccess access, string threadId, string body, CancellationToken ct) =>
+        MutateAsync(access, ReplyMutation, new { thread = threadId, body },
+            data => data.GetProperty("addPullRequestReviewThreadReply").GetProperty("comment").GetProperty("id").GetString() ?? "", ct);
+
+    private const string EditIssueComment = """
+        mutation($id: ID!, $body: String!) { updateIssueComment(input: { id: $id, body: $body }) { issueComment { id } } }
+        """;
+
+    private const string EditReviewComment = """
+        mutation($id: ID!, $body: String!) { updatePullRequestReviewComment(input: { pullRequestReviewCommentId: $id, body: $body }) { pullRequestReviewComment { id } } }
+        """;
+
+    public Task<WriteResult<bool>> EditCommentAsync(RepoAccess access, string commentId, string type, string body, CancellationToken ct) =>
+        type switch
+        {
+            "IssueComment" => MutateAsync(access, EditIssueComment, new { id = commentId, body }, _ => true, ct),
+            "PullRequestReviewComment" => MutateAsync(access, EditReviewComment, new { id = commentId, body }, _ => true, ct),
+            _ => Task.FromResult(WriteResult<bool>.Refused(RepoFailure.NotFound, "not a comment")),
+        };
+
+    private const string DeleteIssueComment = """
+        mutation($id: ID!) { deleteIssueComment(input: { id: $id }) { clientMutationId } }
+        """;
+
+    private const string DeleteReviewComment = """
+        mutation($id: ID!) { deletePullRequestReviewComment(input: { id: $id }) { clientMutationId } }
+        """;
+
+    public Task<WriteResult<bool>> DeleteCommentAsync(RepoAccess access, string commentId, string type, CancellationToken ct) =>
+        type switch
+        {
+            "IssueComment" => MutateAsync(access, DeleteIssueComment, new { id = commentId }, _ => true, ct),
+            "PullRequestReviewComment" => MutateAsync(access, DeleteReviewComment, new { id = commentId }, _ => true, ct),
+            _ => Task.FromResult(WriteResult<bool>.Refused(RepoFailure.NotFound, "not a comment")),
+        };
+
+    private const string ResolveMutation = """
+        mutation($id: ID!) { resolveReviewThread(input: { threadId: $id }) { thread { isResolved } } }
+        """;
+
+    private const string UnresolveMutation = """
+        mutation($id: ID!) { unresolveReviewThread(input: { threadId: $id }) { thread { isResolved } } }
+        """;
+
+    public Task<WriteResult<bool>> SetThreadResolvedAsync(RepoAccess access, string threadId, bool resolved, CancellationToken ct) =>
+        MutateAsync(access, resolved ? ResolveMutation : UnresolveMutation, new { id = threadId }, _ => true, ct);
+
+    // ---- the reads only writes need -------------------------------------------------------------
+
+    private const string NodeQuery = """
+        query($id: ID!) {
+          node(id: $id) {
+            __typename
+            ... on PullRequestReviewThread { pullRequest { number repository { nameWithOwner } } }
+            ... on PullRequestReviewComment { author { login } pullRequest { number repository { nameWithOwner } } }
+            ... on IssueComment { author { login } issue { number } repository { nameWithOwner } }
+          }
+        }
+        """;
+
+    public async Task<RepoResult<NodeOwner>> NodeOwnerAsync(RepoAccess access, string nodeId, CancellationToken ct)
+    {
+        var result = await QueryAsync(access, NodeQuery, new { id = nodeId }, data =>
+        {
+            var node = data.GetProperty("node");
+            if (node.ValueKind != JsonValueKind.Object)
+            {
+                return null;
+            }
+
+            var type = node.GetProperty("__typename").GetString() ?? "";
+            var author = node.TryGetProperty("author", out var a) && a.ValueKind == JsonValueKind.Object ? a.GetProperty("login").GetString() : null;
+            return type switch
+            {
+                "PullRequestReviewThread" or "PullRequestReviewComment" => new NodeOwner(type,
+                    node.GetProperty("pullRequest").GetProperty("repository").GetProperty("nameWithOwner").GetString() ?? "",
+                    node.GetProperty("pullRequest").GetProperty("number").GetInt32(), author),
+                "IssueComment" => new NodeOwner(type,
+                    node.GetProperty("repository").GetProperty("nameWithOwner").GetString() ?? "",
+                    node.GetProperty("issue").GetProperty("number").GetInt32(), author),
+                _ => new NodeOwner(type, "", 0, author),
+            };
+        }, ct).ConfigureAwait(false);
+        return result.Ok && result.Value is null ? RepoResult<NodeOwner>.Fail(RepoFailure.NotFound) : result!;
+    }
+
+    /// <remarks>
+    /// Conversation comments, then line comments and replies (both are review comments to REST),
+    /// each since the operation was reserved, newest pages first being unnecessary: a write's own
+    /// comment is created after <paramref name="since"/>, so the window is small.
+    /// </remarks>
+    public async Task<RepoResult<string>> FindTaggedCommentAsync(RepoAccess access, string owner, string repo, int number, string tag, DateTimeOffset since, CancellationToken ct)
+    {
+        var from = E(since.AddMinutes(-1).UtcDateTime.ToString("yyyy-MM-ddTHH:mm:ssZ", CultureInfo.InvariantCulture));
+        foreach (var list in new[] { $"repos/{E(owner)}/{E(repo)}/issues/{N(number)}/comments", $"repos/{E(owner)}/{E(repo)}/pulls/{N(number)}/comments" })
+        {
+            var found = await GetAsync(access, $"{list}?since={from}&per_page=100", root => root.EnumerateArray()
+                .Where(c => c.GetProperty("user").GetProperty("login").GetString() == access.Who
+                            && c.TryGetProperty("body", out var b) && (b.GetString() ?? "").Contains(tag, StringComparison.Ordinal))
+                .Select(c => c.GetProperty("node_id").GetString() ?? "")
+                .FirstOrDefault() ?? "", ct).ConfigureAwait(false);
+            if (!found.Ok || found.Value!.Length > 0)
+            {
+                return found;
+            }
+        }
+
+        return RepoResult<string>.Of("");
+    }
+
+    private const string BodyQuery = """
+        query($id: ID!) { node(id: $id) { ... on IssueComment { body } ... on PullRequestReviewComment { body } } }
+        """;
+
+    public async Task<RepoResult<string>> CommentBodyAsync(RepoAccess access, string commentId, CancellationToken ct)
+    {
+        var result = await QueryAsync(access, BodyQuery, new { id = commentId }, data =>
+            data.GetProperty("node") is { ValueKind: JsonValueKind.Object } n && n.TryGetProperty("body", out var b) ? b.GetString() ?? "" : "", ct).ConfigureAwait(false);
+        // A deleted comment is "not found" to GraphQL; for reconciliation that is an answer, not a failure.
+        return result.Failure == RepoFailure.NotFound ? RepoResult<string>.Of("") : result;
+    }
+
+    private const string ResolvedQuery = """
+        query($id: ID!) { node(id: $id) { ... on PullRequestReviewThread { isResolved } } }
+        """;
+
+    public Task<RepoResult<bool>> ThreadResolvedAsync(RepoAccess access, string threadId, CancellationToken ct) =>
+        QueryAsync(access, ResolvedQuery, new { id = threadId }, data => data.GetProperty("node").GetProperty("isResolved").GetBoolean(), ct);
+
+    // ---- transport ------------------------------------------------------------------------------
+
+    private async Task<WriteResult<T>> RestAsync<T>(RepoAccess access, HttpMethod method, string relative, object payload, Func<JsonElement, T> read, CancellationToken ct)
+    {
+        if (access.Kind != AccessKind.User || access.Token is null)
+        {
+            return WriteResult<T>.Refused(RepoFailure.Unauthorized, "writes need a signed-in person");
+        }
+
+        using var request = Request(access, method, new Uri($"{GitHub.ApiBaseUrl.TrimEnd('/')}/{relative}"), payload);
+        return await SendAsync(request, read, isGraph: false, ct).ConfigureAwait(false);
+    }
+
+    private async Task<WriteResult<T>> MutateAsync<T>(RepoAccess access, string mutation, object variables, Func<JsonElement, T> read, CancellationToken ct)
+    {
+        if (access.Kind != AccessKind.User || access.Token is null)
+        {
+            return WriteResult<T>.Refused(RepoFailure.Unauthorized, "writes need a signed-in person");
+        }
+
+        using var request = Request(access, HttpMethod.Post, GraphUrl(), new { query = mutation, variables });
+        return await SendAsync(request, read, isGraph: true, ct).ConfigureAwait(false);
+    }
+
+    private async Task<WriteResult<T>> SendAsync<T>(HttpRequestMessage request, Func<JsonElement, T> read, bool isGraph, CancellationToken ct)
+    {
+        HttpResponseMessage response;
+        try
+        {
+            response = await clients.CreateClient(GitHubRepoSource.ApiClient).SendAsync(request, ct).ConfigureAwait(false);
+        }
+        catch (HttpRequestException e)
+        {
+            // Could be before the request left or after: no way to tell, so no way to call it a failure.
+            log.Warn(LogCategory.Web, $"GitHub write {request.Method} {Path(request)} lost: {e.Message}; outcome unknown");
+            return WriteResult<T>.Unknown();
+        }
+        catch (TaskCanceledException) when (!ct.IsCancellationRequested)
+        {
+            log.Warn(LogCategory.Web, $"GitHub write {request.Method} {Path(request)} timed out; outcome unknown");
+            return WriteResult<T>.Unknown();
+        }
+
+        using (response)
+        {
+            if ((int)response.StatusCode >= 500)
+            {
+                log.Warn(LogCategory.Web, $"GitHub write {request.Method} {Path(request)} answered {(int)response.StatusCode}; outcome unknown");
+                return WriteResult<T>.Unknown();
+            }
+
+            string text;
+            try
+            {
+                text = await response.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
+            }
+            catch (HttpRequestException)
+            {
+                // The status said success or refusal, but the body was lost: for a success that is
+                // still an unknown id, and reconciliation finds it.
+                return response.IsSuccessStatusCode ? WriteResult<T>.Unknown() : WriteResult<T>.Refused(Refusal(response), null);
+            }
+
+            if (!response.IsSuccessStatusCode)
+            {
+                return WriteResult<T>.Refused(Refusal(response), Message(text));
+            }
+
+            try
+            {
+                using var doc = JsonDocument.Parse(text);
+                if (isGraph)
+                {
+                    if (doc.RootElement.TryGetProperty("errors", out var errors) && errors.ValueKind == JsonValueKind.Array && errors.GetArrayLength() > 0)
+                    {
+                        var type = errors[0].TryGetProperty("type", out var t) ? t.GetString() : null;
+                        var message = errors[0].TryGetProperty("message", out var m) ? m.GetString() : null;
+                        return WriteResult<T>.Refused(type switch
+                        {
+                            "NOT_FOUND" => RepoFailure.NotFound,
+                            "FORBIDDEN" => RepoFailure.NotFound,
+                            "RATE_LIMITED" => RepoFailure.RateLimited,
+                            _ => RepoFailure.Upstream,
+                        }, Clip(message));
+                    }
+
+                    return WriteResult<T>.Done(read(doc.RootElement.GetProperty("data")));
+                }
+
+                return WriteResult<T>.Done(read(doc.RootElement));
+            }
+            catch (Exception e) when (e is JsonException or KeyNotFoundException or InvalidOperationException)
+            {
+                // 2xx with a body we cannot read: GitHub did it, we do not know the result.
+                log.Warn(LogCategory.Web, $"GitHub write {request.Method} {Path(request)} succeeded in an unexpected shape ({e.GetType().Name}); outcome unknown");
+                return WriteResult<T>.Unknown();
+            }
+        }
+    }
+
+    private async Task<RepoResult<T>> QueryAsync<T>(RepoAccess access, string query, object variables, Func<JsonElement, T> read, CancellationToken ct)
+    {
+        if (access.Token is null)
+        {
+            return RepoResult<T>.Fail(RepoFailure.Unauthorized);
+        }
+
+        using var request = Request(access, HttpMethod.Post, GraphUrl(), new { query, variables });
+        return await ReadAsync(request, doc =>
+        {
+            if (doc.TryGetProperty("errors", out var errors) && errors.ValueKind == JsonValueKind.Array && errors.GetArrayLength() > 0)
+            {
+                var type = errors[0].TryGetProperty("type", out var t) ? t.GetString() : null;
+                return RepoResult<T>.Fail(type is "NOT_FOUND" or "FORBIDDEN" ? RepoFailure.NotFound : RepoFailure.Upstream);
+            }
+
+            return RepoResult<T>.Of(read(doc.GetProperty("data")));
+        }, ct).ConfigureAwait(false);
+    }
+
+    private async Task<RepoResult<T>> GetAsync<T>(RepoAccess access, string relative, Func<JsonElement, T> read, CancellationToken ct)
+    {
+        using var request = Request(access, HttpMethod.Get, new Uri($"{GitHub.ApiBaseUrl.TrimEnd('/')}/{relative}"), null);
+        return await ReadAsync(request, doc => RepoResult<T>.Of(read(doc)), ct).ConfigureAwait(false);
+    }
+
+    private async Task<RepoResult<T>> ReadAsync<T>(HttpRequestMessage request, Func<JsonElement, RepoResult<T>> read, CancellationToken ct)
+    {
+        try
+        {
+            using var response = await clients.CreateClient(GitHubRepoSource.ApiClient).SendAsync(request, ct).ConfigureAwait(false);
+            if (GitHubRepoSource.Failure(response) is { } failed)
+            {
+                return RepoResult<T>.Fail(failed);
+            }
+
+            using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync(ct).ConfigureAwait(false));
+            return read(doc.RootElement);
+        }
+        catch (Exception e) when (e is HttpRequestException or JsonException or KeyNotFoundException or InvalidOperationException or TaskCanceledException && !ct.IsCancellationRequested)
+        {
+            log.Warn(LogCategory.Web, $"GitHub reconciliation read {Path(request)} failed: {e.GetType().Name}");
+            return RepoResult<T>.Fail(RepoFailure.Upstream);
+        }
+    }
+
+    /// <summary>A refusal's kind. A 403 here is often the App lacking a write permission, which GitHub's message says.</summary>
+    private static RepoFailure Refusal(HttpResponseMessage response) =>
+        response.StatusCode switch
+        {
+            HttpStatusCode.Forbidden when response.Headers.Contains("Retry-After")
+                                          || (response.Headers.TryGetValues("x-ratelimit-remaining", out var left) && left.FirstOrDefault() == "0") => RepoFailure.RateLimited,
+            _ => GitHubRepoSource.Failure(response) ?? RepoFailure.Upstream,
+        };
+
+    /// <summary>GitHub's own refusal text, bounded; the endpoint spells it before the page sees it (S8).</summary>
+    private static string? Message(string body)
+    {
+        try
+        {
+            using var doc = JsonDocument.Parse(body);
+            return doc.RootElement.TryGetProperty("message", out var m) ? Clip(m.GetString()) : null;
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+    }
+
+    private static string? Clip(string? text) => text is null ? null : text.Length > 300 ? text[..300] : text;
+
+    private Uri GraphUrl() => GitHub.GraphQlUrl.Length > 0 ? new Uri(GitHub.GraphQlUrl) : new Uri($"{GitHub.ApiBaseUrl.TrimEnd('/')}/graphql");
+
+    private static HttpRequestMessage Request(RepoAccess access, HttpMethod method, Uri uri, object? payload)
+    {
+        var request = new HttpRequestMessage(method, uri);
+        request.Headers.UserAgent.ParseAdd("Versio-Web");
+        request.Headers.Accept.ParseAdd("application/vnd.github+json");
+        request.Headers.Add("X-GitHub-Api-Version", "2022-11-28");
+        if (access.Token is { } token)
+        {
+            request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+        }
+
+        if (payload is not null)
+        {
+            request.Content = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json");
+        }
+
+        return request;
+    }
+
+    /// <summary>What a log line may say about a request: its path, never its query or body.</summary>
+    private static string Path(HttpRequestMessage request) => request.RequestUri?.AbsolutePath ?? "";
+
+    private static string E(string value) => Uri.EscapeDataString(value);
+
+    private static string N(int number) => number.ToString(CultureInfo.InvariantCulture);
+}

@@ -545,7 +545,10 @@ public static partial class ApiEndpoints
         }
     }
 
-    internal static IResult Refused(RepoFailure failure, HttpContext http) => failure switch
+    internal static IResult Refused(RepoFailure failure, HttpContext http) => Refused(failure);
+
+    /// <summary>A failure as the status and words the page can act on; nothing in it depends on the request.</summary>
+    internal static IResult Refused(RepoFailure failure) => failure switch
     {
         RepoFailure.Unauthorized => Results.Json(new { error = "sign-in", message = "Sign in to see this repository." }, statusCode: 401),
         RepoFailure.SsoRequired => Results.Json(new { error = "sso", message = "This organisation requires single sign-on. Authorise your GitHub session for it, then reload." }, statusCode: 403),

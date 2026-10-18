@@ -155,6 +155,17 @@ public sealed class PullReview(IRepoSource source, ReviewSnapshots snapshots, IV
         return new SnapshotInventory(files, patchSource, github?.Truncated ?? false);
     }
 
+    /// <summary>
+    /// GitHub's patch for one file in this snapshot, read by the same rule as the inventory (this
+    /// revision's or none), or null with the reason a line comment cannot go there.
+    /// </summary>
+    public async Task<(string? Patch, string? Unavailable)> PatchForAsync(RepoAccess who, ReviewSnapshot snapshot, string path, CancellationToken ct)
+    {
+        var (github, _) = await PatchesAsync(who, snapshot, ct).ConfigureAwait(false);
+        var file = github?.Files.FirstOrDefault(f => f.Path == path);
+        return (file?.Patch, Unavailable(github, file));
+    }
+
     private async Task<(PullFileList? Files, string Source)> PatchesAsync(RepoAccess who, ReviewSnapshot snapshot, CancellationToken ct)
     {
         var before = await source.GetPullAsync(who, snapshot.Owner, snapshot.Repo, snapshot.Number, ct).ConfigureAwait(false);

@@ -180,6 +180,71 @@ public sealed class PurityRuleTests
         Assert.All(uses, c => Assert.Equal("Versio.Web.WebHost.RegisterFormats", c.From));
     }
 
+    /// <summary>
+    /// Only <c>GitHubWriter</c> sends a GitHub mutation (docs/web/PLAN.md, *Pull request review*, S1
+    /// and C6). The reader's GraphQL calls are POSTs too — GraphQL reads that way — so the line is
+    /// drawn where it means something: the text <c>mutation</c> in a query, and the PUT, PATCH and
+    /// DELETE verbs. Sign-out's token revocation is the one DELETE outside the writer, and it changes
+    /// the person's own session, not a repository.
+    /// </summary>
+    /// <remarks>
+    /// Read from <c>ldstr</c>: a <c>const string</c> is inlined into each method that uses it, so a
+    /// mutation constant shows up in the method that sends it, wherever the constant was declared.
+    /// </remarks>
+    [Fact]
+    public void Only_the_writer_sends_a_mutation_to_GitHub()
+    {
+        var web = Assembly.Load("Versio.Web");
+        var mutations = Literals(web).Where(l => l.Text.TrimStart().StartsWith("mutation", StringComparison.Ordinal)).ToList();
+        var verbs = References(web).Where(c => c.Called == "System.Net.Http.HttpMethod" && c.Member is "get_Put" or "get_Patch" or "get_Delete").ToList();
+
+        // The positive control: the writer's own mutations must be found, or the rule checks nothing.
+        Assert.Contains(mutations, m => m.From.StartsWith("Versio.Web.Sources.GitHubWriter", StringComparison.Ordinal));
+        Assert.All(mutations, m => Assert.StartsWith("Versio.Web.Sources.GitHubWriter", m.From, StringComparison.Ordinal));
+        Assert.All(verbs, v => Assert.True(
+            v.From.StartsWith("Versio.Web.Sources.GitHubWriter", StringComparison.Ordinal) || v.From == "Versio.Web.Auth.GitHubOAuth.RevokeAsync"
+                || v.From.StartsWith("Versio.Web.Auth.GitHubOAuth+<RevokeAsync>", StringComparison.Ordinal),
+            $"{v.From} uses HttpMethod.{v.Member[4..]}"));
+    }
+
+    private sealed record Literal(string From, string Text);
+
+    /// <summary>Every string literal loaded (<c>ldstr</c>), by the method that loads it.</summary>
+    private static IEnumerable<Literal> Literals(Assembly assembly)
+    {
+        var module = assembly.ManifestModule;
+        foreach (var type in assembly.GetTypes())
+        {
+            foreach (var method in Members(type))
+            {
+                if (Body(method) is not { } il)
+                {
+                    continue;
+                }
+
+                for (var i = 0; i + 5 <= il.Length; i++)
+                {
+                    if (il[i] != 0x72 /* ldstr */)
+                    {
+                        continue;
+                    }
+
+                    string? text;
+                    try
+                    {
+                        text = module.ResolveString(BitConverter.ToInt32(il, i + 1));
+                    }
+                    catch (ArgumentException)
+                    {
+                        continue;
+                    }
+
+                    yield return new Literal($"{type.FullName}.{method.Name}", text);
+                }
+            }
+        }
+    }
+
     /// <summary>Calls, constructions and field accesses, by the type that declares the member.</summary>
     private static IEnumerable<Call> References(Assembly assembly)
     {
