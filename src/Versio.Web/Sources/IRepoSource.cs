@@ -203,8 +203,16 @@ public sealed record ReviewThread(
     bool CanResolve = false,
     bool CanUnresolve = false);
 
+/// <summary>The revision a pull request answer describes: its head, its base branch, and that branch's tip.</summary>
+public sealed record PullRevision(string HeadSha, string BaseRef, string? BaseTipSha);
+
 /// <summary>A pull request's review threads, every page, and whether a bound stopped the reading.</summary>
-public sealed record ReviewThreadList(IReadOnlyList<ReviewThread> Threads, bool Truncated);
+/// <param name="Revision">
+/// The revision the threads' current lines are positions in, read in the same answers as the lines;
+/// null when the pages did not all describe one revision (the pull request moved mid-read) or did
+/// not say.
+/// </param>
+public sealed record ReviewThreadList(IReadOnlyList<ReviewThread> Threads, bool Truncated, PullRevision? Revision = null);
 
 /// <summary>
 /// One entry in a pull request's conversation.

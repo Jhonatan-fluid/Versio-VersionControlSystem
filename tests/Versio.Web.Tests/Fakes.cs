@@ -435,8 +435,15 @@ internal sealed class FakeGitHub : IRepoSource
     public Task<RepoResult<ReviewThreadList>> GetReviewThreadsAsync(RepoAccess access, string owner, string repo, int number, CancellationToken ct)
     {
         var r = SeeGraph(access, owner, repo, "threads " + number);
-        return Task.FromResult(!r.Ok ? r.As<ReviewThreadList>()
-            : RepoResult<ReviewThreadList>.Of(r.Value!.Threads.TryGetValue(number, out var t) ? t : new ReviewThreadList([], false)));
+        if (!r.Ok)
+        {
+            return Task.FromResult(r.As<ReviewThreadList>());
+        }
+
+        // The revision the lines are positions in, as GitHub's answer carries it: the pull request as it is now.
+        var pull = r.Value!.Pulls.FirstOrDefault(p => p.Info.Number == number).Info;
+        var revision = pull is null ? null : new PullRevision(pull.HeadSha, pull.BaseRef, r.Value.Refs.TryGetValue(pull.BaseRef, out var tip) ? tip : null);
+        return Task.FromResult(RepoResult<ReviewThreadList>.Of((r.Value.Threads.TryGetValue(number, out var t) ? t : new ReviewThreadList([], false)) with { Revision = revision }));
     }
 
     public Task<RepoResult<Timeline>> GetTimelineAsync(RepoAccess access, string owner, string repo, int number, CancellationToken ct)

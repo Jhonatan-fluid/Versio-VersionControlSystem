@@ -250,6 +250,25 @@ public sealed partial class PullAnchorTests
     }
 
     /// <summary>
+    /// The revision is read with the threads, so placing them costs no pull request reads of its own:
+    /// the first version checked before and after, four extra GitHub calls per file view (found in
+    /// review, 2026-10-20).
+    /// </summary>
+    [Fact]
+    public async Task Placing_threads_on_a_drawing_reads_no_pull_request_of_its_own()
+    {
+        var w = Build();
+        w.Repo.Threads[5] = new ReviewThreadList([Thread("T1", Struct, "Written on GitHub.", int.Parse(Build().StructLine, System.Globalization.CultureInfo.InvariantCulture))], false);
+        var (host, _, alice, token) = await StartAsync(w);
+        await using var __ = host;
+        var before = w.GitHub.Reads.Count(r => r.What == "pull 5");
+
+        await View(host, token, alice, Struct);
+
+        Assert.Equal(before, w.GitHub.Reads.Count(r => r.What == "pull 5"));
+    }
+
+    /// <summary>
     /// A tag never silently beats a line: when GitHub's current line for the thread is outside the
     /// element the tag names, one of them is wrong, and the thread is listed rather than placed.
     /// </summary>

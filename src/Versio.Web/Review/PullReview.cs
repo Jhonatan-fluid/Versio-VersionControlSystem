@@ -193,17 +193,24 @@ public sealed class PullReview(IRepoSource source, ReviewSnapshots snapshots, IV
     /// The review threads, with GitHub's CURRENT lines kept only when they are this snapshot's.
     /// </summary>
     /// <remarks>
+    /// <para>
     /// A thread's <c>line</c> is where it sits in the pull request's diff as it is now. After a push
     /// or a base change, that is a line of another revision, and placing it on the snapshot's drawing
     /// or Raw diff put a comment on a different declaration (found by review, 2026-10-20). Then the
     /// current lines are dropped: every thread is listed by the page as not on a shown line, and only
     /// an exact anchor (which names its own revision and content) still places one on a drawing.
+    /// </para>
+    /// <para>
+    /// The revision is read in the same answers as the lines (<see cref="ReviewThreadList.Revision"/>),
+    /// not around them: that is both exact — no window between a check and the read — and free. The
+    /// first version checked before and after with four extra GitHub calls per file view (found in
+    /// review, 2026-10-20).
+    /// </para>
     /// </remarks>
     public async Task<RepoResult<ReviewThreadList>> ThreadsAsync(RepoAccess who, ReviewSnapshot snapshot, CancellationToken ct)
     {
-        var before = await IsSnapshotRevisionAsync(who, snapshot, ct).ConfigureAwait(false);
         var threads = await source.GetReviewThreadsAsync(who, snapshot.Owner, snapshot.Repo, snapshot.Number, ct).ConfigureAwait(false);
-        if (!threads.Ok || (before && await IsSnapshotRevisionAsync(who, snapshot, ct).ConfigureAwait(false)))
+        if (!threads.Ok || threads.Value!.Revision == new PullRevision(snapshot.HeadSha, snapshot.BaseRef, snapshot.BaseSha))
         {
             return threads;
         }

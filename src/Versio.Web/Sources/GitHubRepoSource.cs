@@ -552,6 +552,7 @@ public sealed class GitHubRepoSource(
         query($owner: String!, $repo: String!, $number: Int!, $after: String) {
           repository(owner: $owner, name: $repo) {
             pullRequest(number: $number) {
+              headRefOid baseRefName baseRef { target { oid } }
               reviewThreads(first: 50, after: $after) {
                 pageInfo { hasNextPage endCursor }
                 nodes {
@@ -599,11 +600,16 @@ public sealed class GitHubRepoSource(
     {
         var threads = new List<ReviewThread>();
         string? after = null;
+        PullRevision? revision = null;
+        var consistent = true;
         while (true)
         {
             var page = await GraphAsync(access, ThreadsQuery, new { owner, repo, number, after }, data =>
             {
-                var list = PullRequestNode(data).GetProperty("reviewThreads");
+                var pull = PullRequestNode(data);
+                var baseRef = pull.TryGetProperty("baseRef", out var b) && b.ValueKind == JsonValueKind.Object ? Text(b.GetProperty("target"), "oid") : null;
+                var seen = new PullRevision(Text(pull, "headRefOid"), Text(pull, "baseRefName"), baseRef is { Length: > 0 } ? baseRef : null);
+                var list = pull.GetProperty("reviewThreads");
                 var info = list.GetProperty("pageInfo");
                 var read = list.GetProperty("nodes").EnumerateArray().Select(t =>
                 {
@@ -625,12 +631,17 @@ public sealed class GitHubRepoSource(
                         Bool(t, "viewerCanResolve"),
                         Bool(t, "viewerCanUnresolve")), MoreComments: more.GetProperty("hasNextPage").GetBoolean() ? Text(more, "endCursor") : null);
                 }).ToList();
-                return (read, Next: info.GetProperty("hasNextPage").GetBoolean() ? Text(info, "endCursor") : null);
+                return (read, Next: info.GetProperty("hasNextPage").GetBoolean() ? Text(info, "endCursor") : null, Seen: seen);
             }, ct).ConfigureAwait(false);
             if (!page.Ok)
             {
                 return page.As<ReviewThreadList>();
             }
+
+            // Each page says which revision its lines are positions in; pages that disagree mean the
+            // pull request moved mid-read, and then no one revision describes them all.
+            consistent &= revision is null || revision == page.Value.Seen;
+            revision ??= page.Value.Seen;
 
             foreach (var (thread, moreComments) in page.Value.read)
             {
@@ -640,13 +651,13 @@ public sealed class GitHubRepoSource(
             after = page.Value.Next;
             if (after is null || after.Length == 0)
             {
-                return RepoResult<ReviewThreadList>.Of(new ReviewThreadList(threads, false));
+                return RepoResult<ReviewThreadList>.Of(new ReviewThreadList(threads, false, consistent ? revision : null));
             }
 
             if (threads.Count >= MaxThreads)
             {
                 log.Warn(LogCategory.Web, $"review threads {owner}/{repo}#{number}: stopped at {threads.Count}; the rest are on GitHub");
-                return RepoResult<ReviewThreadList>.Of(new ReviewThreadList(threads, true));
+                return RepoResult<ReviewThreadList>.Of(new ReviewThreadList(threads, true, consistent ? revision : null));
             }
         }
     }

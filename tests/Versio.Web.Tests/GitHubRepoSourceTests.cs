@@ -154,7 +154,14 @@ public sealed class GitHubRepoSourceTests : IAsyncLifetime
                         comments = new { pageInfo = new { hasNextPage = false, endCursor = (string?)null }, nodes = new[] { Comment("C9") } } }
                     : new { id = "T1", path = "a.st", isResolved = false, isOutdated = false, line = 3, startLine = 2, originalLine = 3, diffSide = "RIGHT", subjectType = "LINE",
                         comments = new { pageInfo = new { hasNextPage = true, endCursor = "c-cursor" }, nodes = new[] { Comment("C1"), Comment("C2") } } };
-                return Results.Json(new { data = new { repository = new { pullRequest = new { reviewThreads = new
+                // The revision the lines describe, in the same answer; pull request 9 moves between its two pages.
+                var moved = second && variables.GetProperty("number").GetInt32() == 9;
+                return Results.Json(new { data = new { repository = new { pullRequest = new
+                {
+                    headRefOid = moved ? new string('e', 40) : new string('d', 40),
+                    baseRefName = "main",
+                    baseRef = new { target = new { oid = new string('c', 40) } },
+                    reviewThreads = new
                 {
                     pageInfo = new { hasNextPage = !second, endCursor = second ? null : "t-cursor" },
                     nodes = new[] { thread },
@@ -732,5 +739,19 @@ public sealed class GitHubRepoSourceTests : IAsyncLifetime
 
         Assert.Equal(first.Value!.Checks, again.Value!.Checks);
         Assert.Equal(before + 2, _notModified);
+    }
+
+    /// <summary>
+    /// The revision a thread's current lines are positions in is read in the same answers as the
+    /// lines; when the pages disagree — the pull request moved mid-read — there is none.
+    /// </summary>
+    [Fact]
+    public async Task Threads_carry_the_revision_their_lines_describe_and_none_when_it_moved_mid_read()
+    {
+        var steady = (await Source().GetReviewThreadsAsync(Alice, "acme", "plant", 7, CancellationToken.None)).Value!;
+        var moved = (await Source().GetReviewThreadsAsync(Alice, "acme", "plant", 9, CancellationToken.None)).Value!;
+
+        Assert.Equal(new PullRevision(new string('d', 40), "main", new string('c', 40)), steady.Revision);
+        Assert.Null(moved.Revision);
     }
 }
