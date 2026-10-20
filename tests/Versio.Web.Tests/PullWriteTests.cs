@@ -382,6 +382,29 @@ public sealed class PullWriteTests
         Assert.Single(writer.Writes);
     }
 
+    /// <summary>
+    /// The ledger outlives a deploy. An entry recorded before revisions were bound carries the bare
+    /// payload hash; its retry must reconcile, not be refused as another operation — that refusal
+    /// would release the page's key and let the next click post twice (found in review, 2026-10-20).
+    /// </summary>
+    [Fact]
+    public async Task An_entry_recorded_before_revisions_were_bound_still_reconciles()
+    {
+        var (host, writer, alice, token) = await StartAsync(Build());
+        await using var _ = host;
+        var key = Key(DateTimeOffset.UtcNow.AddMinutes(-3));
+        var reserved = DateTimeOffset.UtcNow.AddMinutes(-2);
+        await host.Services.GetRequiredService<IOperationLedger>().RecordAsync($"user:alice|comment|acme/plant|12|{key}",
+            new OperationEntry(ReviewTags.PayloadHash("Before."), OperationState.Unknown, null, reserved, reserved), CancellationToken.None);
+        writer.Comments["C_beforeabcd"] = new FakeWriter.Comment("C_beforeabcd", "IssueComment", "acme/plant", 12, "alice", ReviewTags.WithOperation("Before.", key), reserved, null);
+
+        var retry = await Post(host, "/comments", new { opKey = key, body = "Before." }, alice, Headers(token));
+
+        retry.AssertStatus(HttpStatusCode.OK);
+        Assert.Equal("C_beforeabcd", Json(await retry.Body()).GetProperty("id").GetString());
+        Assert.Empty(writer.Writes);
+    }
+
     /// <summary>The in-memory ledger, holding readers of a failed entry until as many as asked have read it.</summary>
     private sealed class HoldingLedger : IOperationLedger
     {

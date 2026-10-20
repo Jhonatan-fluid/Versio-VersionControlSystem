@@ -757,6 +757,17 @@ public static partial class PullWriteEndpoints
         private static string Bound(string payloadHash, ReviewSnapshot? snapshot) =>
             snapshot is null ? payloadHash : ReviewTags.PayloadHash(payloadHash, snapshot.HeadSha, snapshot.BaseSha);
 
+        /// <summary>
+        /// Whether a recorded entry is this operation: its hash bound to this revision — or the bare
+        /// payload hash, which only an entry recorded before revisions were bound can carry (every
+        /// entry since is bound). The ledger outlives a deploy, so without the second a retry of a
+        /// write whose answer was lost just before one was refused as "op-mismatch", the page let go
+        /// of the key, and the next click could post it twice (found in review, 2026-10-20). Such
+        /// entries are at most a week old (the key lifetime), after which this is moot.
+        /// </summary>
+        private static bool SameOperation(string recorded, string payloadHash, ReviewSnapshot? snapshot) =>
+            recorded == Bound(payloadHash, snapshot) || (snapshot is not null && recorded == payloadHash);
+
         private string LedgerKey(RepoAccess who, string action, string owner, string repo, int number, string key) =>
             string.Join('|', PullEndpoints.Viewer(who), action, $"{owner}/{repo}".ToLowerInvariant(), number, key);
 
@@ -778,7 +789,7 @@ public static partial class PullWriteEndpoints
             var key = request.OpKey!;
             var ledgerKey = LedgerKey(who, action, owner, repo, number, key);
             var entry = await ledger.FindAsync(ledgerKey, ct).ConfigureAwait(false);
-            if (entry is null || entry.PayloadHash != Bound(payloadHash, old))
+            if (entry is null || !SameOperation(entry.PayloadHash, payloadHash, old))
             {
                 return expired;
             }
@@ -803,6 +814,7 @@ public static partial class PullWriteEndpoints
             Func<RepoAccess, ReviewSnapshot?, string, DateTimeOffset, Task<RepoResult<string>>> reconcile,
             bool idempotent, CancellationToken ct)
         {
+            var unbound = payloadHash;
             payloadHash = Bound(payloadHash, snapshot);
             var now = clock.UtcNow;
             switch (ReviewTags.CheckKey(request.OpKey, now))
@@ -819,7 +831,7 @@ public static partial class PullWriteEndpoints
             var reservation = await ledger.ReserveAsync(ledgerKey, payloadHash, now, ct).ConfigureAwait(false);
             if (!reservation.Fresh && reservation.Existing is { } existing)
             {
-                if (existing.PayloadHash != payloadHash)
+                if (!SameOperation(existing.PayloadHash, unbound, snapshot))
                 {
                     Audit(who, action, owner, repo, number, snapshot, key, "refused: same key, different payload");
                     return Results.Json(new { error = "op-mismatch", message = "This retry does not match what was first submitted." }, statusCode: 422);
