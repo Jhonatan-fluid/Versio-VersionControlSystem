@@ -78,6 +78,23 @@ on a 4xx) and calls everything else unknown; checks are paged to 1,000 each and 
 other reader of X has been found and moved too — the target was moved for sending and left behind
 for validating. Web 334 -> 337, vitest 95 -> 112.
 
+**A third review, through `86b6b56`, found four, two of them carried over unfixed.** (1) A retry
+held its key and route but went under the page's CURRENT snapshot: an approval that never reached
+the server, then a push and a reload, would approve a commit the person never saw. Fixed both
+ways: the page keeps the snapshot a key was sent under and retries under it, and the server binds
+head and base into the operation's hash (another revision is another operation, refused). Keys
+outlive snapshots, so an expired but genuine snapshot may still *settle* its own operation (a
+read), never start one. (2) Moving between files saved one file's draft under another's: the
+reused comment box carried its state into the next slot. Boxes, the review page and the new-PR
+form are now keyed by their draft's identity. (3) Pending-review comments and every reconciliation
+search read one page; "not found" is now concluded only from a whole list, and past the bound the
+answer is "cannot tell". (4) Every GraphQL `errors` answer was read as refused; per the spec an
+execution error does not prove nothing ran, so only a request error, or typed pre-execution errors
+with nothing returned, are refusals now. **Rule worth keeping:** what identifies an operation —
+its revision as much as its route — must be fixed when its key is made; and "not there" or
+"refused" is a claim that needs the whole evidence, never the first page or the first error.
+Web 337 -> 343, vitest 112 -> 118.
+
 ---
 
 ### A pull request's "What changed" compared against the base branch's tip, so later commits on the base read as reverted
