@@ -10,17 +10,22 @@ using Versio.Web.Sources;
 
 namespace Versio.Web.Api;
 
+/// <summary>One stretch of changed lines a drawing may not show: the reviewer reads it on Raw.</summary>
+/// <param name="Start">The first line, from 1; zero for the whole file (one too large to read).</param>
+public sealed record CoverageGapDto(string Path, string PathLabel, string Side, int Start, int End, string Reason);
+
 /// <summary>A changed file's drawing in a review, with what the page must say about how far to trust it.</summary>
 /// <param name="Coverage">
-/// "partial" for every rendered view until its renderer reports field-level evidence
-/// (docs/web/PLAN.md, C4); "raw" for the text diff, which shows every changed line.
+/// "complete" when every changed line of the object's files is one the drawing names as changed;
+/// "partial" otherwise, with <paramref name="Gaps"/> saying where (docs/web/PLAN.md, C4); "raw" for
+/// the text diff, which shows every changed line.
 /// </param>
 /// <param name="Placements">
 /// Where each review thread on this file goes on a rendered drawing (docs/web/PLAN.md, C3), decided
 /// here from the drawing's own anchors; empty on Raw, where the page places threads by the diff's
 /// line markers, or when the threads could not be read.
 /// </param>
-public sealed record PullFileView(ViewResult View, string Coverage, IReadOnlyList<Versio.Web.Review.GitHub.ThreadPlacement> Placements);
+public sealed record PullFileView(ViewResult View, string Coverage, IReadOnlyList<Versio.Web.Review.GitHub.ThreadPlacement> Placements, IReadOnlyList<CoverageGapDto> Gaps);
 
 /// <summary>
 /// Pull request review, read side (docs/web/PLAN.md, *Pull request review*, slice 1). Every route
@@ -94,6 +99,7 @@ public static class PullEndpoints
         });
 
         MapLive(pulls);
+        MapCoverage(pulls);
 
         pulls.MapGet("/files", async (string owner, string repo, int number, HttpContext http, AccessResolver access,
             ReviewSnapshots snapshots, ApiEndpoints.Loader load, PullReview review, IOptions<WebOptions> options, CancellationToken ct) =>
@@ -182,7 +188,62 @@ public static class PullEndpoints
                 }
             }
 
-            return Results.Ok(new PullFileView(result.Value!, pane == PaneView.Raw ? "raw" : "partial", placements));
+            return Results.Ok(new PullFileView(result.Value!, CoverageWord(pane, result.Value!.Coverage), placements, Gaps(result.Value!.Coverage)));
+        });
+    }
+
+    /// <summary>
+    /// "complete" only with evidence for every changed line; a drawing with none (a fallback to plain
+    /// text, a binary) is partial, never complete by default.
+    /// </summary>
+    private static string CoverageWord(PaneView pane, Versio.Core.Review.ReviewCoverage? coverage) =>
+        pane == PaneView.Raw ? "raw" : coverage is { Complete: true } ? "complete" : "partial";
+
+    private static IReadOnlyList<CoverageGapDto> Gaps(Versio.Core.Review.ReviewCoverage? coverage) =>
+        coverage?.Gaps.Select(g => new CoverageGapDto(g.Path, CodeHtml.Spelled(g.Path), g.Side == Versio.Core.Review.ReviewSide.New ? "new" : "old", g.Start, g.End, g.Reason)).ToList() ?? [];
+
+    /// <summary>The most files whose drawings the coverage summary renders; the rest are reported unchecked.</summary>
+    internal const int CoverageFileCap = 200;
+
+    /// <summary>
+    /// What the Approve dialog says before an approval: for each changed file, whether its drawing
+    /// covers every changed line (C4). Renders every file's comparison (cached, so a file already
+    /// opened costs nothing), up to <see cref="CoverageFileCap"/>; past it, files are "unchecked" and
+    /// counted as such — never as covered.
+    /// </summary>
+    private static void MapCoverage(RouteGroupBuilder pulls)
+    {
+        pulls.MapGet("/coverage", async (string owner, string repo, int number, HttpContext http, AccessResolver access,
+            ReviewSnapshots snapshots, ApiEndpoints.Loader load, PullReview review, ViewService views, CancellationToken ct) =>
+        {
+            var opened = await OpenAsync(owner, repo, number, http, access, snapshots, ct).ConfigureAwait(false);
+            if (opened.Refusal is { } refusal)
+            {
+                return refusal;
+            }
+
+            var models = await ModelsAsync(http, load, opened.Snapshot!, ct).ConfigureAwait(false);
+            if (models.Refusal is { } failed)
+            {
+                return failed;
+            }
+
+            var inventory = await review.InventoryAsync(opened.Access!, opened.Snapshot!, models.MergeBase!, models.Head!, ct).ConfigureAwait(false);
+            var files = new List<object>(inventory.Files.Count);
+            foreach (var (file, index) in inventory.Files.Select((f, i) => (f, i)))
+            {
+                if (index >= CoverageFileCap)
+                {
+                    files.Add(new { path = file.Path, coverage = "unchecked", gaps = 0 });
+                    continue;
+                }
+
+                var drawn = await views.CompareAsync(models.Access!, models.MergeBase!, models.Head!, file.Path, PaneView.Rendered, false, ct, file.PreviousPath).ConfigureAwait(false);
+                var coverage = drawn.Ok ? drawn.Value!.Coverage : null;
+                files.Add(new { path = file.Path, coverage = drawn.Ok ? CoverageWord(PaneView.Rendered, coverage) : "unchecked", gaps = coverage?.Gaps.Count ?? 0 });
+            }
+
+            return Results.Ok(new { files });
         });
     }
 

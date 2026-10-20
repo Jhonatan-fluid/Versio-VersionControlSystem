@@ -512,7 +512,9 @@ public sealed class PullReviewTests
         var rendered = Json(await (await WithSnapshot(host, "/api/repos/acme/plant/pulls/12/files/view?path=src/Pump.st", token)).Body());
 
         Assert.Equal("raw", raw.GetProperty("coverage").GetString());
-        Assert.Equal("partial", rendered.GetProperty("coverage").GetString());
+        // Complete since slice 4: the one changed line is a declaration whose every token the member
+        // table shows on a row it marks modified (C4). Until then every drawing said "partial".
+        Assert.Equal("complete", rendered.GetProperty("coverage").GetString());
         var html = raw.GetProperty("view").GetProperty("html").GetString()!;
         Assert.Contains("TRUE", html, StringComparison.Ordinal);
         Assert.DoesNotContain("PUSHED_LATER", html, StringComparison.Ordinal);

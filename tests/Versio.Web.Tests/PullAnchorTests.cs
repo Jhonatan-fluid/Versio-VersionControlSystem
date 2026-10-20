@@ -283,4 +283,69 @@ public sealed partial class PullAnchorTests
         Assert.Contains("data-change=\"none\"", told, StringComparison.Ordinal);
         Assert.Contains("data-change=\"modified\"", told, StringComparison.Ordinal);
     }
+    // ---- coverage (C4) ---------------------------------------------------------------------------
+
+    /// <summary>
+    /// The struct's one change is a value the table names on a row it marks modified: complete. The
+    /// ladder has no field evidence yet, so its drawing is partial and its changed lines are named.
+    /// </summary>
+    [Fact]
+    public async Task A_drawing_is_complete_only_with_evidence_and_partial_says_where()
+    {
+        var w = Build();
+        var (host, _, alice, token) = await StartAsync(w);
+        await using var _ = host;
+
+        var table = await View(host, token, alice, Struct);
+        var ladder = await View(host, token, alice, Signals);
+
+        Assert.Equal("complete", table.GetProperty("coverage").GetString());
+        Assert.Equal(0, table.GetProperty("gaps").GetArrayLength());
+        Assert.Equal("partial", ladder.GetProperty("coverage").GetString());
+        var gaps = ladder.GetProperty("gaps").EnumerateArray().ToList();
+        Assert.NotEmpty(gaps);
+        // Signals draws an interface table from its own XML: table evidence exists for the file, but
+        // never vouches for an XML line, so every changed line is "not shown" (and the ladder adds none).
+        Assert.All(gaps, g => Assert.Equal((Signals, "not-shown"), (g.GetProperty("path").GetString(), g.GetProperty("reason").GetString())));
+    }
+
+    /// <summary>
+    /// A layer that changed but is not part of the drawing at all — the GVL's XML beside the .st
+    /// being looked at — is a gap, "not drawn". A drawing is complete about the object, not only about
+    /// the file it happens to draw.
+    /// </summary>
+    [Fact]
+    public async Task A_changed_layer_the_drawing_does_not_draw_keeps_it_partial()
+    {
+        const string gvl = Root + "Glob_Var.gvl.st";
+        const string xml = Root + "Glob_Var.gvl.xml";
+        var w = Build(files =>
+        {
+            files[xml] = Encoding.UTF8.GetBytes(Encoding.UTF8.GetString(files[xml]) + "\n<!-- touched -->\n");
+            return files;
+        });
+        var (host, _, alice, token) = await StartAsync(w);
+        await using var _ = host;
+
+        var view = await View(host, token, alice, gvl);
+
+        Assert.Equal("partial", view.GetProperty("coverage").GetString());
+        Assert.Contains(view.GetProperty("gaps").EnumerateArray(), g => g.GetProperty("path").GetString() == xml && g.GetProperty("reason").GetString() == "not-drawn");
+    }
+
+    [Fact]
+    public async Task The_summary_says_per_file_whether_its_drawing_covers_every_change()
+    {
+        var w = Build();
+        var (host, _, alice, token) = await StartAsync(w);
+        await using var _ = host;
+
+        var response = await host.GetAsync("/api/repos/acme/plant/pulls/5/coverage", alice, new Dictionary<string, string> { [PullEndpoints.SnapshotHeader] = token });
+
+        response.AssertStatus(HttpStatusCode.OK);
+        var files = JsonDocument.Parse(await response.Body()).RootElement.GetProperty("files").EnumerateArray()
+            .ToDictionary(f => f.GetProperty("path").GetString()!, f => f.GetProperty("coverage").GetString());
+        Assert.Equal("complete", files[Struct]);
+        Assert.Equal("partial", files[Signals]);
+    }
 }

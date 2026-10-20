@@ -47,6 +47,14 @@ public sealed record ViewResult(
     /// </summary>
     [System.Text.Json.Serialization.JsonIgnore]
     public IReadOnlyList<Versio.Core.Review.RenderedAnchor> Anchors { get; init; } = [];
+
+    /// <summary>
+    /// For a rendered comparison: which changed lines of the object's files the drawing can vouch
+    /// for, and which it may not show (docs/web/PLAN.md, *Pull request review*, C4). Null for
+    /// anything else. Server-side; the review route sends it on.
+    /// </summary>
+    [System.Text.Json.Serialization.JsonIgnore]
+    public Versio.Core.Review.ReviewCoverage? Coverage { get; init; }
 }
 
 /// <summary>
@@ -94,7 +102,7 @@ public sealed class ViewService(
     IVersioLogger log)
 {
     /// <summary>Bumped whenever any renderer's output changes, so no stale fragment is served.</summary>
-    public const int RendererVersion = 4;
+    public const int RendererVersion = 5;
 
     private WebOptions O => options.Value;
 
@@ -369,6 +377,29 @@ public sealed class ViewService(
             after = Without(after, tooLarge);
         }
 
+        // What each renderer below can vouch for, by the file it drew from (C4). A file drawn with
+        // no evidence (a ladder, an XML table) is reported whole as "no-evidence"; one not drawn at
+        // all as "not-drawn"; one over the draw limit as "too-large", without reading its lines.
+        var evidence = new Dictionary<string, List<Versio.Core.Review.Coverage.Evidence>>(StringComparer.Ordinal);
+        var drawn = new HashSet<string>(StringComparer.Ordinal);
+        var b4 = before;
+        var af = after;
+        Versio.Core.Review.ReviewCoverage Covered()
+        {
+            var report = Versio.Core.Review.Coverage.Check(
+                node.Files.Except(tooLarge).Distinct().Where(Differs).Select(f => (f, Text(b4, f), Text(af, f))),
+                evidence.ToDictionary(kv => kv.Key, kv => (IReadOnlyList<Versio.Core.Review.Coverage.Evidence>)kv.Value),
+                f => drawn.Contains(f) ? "no-evidence" : "not-drawn");
+            var large = tooLarge.Where(Differs).Select(f => new Versio.Core.Review.CoverageGap(f, Versio.Core.Review.ReviewSide.New, 0, 0, "too-large"));
+            return report with { Gaps = [.. report.Gaps, .. large] };
+        }
+
+        void Vouch(string path, Versio.Core.Review.Coverage.Evidence e)
+        {
+            drawn.Add(path);
+            (evidence.TryGetValue(path, out var list) ? list : evidence[path] = []).Add(e);
+        }
+
         // The object's other layers too: a table or a ladder can come from the .xml beside an .st.
         if (CouldNotRead(node, shown, node.Files, before, after) is { } refused)
         {
@@ -399,6 +430,7 @@ public sealed class ViewService(
 
                 var html = new StringBuilder(MemberTableHtml.Fragment(WebNote(compared), compared: true));
                 var anchors = new List<Versio.Core.Review.RenderedAnchor>(MemberTableHtml.Anchors(compared, compared: true));
+                Vouch(path, Versio.Core.Review.Coverage.Table(compared, Text(before, path), Text(after, path)));
                 // A highlighted type counts as drawn: it is the highlight. Counting only the rows'
                 // own changes said "the type changed" and "nothing this view draws did" together
                 // (found in review).
@@ -406,7 +438,7 @@ public sealed class ViewService(
                 var codeChanged = false;
                 if (compared.IsInterface)
                 {
-                    codeChanged = AppendInterfaceCode(html, format, node, after, before, sideBySide, anchors);
+                    codeChanged = AppendInterfaceCode(html, format, node, after, before, sideBySide, anchors, Vouch, p => drawn.Add(p));
                 }
 
                 if (changedFiles && !tableChanged && !codeChanged)
@@ -414,7 +446,7 @@ public sealed class ViewService(
                     notices.Add(NothingDrawnChanged);
                 }
 
-                return Result("table", node, shown, html.ToString(), notices) with { Anchors = anchors };
+                return Result("table", node, shown, html.ToString(), notices) with { Anchors = anchors, Coverage = Covered() };
             }
         }
 
@@ -437,9 +469,11 @@ public sealed class ViewService(
                     notices.Add(NothingDrawnChanged);
                 }
 
+                // A ladder has no field evidence: drawn, and reported whole, so the view stays partial.
+                drawn.Add(path);
                 return Result("ladder", node, shown,
                     LadderHtml.Fragment(comparison, (newLadder ?? oldLadder!).Style, sideBySide ? LadderView.SideBySide : LadderView.Merged, CompareWording, path), notices)
-                    with { Anchors = LadderHtml.Anchors(comparison, path) };
+                    with { Anchors = LadderHtml.Anchors(comparison, path), Coverage = Covered() };
             }
         }
 
@@ -455,7 +489,9 @@ public sealed class ViewService(
             notices.Add(NothingDrawnChanged);
         }
 
-        return Result("source", node, shown, SourceHtml.Fragment(rows, LanguageFor(shown), sideBySide ? SourceView.SideBySide : SourceView.Unified, shown), notices);
+        Vouch(shown, Versio.Core.Review.Coverage.Source(rows));
+        return Result("source", node, shown, SourceHtml.Fragment(rows, LanguageFor(shown), sideBySide ? SourceView.SideBySide : SourceView.Unified, shown), notices)
+            with { Coverage = Covered() };
     }
 
     private ViewResult RawCompare(string shown, IReadOnlyDictionary<string, Layer> before, IReadOnlyDictionary<string, Layer> after, bool sideBySide)
@@ -491,10 +527,14 @@ public sealed class ViewService(
     /// code body. Returns whether the code changed between the two versions.
     /// </summary>
     /// <param name="anchors">Where a comparison's review anchors go: the code's ladder adds its networks.</param>
+    /// <param name="vouch">Where a comparison's coverage evidence goes: a drawn code body vouches for its marked lines.</param>
+    /// <param name="drawnWithoutEvidence">Says a file was drawn though nothing vouches for its lines (the code's ladder).</param>
     private static bool AppendInterfaceCode(
         StringBuilder html, IPlcProjectFormat format, ProjectTreeNode node,
         IReadOnlyDictionary<string, Layer> newer, IReadOnlyDictionary<string, Layer>? older, bool sideBySide = false,
-        List<Versio.Core.Review.RenderedAnchor>? anchors = null)
+        List<Versio.Core.Review.RenderedAnchor>? anchors = null,
+        Action<string, Versio.Core.Review.Coverage.Evidence>? vouch = null,
+        Action<string>? drawnWithoutEvidence = null)
     {
         if (node.PrimaryFile is not { } code)
         {
@@ -514,6 +554,7 @@ public sealed class ViewService(
                     : LadderDiff.Compare(ladderOld?.Body, ladderNew.Body);
             html.Append(LadderHtml.Fragment(comparison, (ladderNew ?? ladderOld!).Style, sideBySide ? LadderView.SideBySide : LadderView.Merged, older is null ? SingleWording : CompareWording, code));
             anchors?.AddRange(LadderHtml.Anchors(comparison, code));
+            drawnWithoutEvidence?.Invoke(code);
             return older is not null && comparison.HasChanges;
         }
 
@@ -527,6 +568,11 @@ public sealed class ViewService(
         if (older is not null)
         {
             rows = StSourceLayout.Mark(rows, oldText, newText);
+        }
+
+        if (older is not null)
+        {
+            vouch?.Invoke(code, Versio.Core.Review.Coverage.Source(rows));
         }
 
         html.Append(SourceHtml.Fragment(rows, LanguageFor(code), sideBySide ? SourceView.SideBySide : SourceView.Unified, code));
