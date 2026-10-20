@@ -2,7 +2,7 @@ import { act } from 'react';
 import { createRoot } from 'react-dom/client';
 import { MemoryRouter, Route, Routes } from 'react-router';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import type { ThreadPlacement } from '../api';
+import type { CoverageGap, CoverageSummary, PendingReviewView, ThreadPlacement } from '../api';
 import { PullPage, placementSelector, threadSelector } from './PullPage';
 
 // The review page (docs/web/PLAN.md, *Pull request review*, slice 1): everything read against one
@@ -41,6 +41,18 @@ interface Options {
   writes?: Record<string, { status: number; body: unknown }>;
   /** Where the server placed each thread on the drawing. */
   placements?: ThreadPlacement[];
+  /** The viewer's pending review, if any. */
+  pending?: PendingReviewView['review'];
+  viewerIsAuthor?: boolean;
+  lastReview?: string | null;
+  viewed?: string[];
+  /** The rendered file's coverage, and its gaps. */
+  coverage?: 'complete' | 'partial';
+  gaps?: CoverageGap[];
+  /** The per-file summary the review dialog totals up. */
+  summary?: CoverageSummary;
+  /** The head moves the moment anything is written: a push landing mid-submit. */
+  movesOnWrite?: boolean;
 }
 
 let calls: { url: string; snapshot: string | null; method: string; csrf: string | null; body: Record<string, unknown> | null }[] = [];
@@ -54,9 +66,11 @@ function answer(url: string, o: Options): unknown {
     };
   }
   if (url.endsWith('/status')) {
+    const moved = (o.stale ?? false) || (o.movesOnWrite === true && calls.some((c) => c.method !== 'GET'));
     return {
-      stale: o.stale ?? false, headMoved: o.stale ?? false, baseMoved: false, summaryError: null,
-      summary: { state: 'OPEN', draft: false, merged: false, mergeable: 'MERGEABLE', reviewDecision: 'REVIEW_REQUIRED', labels: [], assignees: [], reviewers: [] },
+      stale: moved, headMoved: moved, baseMoved: false, summaryError: null,
+      summary: { state: 'OPEN', draft: false, merged: false, mergeable: 'MERGEABLE', reviewDecision: 'REVIEW_REQUIRED', labels: [], assignees: [],
+        reviewers: [{ login: 'kim', state: 'REQUESTED' }], viewerIsAuthor: o.viewerIsAuthor ?? false, viewerLastReviewCommit: o.lastReview ?? null },
       checksError: null, checks: [{ name: 'build', status: 'completed', conclusion: 'failure', url: 'https://ci.example/1', source: 'check-run' }],
     };
   }
@@ -69,7 +83,8 @@ function answer(url: string, o: Options): unknown {
   if (url.includes('/files/view')) {
     const raw = url.includes('view=raw');
     return {
-      coverage: raw ? 'raw' : 'partial',
+      coverage: raw ? 'raw' : o.coverage ?? 'partial',
+      gaps: raw ? [] : o.gaps ?? [],
       placements: raw ? [] : o.placements ?? [],
       view: { kind: raw ? 'diff' : 'table', title: 'Pump', path: 'src/Pump.st', html: raw ? rawDiff : renderedSource, notices: [], layers: ['src/Pump.st'], layerLabels: ['src/Pump.st'] },
     };
@@ -85,6 +100,15 @@ function answer(url: string, o: Options): unknown {
         { id: 'GONE', path: 'src/Pump.st', pathLabel: 'src/Pump.st', resolved: false, outdated: true, line: null, startLine: null, side: 'RIGHT', originalLine: 9, subject: 'LINE', truncated: false, ...may, comments: [comment('c3', '<p>an old remark</p>')] },
       ],
     };
+  }
+  if (url.endsWith('/reviews/pending')) {
+    return { review: o.pending ?? null };
+  }
+  if (url.endsWith('/viewed')) {
+    return { paths: o.viewed ?? [] };
+  }
+  if (url.endsWith('/coverage')) {
+    return o.summary ?? { files: [{ path: 'src/Pump.st', coverage: 'partial', gaps: 2 }] };
   }
   if (url.endsWith('/timeline')) {
     return { truncated: false, items: [{ kind: 'review', actor: 'sam', when: '2026-10-17T09:00:00Z', html: null, text: null, state: 'APPROVED', sha: null }] };
@@ -465,5 +489,249 @@ describe('placementSelector', () => {
     const selector = placementSelector({ ...base, outcome: 'hint', dom: null, hintPath: 'a"b\\c.st', hintSide: 'LEFT', hintLine: 4 })!;
     expect(selector).toBe('[data-src-path="a\\"b\\\\c.st"] [data-old-file-line="4"]');
     expect(() => document.querySelector(selector)).not.toThrow();
+  });
+});
+
+// Slice 4 (docs/web/PLAN.md, C2 and C4): a review is submitted on the commit it names, an older
+// pending review only as what it is, and the dialog says what the reviewer may not have seen.
+describe('PullPage review', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+    document.body.innerHTML = '';
+    sessionStorage.clear();
+  });
+
+  async function click(element: Element, host: HTMLElement) {
+    await act(async () => {
+      (element as HTMLElement).click();
+    });
+    await settle(host, () => false);
+  }
+
+  async function type(textarea: HTMLTextAreaElement, text: string) {
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')!.set!.call(textarea, text);
+      textarea.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+  }
+
+  const button = (root: ParentNode, label: string) => Array.from(root.querySelectorAll('button')).find((b) => b.textContent === label);
+  const writes = () => calls.filter((c) => c.method !== 'GET' && !c.url.endsWith('/markdown'));
+  const radio = (host: HTMLElement, value: string) => host.querySelector<HTMLInputElement>(`.review-dialog input[value="${value}"]`);
+  const pendingOn = (commit: string) => ({ id: 'PRR_1', commit, onSnapshotHead: commit === head, comments: [{ id: 'C1', path: 'src/Pump.st', pathLabel: 'src/Pump.st', html: '<p>x</p>' }] });
+
+  it('with no pending review, approves in one call on the reviewed head, then reads the review again', async () => {
+    const { host, root } = await render('/acme/plant/pull/12', { writable: true });
+    await click(button(host, 'Review changes')!, host);
+    await click(radio(host, 'APPROVE')!, host);
+    const before = calls.filter((c) => c.url.endsWith('/reviews/pending')).length;
+
+    await click(button(host, 'Submit: Approve')!, host);
+
+    const posted = writes()[0]!;
+    expect(posted.url.endsWith('/pulls/12/reviews')).toBe(true);
+    expect(posted.body).toMatchObject({ event: 'APPROVE', body: '' });
+    expect(posted.body).not.toHaveProperty('commit');
+    expect(posted.snapshot).toBe(token);
+    expect(calls.filter((c) => c.url.endsWith('/reviews/pending')).length).toBeGreaterThan(before);
+    expect(host.querySelector('.review-bar .notice')?.textContent).toContain(`Approve submitted on ${head.slice(0, 8)}`);
+    act(() => root.unmount());
+  });
+
+  it('reads the status again right after a submit and says a push landed meanwhile, not at the next poll', async () => {
+    const { host, root } = await render('/acme/plant/pull/12', { writable: true, movesOnWrite: true });
+    await click(button(host, 'Review changes')!, host);
+    await click(radio(host, 'APPROVE')!, host);
+    const before = calls.filter((c) => c.url.endsWith('/status')).length;
+
+    await click(button(host, 'Submit: Approve')!, host);
+
+    expect(calls.filter((c) => c.url.endsWith('/status')).length).toBeGreaterThan(before);
+    expect(host.querySelector('.review-bar .notice')?.textContent).toContain('your review stays on the commit you were shown');
+    act(() => root.unmount());
+  });
+
+  it('submits a pending review made on the reviewed head as that review', async () => {
+    const { host, root } = await render('/acme/plant/pull/12', { writable: true, pending: pendingOn(head) });
+    expect(host.querySelector('.review-bar')?.textContent).toContain('1 comment');
+    await click(button(host, 'Finish your review')!, host);
+    await click(button(host, 'Submit: Comment')!, host);
+
+    expect(writes()[0]!.url.endsWith('/reviews/PRR_1/submit')).toBe(true);
+    act(() => root.unmount());
+  });
+
+  it('submits an older pending review only as historical, naming its commit, and takes no more comments into it', async () => {
+    const older = 'a'.repeat(40);
+    const { host, root } = await render('/acme/plant/pull/12?tab=files&path=src%2FPump.st', { writable: true, pending: pendingOn(older) });
+    expect(host.querySelector('.review-bar')?.textContent).toContain(older.slice(0, 8));
+    await click(button(host, 'Finish your review')!, host);
+    expect(host.querySelector('.review-dialog')?.textContent).toContain(`started on commit ${older.slice(0, 8)}`);
+
+    await click(button(host, 'Submit: Comment')!, host);
+    const posted = writes()[0]!;
+    expect(posted.url.endsWith('/reviews/PRR_1/submit-historical')).toBe(true);
+    expect(posted.body?.commit).toBe(older);
+
+    await click(button(host, 'Comment on the whole file')!, host);
+    expect(button(host.querySelector('.file-comment')!, 'Add to review')).toBeUndefined();
+    expect(button(host.querySelector('.file-comment')!, 'Start a review')).toBeUndefined();
+    act(() => root.unmount());
+  });
+
+  it('offers a comment into a pending review on the reviewed head as "Add to review"', async () => {
+    const { host, root } = await render('/acme/plant/pull/12?tab=files&path=src%2FPump.st', { writable: true, pending: pendingOn(head) });
+    await click(button(host, 'Comment on the whole file')!, host);
+
+    expect(button(host.querySelector('.file-comment')!, 'Add to review')).toBeDefined();
+    act(() => root.unmount());
+  });
+
+  it('does not offer the author an approval or a request for changes on their own pull request', async () => {
+    const { host, root } = await render('/acme/plant/pull/12', { writable: true, viewerIsAuthor: true });
+    await click(button(host, 'Review changes')!, host);
+
+    expect(radio(host, 'COMMENT')).not.toBeNull();
+    expect(radio(host, 'APPROVE')).toBeNull();
+    expect(radio(host, 'REQUEST_CHANGES')).toBeNull();
+    act(() => root.unmount());
+  });
+
+  it('asks for words before a request for changes', async () => {
+    const { host, root } = await render('/acme/plant/pull/12', { writable: true });
+    await click(button(host, 'Review changes')!, host);
+    await click(radio(host, 'REQUEST_CHANGES')!, host);
+
+    expect(button(host, 'Submit: Request changes')!.disabled).toBe(true);
+    await type(host.querySelector<HTMLTextAreaElement>('.review-dialog textarea')!, 'The delay must stay.');
+    expect(button(host, 'Submit: Request changes')!.disabled).toBe(false);
+    act(() => root.unmount());
+  });
+
+  it('reads coverage only when the dialog opens, and lists unopened files and files the drawing may not show', async () => {
+    const { host, root } = await render('/acme/plant/pull/12', { writable: true });
+    expect(calls.some((c) => c.url.endsWith('/coverage'))).toBe(false);
+
+    await click(button(host, 'Review changes')!, host);
+
+    expect(calls.some((c) => c.url.endsWith('/coverage'))).toBe(true);
+    const notes = Array.from(host.querySelectorAll('.review-notes summary')).map((s) => s.textContent);
+    expect(notes).toContain('1 file not opened here');
+    expect(notes.some((n) => n?.includes('1 file with changes the drawing may not show'))).toBe(true);
+    act(() => root.unmount());
+  });
+
+  it('does not count an opened, completely drawn file against the approval', async () => {
+    const { host, root } = await render('/acme/plant/pull/12?tab=files&path=src%2FPump.st', {
+      writable: true, coverage: 'complete', summary: { files: [{ path: 'src/Pump.st', coverage: 'complete', gaps: 0 }] },
+    });
+    await click(button(host, 'Review changes')!, host);
+
+    expect(host.querySelectorAll('.review-notes')).toHaveLength(0);
+    act(() => root.unmount());
+  });
+
+  it('adds a drafted comment to the review, and a retry after an unknown outcome goes nowhere else', async () => {
+    const unknown = { status: 202, body: { outcome: 'unknown', message: 'This may or may not have been posted.' } };
+    const { host, root } = await render('/acme/plant/pull/12?tab=files&path=src%2FPump.st', { writable: true, writes: { '/reviews/pending/threads': unknown } });
+
+    await click(host.querySelector('tr[data-anchors~="r-new-0"] td.mt-name')!, host);
+    const draft = () => host.querySelector('.thread-draft')!;
+    await type(draft().querySelector('textarea')!, 'Why TRUE?');
+    await click(button(draft(), 'Start a review')!, host);
+
+    const first = writes()[0]!;
+    expect(first.url.endsWith('/reviews/pending/threads')).toBe(true);
+    expect(first.body).toMatchObject({ path: 'src/Pump.st', dom: 'r-new-0', body: 'Why TRUE?' });
+    // The key belongs to the review now: the other target is not offered beside the retry.
+    expect(button(draft(), 'Start a review')).toBeUndefined();
+    await click(button(draft(), 'Try again')!, host);
+
+    const second = writes()[1]!;
+    expect(second.url.endsWith('/reviews/pending/threads')).toBe(true);
+    expect(second.body?.opKey).toBe(first.body?.opKey);
+    act(() => root.unmount());
+  });
+
+  it('says a complete drawing is complete, and lists each gap of a partial one', async () => {
+    const complete = await render('/acme/plant/pull/12?tab=files&path=src%2FPump.st', { coverage: 'complete' });
+    expect(complete.host.querySelector('.review-complete')).not.toBeNull();
+    expect(complete.host.querySelector('.review-partial')).toBeNull();
+    act(() => complete.root.unmount());
+    document.body.innerHTML = '';
+
+    const gaps: CoverageGap[] = [
+      { path: 'src/Pump.xml', pathLabel: 'src/Pump.xml', side: 'new', start: 4, end: 6, reason: 'not-shown' },
+      { path: 'src/Pump.st', pathLabel: 'src/Pump.st', side: 'old', start: 0, end: 0, reason: 'no-evidence' },
+    ];
+    const partial = await render('/acme/plant/pull/12?tab=files&path=src%2FPump.st', { gaps });
+    const items = Array.from(partial.host.querySelectorAll('.review-gaps li')).map((li) => li.textContent);
+    expect(items).toEqual([
+      'src/Pump.xml, as it is, lines 4–6: changed, but not shown as changed',
+      'src/Pump.st, as it was, the whole file: this kind of drawing cannot yet say what it shows',
+    ]);
+    expect(partial.host.querySelector('.review-complete')).toBeNull();
+    act(() => partial.root.unmount());
+  });
+
+  it('marks a file viewed on GitHub, and takes the mark back when GitHub refuses', async () => {
+    const { host, root } = await render('/acme/plant/pull/12?tab=files&path=src%2FPump.st', {
+      writable: true, writes: { '/viewed': { status: 403, body: { error: 'refused', message: 'No.' } } },
+    });
+    const box = host.querySelector<HTMLInputElement>('.changes input.review-viewed')!;
+    expect(box.checked).toBe(false);
+
+    await click(box, host);
+
+    expect(writes()[0]!.body).toMatchObject({ path: 'src/Pump.st', viewed: true });
+    expect(host.querySelector<HTMLInputElement>('.changes input.review-viewed')!.checked).toBe(false);
+    act(() => root.unmount());
+  });
+
+  it("shows GitHub's viewed marks", async () => {
+    const { host, root } = await render('/acme/plant/pull/12?tab=files&path=src%2FPump.st', { writable: true, viewed: ['src/Pump.st'] });
+    expect(host.querySelector<HTMLInputElement>('.changes input.review-viewed')!.checked).toBe(true);
+    act(() => root.unmount());
+  });
+
+  it('links the changes since the viewer last reviewed, and only when there are some', async () => {
+    const last = 'f'.repeat(40);
+    const moved = await render('/acme/plant/pull/12', { lastReview: last });
+    const link = Array.from(moved.host.querySelectorAll('a')).find((a) => a.textContent?.startsWith('Changes since your last review'));
+    expect(link?.getAttribute('href')).toBe(`/acme/plant/compare/${last}...${head}`);
+    act(() => moved.root.unmount());
+    document.body.innerHTML = '';
+
+    const same = await render('/acme/plant/pull/12', { lastReview: head });
+    expect(Array.from(same.host.querySelectorAll('a')).some((a) => a.textContent?.startsWith('Changes since'))).toBe(false);
+    act(() => same.root.unmount());
+  });
+
+  it('discards a pending review only after the person confirms', async () => {
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValueOnce(false).mockReturnValueOnce(true);
+    const { host, root } = await render('/acme/plant/pull/12', { writable: true, pending: pendingOn(head) });
+
+    await click(button(host, 'Discard')!, host);
+    expect(writes()).toHaveLength(0);
+    await click(button(host, 'Discard')!, host);
+
+    expect(confirm).toHaveBeenCalledTimes(2);
+    expect(writes()[0]!.url.endsWith('/reviews/PRR_1/discard')).toBe(true);
+    act(() => root.unmount());
+  });
+
+  it('asks for a review by login and withdraws an open request', async () => {
+    const { host, root } = await render('/acme/plant/pull/12', { writable: true });
+    const input = host.querySelector<HTMLInputElement>('.reviewers-add input')!;
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, 'lee');
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    await click(button(host, 'Ask')!, host);
+    await click(button(host, 'remove')!, host);
+
+    expect(writes().map((w) => w.body)).toMatchObject([{ add: ['lee'], remove: [] }, { add: [], remove: ['kim'] }]);
+    act(() => root.unmount());
   });
 });

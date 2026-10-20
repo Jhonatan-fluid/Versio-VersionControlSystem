@@ -21,7 +21,7 @@ UX remainder) is built and tested as of 2026-08-25** — UX-6 find boxes, UX-7 `
 Escape, UX-8 copy-a-commit, UX-12 amend-while-unpushed — and its visual half joins the
 eyeball list in item 2. Do not start from `archive/` or a handoff.
 
-**Tests:** 3,695 across twelve projects (plus 56 vitest in `web/`), last counted 2026-10-19
+**Tests:** 3,718 across twelve projects (plus 72 vitest in `web/`), last counted 2026-10-19
 on `ReviewFixes` — Integration 172 and App 783 after the review fixes; the toolchain-gated
 counts (TIA 5, TwinCAT 6, CODESYS 55) are from their last gate runs, not re-run for the count. **The Rendered view of an ST object reads like the IDE (2026-09-20):** no
 `@@` line, one gutter, a Declaration / Implementation divider, and the implementation
@@ -61,7 +61,7 @@ marking, duplicate-param keys, and the detail-pane lookup. All of them are in
 
 | Project | Tests | Time | Needs |
 |---|---|---|---|
-| `Versio.Core.Tests` | 1,784 | under a second | nothing |
+| `Versio.Core.Tests` | 1,790 | under a second | nothing |
 | `Versio.Integration.Tests` | 174 | ~10 s | real git |
 | `Versio.App.Tests` | 788 (re-counted 2026-10-19; the 789 here before was stale) | 10 m 46 s on 2026-10-19; 6 m 35 s on 2026-10-10; 8 m 38 s on 2026-10-05; ~3.6 min on 2026-09-22 | nothing |
 | `Versio.Arch.Tests` | 36 | instant | nothing |
@@ -71,8 +71,8 @@ marking, duplicate-param keys, and the detail-pane lookup. All of them are in
 | `Versio.Plc.TiaPortal.Tests` | 5 | seconds when skipped; minutes when Portal runs the import gate | **real TIA Portal** — skips without Openness membership or LFS content |
 | `Versio.Plc.TwinCat.Pure.Tests` | 23 | instant | nothing |
 | `Versio.Plc.TwinCat.Tests` | 6 | seconds when skipped; ~5 min when XAE runs the import gate | **real TwinCAT XAE** — skips without `TcXaeShell.DTE.17.0` or the fixture |
-| `Versio.Web.Tests` | 258 | a few seconds | nothing — GitHub is faked |
-| `web/` (vitest) | 56 | ~20 s | the pinned Node in `web/.node` |
+| `Versio.Web.Tests` | 275 | a few seconds | nothing — GitHub is faked |
+| `web/` (vitest) | 72 | ~20 s | the pinned Node in `web/.node` |
 | `Versio.Plc.Codesys.Tests` | 55 | **~30 min**; 41 m 14 s, 55/55, on 2026-10-11 on `WebViewer` | **real CODESYS** |
 
 The first ten are the loop to work in — about thirty seconds plus the UI suite. The last is
@@ -405,7 +405,20 @@ One list. Reorder it; do not copy it into another file.
    own lines inside GitHub's hunks (or on the file), writes the tag, and places threads on
    drawings; a tag that disagrees with GitHub's current line places nothing. Element-level
    anchors deferred (PLAN.md). Seen in the preview: a comment written on network 2 lands, moved,
-   on the renumbered network 1. Next: slice 4, coverage evidence and reviews.
+   on the renumbered network 1. **Slice 4 built 2026-10-19**: a drawing says which changed lines
+   it shows. Each changed line of every file of the object needs evidence from its renderer — a
+   drawn source line, or a member-table row drawn as changed whose shown fields account for every
+   token on the line — or it is a gap the page lists with its reason and a link to Raw; "complete"
+   only with none. XML tables and ladders stay partial (no field evidence yet), which is the rule
+   working, not a defect. Reviews: one-shot Comment / Approve / Request changes with `commit_id`;
+   drafts into a pending review created with `commitOID`; an older pending review submitted only
+   as historical, its commit named; discard; the author offered Comment only. The dialog totals
+   files never opened here and files with gaps, and informs without blocking. Viewed marks,
+   reviewers, and "changes since your last review" are on the page. The move path is deferred
+   (one pending review per person per pull request). Its gate, the owner's: approve as a second
+   user while a third pushes mid-approval; submit an older draft historically; see the
+   same-line shown-plus-unshown edit listed. Next, only if asked: slice 5, creating pull requests
+   and their metadata.
    **A loose end seen once, 2026-10-19:** `PerformanceTests.A_page_load_asks_GitHub_for_each_thing_once`
    failed one full Web run and passed three after; not investigated. A suspect, unproven: the
    loader's resolution cache is written after its single-flight finishes, so a request arriving in

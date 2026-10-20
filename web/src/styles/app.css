@@ -129,6 +129,23 @@ button { font: inherit; color: inherit; }
 
 .fragment { min-width: 0; }
 .fragment .cd-num { cursor: pointer; }
+.review-bar { border: 1px solid var(--border); border-radius: 6px; background: var(--surface-card); padding: 8px 10px; margin: 0 0 10px; font-size: 13px; }
+.review-bar-row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.review-bar-tools { margin-left: auto; display: inline-flex; gap: 10px; align-items: center; }
+.review-old { color: var(--notice-border); }
+.review-pending-comments, .review-notes { margin: 6px 0 0; font-size: 12px; overflow-wrap: anywhere; }
+.review-pending-comments .link-button, .review-notes .link-button { text-align: left; }
+.review-dialog { margin-top: 10px; }
+.review-events { border: 0; padding: 0; margin: 0; display: flex; gap: 14px; flex-wrap: wrap; align-items: baseline; }
+.review-notes summary { cursor: pointer; }
+.review-gaps { margin: 4px 0 0; padding-left: 18px; font-size: 12px; }
+.review-complete { font-size: 12px; margin: 0 0 8px; }
+.review-viewed { margin: 0 8px 0 4px; flex: none; }
+.review-viewed-label { font-size: 12px; display: inline-flex; gap: 4px; align-items: center; }
+.changes li:has(.review-viewed) { display: flex; align-items: center; }
+.reviewers-editor .row-list button { margin-left: 6px; font-size: 12px; }
+.reviewers-add { display: flex; gap: 6px; margin-top: 4px; }
+.reviewers-add input { flex: 1; min-width: 0; font: 13px var(--ui); color: var(--fg); background: var(--surface-card); border: 1px solid var(--border); border-radius: 6px; padding: 3px 6px; }
 .can-comment td.mt-name, .can-comment .ld-head { cursor: pointer; }
 .can-comment td.mt-name:hover, .can-comment .ld-head:hover { text-decoration: underline dotted; }
 tr.thread-row > td { padding: 4px 8px 8px 32px; background: transparent; }

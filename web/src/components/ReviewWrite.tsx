@@ -16,6 +16,8 @@ interface Draft {
   body: string;
   /** Set when first submitted, kept for every retry, dropped once the outcome is known. */
   opKey: string | null;
+  /** Where the held key was sent: a retry goes there and nowhere else. */
+  target?: string | null;
 }
 
 /** Drafts survive a reload, a "load the latest" and a dropped connection: losing someone's words is the failure that matters. */
@@ -78,13 +80,18 @@ interface CommentBoxProps {
   onCancel?: () => void;
   /** The pull request moved: the page offers to load the latest. */
   onStale?: () => void;
+  /**
+   * A second place the same comment can go — "Add to review", into the viewer's pending review —
+   * with the same payload. Offered only while no key is held (see submit).
+   */
+  alternative?: { path: string; label: string };
 }
 
 /**
  * A comment being written: the text, a preview drawn by the server's Markdown, and the outcome of
  * posting it said plainly. The draft is never cleared until the server says the comment is posted.
  */
-export function CommentBox({ owner, repo, snap, slot, path, method = 'POST', payload, initial, submitLabel, placeholder, onDone, onCancel, onStale }: CommentBoxProps) {
+export function CommentBox({ owner, repo, snap, slot, path, method = 'POST', payload, initial, submitLabel, placeholder, onDone, onCancel, onStale, alternative }: CommentBoxProps) {
   const [draft, setDraft] = useState<Draft>(() => {
     const kept = readDraft(slot);
     return kept.body || kept.opKey ? kept : { body: initial ?? '', opKey: null };
@@ -95,15 +102,18 @@ export function CommentBox({ owner, repo, snap, slot, path, method = 'POST', pay
 
   useEffect(() => writeDraft(slot, draft), [slot, draft]);
 
-  async function submit() {
-    if (!draft.body.trim() || busy) {
+  // A held key belongs to the target it was sent to. Posting the same words somewhere else is a
+  // different operation, and the first may already have happened — so while a key is held only a
+  // retry of that target is offered, never the other button.
+  async function submit(to: string = path) {
+    if (!draft.body.trim() || busy || (draft.opKey !== null && draft.target && draft.target !== to)) {
       return;
     }
     const opKey = draft.opKey ?? newOpKey();
-    setDraft({ ...draft, opKey });
+    setDraft({ ...draft, opKey, target: to });
     setBusy(true);
     setNote(null);
-    const answer = await api.review.write(owner, repo, snap, path, method, { ...payload, body: draft.body, opKey });
+    const answer = await api.review.write(owner, repo, snap, to, method, { ...payload, body: draft.body, opKey });
     setBusy(false);
     if (answer.outcome === 'done') {
       writeDraft(slot, null);
@@ -150,7 +160,12 @@ export function CommentBox({ owner, repo, snap, slot, path, method = 'POST', pay
           </button>
         )}
         {onCancel && <button type="button" className="button-quiet" onClick={() => { writeDraft(slot, null); onCancel(); }}>Cancel</button>}
-        <button type="button" className="button" onClick={submit} disabled={busy || !draft.body.trim()}>
+        {alternative && !locked && (
+          <button type="button" className="button-quiet" onClick={() => submit(alternative.path)} disabled={busy || !draft.body.trim()}>
+            {alternative.label}
+          </button>
+        )}
+        <button type="button" className="button" onClick={() => submit(locked && draft.target ? draft.target : path)} disabled={busy || !draft.body.trim()}>
           {busy ? 'Posting...' : locked ? `Try again` : submitLabel}
         </button>
       </div>

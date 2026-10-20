@@ -237,11 +237,40 @@ export interface ThreadPlacement {
   hintLine: number | null;
 }
 
-/** A changed file's drawing, and how far it can be trusted: "partial" until its renderer proves coverage (C4). */
+/** A stretch of changed lines a drawing may not show (docs/web/PLAN.md, C4); start 0 is the whole file. */
+export interface CoverageGap {
+  path: string;
+  pathLabel: string;
+  side: 'old' | 'new';
+  start: number;
+  end: number;
+  reason: 'not-shown' | 'no-evidence' | 'not-drawn' | 'too-large' | string;
+}
+
+/**
+ * A changed file's drawing, and how far it can be trusted: "complete" only when every changed line
+ * of the object is one the drawing names as changed; "partial" with the gaps otherwise (C4).
+ */
 export interface ReviewFileView {
   view: View;
-  coverage: 'partial' | 'raw';
+  coverage: 'complete' | 'partial' | 'raw';
   placements: ThreadPlacement[];
+  gaps: CoverageGap[];
+}
+
+/** The viewer's pending review: one per person per pull request, created on the commit it will approve. */
+export interface PendingReviewView {
+  review: {
+    id: string;
+    commit: string;
+    onSnapshotHead: boolean;
+    comments: { id: string; path: string; pathLabel: string; html: string }[];
+  } | null;
+}
+
+/** Per changed file, whether its drawing covers every change: what the Approve dialog totals up. */
+export interface CoverageSummary {
+  files: { path: string; coverage: 'complete' | 'partial' | 'unchecked'; gaps: number }[];
 }
 
 export interface ReviewStatus {
@@ -259,6 +288,10 @@ export interface ReviewStatus {
     labels: { name: string; color: string }[];
     assignees: string[];
     reviewers: { login: string; state: string }[];
+    /** GitHub refuses an author's approval: the page does not offer it. */
+    viewerIsAuthor: boolean;
+    /** The commit the viewer last reviewed, for "changes since your last review". */
+    viewerLastReviewCommit: string | null;
   } | null;
   checksError: string | null;
   checks: { name: string; status: string; conclusion: string | null; url: string | null; source: string }[] | null;
@@ -394,6 +427,12 @@ export const api = {
       get<ReviewTimeline>(`${reviewBase(owner, repo, s.number)}/timeline`, signal, sealed(s)),
     commits: (owner: string, repo: string, s: ReviewSnapshot, signal?: AbortSignal) =>
       get<ReviewCommits>(`${reviewBase(owner, repo, s.number)}/commits`, signal, sealed(s)),
+    pending: (owner: string, repo: string, s: ReviewSnapshot, signal?: AbortSignal) =>
+      get<PendingReviewView>(`${reviewBase(owner, repo, s.number)}/reviews/pending`, signal, sealed(s)),
+    viewed: (owner: string, repo: string, s: ReviewSnapshot, signal?: AbortSignal) =>
+      get<{ paths: string[] }>(`${reviewBase(owner, repo, s.number)}/viewed`, signal, sealed(s)),
+    coverage: (owner: string, repo: string, s: ReviewSnapshot, signal?: AbortSignal) =>
+      get<CoverageSummary>(`${reviewBase(owner, repo, s.number)}/coverage`, signal, sealed(s)),
 
     /**
      * A write. Never throws on a refusal: every answer — done, pending, unknown, refused — is the

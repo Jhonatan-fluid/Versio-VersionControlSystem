@@ -1,13 +1,14 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router';
-import type { Layout, Me, PaneView, ReviewCommits, ReviewFile, ReviewFileView, ReviewSnapshot, ReviewStatus, ReviewThread, ReviewThreads, ReviewTimeline, ThreadPlacement } from '../api';
+import type { CoverageGap, Layout, Me, PaneView, PendingReviewView, ReviewCommits, ReviewFile, ReviewFileView, ReviewSnapshot, ReviewStatus, ReviewThread, ReviewThreads, ReviewTimeline, ThreadPlacement } from '../api';
 import { ApiError, api } from '../api';
 import type { Annotation } from '../components/FragmentHost';
 import { FragmentHost } from '../components/FragmentHost';
 import { ErrorPanel } from '../components/Pane';
-import { ActionButton, CommentBox } from '../components/ReviewWrite';
+import { ReviewBar, ReviewersEditor } from '../components/ReviewBar';
+import { ActionButton, CommentBox, newOpKey } from '../components/ReviewWrite';
 import { Workbench } from '../components/Workbench';
-import { blobUrl, pullUrl, pullsUrl, treeUrl } from '../routes';
+import { blobUrl, compareUrl, pullUrl, pullsUrl, treeUrl } from '../routes';
 import type { Async } from '../useAsync';
 import { useAsync } from '../useAsync';
 
@@ -82,6 +83,30 @@ interface Writer {
   slots: string;
   onChanged: () => void;
   onStale: () => void;
+  /**
+   * "Add to review", when a comment may go into the viewer's pending review: there is none yet (the
+   * first creates it on the snapshot's head), or there is one on that head. One on an older commit
+   * takes no more comments here (C2), so the button is not drawn.
+   */
+  review: { path: string; label: string } | undefined;
+}
+
+/** Where a draft may also go: the pending review, unless the viewer's is on another commit. */
+export function reviewAlternative(pending: PendingReviewView | null): { path: string; label: string } | undefined {
+  if (!pending || (pending.review && !pending.review.onSnapshotHead)) {
+    return undefined;
+  }
+  return { path: '/reviews/pending/threads', label: pending.review ? 'Add to review' : 'Start a review' };
+}
+
+/** The files opened on this page, per pull request, for "not opened here" in the review dialog. */
+function readOpened(slot: string): string[] {
+  try {
+    const raw = sessionStorage.getItem(slot);
+    return raw ? (JSON.parse(raw) as string[]) : [];
+  } catch {
+    return [];
+  }
 }
 
 /** An attribute value for a selector: quotes and backslashes escaped, so a path cannot end it. */
@@ -157,14 +182,63 @@ export function PullPage({ me }: { me: Me | null }) {
     [token, tab, path, view, layout, from, files.state],
   );
 
+  // The viewer's own review state: only with writes on, since only then can anything be done with it.
+  const writable = snap?.writable === true;
+  const pending = useAsync((s) => (snap && writable ? api.review.pending(owner, repo, snap, s) : never()), [token, changed, writable]);
+  const viewedRead = useAsync((s) => (snap && writable ? api.review.viewed(owner, repo, snap, s) : never()), [token, writable]);
+  // A mark set here is shown at once; GitHub's list is read once per snapshot.
+  const [viewedNow, setViewedNow] = useState<Record<string, boolean>>({});
+  useEffect(() => setViewedNow({}), [token]);
+  const viewed = useMemo(() => {
+    const set = new Set(viewedRead.state === 'ok' ? viewedRead.value.paths : []);
+    for (const [p, on] of Object.entries(viewedNow)) {
+      if (on) {
+        set.add(p);
+      } else {
+        set.delete(p);
+      }
+    }
+    return set;
+  }, [viewedRead, viewedNow]);
+  const openedSlot = `versio:opened:${owner}/${repo}#${n}`;
+  const [opened, setOpened] = useState<Set<string>>(() => new Set(readOpened(openedSlot)));
+  useEffect(() => {
+    if (tab === 'files' && path && !opened.has(path)) {
+      const next = new Set(opened).add(path);
+      setOpened(next);
+      try {
+        sessionStorage.setItem(openedSlot, JSON.stringify([...next]));
+      } catch {
+        // Storage off: remembered while the page lives.
+      }
+    }
+  }, [tab, path, opened, openedSlot]);
+
   const signIn = me?.signInAvailable && !me.signedIn ? api.signInUrl(location.pathname + location.search) : null;
   const reload = () => {
     setStaleWrite(false);
     setLoads((x) => x + 1);
   };
   const writer: Writer | null = snap?.writable
-    ? { owner, repo, snap, slots: `versio:draft:${owner}/${repo}#${n}`, onChanged: () => setChanged((x) => x + 1), onStale: () => setStaleWrite(true) }
+    ? {
+        owner, repo, snap, slots: `versio:draft:${owner}/${repo}#${n}`, onChanged: () => setChanged((x) => x + 1), onStale: () => setStaleWrite(true),
+        review: reviewAlternative(pending.state === 'ok' ? pending.value : null),
+      }
     : null;
+  const last = status?.summary?.viewerLastReviewCommit ?? null;
+
+  function markViewed(p: string, on: boolean) {
+    if (!writer) {
+      return;
+    }
+    // Viewed is the viewer's own bookkeeping and safe to repeat: no key is held across clicks.
+    setViewedNow((v) => ({ ...v, [p]: on }));
+    void api.review.write(owner, repo, writer.snap, '/viewed', 'POST', { path: p, viewed: on, opKey: newOpKey() }).then((answer) => {
+      if (answer.outcome !== 'done') {
+        setViewedNow((v) => ({ ...v, [p]: !on }));
+      }
+    });
+  }
   const expired = [files, threads, timeline, commits, fileView].some((a) => a.state === 'error' && needsReload(a.error));
 
   function go(nextTab: Tab, nextPath?: string) {
@@ -220,13 +294,17 @@ export function PullPage({ me }: { me: Me | null }) {
                         {!f.inline && <span className="muted review-flag" title={unavailable[f.inlineUnavailable ?? ''] ?? ''}>file only</span>}
                         {count > 0 && <span className="review-count" title={`${count} review thread${count === 1 ? '' : 's'}`}>{count}</span>}
                       </button>
+                      {writer && (
+                        <input type="checkbox" className="review-viewed" checked={viewed.has(f.path)} onChange={(e) => markViewed(f.path, e.target.checked)}
+                          aria-label={`Viewed ${f.label}`} title="Viewed" />
+                      )}
                     </li>
                   );
                 })}
               </ul>
             </>
           )}
-          {tab !== 'files' && <Summary status={status} />}
+          {tab !== 'files' && <Summary status={status} writer={writer} />}
         </>
       }
     >
@@ -261,7 +339,16 @@ export function PullPage({ me }: { me: Me | null }) {
           )}
           <p className="muted review-revision" title={`base ${snap!.baseSha}\nmerge-base ${snap!.mergeBaseSha}\nhead ${snap!.headSha}`}>
             Reviewing {snap!.headSha.slice(0, 8)}, compared from where it branched ({snap!.mergeBaseSha.slice(0, 8)}).
+            {/* Two-dot from the reviewed commit: after a force-push it also shows what the rewrite changed, which is the point. */}
+            {last && last !== snap!.headSha && (
+              <> <Link to={compareUrl(owner, repo, last, snap!.headSha)}>Changes since your last review ({last.slice(0, 8)})</Link></>
+            )}
           </p>
+          {writer && (
+            <ReviewBar owner={owner} repo={repo} snap={snap!} slots={writer.slots} status={status} pending={pending}
+              files={files.state === 'ok' ? files.value.files : []} opened={opened} viewed={viewed}
+              onChanged={writer.onChanged} onStale={writer.onStale} onOpenPath={(p) => go('files', p)} />
+          )}
           {tab === 'conversation' && <Conversation snap={snap!} timeline={timeline} writer={writer} onOpenPath={(p) => navigate(blobUrl(owner, repo, snap!.headSha, p))} />}
           {tab === 'commits' && <Commits commits={commits} />}
           {tab === 'checks' && <Checks status={status} />}
@@ -281,6 +368,8 @@ export function PullPage({ me }: { me: Me | null }) {
                 onLayer={(layer) => go('files', layer)}
                 onOpenPath={(p) => navigate(blobUrl(owner, repo, snap!.headSha, p))}
                 signInUrl={signIn}
+                viewed={viewed.has(path)}
+                onViewed={(on) => markViewed(path, on)}
               />
             ) : (
               <p className="muted">Pick a changed file.</p>
@@ -293,7 +382,7 @@ export function PullPage({ me }: { me: Me | null }) {
 }
 
 /** The live state, beside every tab but the file list: what the pull request is, now. */
-function Summary({ status }: { status: ReviewStatus | null }) {
+function Summary({ status, writer }: { status: ReviewStatus | null; writer: Writer | null }) {
   if (!status) {
     return <p className="muted pad">Reading the pull request's state...</p>;
   }
@@ -308,7 +397,12 @@ function Summary({ status }: { status: ReviewStatus | null }) {
           <p><span className={`state state-${s.merged ? 'merged' : s.state.toLowerCase()}`}>{s.merged ? 'Merged' : s.draft ? 'Draft' : s.state === 'OPEN' ? 'Open' : 'Closed'}</span></p>
           {s.reviewDecision && <p>{({ APPROVED: 'Approved', CHANGES_REQUESTED: 'Changes requested', REVIEW_REQUIRED: 'Review required' } as Record<string, string>)[s.reviewDecision] ?? s.reviewDecision}</p>}
           {s.mergeable === 'CONFLICTING' && <p className="error-text">Has conflicts with its base</p>}
-          {s.reviewers.length > 0 && (
+          {writer ? (
+            <>
+              <p className="panel-title">Reviewers</p>
+              <ReviewersEditor owner={writer.owner} repo={writer.repo} snap={writer.snap} reviewers={s.reviewers} onChanged={writer.onChanged} />
+            </>
+          ) : s.reviewers.length > 0 && (
             <>
               <p className="panel-title">Reviewers</p>
               <ul className="row-list">
@@ -455,6 +549,20 @@ interface FileReviewProps {
   onLayer: (path: string) => void;
   onOpenPath: (path: string) => void;
   signInUrl: string | null;
+  viewed: boolean;
+  onViewed: (on: boolean) => void;
+}
+
+/** A gap's place, in words: a whole file, or a stretch of lines on one side. */
+export function gapWords(gap: CoverageGap): string {
+  const where = gap.start === 0 ? 'the whole file' : gap.start === gap.end ? `line ${gap.start}` : `lines ${gap.start}–${gap.end}`;
+  const why = ({
+    'not-shown': 'changed, but not shown as changed',
+    'no-evidence': 'this kind of drawing cannot yet say what it shows',
+    'not-drawn': 'not drawn',
+    'too-large': 'too large to check',
+  } as Record<string, string>)[gap.reason] ?? gap.reason;
+  return `${gap.pathLabel}, ${gap.side === 'old' ? 'as it was' : 'as it is'}, ${where}: ${why}`;
 }
 
 /**
@@ -462,7 +570,7 @@ interface FileReviewProps {
  * threads. On Raw, a thread sits under its line; anything that cannot be placed — outdated, on the
  * file, or on a line this drawing does not show — is listed above, never dropped.
  */
-function FileReview({ writer, path, file, result, threads, threadsState, view, layout, onView, onLayout, onLayer, onOpenPath, signInUrl }: FileReviewProps) {
+function FileReview({ writer, path, file, result, threads, threadsState, view, layout, onView, onLayout, onLayer, onOpenPath, signInUrl, viewed, onViewed }: FileReviewProps) {
   const [placed, setPlaced] = useState<string[]>([]);
   // A new comment being written. On Raw, on a diff line (the diff's own numbers are file lines).
   // On a drawing, on an element the server will resolve (a member row, a network), or on a drawn
@@ -511,7 +619,7 @@ function FileReview({ writer, path, file, result, threads, threadsState, view, l
               payload={drafting.kind === 'anchor'
                 ? { path, from: file?.previousPath ?? undefined, dom: drafting.dom }
                 : { path: drafting.file, line: drafting.line, side: drafting.side }}
-              submitLabel="Comment" onCancel={() => setDrafting(null)}
+              submitLabel="Comment" alternative={writer.review} onCancel={() => setDrafting(null)}
               onDone={() => { setDrafting(null); writer.onChanged(); }} onStale={writer.onStale} />
           </div>
         ),
@@ -536,6 +644,11 @@ function FileReview({ writer, path, file, result, threads, threadsState, view, l
           <h2 className="review-file">{v.title}</h2>
         </div>
         <div className="pane-tools">
+          {writer && (
+            <label className="review-viewed-label">
+              <input type="checkbox" checked={viewed} onChange={(e) => onViewed(e.target.checked)} /> Viewed
+            </label>
+          )}
           <div className="segmented" role="tablist" aria-label="View">
             <button type="button" role="tab" aria-selected={view === 'rendered'} onClick={() => onView('rendered')}>Rendered</button>
             <button type="button" role="tab" aria-selected={view === 'raw'} onClick={() => onView('raw')}>Raw</button>
@@ -555,12 +668,25 @@ function FileReview({ writer, path, file, result, threads, threadsState, view, l
           ))}
         </div>
       )}
-      {/* C4: until a renderer proves which fields it shows, its drawing may leave a change out.
-          Said every time, because an approval of the drawing is an approval of what it shows. */}
+      {/* C4: a drawing is "complete" only when every changed line of the object is one it names as
+          changed. Anything less is said, with each stretch it cannot vouch for, every time — an
+          approval of the drawing is an approval of what it shows. */}
+      {result.value.coverage === 'complete' && (
+        <p className="muted review-complete" role="note">Every change in this object is shown in the drawing.</p>
+      )}
       {result.value.coverage === 'partial' && (
-        <p className="notice review-partial" role="note">
+        <div className="notice review-partial" role="note">
           The drawing may not show every change in this file. Check <button type="button" className="link-button" onClick={() => onView('raw')}>Raw</button> before approving.
-        </p>
+          {result.value.gaps.length > 0 && (
+            <ul className="review-gaps">
+              {result.value.gaps.map((g) => (
+                <li key={`${g.path}:${g.side}:${g.start}-${g.end}`}>
+                  <button type="button" className="link-button" onClick={() => (g.path === path ? onView('raw') : onLayer(g.path))}>{gapWords(g)}</button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
       )}
       {file?.change === 'renamed' && <p className="notice" role="note">Renamed from {file.previousLabel}. The drawing does not yet compare against the old path.</p>}
       {file && !file.inline && <p className="notice" role="note">{unavailable[file.inlineUnavailable ?? ''] ?? ''}</p>}
@@ -575,7 +701,7 @@ function FileReview({ writer, path, file, result, threads, threadsState, view, l
           {writer && view === 'raw' && file && !file.inline && <span className="muted">Comments on this file go on the whole file. </span>}
           {fileComment ? (
             <CommentBox owner={writer.owner} repo={writer.repo} snap={writer.snap} slot={`${writer.slots}:file:${path}`} path="/line-comments" payload={{ path }}
-              submitLabel="Comment on the file" onCancel={() => setFileComment(false)} onDone={() => { setFileComment(false); writer.onChanged(); }} onStale={writer.onStale} />
+              submitLabel="Comment on the file" alternative={writer.review} onCancel={() => setFileComment(false)} onDone={() => { setFileComment(false); writer.onChanged(); }} onStale={writer.onStale} />
           ) : (
             <button type="button" className="link-button" onClick={() => setFileComment(true)}>Comment on the whole file</button>
           )}

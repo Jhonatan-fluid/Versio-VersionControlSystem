@@ -626,8 +626,27 @@ only use of Contents write; **no admin bypass, ever**.
    server re-renders and takes the anchor from its own rendering (`/anchor-comments`). Drawn source
    lines take ordinary line comments in their own file (`data-src-path` + file line). Renamed files
    are compared with their old path when GitHub reports the rename. Coverage (C4) is unchanged:
-   every drawing still says it may be partial.
-4. Coverage evidence (C4), pending reviews, approval and request changes (C2).
+   every drawing still said it may be partial (slice 4 replaced that).
+4. Coverage evidence (C4), pending reviews, approval and request changes (C2). **Built
+   2026-10-19; its real-GitHub gate waits for the App.** As built: coverage is decided per
+   **changed line of every file of the object**, not per element — a drawn source layout vouches
+   for the lines it draws added and struck; a compared member table vouches for a line only when
+   it lies in one row's lines, the row is drawn as changed, and every token on it is a whole token
+   of a field the table shows (so a shown value change beside an unshown pragma on the same line is
+   a gap). Anything else is a gap with its reason (`not-shown`, `no-evidence` — a ladder, which has
+   no field evidence yet — `not-drawn`, `too-large`), and a view is "complete" only with no gap.
+   **XML member tables stay partial**: XML lines are mostly markup the table does not show, so none
+   is vouched for. The page lists every gap and links each to Raw or the layer it is in; the review
+   dialog totals files never opened here and files with gaps (`/coverage`, rendering at most 200
+   files, the rest "unchecked" and counted as unsure), and informs without blocking. Reviews: a
+   one-shot review is `POST /reviews` with `commit_id`; a draft comment can go into a pending
+   review ("Start a review" / "Add to review"), which is created with `commitOID` the first time;
+   one on an older commit takes no more drafts and is submitted only by the historical route, the
+   dialog naming its commit. **The move path is deferred**: GitHub keeps one pending review per
+   person per pull request, so there is nowhere to copy the drafts first — discard and start again,
+   or submit it as historical. The author is offered Comment only (GitHub refuses the rest). Also
+   built: viewed marks (GitHub's own), requesting and withdrawing reviewers by login, and "changes
+   since your last review" (a compare from the viewer's last reviewed commit to the head).
 5. Pull request creation (same-repository branches) and metadata.
 6. Merge, update-branch and auto-merge (with `expectedHeadOid`; it is a *future* merge of this
    exact commit, described as such) — a separate release gate. **Branch deletion deferred**: no
