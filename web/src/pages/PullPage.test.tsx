@@ -590,6 +590,28 @@ describe('PullPage review', () => {
     act(() => root.unmount());
   });
 
+  it('after a submit whose answer was lost and a reload with no pending review left, the retry goes where the key was sent', async () => {
+    const unknown = { status: 202, body: { outcome: 'unknown', message: 'This may or may not have been posted.' } };
+    const first = await render('/acme/plant/pull/12', { writable: true, pending: pendingOn(head), writes: { '/reviews/PRR_1/submit': unknown } });
+    await click(button(first.host, 'Finish your review')!, first.host);
+    await click(radio(first.host, 'APPROVE')!, first.host);
+    await click(button(first.host, 'Submit: Approve')!, first.host);
+    const before = writes();
+    act(() => first.root.unmount());
+    document.body.innerHTML = '';
+
+    // GitHub did submit it: the pending review is gone, which on its own would point at /reviews.
+    const again = await render('/acme/plant/pull/12', { writable: true });
+    await click(button(again.host, 'Review changes')!, again.host);
+    expect(again.host.querySelector('.review-dialog')?.textContent).toContain('may or may not have gone through');
+    await click(button(again.host, 'Try again')!, again.host);
+
+    const sent = [...before, ...writes()];
+    expect(sent.map((w) => w.url.slice(w.url.indexOf('/reviews')))).toEqual(['/reviews/PRR_1/submit', '/reviews/PRR_1/submit']);
+    expect(sent[1]!.body?.opKey).toBe(sent[0]!.body?.opKey);
+    act(() => again.root.unmount());
+  });
+
   it('submits a pending review made on the reviewed head as that review', async () => {
     const { host, root } = await render('/acme/plant/pull/12', { writable: true, pending: pendingOn(head) });
     expect(host.querySelector('.review-bar')?.textContent).toContain('1 comment');

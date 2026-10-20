@@ -150,7 +150,17 @@ interface Held {
   event: ReviewEvent;
   /** As in CommentBox: kept while the outcome is unknown, so a retry is the same operation. */
   opKey: string | null;
+  /**
+   * Where the held key was sent — the route, and for a historical review its commit — kept with
+   * the key. A retry goes there and nowhere else: worked out again, it changes under the person.
+   * A submit that succeeded with its answer lost leaves no pending review, so after a reload the
+   * target became "/reviews", a different operation in the ledger, and a second review (found by
+   * review, 2026-10-20).
+   */
+  target?: Target | null;
 }
+
+type Target = ReturnType<typeof reviewTarget>;
 
 function readHeld(slot: string): Held {
   try {
@@ -167,8 +177,9 @@ function readHeld(slot: string): Held {
 function ReviewDialog({ owner, repo, snap, slot, pending, author, notes, onOpenPath, onStale, onCancel, onDone }: ReviewDialogProps) {
   const [held, setHeld] = useState<Held>(() => readHeld(slot));
   const [busy, setBusy] = useState(false);
-  const [note, setNote] = useState<string | null>(null);
-  const target = reviewTarget(pending);
+  // A key kept over a reload means an earlier submission's outcome is not known: said, so "Try again" is understood as checking first.
+  const [note, setNote] = useState<string | null>(() => (readHeld(slot).opKey ? 'Your last submission may or may not have gone through. Try again checks first, and never submits twice.' : null));
+  const target: Target = held.opKey !== null && held.target ? held.target : reviewTarget(pending);
   // GitHub refuses an author's approval or request for changes on their own pull request: not offered.
   const events: ReviewEvent[] = author ? ['COMMENT'] : ['COMMENT', 'APPROVE', 'REQUEST_CHANGES'];
   const event = events.includes(held.event) ? held.event : 'COMMENT';
@@ -192,7 +203,7 @@ function ReviewDialog({ owner, repo, snap, slot, pending, author, notes, onOpenP
       return;
     }
     const opKey = held.opKey ?? newOpKey();
-    setHeld({ ...held, event, opKey });
+    setHeld({ ...held, event, opKey, target });
     setBusy(true);
     setNote(null);
     const answer: WriteAnswer = await api.review.write(owner, repo, snap, target.path, 'POST',
@@ -204,7 +215,7 @@ function ReviewDialog({ owner, repo, snap, slot, pending, author, notes, onOpenP
       } catch {
         // Storage off.
       }
-      setHeld({ body: '', event: 'COMMENT', opKey: null });
+      setHeld({ body: '', event: 'COMMENT', opKey: null, target: null });
       onDone(`${eventWords[event]} submitted on ${(target.commit ?? snap.headSha).slice(0, 8)}.`);
       return;
     }
@@ -212,7 +223,7 @@ function ReviewDialog({ owner, repo, snap, slot, pending, author, notes, onOpenP
       onStale();
     }
     if (answer.outcome !== 'unknown' && answer.outcome !== 'pending') {
-      setHeld((h) => ({ ...h, opKey: null }));
+      setHeld((h) => ({ ...h, opKey: null, target: null }));
     }
     setNote(describe(answer));
   }
@@ -261,7 +272,7 @@ function ReviewDialog({ owner, repo, snap, slot, pending, author, notes, onOpenP
       {note && <p className="notice comment-note" role="status">{note}</p>}
       <div className="comment-actions">
         {locked && !busy && (
-          <button type="button" className="button-quiet" onClick={() => { setHeld({ ...held, opKey: null }); setNote(null); }}>Edit</button>
+          <button type="button" className="button-quiet" onClick={() => { setHeld({ ...held, opKey: null, target: null }); setNote(null); }}>Edit</button>
         )}
         <button type="button" className="button-quiet" onClick={onCancel}>Cancel</button>
         <button type="button" className="button" onClick={submit} disabled={busy || (needsWords && !held.body.trim())}>
