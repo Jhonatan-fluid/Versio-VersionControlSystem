@@ -65,6 +65,19 @@ anchored comment. The review found them by asking what happens around the code r
 Evidence: the seven commits after `73817f4`, each with its reproduction as a test and a killed
 mutation; Web 324 -> 334, vitest 92 -> 95.
 
+**A second review, through `3cce5f9`, found three more; two were the first round's fixes left
+half done.** (1) `cc53599` kept the review's target with its key, but the dialog's "needs words"
+rule still asked whether a pending review existed *now*: an empty comment submitted on a pending
+review, answer lost, reload, and Try again was disabled for good. (2) `55fa7f3` made a proxy's page
+"unknown", but JSON `null` still threw on `.outcome` (the box stuck posting) and `{}` on a 200
+still read as a refusal. (3) Separately, since slice 1, checks were read one page deep: 100 passing
+runs and a failing 101st showed as all green, with no word that the list was cut. Fixes: the words
+rule asks the saved target; `readWriteAnswer` states what is known (an outcome on a 2xx, an error
+on a 4xx) and calls everything else unknown; checks are paged to 1,000 each and say when cut.
+**Rule worth keeping:** a fix of "X is read from the wrong place" is finished only when every
+other reader of X has been found and moved too — the target was moved for sending and left behind
+for validating. Web 334 -> 337, vitest 95 -> 112.
+
 ---
 
 ### A pull request's "What changed" compared against the base branch's tip, so later commits on the base read as reverted
