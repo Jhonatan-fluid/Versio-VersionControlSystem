@@ -973,16 +973,10 @@ public static partial class PullWriteEndpoints
         /// <summary>The pull request moved past the snapshot: 409, or the refusal that stopped the check.</summary>
         internal async Task<IResult?> StaleAsync(RepoAccess who, ReviewSnapshot s, CancellationToken ct)
         {
-            var pull = await source.GetPullAsync(who, s.Owner, s.Repo, s.Number, ct).ConfigureAwait(false);
-            var baseTip = pull.Ok ? await source.ResolveCommitAsync(who, s.Owner, s.Repo, pull.Value!.Pull.BaseRef, ct).ConfigureAwait(false) : null;
-            if (!pull.Ok || baseTip is not { Ok: true } || pull.Value!.Pull.HeadSha != s.HeadSha || pull.Value.Pull.BaseRef != s.BaseRef || baseTip.Value != s.BaseSha)
-            {
-                return pull.Ok && baseTip is { Ok: true }
-                    ? Results.Json(new { error = "snapshot-stale", message = "This pull request changed after you opened it. Load the latest, then comment." }, statusCode: 409)
-                    : ApiEndpoints.Refused(pull.Ok ? baseTip!.Failure : pull.Failure);
-            }
-
-            return null;
+            var check = await review.CheckRevisionAsync(who, s, ct).ConfigureAwait(false);
+            return check.Same ? null
+                : check.Failure != RepoFailure.None ? ApiEndpoints.Refused(check.Failure)
+                : Results.Json(new { error = "snapshot-stale", message = "This pull request changed after you opened it. Load the latest, then comment." }, statusCode: 409);
         }
 
         internal async Task<IResult?> LinePreconditionAsync(RepoAccess who, ReviewSnapshot s, LineComment comment, CancellationToken ct)

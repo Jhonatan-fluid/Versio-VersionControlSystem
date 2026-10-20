@@ -5,6 +5,9 @@ using Versio.Web.Sources;
 
 namespace Versio.Web.Review;
 
+/// <summary>Whether the pull request is still a snapshot's revision; <paramref name="Failure"/> says why it could not be told.</summary>
+public sealed record RevisionCheck(bool Same, RepoFailure Failure);
+
 /// <summary>Why a changed file cannot take a comment on a line, or null when it can.</summary>
 public static class InlineUnavailable
 {
@@ -177,16 +180,31 @@ public sealed class PullReview(IRepoSource source, ReviewSnapshots snapshots, IV
     /// comparison, so patches of a different diff were accepted as this one's (found by review,
     /// 2026-10-20). Not knowable counts as no.
     /// </remarks>
-    private async Task<bool> IsSnapshotRevisionAsync(RepoAccess who, ReviewSnapshot snapshot, CancellationToken ct)
+    private async Task<bool> IsSnapshotRevisionAsync(RepoAccess who, ReviewSnapshot snapshot, CancellationToken ct) =>
+        (await CheckRevisionAsync(who, snapshot, ct).ConfigureAwait(false)).Same;
+
+    /// <summary>
+    /// THE check of "is the pull request still this snapshot's revision": the same head, the same base
+    /// branch, that branch at the same commit — or why it cannot be told. Writes refuse a stale
+    /// snapshot by it (<c>Writes.StaleAsync</c>) and live patches are trusted by it; it lived as two
+    /// copies, with different failure handling, until a review found them drifting (2026-10-20) —
+    /// which is how a base change once slipped past one of them.
+    /// </summary>
+    public async Task<RevisionCheck> CheckRevisionAsync(RepoAccess who, ReviewSnapshot snapshot, CancellationToken ct)
     {
         var pull = await source.GetPullAsync(who, snapshot.Owner, snapshot.Repo, snapshot.Number, ct).ConfigureAwait(false);
-        if (!pull.Ok || pull.Value!.Pull.HeadSha != snapshot.HeadSha || pull.Value.Pull.BaseRef != snapshot.BaseRef)
+        if (!pull.Ok)
         {
-            return false;
+            return new RevisionCheck(false, pull.Failure);
+        }
+
+        if (pull.Value!.Pull.HeadSha != snapshot.HeadSha || pull.Value.Pull.BaseRef != snapshot.BaseRef)
+        {
+            return new RevisionCheck(false, RepoFailure.None);
         }
 
         var tip = await source.ResolveCommitAsync(who, snapshot.Owner, snapshot.Repo, snapshot.BaseRef, ct).ConfigureAwait(false);
-        return tip.Ok && tip.Value == snapshot.BaseSha;
+        return tip.Ok ? new RevisionCheck(tip.Value == snapshot.BaseSha, RepoFailure.None) : new RevisionCheck(false, tip.Failure);
     }
 
     /// <summary>
