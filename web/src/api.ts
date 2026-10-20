@@ -437,10 +437,20 @@ async function send(url: string, method: 'POST' | 'PATCH', headers: Record<strin
     return { status: 0, outcome: 'unknown', message: 'The connection dropped. This may or may not have been posted; refresh to check.' };
   }
   let json: Omit<WriteAnswer, 'status'> = {};
+  let ours = false;
   try {
     json = await response.json();
+    ours = typeof json === 'object' && json !== null;
   } catch {
-    // A proxy's error page: the status says enough.
+    // Not JSON: not this server's answer (it always answers JSON), so something in between spoke.
+  }
+  // Only this server's own answer can say a write was refused, and so that nothing happened. A
+  // 5xx, or anything that is not its JSON — a proxy's 502 or 504 page, a load balancer's timeout —
+  // may come after the request went through and GitHub did it: that is "unknown", and the key is
+  // kept, exactly as for a dropped connection. Reading it as a refusal cleared the key, and the
+  // next click could post the same comment twice (found by review, 2026-10-20).
+  if (json.outcome === undefined && (response.status >= 500 || !ours)) {
+    return { status: response.status, outcome: 'unknown', message: 'No clear answer came back. This may or may not have been posted; refresh to check before posting it again.' };
   }
   return { status: response.status, ...json };
 }

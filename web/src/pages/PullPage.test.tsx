@@ -152,7 +152,8 @@ async function render(path: string, o: Options = {}) {
     if (method !== 'GET') {
       const scripted = Object.entries(o.writes ?? {}).find(([suffix]) => url.endsWith(suffix))?.[1];
       const reply = scripted ?? { status: 200, body: url.endsWith('/markdown') ? { html: '<p>preview</p>' } : { outcome: 'done', id: 'NEW' } };
-      return new Response(JSON.stringify(reply.body), { status: reply.status, headers: { 'Content-Type': 'application/json' } });
+      // A string body is sent as it is: a proxy's HTML error page, not this server's JSON.
+      return new Response(typeof reply.body === 'string' ? reply.body : JSON.stringify(reply.body), { status: reply.status, headers: { 'Content-Type': typeof reply.body === 'string' ? 'text/html' : 'application/json' } });
     }
     return new Response(JSON.stringify(answer(url, o)), { status: 200, headers: { 'Content-Type': 'application/json' } });
   }));
@@ -343,6 +344,26 @@ describe('PullPage writes', () => {
     expect(first!.body?.opKey).toBe(second!.body?.opKey);
     act(() => root.unmount());
   });
+
+  // A gateway's 504 page or a server 500 may come after GitHub did the write: never a refusal.
+  for (const [what, reply] of [
+    ["a proxy's 504 page", { status: 504, body: '<html><body>Gateway Time-out</body></html>' }],
+    ['a 500 with no outcome', { status: 500, body: { error: 'internal' } }],
+  ] as const) {
+    it(`keeps the key after ${what}, and the retry is the same operation`, async () => {
+      const { host, root } = await render('/acme/plant/pull/12', { writable: true, writes: { '/comments': reply } });
+      const box = host.querySelector('.comment-box')!;
+
+      await type(box.querySelector('textarea')!, 'Maybe.');
+      await click(button(box, 'Comment'), host);
+      expect(host.querySelector('.comment-note')?.textContent).toContain('may or may not');
+      await click(button(host.querySelector('.comment-box')!, 'Try again'), host);
+
+      const [first, second] = writes();
+      expect(second!.body?.opKey).toBe(first!.body?.opKey);
+      act(() => root.unmount());
+    });
+  }
 
   it('writes a line comment from a gutter click on Raw, on the side of the row clicked', async () => {
     const { host, root } = await render('/acme/plant/pull/12?tab=files&path=src%2FPump.st&view=raw', { writable: true });
