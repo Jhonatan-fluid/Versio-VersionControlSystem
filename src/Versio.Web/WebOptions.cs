@@ -119,6 +119,13 @@ public sealed class WriteOptions
 
     /// <summary>The largest write request body accepted (S8). GitHub's own comment cap is 65,536 characters.</summary>
     public int MaxBodyBytes { get; set; } = 64 * 1024;
+
+    /// <summary>
+    /// The merge tier (S11): merge, update-branch and auto-merge, the only writes that need the App's
+    /// Contents write and the only ones that change a branch. Off by default, on top of
+    /// <see cref="Enabled"/>: its routes answer 404 without it, and the page offers no merge.
+    /// </summary>
+    public bool Merge { get; set; }
 }
 
 /// <summary>The GitHub App and the hosts the viewer may talk to.</summary>

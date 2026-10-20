@@ -127,6 +127,23 @@ internal sealed class FakeGitHub : IRepoSource
 
         /// <summary>Tokens GitHub says may not edit the pull requests (viewerCanUpdate false); everyone else may.</summary>
         public HashSet<string> CannotUpdate { get; } = new(StringComparer.Ordinal);
+
+        /// <summary>GitHub's mergeStateStatus per pull request; CLEAN when not set.</summary>
+        public Dictionary<int, string> MergeStatus { get; } = [];
+
+        /// <summary>The merge methods the repository allows.</summary>
+        public List<string> MergeMethods { get; } = ["MERGE", "SQUASH", "REBASE"];
+
+        public bool AutoMergeAllowed { get; set; } = true;
+
+        /// <summary>Auto-merge per pull request: its method, who turned it on, and for which head.</summary>
+        public Dictionary<int, (string Method, string By, string Head)> AutoMerge { get; } = [];
+
+        /// <summary>Merge commits per merged pull request.</summary>
+        public Dictionary<int, string> MergeCommits { get; } = [];
+
+        /// <summary>When set, the merge-state read fails with this: what GitHub refusing the preview field looks like.</summary>
+        public RepoFailure? MergeStateFailure { get; set; }
     }
 
     private readonly Dictionary<string, FakeRepo> _repos = new(StringComparer.OrdinalIgnoreCase);
@@ -428,6 +445,29 @@ internal sealed class FakeGitHub : IRepoSource
         var r = See(access, owner, repo, "pull-commits " + number);
         return Task.FromResult(!r.Ok ? r.As<PullCommitList>()
             : RepoResult<PullCommitList>.Of(r.Value!.PullCommits.TryGetValue(number, out var c) ? c : new PullCommitList([], false)));
+    }
+
+    public Task<RepoResult<MergeState>> GetMergeStateAsync(RepoAccess access, string owner, string repo, int number, CancellationToken ct)
+    {
+        var r = SeeGraph(access, owner, repo, "merge-state " + number);
+        if (!r.Ok || r.Value!.MergeStateFailure is { } failure)
+        {
+            return Task.FromResult(r.Ok ? RepoResult<MergeState>.Fail(r.Value!.MergeStateFailure!.Value) : r.As<MergeState>());
+        }
+
+        var found = r.Value.Pulls.Where(p => p.Info.Number == number).Select(p => p.Info).ToList();
+        if (found.Count == 0)
+        {
+            return Task.FromResult(RepoResult<MergeState>.Fail(RepoFailure.NotFound));
+        }
+
+        var state = r.Value.PullStates.TryGetValue(number, out var s) ? s : "OPEN";
+        var auto = r.Value.AutoMerge.TryGetValue(number, out var a) ? a : ((string, string, string)?)null;
+        return Task.FromResult(RepoResult<MergeState>.Of(new MergeState(
+            state, state == "MERGED", found[0].HeadSha, r.Value.MergeStatus.TryGetValue(number, out var status) ? status : "CLEAN",
+            r.Value.MergeMethods.ToList(), r.Value.AutoMergeAllowed, auto?.Item1, auto?.Item2,
+            state == "OPEN" && auto is null, auto is not null, "PR_" + number.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            r.Value.MergeCommits.TryGetValue(number, out var commit) ? commit : null)));
     }
 
     public Task<RepoResult<IReadOnlyList<PullLabel>>> GetLabelsAsync(RepoAccess access, string owner, string repo, CancellationToken ct)

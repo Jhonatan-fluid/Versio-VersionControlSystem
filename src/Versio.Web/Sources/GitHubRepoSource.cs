@@ -337,6 +337,64 @@ public sealed class GitHubRepoSource(
             };
         }, ct);
 
+    private const string MergeStateQuery = """
+        query($owner: String!, $repo: String!, $number: Int!) {
+          repository(owner: $owner, name: $repo) {
+            mergeCommitAllowed squashMergeAllowed rebaseMergeAllowed autoMergeAllowed
+            pullRequest(number: $number) {
+              id state merged headRefOid mergeStateStatus
+              mergeCommit { oid }
+              viewerCanEnableAutoMerge viewerCanDisableAutoMerge
+              autoMergeRequest { mergeMethod enabledBy { login } }
+            }
+          }
+        }
+        """;
+
+    /// <remarks>
+    /// Its own query, apart from the summary: <c>mergeStateStatus</c> has been behind GitHub's
+    /// <c>merge-info-preview</c>, and a field GitHub refuses fails the whole query. Here that costs
+    /// only the merge box, which then offers nothing — failing closed — while the summary, and the
+    /// "this pull request changed" signal it carries, go on working.
+    /// </remarks>
+    public Task<RepoResult<MergeState>> GetMergeStateAsync(RepoAccess access, string owner, string repo, int number, CancellationToken ct) =>
+        GraphAsync(access, MergeStateQuery, new { owner, repo, number }, data =>
+        {
+            // The pull request first: it throws "not found" for a missing repository or pull request.
+            var p = PullRequestNode(data);
+            var r = data.GetProperty("repository");
+            var methods = new List<string>();
+            if (Bool(r, "mergeCommitAllowed"))
+            {
+                methods.Add("MERGE");
+            }
+
+            if (Bool(r, "squashMergeAllowed"))
+            {
+                methods.Add("SQUASH");
+            }
+
+            if (Bool(r, "rebaseMergeAllowed"))
+            {
+                methods.Add("REBASE");
+            }
+
+            var auto = p.TryGetProperty("autoMergeRequest", out var a) && a.ValueKind == JsonValueKind.Object ? a : (JsonElement?)null;
+            return new MergeState(
+                Text(p, "state"),
+                Bool(p, "merged"),
+                Text(p, "headRefOid"),
+                Text(p, "mergeStateStatus") is { Length: > 0 } status ? status : "UNKNOWN",
+                methods,
+                Bool(r, "autoMergeAllowed"),
+                auto is { } on ? Text(on, "mergeMethod") : null,
+                auto is { } by ? Login(by, "enabledBy") : null,
+                Bool(p, "viewerCanEnableAutoMerge"),
+                Bool(p, "viewerCanDisableAutoMerge"),
+                Text(p, "id"),
+                Oid(p, "mergeCommit"));
+        }, ct, preview: "application/vnd.github.merge-info-preview+json");
+
     public Task<RepoResult<IReadOnlyList<PullLabel>>> GetLabelsAsync(RepoAccess access, string owner, string repo, CancellationToken ct) =>
         GetJsonAsync<IReadOnlyList<PullLabel>>(access, $"repos/{E(owner)}/{E(repo)}/labels?per_page=100",
             root => root.EnumerateArray().Select(l => new PullLabel(Text(l, "name"), HexColor(Text(l, "color")))).ToList(), ct);
@@ -782,7 +840,8 @@ public sealed class GitHubRepoSource(
     /// not leak — and nothing is read from a response that carries errors.
     /// </para>
     /// </remarks>
-    private async Task<RepoResult<T>> GraphAsync<T>(RepoAccess access, string query, object variables, Func<JsonElement, T> read, CancellationToken ct)
+    /// <param name="preview">A GraphQL preview's media type, for a field GitHub still gates behind one.</param>
+    private async Task<RepoResult<T>> GraphAsync<T>(RepoAccess access, string query, object variables, Func<JsonElement, T> read, CancellationToken ct, string? preview = null)
     {
         if (access.Token is null)
         {
@@ -791,6 +850,11 @@ public sealed class GitHubRepoSource(
 
         var url = GitHub.GraphQlUrl.Length > 0 ? new Uri(GitHub.GraphQlUrl) : Api("graphql");
         using var request = Request(access, HttpMethod.Post, url);
+        if (preview is not null)
+        {
+            request.Headers.Accept.ParseAdd(preview);
+        }
+
         request.Content = new StringContent(JsonSerializer.Serialize(new { query, variables }), Encoding.UTF8, "application/json");
         try
         {

@@ -183,6 +183,53 @@ public sealed class GitHubWriter(IHttpClientFactory clients, IOptions<WebOptions
     public Task<WriteResult<bool>> SetViewedAsync(RepoAccess access, string pullNodeId, string path, bool viewed, CancellationToken ct) =>
         MutateAsync(access, viewed ? MarkViewedMutation : UnmarkViewedMutation, new { pull = pullNodeId, path }, _ => true, ct);
 
+    /// <remarks>
+    /// <c>sha</c> is GitHub's own atomic precondition: it merges only if the head is still that
+    /// commit, and answers 409 otherwise. That is what makes "merge what was reviewed" true rather
+    /// than hoped — the server's own staleness check before it only narrows the window.
+    /// </remarks>
+    public Task<WriteResult<string>> MergePullAsync(RepoAccess access, string owner, string repo, int number, string headSha, string method, string? title, string? message, CancellationToken ct)
+    {
+        var payload = new Dictionary<string, string>(StringComparer.Ordinal) { ["sha"] = headSha, ["merge_method"] = method.ToLowerInvariant() };
+        if (title is not null)
+        {
+            payload["commit_title"] = title;
+        }
+
+        if (message is not null)
+        {
+            payload["commit_message"] = message;
+        }
+
+        return RestAsync(access, HttpMethod.Put, $"repos/{E(owner)}/{E(repo)}/pulls/{N(number)}/merge", payload,
+            root => root.TryGetProperty("sha", out var sha) ? sha.GetString() ?? "merged" : "merged", ct);
+    }
+
+    /// <remarks><c>expected_head_sha</c>: GitHub refuses (422) if the head is no longer the reviewed commit.</remarks>
+    public Task<WriteResult<bool>> UpdateBranchAsync(RepoAccess access, string owner, string repo, int number, string expectedHeadSha, CancellationToken ct) =>
+        RestAsync(access, HttpMethod.Put, $"repos/{E(owner)}/{E(repo)}/pulls/{N(number)}/update-branch", new { expected_head_sha = expectedHeadSha }, _ => true, ct);
+
+    private const string EnableAutoMergeMutation = """
+        mutation($pull: ID!, $method: PullRequestMergeMethod!, $head: GitObjectID!) {
+          enablePullRequestAutoMerge(input: { pullRequestId: $pull, mergeMethod: $method, expectedHeadOid: $head }) { pullRequest { id } }
+        }
+        """;
+
+    private const string DisableAutoMergeMutation = """
+        mutation($pull: ID!) { disablePullRequestAutoMerge(input: { pullRequestId: $pull }) { pullRequest { id } } }
+        """;
+
+    /// <remarks>
+    /// <c>expectedHeadOid</c>: auto-merge is a FUTURE merge, whenever the requirements pass, and with
+    /// this it is a future merge of exactly the reviewed commit — a later push turns it off, by
+    /// GitHub's contract, rather than merging code nobody reviewed.
+    /// </remarks>
+    public Task<WriteResult<bool>> EnableAutoMergeAsync(RepoAccess access, string pullNodeId, string method, string expectedHeadSha, CancellationToken ct) =>
+        MutateAsync(access, EnableAutoMergeMutation, new { pull = pullNodeId, method, head = expectedHeadSha }, _ => true, ct);
+
+    public Task<WriteResult<bool>> DisableAutoMergeAsync(RepoAccess access, string pullNodeId, CancellationToken ct) =>
+        MutateAsync(access, DisableAutoMergeMutation, new { pull = pullNodeId }, _ => true, ct);
+
     public Task<WriteResult<int>> CreatePullAsync(RepoAccess access, string owner, string repo, NewPull pull, CancellationToken ct) =>
         RestAsync(access, HttpMethod.Post, $"repos/{E(owner)}/{E(repo)}/pulls",
             new { title = pull.Title, body = pull.Body, head = pull.Head, @base = pull.Base, draft = pull.Draft },

@@ -47,6 +47,9 @@ public sealed class GitHubWriterTests : IAsyncLifetime
         });
         app.MapPost("/repos/acme/plant/pulls/12/comments", () => Results.Json(new { node_id = "PRRC_1" }, statusCode: 201));
         app.MapPost("/repos/acme/plant/pulls/12/reviews", () => Results.Json(new { node_id = "PRR_1" }, statusCode: 200));
+        app.MapPut("/repos/acme/plant/pulls/12/merge", () => Results.Json(new { sha = new string('m', 40), merged = true }));
+        app.MapPut("/repos/acme/plant/pulls/13/merge", () => Results.Json(new { message = "Head branch was modified. Review and try the merge again." }, statusCode: 409));
+        app.MapPut("/repos/acme/plant/pulls/12/update-branch", () => Results.Json(new { message = "Updating pull request branch." }, statusCode: 202));
         app.MapPost("/repos/acme/plant/pulls", () => Results.Json(new { number = 13, node_id = "PR_13" }, statusCode: 201));
         app.MapPatch("/repos/acme/plant/pulls/12", () => Results.Json(new { number = 12 }));
         app.MapDelete("/repos/acme/plant/issues/12/labels/gone", () => Results.Json(new { message = "Label does not exist" }, statusCode: 404));
@@ -239,5 +242,35 @@ public sealed class GitHubWriterTests : IAsyncLifetime
         var query = _requests.Single(r => r.Method == "GET").Path;
         Assert.Contains("head=acme%3Afeature", query, StringComparison.Ordinal);
         Assert.Contains("state=all", query, StringComparison.Ordinal);
+    }
+
+    /// <summary>The merge carries the reviewed head as GitHub's precondition, and GitHub's 409 for a moved head is a refusal, never "unknown".</summary>
+    [Fact]
+    public async Task A_merge_names_its_head_and_a_moved_head_is_refused_in_GitHubs_words()
+    {
+        var head = new string('d', 40);
+        var merged = await Writer().MergePullAsync(Alice, "acme", "plant", 12, head, "SQUASH", null, null, CancellationToken.None);
+        var moved = await Writer().MergePullAsync(Alice, "acme", "plant", 13, head, "MERGE", null, null, CancellationToken.None);
+
+        Assert.Equal((WriteOutcome.Done, new string('m', 40)), (merged.Outcome, merged.Value));
+        var body = _requests.First(r => r.Method == "PUT" && r.Path.EndsWith("/12/merge", StringComparison.Ordinal)).Body;
+        Assert.Contains($"\"sha\":\"{head}\"", body, StringComparison.Ordinal);
+        Assert.Contains("\"merge_method\":\"squash\"", body, StringComparison.Ordinal);
+        Assert.Equal(WriteOutcome.Refused, moved.Outcome);
+        Assert.Contains("Head branch was modified", moved.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Updating_the_branch_and_auto_merge_name_the_reviewed_head()
+    {
+        var head = new string('d', 40);
+        var updated = await Writer().UpdateBranchAsync(Alice, "acme", "plant", 12, head, CancellationToken.None);
+        var auto = await Writer().EnableAutoMergeAsync(Alice, "PR_12", "MERGE", head, CancellationToken.None);
+
+        Assert.Equal((WriteOutcome.Done, WriteOutcome.Done), (updated.Outcome, auto.Outcome));
+        Assert.Contains($"\"expected_head_sha\":\"{head}\"", _requests.Single(r => r.Path.EndsWith("/update-branch", StringComparison.Ordinal)).Body, StringComparison.Ordinal);
+        var mutation = _requests.Single(r => r.Body.Contains("enablePullRequestAutoMerge", StringComparison.Ordinal)).Body;
+        Assert.Contains("expectedHeadOid", mutation, StringComparison.Ordinal);
+        Assert.Contains($"\"head\":\"{head}\"", mutation, StringComparison.Ordinal);
     }
 }

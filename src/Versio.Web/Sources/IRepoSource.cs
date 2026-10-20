@@ -139,6 +139,24 @@ public sealed record PullSummary(
     public bool ViewerCanUpdate { get; init; }
 }
 
+/// <summary>What a merge needs to know about a pull request, read on its own (slice 6, S11).</summary>
+/// <param name="MergeStateStatus">GitHub's CLEAN, UNSTABLE, HAS_HOOKS, BLOCKED, BEHIND, DIRTY, DRAFT or UNKNOWN.</param>
+/// <param name="Methods">MERGE, SQUASH and REBASE, as far as the repository allows each.</param>
+/// <param name="AutoMergeMethod">The method auto-merge is set to, or null when it is off.</param>
+public sealed record MergeState(
+    string State,
+    bool Merged,
+    string HeadSha,
+    string MergeStateStatus,
+    IReadOnlyList<string> Methods,
+    bool AutoMergeAllowed,
+    string? AutoMergeMethod,
+    string? AutoMergeBy,
+    bool ViewerCanEnableAutoMerge,
+    bool ViewerCanDisableAutoMerge,
+    string NodeId,
+    string? MergeCommit);
+
 /// <summary>One comment of a pending review, as its author sees it. <paramref name="Body"/> is Markdown: untrusted.</summary>
 public sealed record PendingComment(string Id, string Path, string Body);
 
@@ -292,6 +310,9 @@ public interface IRepoSource
 
     /// <summary>The paths the viewer marked viewed on the pull request (GitHub keeps this per person).</summary>
     Task<RepoResult<IReadOnlyList<string>>> GetViewedAsync(RepoAccess access, string owner, string repo, int number, CancellationToken ct);
+
+    /// <summary>The pull request's merge state, the methods the repository allows, and auto-merge.</summary>
+    Task<RepoResult<MergeState>> GetMergeStateAsync(RepoAccess access, string owner, string repo, int number, CancellationToken ct);
 
     /// <summary>The repository's labels, by name, up to 100: what may be put on a pull request (labels are not created here).</summary>
     Task<RepoResult<IReadOnlyList<PullLabel>>> GetLabelsAsync(RepoAccess access, string owner, string repo, CancellationToken ct);

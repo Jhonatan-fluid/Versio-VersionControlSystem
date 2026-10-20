@@ -163,6 +163,8 @@ public sealed class FixturePreview
             settings["Web:Writes:Enabled"] = "true";
             settings["Web:Writes:Repositories:0"] = "acme/plant";
             settings["Web:Writes:SingleInstance"] = "true";
+            // The merge tier too (slice 6), so the merge box can be looked at; merges land in the fake.
+            settings["Web:Writes:Merge"] = "true";
         }
 
         await using var host = await TestHost.StartAsync(github, settings, writes ? s => s.AddSingleton<IRepoWriter>(writer) : null);

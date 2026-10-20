@@ -93,6 +93,18 @@ public interface IRepoWriter
 
     Task<WriteResult<bool>> SetViewedAsync(RepoAccess access, string pullNodeId, string path, bool viewed, CancellationToken ct);
 
+    /// <summary>Merges, only if the head is still <paramref name="headSha"/>; the value is the merge commit.</summary>
+    /// <param name="method">MERGE, SQUASH or REBASE.</param>
+    Task<WriteResult<string>> MergePullAsync(RepoAccess access, string owner, string repo, int number, string headSha, string method, string? title, string? message, CancellationToken ct);
+
+    /// <summary>Brings the base into the head branch, only if the head is still <paramref name="expectedHeadSha"/>.</summary>
+    Task<WriteResult<bool>> UpdateBranchAsync(RepoAccess access, string owner, string repo, int number, string expectedHeadSha, CancellationToken ct);
+
+    /// <summary>Turns auto-merge on for exactly <paramref name="expectedHeadSha"/>: a later push turns it off.</summary>
+    Task<WriteResult<bool>> EnableAutoMergeAsync(RepoAccess access, string pullNodeId, string method, string expectedHeadSha, CancellationToken ct);
+
+    Task<WriteResult<bool>> DisableAutoMergeAsync(RepoAccess access, string pullNodeId, CancellationToken ct);
+
     /// <summary>Opens a pull request; the value is its number.</summary>
     Task<WriteResult<int>> CreatePullAsync(RepoAccess access, string owner, string repo, NewPull pull, CancellationToken ct);
 

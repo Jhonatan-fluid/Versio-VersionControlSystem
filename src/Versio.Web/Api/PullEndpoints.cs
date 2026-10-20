@@ -95,12 +95,15 @@ public static class PullEndpoints
                 // signed-in person (S1). The routes check both again; this only spares the page from
                 // offering what would be refused.
                 writable = options.Value.Writable(owner, repo) && who.Value!.Kind == AccessKind.User,
+                // The merge tier on top (S11): whether to draw the merge box at all.
+                canMerge = options.Value.Writable(owner, repo) && options.Value.Writes.Merge && who.Value!.Kind == AccessKind.User,
             });
         });
 
         MapLive(pulls);
         MapCoverage(pulls);
         MapRepoLevel(app);
+        MapMergeState(pulls);
 
         pulls.MapGet("/files", async (string owner, string repo, int number, HttpContext http, AccessResolver access,
             ReviewSnapshots snapshots, ApiEndpoints.Loader load, PullReview review, IOptions<WebOptions> options, CancellationToken ct) =>
@@ -245,6 +248,53 @@ public static class PullEndpoints
             }
 
             return Results.Ok(new { files });
+        });
+    }
+
+    /// <summary>
+    /// The merge box's read: the methods allowed, whether anyone could merge now and why not, and
+    /// auto-merge. Read with the viewer's own credential; with the merge tier off it says only that.
+    /// </summary>
+    private static void MapMergeState(RouteGroupBuilder pulls)
+    {
+        pulls.MapGet("/merge-state", async (string owner, string repo, int number, HttpContext http, AccessResolver access,
+            ReviewSnapshots snapshots, IRepoSource source, IOptions<WebOptions> options, CancellationToken ct) =>
+        {
+            var opened = await OpenAsync(owner, repo, number, http, access, snapshots, ct).ConfigureAwait(false);
+            if (opened.Refusal is { } refusal)
+            {
+                return refusal;
+            }
+
+            if (!options.Value.Writable(owner, repo) || !options.Value.Writes.Merge)
+            {
+                return Results.Ok(new { tier = false });
+            }
+
+            var state = await source.GetMergeStateAsync(opened.Access!, owner, repo, number, ct).ConfigureAwait(false);
+            if (!state.Ok)
+            {
+                // Failing closed: no merge is offered when GitHub cannot say whether one is allowed.
+                return Results.Ok(new { tier = true, error = Problem(state.Failure) });
+            }
+
+            var m = state.Value!;
+            var mergeable = !m.Merged && m.State == "OPEN" && PullWriteEndpoints.MergeableStates.Contains(m.MergeStateStatus);
+            return Results.Ok(new
+            {
+                tier = true,
+                state = m.State,
+                merged = m.Merged,
+                headSha = m.HeadSha,
+                mergeStateStatus = m.MergeStateStatus,
+                mergeable,
+                blocked = mergeable || m.Merged ? null : PullWriteEndpoints.MergeBlocked(m.MergeStateStatus),
+                methods = m.Methods,
+                autoMergeAllowed = m.AutoMergeAllowed && m.ViewerCanEnableAutoMerge,
+                autoMerge = m.AutoMergeMethod is null ? null : new { method = m.AutoMergeMethod, by = CodeHtml.Spelled(m.AutoMergeBy ?? "") },
+                canDisableAutoMerge = m.ViewerCanDisableAutoMerge,
+                mergeCommit = m.MergeCommit,
+            });
         });
     }
 

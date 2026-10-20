@@ -187,6 +187,58 @@ internal sealed class FakeWriter : IRepoWriter
             return true;
         });
 
+    /// <summary>Merges as asked: number, the sha the request named, method.</summary>
+    public ConcurrentQueue<(int Number, string Sha, string Method)> Merges { get; } = new();
+
+    /// <summary>
+    /// GitHub's atomic precondition, faithfully: a merge naming any head but the live one is refused
+    /// with GitHub's own words, and nothing is merged.
+    /// </summary>
+    public Task<WriteResult<string>> MergePullAsync(RepoAccess access, string owner, string repo, int number, string headSha, string method, string? title, string? message, CancellationToken ct)
+    {
+        Calls.Enqueue(("merge", access, $"{headSha} {method}"));
+        BeforeEffect?.Invoke();
+        var live = Repo!.Pulls.First(p => p.Info.Number == number).Info;
+        if (live.HeadSha != headSha)
+        {
+            return Task.FromResult(WriteResult<string>.Refused(RepoFailure.Upstream, "Head branch was modified. Review and try the merge again."));
+        }
+
+        var mode = Next.TryDequeue(out var m) ? m : Mode.Done;
+        if (mode is Mode.Refused or Mode.LostBefore)
+        {
+            return Task.FromResult(mode == Mode.Refused ? WriteResult<string>.Refused(RepoFailure.Upstream, "Validation Failed") : WriteResult<string>.Unknown());
+        }
+
+        Merges.Enqueue((number, headSha, method));
+        Repo.PullStates[number] = "MERGED";
+        Repo.MergeCommits[number] = new string('m', 40);
+        return Task.FromResult(mode == Mode.LostAfter ? WriteResult<string>.Unknown() : WriteResult<string>.Done(new string('m', 40)));
+    }
+
+    public Task<WriteResult<bool>> UpdateBranchAsync(RepoAccess access, string owner, string repo, int number, string expectedHeadSha, CancellationToken ct)
+    {
+        Calls.Enqueue(("update-branch", access, expectedHeadSha));
+        var live = Repo!.Pulls.First(p => p.Info.Number == number).Info;
+        if (live.HeadSha != expectedHeadSha)
+        {
+            return Task.FromResult(WriteResult<bool>.Refused(RepoFailure.Upstream, "expected head sha didn't match current head ref."));
+        }
+
+        Replace(number, (info, body) => (info with { HeadSha = new string('u', 40) }, body));
+        return Task.FromResult(WriteResult<bool>.Done(true));
+    }
+
+    public Task<WriteResult<bool>> EnableAutoMergeAsync(RepoAccess access, string pullNodeId, string method, string expectedHeadSha, CancellationToken ct) =>
+        Run("auto-merge-on", access, $"{method} {expectedHeadSha}", () =>
+        {
+            Repo!.AutoMerge[NumberOf(pullNodeId)] = (method, access.Who, expectedHeadSha);
+            return true;
+        });
+
+    public Task<WriteResult<bool>> DisableAutoMergeAsync(RepoAccess access, string pullNodeId, CancellationToken ct) =>
+        Run("auto-merge-off", access, pullNodeId, () => Repo!.AutoMerge.Remove(NumberOf(pullNodeId)) || true);
+
     /// <summary>The pull requests this writer opened, in order: base, head, title, body, draft.</summary>
     public ConcurrentQueue<NewPull> Created { get; } = new();
 

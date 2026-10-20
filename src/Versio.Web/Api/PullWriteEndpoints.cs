@@ -150,6 +150,7 @@ public static partial class PullWriteEndpoints
 
         MapReviews(pulls);
         MapMeta(pulls);
+        MapMerge(pulls);
         MapCreate(app);
 
         pulls.MapWrite("POST", "/threads/{threadId}/replies", async (string owner, string repo, int number, string threadId, CommentRequest request, HttpContext http, Writes w, CancellationToken ct) =>
@@ -470,6 +471,12 @@ public static partial class PullWriteEndpoints
 
             // S9 first, as 404: with writes off for this repository, a write route does not exist.
             if (!ApiEndpoints.Valid(owner, repo) || !options.Value.Writable(owner, repo))
+            {
+                return Results.NotFound();
+            }
+
+            // S11: the merge tier is its own switch on top, and likewise does not exist without it.
+            if (http.GetEndpoint()?.Metadata.GetMetadata<MergeEndpoint>() is not null && !options.Value.Writes.Merge)
             {
                 return Results.NotFound();
             }
