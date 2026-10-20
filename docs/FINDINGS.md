@@ -108,6 +108,20 @@ fixed in its own commit (`059a886` to `7fafc5c`) with a reproducing test and kil
 every answer this server gives a case of it — the server's own bodies have to be audited against the
 rule, not just the client's reading of them. Web 343 -> 351, vitest 118 -> 120.
 
+**A fourth review, through `2cf5b5f`, found three — each in a fix of the round before.** (1)
+`059a886` made the limiter's 429 a refusal, and the page let a key go on any refusal: on a retry,
+that released a key whose first attempt may have posted. A refusal of a retry proves only that the
+retry did nothing. The server now marks a refusal `X-Versio-Settled` only where the ledger recorded
+it as the operation's outcome (a precondition's, GitHub's), and one page rule, `releasesKey`, lets a
+key go on a refused retry only when marked. (2) `78164e6` kept snapshots with new keys, but keys
+saved before it had none, and `sentUnder` silently used today's; such an operation's revision is
+unknown, so it is no longer retried at all — the person checks GitHub and resubmits by Edit. (3)
+`0f092d3` checked an update's first parent and not its second, so any merge onto the head counted;
+the second must be the base. **Rule worth keeping:** a fix that adds a new answer, a new stored
+field or a new recognition rule has to be read against the old answers, the old stored data and
+the near-misses of the new rule — each of these three was exactly that. Web 351 -> 354, vitest
+120 -> 124.
+
 ---
 
 ### A pull request's "What changed" compared against the base branch's tip, so later commits on the base read as reverted
