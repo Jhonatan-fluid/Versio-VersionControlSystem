@@ -19,6 +19,54 @@ produce a diff touching everything else.
 
 ---
 
+### An external review of the pull request review work found eight defects, three of them duplicate writes
+
+**2026-10-20, branch `PrReview`, commits after `73817f4`.** A reviewer read all twenty commits of
+the pull request review plan (slices 1–6) and reported eight findings; seven were reproduced
+against the code, one (the ledger race) traced. Every one held. They fall into three shapes, and
+the shapes are the lesson.
+
+**The operation key stopped protecting a retry, three ways.** C5's whole promise is that one
+click makes at most one write. (1) The page's write transport read a proxy's 502/504 page, or any
+answer that was not this server's JSON, as a refusal and cleared the key, although GitHub may
+already have done the write (reproduced with a 504). (2) The review dialog worked its target out
+again on every render; after a pending review's submit succeeded with its answer lost, a reload
+found no pending review and the retry went to `/reviews`, a different ledger action, so a second
+review (reproduced). (3) Taking over a failed or unknown entry was a plain overwrite, so two retries
+could both proceed — the first reservation was atomic, the takeover was not. Fixes: anything not
+this server's own answer with an outcome is "unknown" and keeps the key; the review target is kept
+with the key; `IOperationLedger.TryTakeOverAsync` is a compare-and-set (memory `TryUpdate`, Redis
+one script on the stored text). **Rule worth keeping:** the key protects the operation only if
+everything that identifies the operation — its route, its target, its ownership — is fixed when the
+key is made, and only the server's own word ever releases it.
+
+**Live GitHub data was taken as the snapshot's without proof.** (4) Thread placement and Raw used
+GitHub's *current* lines with no revision check; after a push a comment written on the new head sat
+on a different declaration of the old snapshot (reproduced). (5) Patches were accepted when the head
+matched, but retargeting the base keeps the head and changes the diff (reproduced: `"pull"` chosen
+over the compare). Fix: `PullReview` uses live answers only when head, base branch and base tip are
+the snapshot's before and after the read; otherwise thread lines are dropped (listed, not placed)
+and patches come from the snapshot's own compare. The C1 rule always said "a base move alone
+invalidates the snapshot"; the code checked the head alone in two places.
+
+**A check written for its siblings and not this one, and a promise GitHub does not keep.** (6) A
+comment edit rewrote the body without the anchor tag it carried, so it fell off the drawing; the
+edit now re-reads and re-writes the server's own anchor. (7) Update branch skipped the staleness
+check merge and auto-merge make, so a retargeted base was brought in under a confirmation naming
+the old one. (8) Auto-merge was described — on the page, in the writer and in PLAN — as a merge of
+exactly the reviewed commit that any push turns off. GitHub turns it off only for a push by someone
+*without* write access. It is now worded as what it is and needs the person's explicit yes to later
+commits being merged.
+
+**Why the earlier passes missed them.** Each slice had mutation checks, all killed — but a mutation
+check only tests what the tests describe. None of these was a mutated line; each was a missing case:
+a proxy in between, a reload after a lost answer, two retries at once, a base retarget, an edit of an
+anchored comment. The review found them by asking what happens around the code rather than in it.
+Evidence: the seven commits after `73817f4`, each with its reproduction as a test and a killed
+mutation; Web 324 -> 334, vitest 92 -> 95.
+
+---
+
 ### A pull request's "What changed" compared against the base branch's tip, so later commits on the base read as reverted
 
 **2026-10-17, branch `PrReview`.** Found while planning pull request review for Versio Web
