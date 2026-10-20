@@ -503,6 +503,12 @@ public sealed class GitHubWriter(IHttpClientFactory clients, IOptions<WebOptions
                     {
                         var type = errors[0].TryGetProperty("type", out var t) ? t.GetString() : null;
                         var message = errors[0].TryGetProperty("message", out var m) ? m.GetString() : null;
+                        if (!NothingRan(doc.RootElement, errors))
+                        {
+                            log.Warn(LogCategory.Web, $"GitHub write {request.Method} {Path(request)} answered GraphQL errors ({type ?? "untyped"}) after execution began; outcome unknown");
+                            return WriteResult<T>.Unknown();
+                        }
+
                         return WriteResult<T>.Refused(type switch
                         {
                             "NOT_FOUND" => RepoFailure.NotFound,
@@ -524,6 +530,40 @@ public sealed class GitHubWriter(IHttpClientFactory clients, IOptions<WebOptions
                 return WriteResult<T>.Unknown();
             }
         }
+    }
+
+    /// <summary>The error types GitHub raises before a mutation acts: resolving, permission, validation, rate.</summary>
+    private static readonly string[] BeforeEffect = ["NOT_FOUND", "FORBIDDEN", "UNPROCESSABLE", "RATE_LIMITED", "INSUFFICIENT_SCOPES"];
+
+    /// <summary>
+    /// Whether a GraphQL answer with errors proves the mutation did nothing — the only case in which
+    /// "refused" is true, and so the only one in which the operation key may be released.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// GraphQL answers errors in two kinds (spec, section 7.1.2). A REQUEST error (the document did not
+    /// parse or validate) has no <c>data</c> entry at all: nothing ran. An EXECUTION error comes with
+    /// <c>data</c>, possibly partial: execution began, and an error does not show that the mutation had
+    /// no effect. Every error was read as a refusal at first, so an internal error beside a mutation's
+    /// own returned data released the key and let the person submit again (found by review,
+    /// 2026-10-20).
+    /// </para>
+    /// <para>
+    /// So: no <c>data</c> — nothing ran. Otherwise nothing ran only if every field of <c>data</c> is
+    /// null (no mutation returned anything) AND every error is of a type GitHub raises before acting.
+    /// An internal error, an untyped one, or any returned data is "unknown": the caller reconciles.
+    /// </para>
+    /// </remarks>
+    internal static bool NothingRan(JsonElement root, JsonElement errors)
+    {
+        if (!root.TryGetProperty("data", out var data))
+        {
+            return true;
+        }
+
+        var anyReturned = data.ValueKind == JsonValueKind.Object && data.EnumerateObject().Any(p => p.Value.ValueKind != JsonValueKind.Null);
+        var allBefore = errors.EnumerateArray().All(e => e.TryGetProperty("type", out var t) && t.ValueKind == JsonValueKind.String && BeforeEffect.Contains(t.GetString()));
+        return !anyReturned && allBefore;
     }
 
     private async Task<RepoResult<T>> QueryAsync<T>(RepoAccess access, string query, object variables, Func<JsonElement, T> read, CancellationToken ct)

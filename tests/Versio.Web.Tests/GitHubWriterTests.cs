@@ -65,6 +65,29 @@ public sealed class GitHubWriterTests : IAsyncLifetime
             using var doc = await System.Text.Json.JsonDocument.ParseAsync(http.Request.Body);
             var query = doc.RootElement.GetProperty("query").GetString()!;
             var id = doc.RootElement.GetProperty("variables").TryGetProperty("id", out var v) ? v.GetString() : null;
+            // Execution errors as GitHub sends them: the mutation's own data beside an internal error;
+            // an untyped error with the field null; and a request error, with no data at all.
+            if (id == "partial")
+            {
+                return Results.Json(new { data = new { resolveReviewThread = new { thread = new { isResolved = true } } }, errors = new[] { new { type = "INTERNAL", message = "Something went wrong" } } });
+            }
+
+            // The mutation's data, and a typed error on some field beside it: still it ran.
+            if (id == "partial-typed")
+            {
+                return Results.Json(new { data = new { resolveReviewThread = new { thread = new { isResolved = true } } }, errors = new[] { new { type = "FORBIDDEN", message = "Resource not accessible by integration" } } });
+            }
+
+            if (id == "untyped")
+            {
+                return Results.Json(new { data = new { resolveReviewThread = (object?)null }, errors = new[] { new { message = "Something went wrong while executing your query." } } });
+            }
+
+            if (id == "invalid")
+            {
+                return Results.Json(new { errors = new[] { new { message = "Parse error on \"}\"" } } });
+            }
+
             if (id == "refused")
             {
                 return Results.Json(new { data = (object?)null, errors = new[] { new { type = "FORBIDDEN", message = "Resource not accessible by integration" } } });
@@ -272,5 +295,26 @@ public sealed class GitHubWriterTests : IAsyncLifetime
         var mutation = _requests.Single(r => r.Body.Contains("enablePullRequestAutoMerge", StringComparison.Ordinal)).Body;
         Assert.Contains("expectedHeadOid", mutation, StringComparison.Ordinal);
         Assert.Contains($"\"head\":\"{head}\"", mutation, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// A GraphQL error proves nothing ran only before execution: no data at all, or every error of a
+    /// type GitHub raises before acting with nothing returned. Found by review (2026-10-20): data
+    /// returned beside an internal error was read as refused, which released the operation key.
+    /// </summary>
+    [Fact]
+    public async Task A_GraphQL_error_is_a_refusal_only_when_it_proves_nothing_ran()
+    {
+        var partial = await Writer().SetThreadResolvedAsync(Alice, "partial", true, CancellationToken.None);
+        var untyped = await Writer().SetThreadResolvedAsync(Alice, "untyped", true, CancellationToken.None);
+        var invalid = await Writer().SetThreadResolvedAsync(Alice, "invalid", true, CancellationToken.None);
+        var refused = await Writer().SetThreadResolvedAsync(Alice, "refused", true, CancellationToken.None);
+        var partialTyped = await Writer().SetThreadResolvedAsync(Alice, "partial-typed", true, CancellationToken.None);
+
+        Assert.Equal(WriteOutcome.Unknown, partial.Outcome);
+        Assert.Equal(WriteOutcome.Unknown, partialTyped.Outcome);
+        Assert.Equal(WriteOutcome.Unknown, untyped.Outcome);
+        Assert.Equal(WriteOutcome.Refused, invalid.Outcome);
+        Assert.Equal(WriteOutcome.Refused, refused.Outcome);
     }
 }
