@@ -212,6 +212,10 @@ tr.thread-row > td { padding: 4px 8px 8px 32px; background: transparent; }
 /* Pull request review (docs/web/PLAN.md, *Pull request review*). */
 .button-quiet { display: inline-block; border: 1px solid var(--border); border-radius: 6px; padding: 5px 12px; color: var(--fg); text-decoration: none; background: var(--surface-card); }
 .button-quiet:hover { background: var(--surface-sunken); }
+/* A disabled button must look it: without this, "Open merge request" with no title, or a
+   comment box mid-post, looked exactly as clickable as ever (seen in the preview, 2026-10-20). */
+.button:disabled, .button-quiet:disabled, .link-button:disabled { opacity: 0.5; cursor: default; }
+.button-quiet:disabled:hover { background: var(--surface-card); }
 .change-renamed { color: var(--accent); }
 .review-tabs { display: flex; flex-direction: column; border-bottom: 1px solid var(--border); padding: 4px 0; }
 .review-count { margin-left: auto; font-size: 11px; border: 1px solid var(--border); border-radius: 999px; padding: 0 6px; }
