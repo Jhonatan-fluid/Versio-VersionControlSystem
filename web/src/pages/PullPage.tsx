@@ -1,10 +1,11 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router';
 import type { CoverageGap, Layout, Me, PaneView, PendingReviewView, ReviewCommits, ReviewFile, ReviewFileView, ReviewSnapshot, ReviewStatus, ReviewThread, ReviewThreads, ReviewTimeline, ThreadPlacement } from '../api';
 import { ApiError, api } from '../api';
 import type { Annotation } from '../components/FragmentHost';
 import { FragmentHost } from '../components/FragmentHost';
 import { ErrorPanel } from '../components/Pane';
+import { AssigneesEditor, BaseEditor, LabelsEditor, StateActions, TitleEditor } from '../components/PullMeta';
 import { ReviewBar, ReviewersEditor } from '../components/ReviewBar';
 import { ActionButton, CommentBox, newOpKey } from '../components/ReviewWrite';
 import { Workbench } from '../components/Workbench';
@@ -40,12 +41,18 @@ function needsReload(error: Error): boolean {
 
 /**
  * Polls while the page is visible and once more whenever it becomes visible again. A failed poll
- * keeps the last answer: a blip must not wipe what the reviewer is reading.
+ * keeps the last answer: a blip must not wipe what the reviewer is reading. A new <paramref>key</paramref>
+ * (another snapshot) starts empty; a new <paramref>refresh</paramref> (a write just landed) reads
+ * again at once but keeps showing the last answer meanwhile, so an edit does not blank the panel.
  */
-function usePolled<T>(load: ((signal: AbortSignal) => Promise<T>) | null, key: string): T | null {
+function usePolled<T>(load: ((signal: AbortSignal) => Promise<T>) | null, key: string, refresh = 0): T | null {
   const [value, setValue] = useState<T | null>(null);
+  const shown = useRef(key);
   useEffect(() => {
-    setValue(null);
+    if (shown.current !== key) {
+      shown.current = key;
+      setValue(null);
+    }
     if (!load) {
       return;
     }
@@ -64,7 +71,7 @@ function usePolled<T>(load: ((signal: AbortSignal) => Promise<T>) | null, key: s
       document.removeEventListener('visibilitychange', poll);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [key]);
+  }, [key, refresh]);
   return value;
 }
 
@@ -170,7 +177,10 @@ export function PullPage({ me }: { me: Me | null }) {
   const snap = snapshot.state === 'ok' ? snapshot.value : null;
   const token = snap?.token ?? '';
 
-  const status = usePolled(snap ? (s) => api.review.status(owner, repo, snap, s) : null, token);
+  // Read again after every write: a title, a label or a close shows at once, not at the next poll.
+  const status = usePolled(snap ? (s) => api.review.status(owner, repo, snap, s) : null, token, changed);
+  const live = status?.summary ?? null;
+  const [editing, setEditing] = useState<'title' | 'base' | null>(null);
   const files = useAsync((s) => (snap ? api.review.files(owner, repo, snap, s) : never()), [token]);
   const threads = useAsync((s) => (snap ? api.review.threads(owner, repo, snap, s) : never()), [token, changed]);
   const timeline = useAsync((s) => (snap && tab === 'conversation' ? api.review.timeline(owner, repo, snap, s) : never()), [token, tab, changed]);
@@ -317,8 +327,26 @@ export function PullPage({ me }: { me: Me | null }) {
           <header className="pane-head">
             <div className="pane-title">
               <span className="pane-label">Merge request</span>
-              <h1>{snap!.title}</h1>
-              <span className="pane-folder">#{snap!.number} · {snap!.headLabel} {'→'} {snap!.baseLabel}</span>
+              {writer && live && editing === 'title' ? (
+                <TitleEditor owner={owner} repo={repo} snap={writer.snap} summary={live} onChanged={writer.onChanged} onStale={writer.onStale} onDone={() => setEditing(null)} />
+              ) : (
+                <h1>
+                  {live?.title ?? snap!.title}
+                  {writer && live?.viewerCanUpdate && <button type="button" className="link-button title-edit" onClick={() => setEditing('title')}>Edit</button>}
+                </h1>
+              )}
+              {writer && live && editing === 'base' ? (
+                <BaseEditor owner={owner} repo={repo} snap={writer.snap} branches={branches.state === 'ok' ? branches.value.branches.map((b) => b.name) : []}
+                  current={snap!.baseRef} head={snap!.headLabel} onChanged={writer.onChanged} onStale={writer.onStale} onDone={() => setEditing(null)} />
+              ) : (
+                <>
+                  <span className="pane-folder">#{snap!.number} · {snap!.headLabel} {'→'} {snap!.baseLabel}</span>
+                  {/* Outside the folder line, which cuts long branch names with an ellipsis and took the link with them. */}
+                  {writer && live?.viewerCanUpdate && live.state === 'OPEN' && (
+                    <button type="button" className="link-button base-edit" onClick={() => setEditing('base')}>change base</button>
+                  )}
+                </>
+              )}
             </div>
             <div className="pane-tools">
               <Link className="button-quiet" to={pullsUrl(owner, repo, n)}>All merge requests</Link>
@@ -349,7 +377,7 @@ export function PullPage({ me }: { me: Me | null }) {
               files={files.state === 'ok' ? files.value.files : []} opened={opened} viewed={viewed}
               onChanged={writer.onChanged} onStale={writer.onStale} onOpenPath={(p) => go('files', p)} />
           )}
-          {tab === 'conversation' && <Conversation snap={snap!} timeline={timeline} writer={writer} onOpenPath={(p) => navigate(blobUrl(owner, repo, snap!.headSha, p))} />}
+          {tab === 'conversation' && <Conversation snap={snap!} live={live} timeline={timeline} writer={writer} onOpenPath={(p) => navigate(blobUrl(owner, repo, snap!.headSha, p))} />}
           {tab === 'commits' && <Commits commits={commits} />}
           {tab === 'checks' && <Checks status={status} />}
           {tab === 'files' && (
@@ -395,6 +423,7 @@ function Summary({ status, writer }: { status: ReviewStatus | null; writer: Writ
       {s ? (
         <>
           <p><span className={`state state-${s.merged ? 'merged' : s.state.toLowerCase()}`}>{s.merged ? 'Merged' : s.draft ? 'Draft' : s.state === 'OPEN' ? 'Open' : 'Closed'}</span></p>
+          {writer && s.viewerCanUpdate && <StateActions owner={writer.owner} repo={writer.repo} snap={writer.snap} summary={s} onChanged={writer.onChanged} onStale={writer.onStale} />}
           {s.reviewDecision && <p>{({ APPROVED: 'Approved', CHANGES_REQUESTED: 'Changes requested', REVIEW_REQUIRED: 'Review required' } as Record<string, string>)[s.reviewDecision] ?? s.reviewDecision}</p>}
           {s.mergeable === 'CONFLICTING' && <p className="error-text">Has conflicts with its base</p>}
           {writer ? (
@@ -412,13 +441,25 @@ function Summary({ status, writer }: { status: ReviewStatus | null; writer: Writ
               </ul>
             </>
           )}
-          {s.labels.length > 0 && (
-            <p className="review-labels">
-              {s.labels.map((l) => (
-                // The colour is six hex digits or empty: the server checked it, because it ends up here.
-                <span key={l.name} className="label" style={l.color ? { borderColor: `#${l.color}` } : undefined}>{l.name}</span>
-              ))}
-            </p>
+          {writer && s.viewerCanUpdate ? (
+            <>
+              <p className="panel-title">Labels</p>
+              <LabelsEditor owner={writer.owner} repo={writer.repo} snap={writer.snap} summary={s} onChanged={writer.onChanged} onStale={writer.onStale} />
+              <p className="panel-title">Assignees</p>
+              <AssigneesEditor owner={writer.owner} repo={writer.repo} snap={writer.snap} summary={s} onChanged={writer.onChanged} onStale={writer.onStale} />
+            </>
+          ) : (
+            <>
+              {s.labels.length > 0 && (
+                <p className="review-labels">
+                  {s.labels.map((l) => (
+                    // The colour is six hex digits or empty: the server checked it, because it ends up here.
+                    <span key={l.value} className="label" style={l.color ? { borderColor: `#${l.color}` } : undefined}>{l.name}</span>
+                  ))}
+                </p>
+              )}
+              {s.assignees.length > 0 && <p className="muted">Assigned to {s.assignees.join(', ')}</p>}
+            </>
           )}
         </>
       ) : (
@@ -435,12 +476,49 @@ function Summary({ status, writer }: { status: ReviewStatus | null; writer: Writ
   );
 }
 
-function Conversation({ snap, timeline, writer, onOpenPath }: { snap: ReviewSnapshot; timeline: Async<ReviewTimeline>; writer: Writer | null; onOpenPath: (p: string) => void }) {
+function Conversation({ snap, live, timeline, writer, onOpenPath }: { snap: ReviewSnapshot; live: ReviewStatus['summary']; timeline: Async<ReviewTimeline>; writer: Writer | null; onOpenPath: (p: string) => void }) {
   const [editing, setEditing] = useState<string | null>(null);
+  // The description as it is now, once the live state is read; the snapshot's until then.
+  const description = live ? live.html : snap.html;
+  // The text an edit replaces is fixed when editing starts, and kept with the draft: the live
+  // summary is polled, so taking it at submit would name someone else's newer text as the one
+  // replaced and overwrite it. A draft that survived a reload keeps the text it was written
+  // against, so the server can refuse it if that text has changed since.
+  const [from, setFrom] = useState<string | null>(null);
+  const fromSlot = writer ? `${writer.slots}:description:from` : '';
+  function startEditing() {
+    let kept: string | null = null;
+    try {
+      kept = sessionStorage.getItem(fromSlot);
+      sessionStorage.setItem(fromSlot, kept ?? live!.markdown);
+    } catch {
+      // Storage off: the text is held as long as the page is.
+    }
+    setFrom(kept ?? live!.markdown);
+    setEditing('description');
+  }
+  function stopEditing() {
+    try {
+      sessionStorage.removeItem(fromSlot);
+    } catch {
+      // Storage off.
+    }
+    setEditing(null);
+  }
   return (
     <>
-      <p className="muted">{snap.draft ? 'Draft, ' : ''}opened by {snap.author}, updated {new Date(snap.when).toLocaleString()}</p>
-      {snap.html ? <FragmentHost html={snap.html} path="" onOpenPath={onOpenPath} line={null} onLine={() => {}} /> : <p className="muted">No description.</p>}
+      <p className="muted">{(live ? live.draft : snap.draft) ? 'Draft, ' : ''}opened by {snap.author}, updated {new Date(snap.when).toLocaleString()}</p>
+      {writer && from !== null && editing === 'description' ? (
+        // It names the text it replaces: someone else's edit meanwhile is refused, never overwritten.
+        <CommentBox owner={writer.owner} repo={writer.repo} snap={writer.snap} slot={`${writer.slots}:description`} path="/edit"
+          payload={{ expectBody: from }} initial={from} submitLabel="Save" placeholder="Describe the change"
+          onCancel={stopEditing} onDone={() => { stopEditing(); writer.onChanged(); }} onStale={writer.onStale} />
+      ) : (
+        <>
+          {description ? <FragmentHost html={description} path="" onOpenPath={onOpenPath} line={null} onLine={() => {}} /> : <p className="muted">No description.</p>}
+          {writer && live?.viewerCanUpdate && <button type="button" className="link-button" onClick={startEditing}>Edit the description</button>}
+        </>
+      )}
       <h2 className="review-heading">Conversation</h2>
       {timeline.state === 'loading' && <p className="muted">Loading...</p>}
       {timeline.state === 'error' && <p className="muted">{timeline.error.message}</p>}

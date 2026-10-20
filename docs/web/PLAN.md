@@ -647,7 +647,22 @@ only use of Contents write; **no admin bypass, ever**.
    or submit it as historical. The author is offered Comment only (GitHub refuses the rest). Also
    built: viewed marks (GitHub's own), requesting and withdrawing reviewers by login, and "changes
    since your last review" (a compare from the viewer's last reviewed commit to the head).
-5. Pull request creation (same-repository branches) and metadata.
+5. Pull request creation (same-repository branches) and metadata. **Built 2026-10-20; its
+   real-GitHub gate waits for the App.** As built: "New merge request" (`/owner/repo/pulls/new`)
+   opens one between two branches of this repository — a `owner:branch` head is refused — with the
+   repository's `pull_request_template.md` (`.github/`, the root or `docs/`, at the base branch) and
+   a draft toggle. Opening has no snapshot, so `RunWithoutSnapshotAsync` keys it under pull request
+   0, and a lost answer is reconciled by finding the viewer's own pull request between those
+   branches carrying the operation tag: never opened twice. On the review page, the title, the
+   description and the base are edited, **each naming what it replaces** — GitHub's PATCH has no
+   precondition and would overwrite a colleague's edit, so the server refuses (409) when the
+   title, description or base changed since editing began; the page fixes the replaced text when
+   editing starts and keeps it with the draft over a reload, because the live summary is polled
+   and would otherwise put the colleague's text in as "the one replaced". A base change makes the
+   snapshot stale, which the page reports as for a push. Close and reopen (not when merged), draft
+   and ready, labels the repository already has (none is created: GitHub would make a missing one
+   silently, a repository-wide change), and assignees GitHub says can be assigned (it drops the
+   others while answering success). Edit controls follow GitHub's `viewerCanUpdate`.
 6. Merge, update-branch and auto-merge (with `expectedHeadOid`; it is a *future* merge of this
    exact commit, described as such) — a separate release gate. **Branch deletion deferred**: no
    atomic precondition exists, and read-then-delete could lose pushed work; the repository's

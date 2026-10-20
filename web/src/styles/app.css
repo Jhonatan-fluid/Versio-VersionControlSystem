@@ -144,6 +144,21 @@ button { font: inherit; color: inherit; }
 .review-viewed-label { font-size: 12px; display: inline-flex; gap: 4px; align-items: center; }
 .changes li:has(.review-viewed) { display: flex; align-items: center; }
 .reviewers-editor .row-list button { margin-left: 6px; font-size: 12px; }
+.title-edit { margin-left: 8px; font: 12px var(--ui); vertical-align: middle; }
+.base-edit { font-size: 12px; white-space: nowrap; flex: none; }
+.title-editor, .base-editor { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; margin: 2px 0; }
+.title-editor input { flex: 1; min-width: 0; font: 600 16px var(--ui); color: var(--fg); background: var(--surface-card); border: 1px solid var(--border); border-radius: 6px; padding: 3px 6px; }
+.title-editor .notice, .base-editor .notice { flex-basis: 100%; }
+.state-actions { display: flex; gap: 12px; font-size: 12px; }
+.labels-editor .label button { margin-left: 4px; }
+.labels-editor select, .base-editor select, .new-pull select { font: 13px var(--ui); color: var(--fg); background: var(--surface-card); border: 1px solid var(--border); border-radius: 6px; padding: 2px 4px; max-width: 100%; }
+.assignees-editor .row-list button { margin-left: 6px; font-size: 12px; }
+.new-pull-fields { border: 0; padding: 0; margin: 0 0 10px; display: flex; flex-direction: column; gap: 8px; max-width: 900px; }
+.new-pull-branches { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; font-size: 13px; }
+.new-pull-branches label { display: inline-flex; gap: 6px; align-items: center; }
+.new-pull-title { font: 600 15px var(--ui); color: var(--fg); background: var(--surface-card); border: 1px solid var(--border); border-radius: 6px; padding: 6px 8px; }
+.new-pull-body { width: 100%; min-height: 220px; font: 13px/1.45 var(--ui); color: var(--fg); background: var(--surface-card); border: 1px solid var(--border); border-radius: 6px; padding: 8px; resize: vertical; }
+.new-pull-draft { font-size: 13px; display: inline-flex; gap: 6px; align-items: center; }
 .reviewers-add { display: flex; gap: 6px; margin-top: 4px; }
 .reviewers-add input { flex: 1; min-width: 0; font: 13px var(--ui); color: var(--fg); background: var(--surface-card); border: 1px solid var(--border); border-radius: 6px; padding: 3px 6px; }
 .can-comment td.mt-name, .can-comment .ld-head { cursor: pointer; }
@@ -265,6 +280,10 @@ tr.thread-row > td { padding: 4px 8px 8px 32px; background: transparent; }
   .topbar { padding: 8px 16px; gap: 8px; }
   .tree-toggle { display: inline-block; }
   .workspace { grid-template-columns: minmax(0, 1fr); position: relative; padding: 8px 8px 8px 0; }
+  /* The label, the title and the branch line each take the width they need, one under another,
+     rather than the title squeezed into a column a word wide. */
+  .pane-title { flex-wrap: wrap; row-gap: 2px; }
+  .pane-title h1 { flex-basis: 100%; }
   .panel { display: none; position: absolute; inset: 8px 20% 8px 0; z-index: 2; box-shadow: 0 0 24px rgba(0, 0, 0, .25); }
   .workspace.panel-open .panel { display: flex; }
   .user-name { display: none; }

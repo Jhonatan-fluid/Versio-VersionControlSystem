@@ -125,7 +125,16 @@ export interface Pull {
 
 export interface PullList {
   truncated: boolean;
+  /** Whether "New merge request" is offered: writes on here and a signed-in person. */
+  writable?: boolean;
   pulls: Pull[];
+}
+
+/** A repository label: value is GitHub's own name, sent back to add or remove; label is shown. */
+export interface RepoLabel {
+  value: string;
+  label: string;
+  color: string;
 }
 
 /** One pull request: the list's fields plus its description, rendered as a README is. */
@@ -285,13 +294,21 @@ export interface ReviewStatus {
     merged: boolean;
     mergeable: string;
     reviewDecision: string | null;
-    labels: { name: string; color: string }[];
+    /** name is shown; value is the name as GitHub has it, sent back to remove it. */
+    labels: { name: string; value: string; color: string }[];
     assignees: string[];
     reviewers: { login: string; state: string }[];
     /** GitHub refuses an author's approval: the page does not offer it. */
     viewerIsAuthor: boolean;
     /** The commit the viewer last reviewed, for "changes since your last review". */
     viewerLastReviewCommit: string | null;
+    /** The title and description as they are now: shown, and what an edit starts from and names as replaced. */
+    title: string;
+    titleText: string;
+    markdown: string;
+    html: string;
+    /** GitHub's word on whether the viewer may edit the pull request; edit controls follow it. */
+    viewerCanUpdate: boolean;
   } | null;
   checksError: string | null;
   checks: { name: string; status: string; conclusion: string | null; url: string | null; source: string }[] | null;
@@ -380,6 +397,32 @@ export function rawUrl(owner: string, repo: string, ref: string, path: string): 
   return `${repoBase(owner, repo)}/raw${query({ ref, path })}`;
 }
 
+/**
+ * A write. Never throws on a refusal: every answer — done, pending, unknown, refused — is the
+ * caller's to show. The header no cross-site request can send rides on every one.
+ */
+async function send(url: string, method: 'POST' | 'PATCH', headers: Record<string, string>, body: unknown): Promise<WriteAnswer> {
+  let response: Response;
+  try {
+    response = await fetch(url, {
+      method,
+      credentials: 'same-origin',
+      headers: { Accept: 'application/json', 'Content-Type': 'application/json', 'X-Versio-Request': '1', ...headers },
+      body: JSON.stringify(body),
+    });
+  } catch {
+    // The request may or may not have reached the server: exactly the unknown case.
+    return { status: 0, outcome: 'unknown', message: 'The connection dropped. This may or may not have been posted; refresh to check.' };
+  }
+  let json: Omit<WriteAnswer, 'status'> = {};
+  try {
+    json = await response.json();
+  } catch {
+    // A proxy's error page: the status says enough.
+  }
+  return { status: response.status, ...json };
+}
+
 async function get<T>(url: string, signal?: AbortSignal, headers?: Record<string, string>): Promise<T> {
   const response = await fetch(url, { credentials: 'same-origin', headers: { Accept: 'application/json', ...headers }, signal });
   if (!response.ok) {
@@ -438,26 +481,8 @@ export const api = {
      * A write. Never throws on a refusal: every answer — done, pending, unknown, refused — is the
      * page's to word. The header no cross-site request can send, a JSON body, and the snapshot.
      */
-    async write(owner: string, repo: string, s: ReviewSnapshot, path: string, method: 'POST' | 'PATCH', body: unknown): Promise<WriteAnswer> {
-      let response: Response;
-      try {
-        response = await fetch(`${reviewBase(owner, repo, s.number)}${path}`, {
-          method,
-          credentials: 'same-origin',
-          headers: { Accept: 'application/json', 'Content-Type': 'application/json', 'X-Versio-Request': '1', ...sealed(s) },
-          body: JSON.stringify(body),
-        });
-      } catch {
-        // The request may or may not have reached the server: exactly the unknown case.
-        return { status: 0, outcome: 'unknown', message: 'The connection dropped. This may or may not have been posted; refresh to check.' };
-      }
-      let json: Omit<WriteAnswer, 'status'> = {};
-      try {
-        json = await response.json();
-      } catch {
-        // A proxy's error page: the status says enough.
-      }
-      return { status: response.status, ...json };
+    write(owner: string, repo: string, s: ReviewSnapshot, path: string, method: 'POST' | 'PATCH', body: unknown): Promise<WriteAnswer> {
+      return send(`${reviewBase(owner, repo, s.number)}${path}`, method, sealed(s), body);
     },
 
     preview: async (owner: string, repo: string, s: ReviewSnapshot, body: string): Promise<string> => {
@@ -465,6 +490,12 @@ export const api = {
       return (answer as unknown as { html?: string }).html ?? '';
     },
   },
+  /** Opens a pull request: a write like any other (an operation key, never thrown), with no snapshot because there is no pull request yet. */
+  createPull: (owner: string, repo: string, body: { opKey: string; base: string; head: string; title: string; body: string; draft: boolean }) =>
+    send(`${repoBase(owner, repo)}/pulls`, 'POST', {}, body),
+  pullTemplate: (owner: string, repo: string, base: string, signal?: AbortSignal) =>
+    get<{ markdown: string | null; path: string | null }>(`${repoBase(owner, repo)}/pulls/template${query({ base })}`, signal),
+  labels: (owner: string, repo: string, signal?: AbortSignal) => get<{ labels: RepoLabel[] }>(`${repoBase(owner, repo)}/labels`, signal),
   releases: (owner: string, repo: string, signal?: AbortSignal) => get<ReleaseList>(`${repoBase(owner, repo)}/releases`, signal),
   releaseView: (owner: string, repo: string, tag: string, signal?: AbortSignal) =>
     get<ReleaseView>(`${repoBase(owner, repo)}/releases/view${query({ tag })}`, signal),

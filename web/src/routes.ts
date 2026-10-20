@@ -53,6 +53,19 @@ export function pullsUrl(owner: string, repo: string, number?: number): string {
   return `${repoUrl(owner, repo)}/pulls${number ? `?n=${number}` : ''}`;
 }
 
+/** Opening a merge request; either branch may be chosen in advance. */
+export function newPullUrl(owner: string, repo: string, base?: string, head?: string): string {
+  const p = new URLSearchParams();
+  if (base) {
+    p.set('base', base);
+  }
+  if (head) {
+    p.set('head', head);
+  }
+  const q = p.toString() ? `?${p.toString()}` : '';
+  return `${repoUrl(owner, repo)}/pulls/new${q}`;
+}
+
 /**
  * One pull request's review. ?tab= picks Conversation, Commits, Checks or Files changed; on
  * Files changed, ?path= picks the file. The revision is not in the URL on purpose: a pasted link

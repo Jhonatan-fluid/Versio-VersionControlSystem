@@ -53,6 +53,11 @@ interface Options {
   summary?: CoverageSummary;
   /** The head moves the moment anything is written: a push landing mid-submit. */
   movesOnWrite?: boolean;
+  /** The live title and description (changeable mid-test, as another person's edit would), and whether the viewer may edit. */
+  live?: { title: string; markdown: string };
+  canUpdate?: boolean;
+  merged?: boolean;
+  draftLive?: boolean;
 }
 
 let calls: { url: string; snapshot: string | null; method: string; csrf: string | null; body: Record<string, unknown> | null }[] = [];
@@ -69,8 +74,11 @@ function answer(url: string, o: Options): unknown {
     const moved = (o.stale ?? false) || (o.movesOnWrite === true && calls.some((c) => c.method !== 'GET'));
     return {
       stale: moved, headMoved: moved, baseMoved: false, summaryError: null,
-      summary: { state: 'OPEN', draft: false, merged: false, mergeable: 'MERGEABLE', reviewDecision: 'REVIEW_REQUIRED', labels: [], assignees: [],
-        reviewers: [{ login: 'kim', state: 'REQUESTED' }], viewerIsAuthor: o.viewerIsAuthor ?? false, viewerLastReviewCommit: o.lastReview ?? null },
+      summary: { state: 'OPEN', draft: o.draftLive ?? false, merged: o.merged ?? false, mergeable: 'MERGEABLE', reviewDecision: 'REVIEW_REQUIRED',
+        labels: [{ name: 'plc', value: 'plc', color: '0e8a16' }], assignees: ['sam'],
+        reviewers: [{ login: 'kim', state: 'REQUESTED' }], viewerIsAuthor: o.viewerIsAuthor ?? false, viewerLastReviewCommit: o.lastReview ?? null,
+        title: o.live?.title ?? 'Fix interlock', titleText: o.live?.title ?? 'Fix interlock', markdown: o.live?.markdown ?? 'The delay was wrong.',
+        html: `<div class="md-page"><p>${o.live?.markdown ?? 'The delay was wrong.'}</p></div>`, viewerCanUpdate: o.canUpdate ?? true },
       checksError: null, checks: [{ name: 'build', status: 'completed', conclusion: 'failure', url: 'https://ci.example/1', source: 'check-run' }],
     };
   }
@@ -118,6 +126,9 @@ function answer(url: string, o: Options): unknown {
       { sha: head, headline: 'Fix the default', author: 'jo', when: '2026-10-17T09:00:00Z', inSnapshot: true },
       { sha: 'e'.repeat(40), headline: 'And another', author: 'jo', when: '2026-10-17T09:05:00Z', inSnapshot: false },
     ] };
+  }
+  if (url.endsWith('/labels')) {
+    return { labels: [{ value: 'plc', label: 'plc', color: '0e8a16' }, { value: 'safety', label: 'safety', color: 'd73a4a' }] };
   }
   if (url.endsWith('/branches')) {
     return { branches: [{ name: 'main', label: 'main', commit: 'x' }], truncated: false };
@@ -732,6 +743,145 @@ describe('PullPage review', () => {
     await click(button(host, 'remove')!, host);
 
     expect(writes().map((w) => w.body)).toMatchObject([{ add: ['lee'], remove: [] }, { add: [], remove: ['kim'] }]);
+    act(() => root.unmount());
+  });
+});
+
+// Slice 5 (docs/web/PLAN.md): what a pull request says about itself, edited from what was shown —
+// never from whatever the last poll brought in, which may be someone else's newer text.
+describe('PullPage metadata', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+    document.body.innerHTML = '';
+    sessionStorage.clear();
+  });
+
+  async function click(element: Element, host: HTMLElement) {
+    await act(async () => {
+      (element as HTMLElement).click();
+    });
+    await settle(host, () => false);
+  }
+
+  async function fill(element: HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement, value: string) {
+    await act(async () => {
+      const proto = element instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : element instanceof HTMLSelectElement ? HTMLSelectElement.prototype : HTMLInputElement.prototype;
+      Object.getOwnPropertyDescriptor(proto, 'value')!.set!.call(element, value);
+      element.dispatchEvent(new Event(element instanceof HTMLSelectElement ? 'change' : 'input', { bubbles: true }));
+    });
+  }
+
+  /** A poll, as the page makes one when it becomes visible again. */
+  async function poll(host: HTMLElement) {
+    await act(async () => {
+      document.dispatchEvent(new Event('visibilitychange'));
+    });
+    await settle(host, () => false);
+  }
+
+  const button = (root: ParentNode, label: string) => Array.from(root.querySelectorAll('button')).find((b) => b.textContent === label);
+  const writes = () => calls.filter((c) => c.method !== 'GET' && !c.url.endsWith('/markdown'));
+
+  it('edits the title naming the one it replaces, as it was when editing began, and reads the state again after', async () => {
+    const o = { writable: true, live: { title: 'Fix interlock', markdown: 'The delay was wrong.' } };
+    const { host, root } = await render('/acme/plant/pull/12', o);
+    await click(button(host.querySelector('h1')!, 'Edit')!, host);
+    // Someone else renames it while this person types: the poll brings their title in.
+    o.live = { title: 'Fix interlock (jo)', markdown: 'The delay was wrong.' };
+    await poll(host);
+    await fill(host.querySelector<HTMLInputElement>('.title-editor input')!, 'Fix the interlock delay');
+    const before = calls.filter((c) => c.url.endsWith('/status')).length;
+
+    await click(button(host.querySelector('.title-editor')!, 'Save')!, host);
+
+    const posted = writes()[0]!;
+    expect(posted.url.endsWith('/pulls/12/edit')).toBe(true);
+    expect(posted.body).toMatchObject({ title: 'Fix the interlock delay', expectTitle: 'Fix interlock' });
+    expect(calls.filter((c) => c.url.endsWith('/status')).length).toBeGreaterThan(before);
+    act(() => root.unmount());
+  });
+
+  it('edits the description from the text it showed, and a draft kept over a reload keeps the text it was written against', async () => {
+    const o = { writable: true, live: { title: 'Fix interlock', markdown: 'The delay was wrong.' } };
+    const first = await render('/acme/plant/pull/12', o);
+    await click(button(first.host, 'Edit the description')!, first.host);
+    await fill(first.host.querySelector<HTMLTextAreaElement>('.comment-box textarea')!, 'The delay was 5 s; it is 2 s.');
+    act(() => first.root.unmount());
+    document.body.innerHTML = '';
+
+    // A reload later, someone else has changed the description: the kept draft still names the old text.
+    o.live = { title: 'Fix interlock', markdown: 'Jo rewrote this.' };
+    const again = await render('/acme/plant/pull/12', o);
+    await click(button(again.host, 'Edit the description')!, again.host);
+    expect(again.host.querySelector<HTMLTextAreaElement>('.comment-box textarea')!.value).toBe('The delay was 5 s; it is 2 s.');
+    await click(button(again.host.querySelector('.comment-box')!, 'Save')!, again.host);
+
+    expect(writes()[0]!.body).toMatchObject({ body: 'The delay was 5 s; it is 2 s.', expectBody: 'The delay was wrong.' });
+    act(() => again.root.unmount());
+  });
+
+  it('offers no edit to someone GitHub does not let edit', async () => {
+    const { host, root } = await render('/acme/plant/pull/12', { writable: true, canUpdate: false });
+
+    expect(button(host.querySelector('h1')!, 'Edit')).toBeUndefined();
+    expect(button(host, 'Edit the description')).toBeUndefined();
+    expect(button(host, 'Close')).toBeUndefined();
+    expect(host.querySelector('.labels-editor')).toBeNull();
+    act(() => root.unmount());
+  });
+
+  it('closes only after the person confirms, and converts to a draft', async () => {
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValueOnce(false).mockReturnValueOnce(true);
+    const { host, root } = await render('/acme/plant/pull/12', { writable: true });
+
+    await click(button(host, 'Close')!, host);
+    expect(writes()).toHaveLength(0);
+    await click(button(host, 'Close')!, host);
+    await click(button(host, 'Convert to draft')!, host);
+
+    expect(confirm).toHaveBeenCalledTimes(2);
+    expect(writes().map((w) => [w.url.slice(w.url.lastIndexOf('/')), w.body?.open ?? w.body?.draft])).toEqual([['/state', false], ['/draft', true]]);
+    act(() => root.unmount());
+  });
+
+  it('offers neither close nor draft on a merged pull request', async () => {
+    const { host, root } = await render('/acme/plant/pull/12', { writable: true, merged: true });
+
+    expect(button(host, 'Close')).toBeUndefined();
+    expect(button(host, 'Convert to draft')).toBeUndefined();
+    act(() => root.unmount());
+  });
+
+  it("takes a label off by GitHub's own name, offers only labels not on, and assigns by login", async () => {
+    const { host, root } = await render('/acme/plant/pull/12', { writable: true });
+    const offered = Array.from(host.querySelectorAll('.labels-editor option')).map((o) => o.getAttribute('value'));
+    expect(offered).toEqual(['', 'safety']);
+
+    await click(host.querySelector('[aria-label="Remove the label plc"]')!, host);
+    await fill(host.querySelector<HTMLSelectElement>('.labels-editor select')!, 'safety');
+    await fill(host.querySelector<HTMLInputElement>('.assignees-editor input')!, 'lee');
+    await click(button(host.querySelector('.assignees-editor')!, 'Assign')!, host);
+
+    expect(writes().map((w) => [w.url.slice(w.url.lastIndexOf('/')), w.body?.add, w.body?.remove])).toEqual([
+      ['/labels', [], ['plc']],
+      ['/labels', ['safety'], []],
+      ['/assignees', ['lee'], []],
+    ]);
+    act(() => root.unmount());
+  });
+
+  it('changes the base, and then says the pull request changed as for a push', async () => {
+    const o: { writable: boolean; stale?: boolean } = { writable: true };
+    const { host, root } = await render('/acme/plant/pull/12', o);
+    await click(button(host, 'change base')!, host);
+    // The fixture's only other branch is main itself; a second one is offered once the list has it.
+    expect(host.querySelector('.base-editor select')).not.toBeNull();
+    o.stale = true;
+    await click(button(host, 'Cancel')!, host);
+    await poll(host);
+
+    expect(host.querySelector('.review-stale')).not.toBeNull();
     act(() => root.unmount());
   });
 });

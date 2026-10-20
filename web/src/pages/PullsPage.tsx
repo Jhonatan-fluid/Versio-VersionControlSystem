@@ -4,7 +4,7 @@ import { api } from '../api';
 import { FragmentHost } from '../components/FragmentHost';
 import { ErrorPanel } from '../components/Pane';
 import { Workbench } from '../components/Workbench';
-import { blobUrl, compareUrl, pullUrl, treeUrl } from '../routes';
+import { blobUrl, compareUrl, newPullUrl, pullUrl, treeUrl } from '../routes';
 import { useAsync } from '../useAsync';
 
 /**
@@ -50,6 +50,9 @@ export function PullsPage({ me }: { me: Me | null }) {
       panelTitle="Merge requests"
       panel={
         <>
+          {pulls.state === 'ok' && pulls.value.writable && (
+            <p className="pad"><Link className="button" to={newPullUrl(owner, repo)}>New merge request</Link></p>
+          )}
           {pulls.state === 'loading' && <p className="muted pad">Loading...</p>}
           {pulls.state === 'ok' && pulls.value.pulls.length === 0 && <p className="muted pad">No open merge requests.</p>}
           {pulls.state === 'ok' && (
