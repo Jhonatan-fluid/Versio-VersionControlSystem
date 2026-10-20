@@ -100,6 +100,7 @@ public static class PullEndpoints
 
         MapLive(pulls);
         MapCoverage(pulls);
+        MapRepoLevel(app);
 
         pulls.MapGet("/files", async (string owner, string repo, int number, HttpContext http, AccessResolver access,
             ReviewSnapshots snapshots, ApiEndpoints.Loader load, PullReview review, IOptions<WebOptions> options, CancellationToken ct) =>
@@ -247,6 +248,68 @@ public static class PullEndpoints
         });
     }
 
+    /// <summary>Where GitHub looks for a pull request template, in its order; the name is matched without case, as GitHub does.</summary>
+    private static readonly string[] TemplateFolders = [".github", "", "docs"];
+
+    /// <summary>
+    /// What opening a pull request needs to read: the repository's template at the base branch, and
+    /// the labels a pull request can be given. Neither writes, so neither is under MapWrite.
+    /// </summary>
+    private static void MapRepoLevel(WebApplication app)
+    {
+        var repos = app.MapGroup("/api/repos/{owner}/{repo}").RequireRateLimiting(WebHost.RatePolicy);
+
+        repos.MapGet("/pulls/template", async (string owner, string repo, string? @base, HttpContext http, ApiEndpoints.Loader load, IRepoSource source,
+            IOptions<WebOptions> options, CancellationToken ct) =>
+        {
+            if (@base is null || !ApiEndpoints.ValidRef(@base))
+            {
+                return Results.NotFound();
+            }
+
+            var model = await load.ModelAsync(http, owner, repo, @base, ct).ConfigureAwait(false);
+            if (!model.Ok)
+            {
+                return ApiEndpoints.Refused(model.Failure, http);
+            }
+
+            var (access, m) = model.Value!;
+            var entry = TemplateFolders
+                .Select(folder => m.Files.Values.FirstOrDefault(f => string.Equals(f.Path, folder.Length == 0 ? "pull_request_template.md" : $"{folder}/pull_request_template.md", StringComparison.OrdinalIgnoreCase)))
+                .FirstOrDefault(f => f is not null);
+            if (entry is null)
+            {
+                return Results.Ok(new { markdown = (string?)null, path = (string?)null });
+            }
+
+            // A template is a page of text; anything larger is not one, and is not put in a form.
+            var bytes = await source.GetBlobAsync(access, owner, repo, entry.BlobSha, Math.Min(options.Value.MaxBlobBytes, 64 * 1024), ct).ConfigureAwait(false);
+            return bytes.Ok
+                ? Results.Ok(new { markdown = System.Text.Encoding.UTF8.GetString(bytes.Value!), path = CodeHtml.Spelled(entry.Path) })
+                : Results.Ok(new { markdown = (string?)null, path = (string?)null });
+        });
+
+        repos.MapGet("/labels", async (string owner, string repo, HttpContext http, AccessResolver access, IRepoSource source, CancellationToken ct) =>
+        {
+            if (!ApiEndpoints.Valid(owner, repo))
+            {
+                return Results.NotFound();
+            }
+
+            var who = await access.ResolveAsync(http, owner, repo, ct).ConfigureAwait(false);
+            if (!who.Ok)
+            {
+                return ApiEndpoints.Refused(who.Failure, http);
+            }
+
+            var labels = await source.GetLabelsAsync(who.Value!, owner, repo, ct).ConfigureAwait(false);
+            return labels.Ok
+                // value is the name as GitHub has it, sent back to add or remove; label is what is shown.
+                ? Results.Ok(new { labels = labels.Value!.Select(l => new { value = l.Name, label = CodeHtml.Spelled(l.Name), color = l.Color }) })
+                : ApiEndpoints.Refused(labels.Failure, http);
+        });
+    }
+
     /// <summary>The live state, threads, conversation and commits: each against the snapshot it is read for.</summary>
     private static void MapLive(RouteGroupBuilder pulls)
     {
@@ -281,12 +344,19 @@ public static class PullEndpoints
                     merged = live.Merged,
                     mergeable = live.Mergeable,
                     reviewDecision = live.ReviewDecision,
-                    labels = live.Labels.Select(l => new { name = CodeHtml.Spelled(l.Name), color = l.Color }),
+                    labels = live.Labels.Select(l => new { name = CodeHtml.Spelled(l.Name), value = l.Name, color = l.Color }),
                     assignees = live.Assignees.Select(CodeHtml.Spelled),
                     reviewers = live.Reviewers.Select(r => new { login = CodeHtml.Spelled(r.Login), state = r.State }),
                     // GitHub refuses an author's approval: the page offers it to nobody else.
                     viewerIsAuthor = live.ViewerIsAuthor,
                     viewerLastReviewCommit = live.ViewerLastReviewCommit,
+                    // The title and description as they are now, so an edit made anywhere shows without
+                    // a reload; the raw text is what an edit starts from and names as replaced.
+                    title = CodeHtml.Spelled(live.Title),
+                    titleText = live.Title,
+                    markdown = ReviewTags.Strip(live.Body),
+                    html = ApiEndpoints.MarkdownFragment(ReviewTags.Strip(live.Body)),
+                    viewerCanUpdate = live.ViewerCanUpdate,
                 },
                 checksError = checks.Ok ? null : Problem(checks.Failure),
                 checks = checks.Ok

@@ -128,6 +128,15 @@ public sealed record PullSummary(
 
     /// <summary>The pull request's GraphQL node id, which the review and viewed-file mutations name.</summary>
     public string NodeId { get; init; } = "";
+
+    /// <summary>The title as it is now: edits made anywhere show without reloading the review.</summary>
+    public string Title { get; init; } = "";
+
+    /// <summary>The description as it is now (Markdown, untrusted): what an edit starts from and is checked against.</summary>
+    public string Body { get; init; } = "";
+
+    /// <summary>GitHub's own word on whether the viewer may edit the pull request (title, body, base, state, labels).</summary>
+    public bool ViewerCanUpdate { get; init; }
 }
 
 /// <summary>One comment of a pending review, as its author sees it. <paramref name="Body"/> is Markdown: untrusted.</summary>
@@ -283,6 +292,16 @@ public interface IRepoSource
 
     /// <summary>The paths the viewer marked viewed on the pull request (GitHub keeps this per person).</summary>
     Task<RepoResult<IReadOnlyList<string>>> GetViewedAsync(RepoAccess access, string owner, string repo, int number, CancellationToken ct);
+
+    /// <summary>The repository's labels, by name, up to 100: what may be put on a pull request (labels are not created here).</summary>
+    Task<RepoResult<IReadOnlyList<PullLabel>>> GetLabelsAsync(RepoAccess access, string owner, string repo, CancellationToken ct);
+
+    /// <summary>
+    /// Whether <paramref name="login"/> can be assigned in this repository. GitHub silently drops an
+    /// assignee who cannot be, so the server asks first rather than reporting an assignment that did
+    /// not happen.
+    /// </summary>
+    Task<RepoResult<bool>> CanAssignAsync(RepoAccess access, string owner, string repo, string login, CancellationToken ct);
 
     /// <summary>Every check run and commit status on one commit.</summary>
     Task<RepoResult<IReadOnlyList<CheckInfo>>> GetChecksAsync(RepoAccess access, string owner, string repo, string commitSha, CancellationToken ct);

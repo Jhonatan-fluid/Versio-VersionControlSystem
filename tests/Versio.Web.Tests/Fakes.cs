@@ -112,6 +112,21 @@ internal sealed class FakeGitHub : IRepoSource
 
         /// <summary>Published releases, newest first, each with its Markdown notes.</summary>
         public List<(ReleaseInfo Info, string Body)> Releases { get; } = [];
+
+        /// <summary>A pull request's state when not OPEN: CLOSED or MERGED.</summary>
+        public Dictionary<int, string> PullStates { get; } = [];
+
+        /// <summary>Assignees per pull request.</summary>
+        public Dictionary<int, List<string>> Assignees { get; } = [];
+
+        /// <summary>The repository's labels.</summary>
+        public List<PullLabel> Labels { get; } = [];
+
+        /// <summary>Who can be assigned here.</summary>
+        public HashSet<string> Assignable { get; } = new(StringComparer.OrdinalIgnoreCase);
+
+        /// <summary>Tokens GitHub says may not edit the pull requests (viewerCanUpdate false); everyone else may.</summary>
+        public HashSet<string> CannotUpdate { get; } = new(StringComparer.Ordinal);
     }
 
     private readonly Dictionary<string, FakeRepo> _repos = new(StringComparer.OrdinalIgnoreCase);
@@ -363,11 +378,17 @@ internal sealed class FakeGitHub : IRepoSource
         }
 
         var p = found[0];
+        var body = r.Value.Pulls.First(x => x.Info.Number == number).Body;
+        var state = r.Value.PullStates.TryGetValue(number, out var s) ? s : "OPEN";
         var people = r.Value.PullPeople.TryGetValue(number, out var known) ? known : ([], []);
         return Task.FromResult(RepoResult<PullSummary>.Of(new PullSummary(
-            "OPEN", p.Draft, false, "MERGEABLE", null, p.HeadSha, p.BaseRef,
-            r.Value.Refs.TryGetValue(p.BaseRef, out var tip) ? tip : null, people.Labels, [], people.Reviewers)
+            state, p.Draft, state == "MERGED", "MERGEABLE", null, p.HeadSha, p.BaseRef,
+            r.Value.Refs.TryGetValue(p.BaseRef, out var tip) ? tip : null, people.Labels,
+            r.Value.Assignees.TryGetValue(number, out var assigned) ? assigned.ToList() : [], people.Reviewers)
         {
+            Title = p.Title,
+            Body = body,
+            ViewerCanUpdate = access.Token is { } can && !r.Value.CannotUpdate.Contains(can),
             ViewerIsAuthor = access.Token is { } token && r.Value.PullAuthorToken.TryGetValue(number, out var author) && author == token,
             ViewerLastReviewCommit = access.Token is { } t && r.Value.LastReviewCommit.TryGetValue((number, t), out var last) ? last : null,
             NodeId = "PR_" + number.ToString(System.Globalization.CultureInfo.InvariantCulture),
@@ -407,6 +428,18 @@ internal sealed class FakeGitHub : IRepoSource
         var r = See(access, owner, repo, "pull-commits " + number);
         return Task.FromResult(!r.Ok ? r.As<PullCommitList>()
             : RepoResult<PullCommitList>.Of(r.Value!.PullCommits.TryGetValue(number, out var c) ? c : new PullCommitList([], false)));
+    }
+
+    public Task<RepoResult<IReadOnlyList<PullLabel>>> GetLabelsAsync(RepoAccess access, string owner, string repo, CancellationToken ct)
+    {
+        var r = See(access, owner, repo, "labels");
+        return Task.FromResult(r.Ok ? RepoResult<IReadOnlyList<PullLabel>>.Of(r.Value!.Labels.ToList()) : r.As<IReadOnlyList<PullLabel>>());
+    }
+
+    public Task<RepoResult<bool>> CanAssignAsync(RepoAccess access, string owner, string repo, string login, CancellationToken ct)
+    {
+        var r = See(access, owner, repo, "assignable " + login);
+        return Task.FromResult(r.Ok ? RepoResult<bool>.Of(r.Value!.Assignable.Contains(login)) : r.As<bool>());
     }
 
     public Task<RepoResult<IReadOnlyList<CheckInfo>>> GetChecksAsync(RepoAccess access, string owner, string repo, string commitSha, CancellationToken ct)

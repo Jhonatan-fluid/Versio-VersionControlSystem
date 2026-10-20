@@ -298,7 +298,8 @@ public static partial class ApiEndpoints
         // only; one body is fetched and rendered when picked, because fifty rendered Markdown
         // bodies per list load would be paid mostly for rows nobody opens. The view routes render
         // with Core's Markdown, exactly as a README is, so the page places them like any fragment.
-        api.MapGet("/pulls", async (string owner, string repo, HttpContext http, AccessResolver access, IRepoSource source, CancellationToken ct) =>
+        api.MapGet("/pulls", async (string owner, string repo, HttpContext http, AccessResolver access, IRepoSource source,
+            Microsoft.Extensions.Options.IOptions<WebOptions> options, CancellationToken ct) =>
         {
             if (!Valid(owner, repo))
             {
@@ -317,6 +318,8 @@ public static partial class ApiEndpoints
                 ? Results.Ok(new
                 {
                     truncated = pulls.Value!.Count > ListLimit,
+                    // Whether to offer "New merge request": writes on here and a signed-in person (S9, S1).
+                    writable = options.Value.Writable(owner, repo) && who.Value!.Kind == AccessKind.User,
                     pulls = pulls.Value.Take(ListLimit).Select(p => new
                     {
                         number = p.Number,

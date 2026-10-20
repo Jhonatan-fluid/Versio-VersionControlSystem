@@ -47,6 +47,16 @@ public sealed class GitHubWriterTests : IAsyncLifetime
         });
         app.MapPost("/repos/acme/plant/pulls/12/comments", () => Results.Json(new { node_id = "PRRC_1" }, statusCode: 201));
         app.MapPost("/repos/acme/plant/pulls/12/reviews", () => Results.Json(new { node_id = "PRR_1" }, statusCode: 200));
+        app.MapPost("/repos/acme/plant/pulls", () => Results.Json(new { number = 13, node_id = "PR_13" }, statusCode: 201));
+        app.MapPatch("/repos/acme/plant/pulls/12", () => Results.Json(new { number = 12 }));
+        app.MapDelete("/repos/acme/plant/issues/12/labels/gone", () => Results.Json(new { message = "Label does not exist" }, statusCode: 404));
+        app.MapDelete("/repos/acme/plant/issues/12/labels/{name}", () => Results.Json(Array.Empty<object>()));
+        app.MapGet("/repos/acme/plant/pulls", () => Results.Json(new object[]
+        {
+            new { number = 20, user = new { login = "mallory" }, body = "copied <!-- versio:op v1 K -->" },
+            new { number = 21, user = new { login = "alice" }, body = (string?)null },
+            new { number = 22, user = new { login = "alice" }, body = "mine\n\n<!-- versio:op v1 K -->" },
+        }));
         app.MapPost("/graphql", async (HttpContext http) =>
         {
             using var doc = await System.Text.Json.JsonDocument.ParseAsync(http.Request.Body);
@@ -186,5 +196,48 @@ public sealed class GitHubWriterTests : IAsyncLifetime
         Assert.Contains($"\"commit_id\":\"{new string('d', 40)}\"", bodies[0], StringComparison.Ordinal);
         Assert.Contains("\"subject_type\":\"file\"", bodies[1], StringComparison.Ordinal);
         Assert.DoesNotContain("\"line\"", bodies[1], StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task A_pull_request_is_opened_from_a_branch_of_this_repository_and_its_number_comes_back()
+    {
+        var created = await Writer().CreatePullAsync(Alice, "acme", "plant", new NewPull("main", "feature", "Add the valve", "Adds it.", true), CancellationToken.None);
+
+        Assert.Equal((WriteOutcome.Done, 13), (created.Outcome, created.Value));
+        var body = _requests.Single(r => r.Method == "POST" && r.Path == "/repos/acme/plant/pulls").Body;
+        Assert.Contains("\"head\":\"feature\"", body, StringComparison.Ordinal);
+        Assert.Contains("\"base\":\"main\"", body, StringComparison.Ordinal);
+        Assert.Contains("\"draft\":true", body, StringComparison.Ordinal);
+    }
+
+    /// <summary>A field not being changed is not sent: GitHub keeps whatever it is now, whoever changed it.</summary>
+    [Fact]
+    public async Task An_edit_sends_only_the_fields_it_changes()
+    {
+        await Writer().EditPullAsync(Alice, "acme", "plant", 12, new PullEdit("New title", null, null), CancellationToken.None);
+
+        var body = _requests.Single(r => r.Method == "PATCH").Body;
+        Assert.Equal("{\"title\":\"New title\"}", body);
+    }
+
+    [Fact]
+    public async Task Removing_a_label_already_gone_is_what_was_asked_and_counts_as_done()
+    {
+        var done = await Writer().SetLabelsAsync(Alice, "acme", "plant", 12, [], ["gone", "plc"], CancellationToken.None);
+
+        Assert.Equal(WriteOutcome.Done, done.Outcome);
+        Assert.Equal(2, _requests.Count(r => r.Method == "DELETE"));
+    }
+
+    /// <summary>Reconciling an opening finds the viewer's own pull request carrying the tag — not one someone copied it into.</summary>
+    [Fact]
+    public async Task Reconciling_an_opening_finds_only_the_viewers_own_tagged_pull_request()
+    {
+        var found = await Writer().FindCreatedPullAsync(Alice, "acme", "plant", "feature", "main", "<!-- versio:op v1 K -->", CancellationToken.None);
+
+        Assert.Equal(22, found.Value);
+        var query = _requests.Single(r => r.Method == "GET").Path;
+        Assert.Contains("head=acme%3Afeature", query, StringComparison.Ordinal);
+        Assert.Contains("state=all", query, StringComparison.Ordinal);
     }
 }

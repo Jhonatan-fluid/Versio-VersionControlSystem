@@ -187,6 +187,78 @@ internal sealed class FakeWriter : IRepoWriter
             return true;
         });
 
+    /// <summary>The pull requests this writer opened, in order: base, head, title, body, draft.</summary>
+    public ConcurrentQueue<NewPull> Created { get; } = new();
+
+    private void Replace(int number, Func<PullInfo, string, (PullInfo, string)> change)
+    {
+        var i = Repo!.Pulls.FindIndex(p => p.Info.Number == number);
+        Repo.Pulls[i] = change(Repo.Pulls[i].Info, Repo.Pulls[i].Body);
+    }
+
+    public Task<WriteResult<int>> CreatePullAsync(RepoAccess access, string owner, string repo, NewPull pull, CancellationToken ct) =>
+        Run("create-pull", access, $"{pull.Head}->{pull.Base}", () =>
+        {
+            Created.Enqueue(pull);
+            var number = Repo!.Pulls.Count == 0 ? 1 : Repo.Pulls.Max(p => p.Info.Number) + 1;
+            Repo.Pulls.Add((new PullInfo(number, pull.Title, access.Who, Now, pull.Base, pull.Head, Repo.Refs[pull.Head], pull.Draft), pull.Body));
+            return number;
+        });
+
+    public Task<WriteResult<bool>> EditPullAsync(RepoAccess access, string owner, string repo, int number, PullEdit edit, CancellationToken ct) =>
+        Run("edit-pull", access, $"{edit.Title}|{edit.Body}|{edit.Base}", () =>
+        {
+            Replace(number, (info, body) => (info with { Title = edit.Title ?? info.Title, BaseRef = edit.Base ?? info.BaseRef }, edit.Body ?? body));
+            return true;
+        });
+
+    public Task<WriteResult<bool>> SetPullOpenAsync(RepoAccess access, string owner, string repo, int number, bool open, CancellationToken ct) =>
+        Run(open ? "reopen" : "close", access, number.ToString(System.Globalization.CultureInfo.InvariantCulture), () =>
+        {
+            if (open)
+            {
+                Repo!.PullStates.Remove(number);
+            }
+            else
+            {
+                Repo!.PullStates[number] = "CLOSED";
+            }
+
+            return true;
+        });
+
+    public Task<WriteResult<bool>> SetDraftAsync(RepoAccess access, string pullNodeId, bool draft, CancellationToken ct) =>
+        Run(draft ? "to-draft" : "ready", access, pullNodeId, () =>
+        {
+            Replace(NumberOf(pullNodeId), (info, body) => (info with { Draft = draft }, body));
+            return true;
+        });
+
+    public Task<WriteResult<bool>> SetLabelsAsync(RepoAccess access, string owner, string repo, int number, IReadOnlyList<string> add, IReadOnlyList<string> remove, CancellationToken ct) =>
+        Run("labels", access, string.Join(',', add) + "|" + string.Join(',', remove), () =>
+        {
+            var people = Repo!.PullPeople.TryGetValue(number, out var known) ? known : ([], []);
+            var labels = people.Labels.Where(l => !remove.Contains(l.Name)).ToList();
+            labels.AddRange(add.Where(a => labels.All(l => l.Name != a)).Select(a => Repo.Labels.First(l => l.Name == a)));
+            Repo.PullPeople[number] = (labels, people.Reviewers);
+            return true;
+        });
+
+    public Task<WriteResult<bool>> SetAssigneesAsync(RepoAccess access, string owner, string repo, int number, IReadOnlyList<string> add, IReadOnlyList<string> remove, CancellationToken ct) =>
+        Run("assignees", access, string.Join(',', add) + "|" + string.Join(',', remove), () =>
+        {
+            var now = Repo!.Assignees.TryGetValue(number, out var known) ? known : [];
+            Repo.Assignees[number] = [.. now.Where(a => !remove.Contains(a)).Concat(add.Where(a => !now.Contains(a)))];
+            return true;
+        });
+
+    public Task<RepoResult<int>> FindCreatedPullAsync(RepoAccess access, string owner, string repo, string head, string @base, string tag, CancellationToken ct)
+    {
+        Calls.Enqueue(("find-pull", access, tag));
+        var found = Repo!.Pulls.FirstOrDefault(p => p.Info.HeadRef == head && p.Info.BaseRef == @base && p.Info.Author == access.Who && p.Body.Contains(tag, StringComparison.Ordinal));
+        return Task.FromResult(RepoResult<int>.Of(found.Info?.Number ?? 0));
+    }
+
     public Task<RepoResult<string>> FindTaggedReviewAsync(RepoAccess access, string owner, string repo, int number, string tag, CancellationToken ct)
     {
         Calls.Enqueue(("find", access, tag));
@@ -227,5 +299,5 @@ internal sealed class FakeWriter : IRepoWriter
 
     /// <summary>The write calls only, without the reads (node checks, reconciliation).</summary>
     public IReadOnlyList<(string Action, RepoAccess Access, string Detail)> Writes =>
-        Calls.Where(c => c.Action is not ("node" or "find")).ToList();
+        Calls.Where(c => c.Action is not ("node" or "find" or "find-pull")).ToList();
 }

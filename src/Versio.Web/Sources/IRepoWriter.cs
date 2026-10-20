@@ -31,6 +31,12 @@ public sealed record WriteResult<T>(WriteOutcome Outcome, T? Value, RepoFailure 
 /// <param name="Commit">A review's commit; null for anything else.</param>
 public sealed record NodeOwner(string Type, string Repository, int Number, string? Author, string? State = null, string? Commit = null);
 
+/// <summary>A new pull request between two branches of the same repository.</summary>
+public sealed record NewPull(string Base, string Head, string Title, string Body, bool Draft);
+
+/// <summary>What an edit changes: each field null to leave it as it is.</summary>
+public sealed record PullEdit(string? Title, string? Body, string? Base);
+
 /// <summary>A comment on a line, or on a whole file when <paramref name="Line"/> is null.</summary>
 /// <param name="Commit">The commit it is written against: always the review snapshot's head.</param>
 public sealed record LineComment(string Commit, string Path, int? Line, string Side, int? StartLine, string Body);
@@ -86,6 +92,29 @@ public interface IRepoWriter
     Task<WriteResult<bool>> SetReviewersAsync(RepoAccess access, string owner, string repo, int number, IReadOnlyList<string> add, IReadOnlyList<string> remove, CancellationToken ct);
 
     Task<WriteResult<bool>> SetViewedAsync(RepoAccess access, string pullNodeId, string path, bool viewed, CancellationToken ct);
+
+    /// <summary>Opens a pull request; the value is its number.</summary>
+    Task<WriteResult<int>> CreatePullAsync(RepoAccess access, string owner, string repo, NewPull pull, CancellationToken ct);
+
+    Task<WriteResult<bool>> EditPullAsync(RepoAccess access, string owner, string repo, int number, PullEdit edit, CancellationToken ct);
+
+    /// <summary>Closes (<paramref name="open"/> false) or reopens a pull request.</summary>
+    Task<WriteResult<bool>> SetPullOpenAsync(RepoAccess access, string owner, string repo, int number, bool open, CancellationToken ct);
+
+    /// <summary>Converts to a draft, or marks ready for review: GraphQL only.</summary>
+    Task<WriteResult<bool>> SetDraftAsync(RepoAccess access, string pullNodeId, bool draft, CancellationToken ct);
+
+    /// <summary>Adds and removes labels, by name; each half is safe to repeat.</summary>
+    Task<WriteResult<bool>> SetLabelsAsync(RepoAccess access, string owner, string repo, int number, IReadOnlyList<string> add, IReadOnlyList<string> remove, CancellationToken ct);
+
+    /// <summary>Adds and removes assignees, by login; each half is safe to repeat.</summary>
+    Task<WriteResult<bool>> SetAssigneesAsync(RepoAccess access, string owner, string repo, int number, IReadOnlyList<string> add, IReadOnlyList<string> remove, CancellationToken ct);
+
+    /// <summary>
+    /// The number of a pull request from <paramref name="head"/> into <paramref name="base"/> that the
+    /// viewer opened and whose body carries <paramref name="tag"/>; 0 when there is none.
+    /// </summary>
+    Task<RepoResult<int>> FindCreatedPullAsync(RepoAccess access, string owner, string repo, string head, string @base, string tag, CancellationToken ct);
 
     /// <summary>The id of the viewer's submitted review on this pull request whose body carries <paramref name="tag"/>; empty when none.</summary>
     Task<RepoResult<string>> FindTaggedReviewAsync(RepoAccess access, string owner, string repo, int number, string tag, CancellationToken ct);

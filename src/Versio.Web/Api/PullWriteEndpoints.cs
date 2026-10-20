@@ -149,6 +149,8 @@ public static partial class PullWriteEndpoints
         });
 
         MapReviews(pulls);
+        MapMeta(pulls);
+        MapCreate(app);
 
         pulls.MapWrite("POST", "/threads/{threadId}/replies", async (string owner, string repo, int number, string threadId, CommentRequest request, HttpContext http, Writes w, CancellationToken ct) =>
         {
@@ -539,13 +541,16 @@ public static partial class PullWriteEndpoints
     }
 
     /// <summary>What a write needs, injected once.</summary>
-    public sealed class Writes(
+    public sealed partial class Writes(
         IRepoWriter writer, IRepoSource source, IOperationLedger ledger, ReviewSnapshots snapshots, PullReview review, IClock clock, IVersioLogger log,
         Versio.Web.Rendering.ViewService views, ApiEndpoints.Loader load)
     {
         public IRepoWriter Writer => writer;
 
         public IRepoSource Source => source;
+
+        /// <summary>For the other part of this class: a primary constructor's parameters are seen only by the part that declares them.</summary>
+        private IVersioLogger Log => log;
 
         /// <summary>A one-shot review's preconditions: the snapshot still the pull request's, and no pending review in the way.</summary>
         /// <remarks>GitHub keeps one pending review per person per pull request; a one-shot review beside it is refused there, and said here first.</remarks>
@@ -677,6 +682,37 @@ public static partial class PullWriteEndpoints
                     : Results.Json(new { error = "snapshot-invalid", message = "This review's revision could not be read. Reload the pull request." }, statusCode: 400);
             }
 
+            return await RunOpenedAsync(http, who, snapshot, owner, repo, number, request, action, payloadHash,
+                precondition is null ? null : (w, s) => precondition(w, s!),
+                (w, s, k) => write(w, s!, k),
+                (w, s, k, since) => reconcile(w, s!, k, since),
+                idempotent, ct).ConfigureAwait(false);
+        }
+
+        /// <summary>
+        /// A write about no existing pull request — opening one — so there is no snapshot to open:
+        /// everything else is <see cref="RunAsync"/>'s, the key, the reservation, the preconditions,
+        /// the call, the record and the reconciliation. The ledger keys it under pull request 0.
+        /// </summary>
+        internal Task<IResult> RunWithoutSnapshotAsync(
+            HttpContext http, string owner, string repo, WriteRequest request, string action, string payloadHash,
+            Func<RepoAccess, Task<IResult?>>? precondition,
+            Func<RepoAccess, string, Task<WriteResult<string>>> write,
+            Func<RepoAccess, string, DateTimeOffset, Task<RepoResult<string>>> reconcile,
+            bool idempotent, CancellationToken ct) =>
+            RunOpenedAsync(http, (RepoAccess)http.Items[AccessItem]!, null, owner, repo, 0, request, action, payloadHash,
+                precondition is null ? null : (w, _) => precondition(w),
+                (w, _, k) => write(w, k),
+                (w, _, k, since) => reconcile(w, k, since),
+                idempotent, ct);
+
+        private async Task<IResult> RunOpenedAsync(
+            HttpContext http, RepoAccess who, ReviewSnapshot? snapshot, string owner, string repo, int number, WriteRequest request, string action, string payloadHash,
+            Func<RepoAccess, ReviewSnapshot?, Task<IResult?>>? precondition,
+            Func<RepoAccess, ReviewSnapshot?, string, Task<WriteResult<string>>> write,
+            Func<RepoAccess, ReviewSnapshot?, string, DateTimeOffset, Task<RepoResult<string>>> reconcile,
+            bool idempotent, CancellationToken ct)
+        {
             var now = clock.UtcNow;
             switch (ReviewTags.CheckKey(request.OpKey, now))
             {
@@ -752,8 +788,8 @@ public static partial class PullWriteEndpoints
         /// or not knowable now: null, and the entry stays as it was.
         /// </summary>
         private async Task<IResult?> ReconcileAsync(
-            RepoAccess who, ReviewSnapshot snapshot, string key, OperationEntry entry,
-            Func<RepoAccess, ReviewSnapshot, string, DateTimeOffset, Task<RepoResult<string>>> reconcile,
+            RepoAccess who, ReviewSnapshot? snapshot, string key, OperationEntry entry,
+            Func<RepoAccess, ReviewSnapshot?, string, DateTimeOffset, Task<RepoResult<string>>> reconcile,
             string ledgerKey, string action, string owner, string repo, int number)
         {
             var found = await reconcile(who, snapshot, key, entry.Reserved).ConfigureAwait(false);
@@ -898,8 +934,8 @@ public static partial class PullWriteEndpoints
         }
 
         /// <summary>The audit line of every write (S10): who, what, where, at which revision, how it ended. Never a body, never a token.</summary>
-        private void Audit(RepoAccess who, string action, string owner, string repo, int number, ReviewSnapshot s, string key, string outcome) =>
-            log.Info(LogCategory.Web, $"write {action} {who} {owner}/{repo}#{number} head {s.HeadSha[..8]} op {key[..Math.Min(key.Length, 13)]}… {outcome}");
+        private void Audit(RepoAccess who, string action, string owner, string repo, int number, ReviewSnapshot? s, string key, string outcome) =>
+            log.Info(LogCategory.Web, $"write {action} {who} {owner}/{repo}#{number} head {(s is null ? "-" : s.HeadSha[..8])} op {key[..Math.Min(key.Length, 13)]}… {outcome}");
     }
 
     /// <summary>A writer's bool result as the id-shaped result <see cref="Writes.RunAsync"/> records.</summary>

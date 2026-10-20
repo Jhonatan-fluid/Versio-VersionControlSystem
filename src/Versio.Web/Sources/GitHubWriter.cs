@@ -183,6 +183,105 @@ public sealed class GitHubWriter(IHttpClientFactory clients, IOptions<WebOptions
     public Task<WriteResult<bool>> SetViewedAsync(RepoAccess access, string pullNodeId, string path, bool viewed, CancellationToken ct) =>
         MutateAsync(access, viewed ? MarkViewedMutation : UnmarkViewedMutation, new { pull = pullNodeId, path }, _ => true, ct);
 
+    public Task<WriteResult<int>> CreatePullAsync(RepoAccess access, string owner, string repo, NewPull pull, CancellationToken ct) =>
+        RestAsync(access, HttpMethod.Post, $"repos/{E(owner)}/{E(repo)}/pulls",
+            new { title = pull.Title, body = pull.Body, head = pull.Head, @base = pull.Base, draft = pull.Draft },
+            root => root.GetProperty("number").GetInt32(), ct);
+
+    /// <remarks>Only the fields being changed are sent: a field left out is left as it is on GitHub, whoever changed it since.</remarks>
+    public Task<WriteResult<bool>> EditPullAsync(RepoAccess access, string owner, string repo, int number, PullEdit edit, CancellationToken ct)
+    {
+        var fields = new Dictionary<string, string>(StringComparer.Ordinal);
+        if (edit.Title is { } title)
+        {
+            fields["title"] = title;
+        }
+
+        if (edit.Body is { } body)
+        {
+            fields["body"] = body;
+        }
+
+        if (edit.Base is { } @base)
+        {
+            fields["base"] = @base;
+        }
+
+        return RestAsync(access, HttpMethod.Patch, $"repos/{E(owner)}/{E(repo)}/pulls/{N(number)}", fields, _ => true, ct);
+    }
+
+    public Task<WriteResult<bool>> SetPullOpenAsync(RepoAccess access, string owner, string repo, int number, bool open, CancellationToken ct) =>
+        RestAsync(access, HttpMethod.Patch, $"repos/{E(owner)}/{E(repo)}/pulls/{N(number)}", new { state = open ? "open" : "closed" }, _ => true, ct);
+
+    private const string ToDraftMutation = """
+        mutation($pull: ID!) { convertPullRequestToDraft(input: { pullRequestId: $pull }) { pullRequest { isDraft } } }
+        """;
+
+    private const string ReadyMutation = """
+        mutation($pull: ID!) { markPullRequestReadyForReview(input: { pullRequestId: $pull }) { pullRequest { isDraft } } }
+        """;
+
+    public Task<WriteResult<bool>> SetDraftAsync(RepoAccess access, string pullNodeId, bool draft, CancellationToken ct) =>
+        MutateAsync(access, draft ? ToDraftMutation : ReadyMutation, new { pull = pullNodeId }, _ => true, ct);
+
+    /// <remarks>
+    /// Additions in one call; each removal is its own (GitHub removes labels one by one). A removal
+    /// GitHub answers 404 for is a label already gone, which is what was asked.
+    /// </remarks>
+    public async Task<WriteResult<bool>> SetLabelsAsync(RepoAccess access, string owner, string repo, int number, IReadOnlyList<string> add, IReadOnlyList<string> remove, CancellationToken ct)
+    {
+        var path = $"repos/{E(owner)}/{E(repo)}/issues/{N(number)}/labels";
+        if (add.Count > 0)
+        {
+            var added = await RestAsync(access, HttpMethod.Post, path, new { labels = add }, _ => true, ct).ConfigureAwait(false);
+            if (added.Outcome != WriteOutcome.Done)
+            {
+                return added;
+            }
+        }
+
+        foreach (var name in remove)
+        {
+            var removed = await RestAsync(access, HttpMethod.Delete, $"{path}/{E(name)}", new { }, _ => true, ct).ConfigureAwait(false);
+            if (removed.Outcome != WriteOutcome.Done && !(removed.Outcome == WriteOutcome.Refused && removed.Failure == RepoFailure.NotFound))
+            {
+                return removed;
+            }
+        }
+
+        return WriteResult<bool>.Done(true);
+    }
+
+    public async Task<WriteResult<bool>> SetAssigneesAsync(RepoAccess access, string owner, string repo, int number, IReadOnlyList<string> add, IReadOnlyList<string> remove, CancellationToken ct)
+    {
+        var path = $"repos/{E(owner)}/{E(repo)}/issues/{N(number)}/assignees";
+        if (add.Count > 0)
+        {
+            var added = await RestAsync(access, HttpMethod.Post, path, new { assignees = add }, _ => true, ct).ConfigureAwait(false);
+            if (added.Outcome != WriteOutcome.Done)
+            {
+                return added;
+            }
+        }
+
+        return remove.Count > 0
+            ? await RestAsync(access, HttpMethod.Delete, path, new { assignees = remove }, _ => true, ct).ConfigureAwait(false)
+            : WriteResult<bool>.Done(true);
+    }
+
+    /// <remarks>
+    /// GitHub allows one open pull request per head and base, and lists them by <c>head=owner:branch</c>;
+    /// all states, because the one created may have been closed since. Its author must be the viewer
+    /// and its body must carry the tag: someone else's pull request between the same branches is not
+    /// this operation's.
+    /// </remarks>
+    public Task<RepoResult<int>> FindCreatedPullAsync(RepoAccess access, string owner, string repo, string head, string @base, string tag, CancellationToken ct) =>
+        GetAsync(access, $"repos/{E(owner)}/{E(repo)}/pulls?state=all&head={E(owner + ":" + head)}&base={E(@base)}&per_page=100", root => root.EnumerateArray()
+            .Where(p => p.GetProperty("user").GetProperty("login").GetString() == access.Who
+                        && p.TryGetProperty("body", out var b) && b.ValueKind == JsonValueKind.String && (b.GetString() ?? "").Contains(tag, StringComparison.Ordinal))
+            .Select(p => p.GetProperty("number").GetInt32())
+            .FirstOrDefault(), ct);
+
     public Task<RepoResult<string>> FindTaggedReviewAsync(RepoAccess access, string owner, string repo, int number, string tag, CancellationToken ct) =>
         GetAsync(access, $"repos/{E(owner)}/{E(repo)}/pulls/{N(number)}/reviews?per_page=100", root => root.EnumerateArray()
             .Where(r => r.GetProperty("user").GetProperty("login").GetString() == access.Who

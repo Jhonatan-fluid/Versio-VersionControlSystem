@@ -270,7 +270,7 @@ public sealed class GitHubRepoSource(
         query($owner: String!, $repo: String!, $number: Int!) {
           repository(owner: $owner, name: $repo) {
             pullRequest(number: $number) {
-              state isDraft merged mergeable reviewDecision headRefOid baseRefName
+              state isDraft merged mergeable reviewDecision headRefOid baseRefName title body viewerCanUpdate
               baseRef { target { oid } }
               labels(first: 30) { nodes { name color } }
               assignees(first: 20) { nodes { login } }
@@ -331,8 +331,34 @@ public sealed class GitHubRepoSource(
                     ? Oid(last, "commit")
                     : null,
                 NodeId = Text(p, "id"),
+                Title = Text(p, "title"),
+                Body = Text(p, "body"),
+                ViewerCanUpdate = Bool(p, "viewerCanUpdate"),
             };
         }, ct);
+
+    public Task<RepoResult<IReadOnlyList<PullLabel>>> GetLabelsAsync(RepoAccess access, string owner, string repo, CancellationToken ct) =>
+        GetJsonAsync<IReadOnlyList<PullLabel>>(access, $"repos/{E(owner)}/{E(repo)}/labels?per_page=100",
+            root => root.EnumerateArray().Select(l => new PullLabel(Text(l, "name"), HexColor(Text(l, "color")))).ToList(), ct);
+
+    /// <remarks>GitHub answers 204 for yes and 404 for no: no body either way, so not <see cref="GetJsonAsync{T}"/>.</remarks>
+    public async Task<RepoResult<bool>> CanAssignAsync(RepoAccess access, string owner, string repo, string login, CancellationToken ct)
+    {
+        var relative = $"repos/{E(owner)}/{E(repo)}/assignees/{E(login)}";
+        using var request = Request(access, HttpMethod.Get, Api(relative));
+        try
+        {
+            using var response = await clients.CreateClient(ApiClient).SendAsync(request, ct).ConfigureAwait(false);
+            return response.StatusCode == HttpStatusCode.NotFound ? RepoResult<bool>.Of(false)
+                : Failure(response) is { } failed ? RepoResult<bool>.Fail(failed, Redact(relative))
+                : RepoResult<bool>.Of(true);
+        }
+        catch (HttpRequestException e)
+        {
+            log.Warn(LogCategory.Web, $"GitHub unreachable for {Redact(relative)}: {e.Message}");
+            return RepoResult<bool>.Fail(RepoFailure.Upstream);
+        }
+    }
 
     private const string PendingQuery = """
         query($owner: String!, $repo: String!, $number: Int!) {

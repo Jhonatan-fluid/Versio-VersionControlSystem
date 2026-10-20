@@ -126,6 +126,11 @@ public sealed class FixturePreview
         ], false);
         repo.PullCommits[1] = new PullCommitList([new PullCommit(next, "Lower the simulated cooling step", "sam", when)], false);
         repo.PullPeople[1] = ([new PullLabel("plc", "1a7f37"), new PullLabel("needs-soak", "9a6700")], [new PullReviewer("lee", "CHANGES_REQUESTED"), new PullReviewer("controls", "REQUESTED")]);
+        // Slice 5: labels to put on and people who can be assigned. A new pull request can be
+        // opened from "next" into "main" (the fixtures carry no template, so its body starts empty).
+        repo.Labels.AddRange([new PullLabel("plc", "1a7f37"), new PullLabel("needs-soak", "9a6700"), new PullLabel("safety", "d1242f")]);
+        repo.Assignable.UnionWith(["sam", "jo", "lee"]);
+        repo.Assignees[1] = ["sam"];
         github.PreviewGraphWithoutToken = true;
 
         repo.Releases.Add((new ReleaseInfo("v1.1", "Cooling fixes", "sam", DateTimeOffset.Now.AddDays(-2), Prerelease: false),
