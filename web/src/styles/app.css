@@ -165,6 +165,7 @@ button { font: inherit; color: inherit; }
 .merge-fields textarea { min-height: 60px; font: 13px var(--ui); color: var(--fg); background: var(--surface-card); border: 1px solid var(--border); border-radius: 6px; padding: 6px; }
 .merge-ready { display: flex; flex-direction: column; gap: 8px; align-items: flex-start; }
 .merge-auto .link-button { margin-left: 8px; }
+.merge-accept { display: flex; gap: 6px; align-items: baseline; margin: 6px 0; }
 .merge-confirm { border: 1px solid var(--notice-border); border-radius: 6px; padding: 8px 10px; background: var(--notice-bg); }
 .new-pull-draft { font-size: 13px; display: inline-flex; gap: 6px; align-items: center; }
 .reviewers-add { display: flex; gap: 6px; margin-top: 4px; }

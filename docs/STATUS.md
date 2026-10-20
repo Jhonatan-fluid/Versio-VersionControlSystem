@@ -428,8 +428,9 @@ One list. Reorder it; do not copy it into another file.
    `Web:Writes:Merge`. Each names the reviewed commit as GitHub's own precondition, and nothing is
    merged past required reviews or checks — for an administrator either: only CLEAN, UNSTABLE or
    HAS_HOOKS merge. Branch deletion stays deferred (no atomic precondition). Its gate, the owner's,
-   and the release gate: a merge with a stale head is refused; a merge succeeds; auto-merge on, then
-   a push, and GitHub turns it off and the page says so. Then the external penetration test with
+   and the release gate: a merge with a stale head is refused; a merge succeeds; auto-merge is
+   turned on only with the yes to later commits, and a push by someone without write access turns
+   it off (one by a writer does not — GitHub's rule, corrected here 2026-10-20). Then the external penetration test with
    writes on, before anyone but the owner has them. **The PR review plan's six slices are built;
    every real-GitHub gate is the owner's to run.**
    **A loose end seen once, 2026-10-19:** `PerformanceTests.A_page_load_asks_GitHub_for_each_thing_once`

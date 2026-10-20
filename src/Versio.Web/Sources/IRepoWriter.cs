@@ -100,7 +100,10 @@ public interface IRepoWriter
     /// <summary>Brings the base into the head branch, only if the head is still <paramref name="expectedHeadSha"/>.</summary>
     Task<WriteResult<bool>> UpdateBranchAsync(RepoAccess access, string owner, string repo, int number, string expectedHeadSha, CancellationToken ct);
 
-    /// <summary>Turns auto-merge on for exactly <paramref name="expectedHeadSha"/>: a later push turns it off.</summary>
+    /// <summary>
+    /// Turns auto-merge on, only if the head is still <paramref name="expectedHeadSha"/>. Not a pin:
+    /// later pushes by people with write access are merged too when the requirements pass.
+    /// </summary>
     Task<WriteResult<bool>> EnableAutoMergeAsync(RepoAccess access, string pullNodeId, string method, string expectedHeadSha, CancellationToken ct);
 
     Task<WriteResult<bool>> DisableAutoMergeAsync(RepoAccess access, string pullNodeId, CancellationToken ct);

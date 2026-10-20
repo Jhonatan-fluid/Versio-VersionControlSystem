@@ -987,7 +987,7 @@ describe('PullPage merge box', () => {
     act(() => root.unmount());
   });
 
-  it('offers no merge past what protects the branch, only auto-merge of exactly this commit', async () => {
+  it('offers no merge past what protects the branch, and auto-merge only with a yes to later commits being merged', async () => {
     const blocked = { ...ready, mergeStateStatus: 'BLOCKED', mergeable: false, blocked: 'Required reviews or checks have not passed.' };
     const { host, root } = await render('/acme/plant/pull/12', { writable: true, canMerge: true, merge: blocked });
     const box = () => host.querySelector('.merge-box')!;
@@ -995,11 +995,15 @@ describe('PullPage merge box', () => {
     expect(box().textContent).toContain('Required reviews or checks have not passed.');
     expect(button(box(), 'Merge...')).toBeUndefined();
     await click(button(box(), 'Merge automatically when ready...')!, host);
-    expect(box().querySelector('.merge-confirm')?.textContent).toContain(`only commit ${head.slice(0, 8)}: any push turns it off`);
+    // What GitHub does, not what it was once said to: later pushes by writers are merged too.
+    expect(box().querySelector('.merge-confirm')?.textContent).toContain('commits pushed after your review');
+    expect(box().querySelector('.merge-confirm')?.textContent).not.toContain('only commit');
+    expect(button(box(), 'Confirm')!.disabled).toBe(true);
+    await click(box().querySelector('.merge-accept input')!, host);
     await click(button(box(), 'Confirm')!, host);
 
     expect(writes()[0]!.url.endsWith('/auto-merge')).toBe(true);
-    expect(writes()[0]!.body).toMatchObject({ enable: true, method: 'MERGE' });
+    expect(writes()[0]!.body).toMatchObject({ enable: true, method: 'MERGE', acceptsLaterCommits: true });
     act(() => root.unmount());
   });
 

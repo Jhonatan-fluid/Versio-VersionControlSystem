@@ -270,15 +270,19 @@ public sealed class PullMergeWriteTests
         Assert.DoesNotContain(writer.Calls, c => c.Action == "update-branch");
     }
 
-    /// <summary>Auto-merge is a future merge of exactly this commit: a later push turns it off, by GitHub's contract.</summary>
+    /// <summary>
+    /// Auto-merge is turned on only while the head is the reviewed commit (expectedHeadOid). That is
+    /// not a pin — later pushes by people with write access are merged too — so it takes the person's
+    /// explicit yes to exactly that.
+    /// </summary>
     [Fact]
-    public async Task Auto_merge_is_turned_on_for_exactly_the_reviewed_head_and_off_again()
+    public async Task Auto_merge_is_turned_on_only_while_the_head_is_the_reviewed_one_and_off_again()
     {
         var w = Build();
         var (host, writer, alice, token, _) = await StartAsync(w);
         await using var __ = host;
 
-        (await Post(host, alice, token, "/auto-merge", new { opKey = Key(), enable = true, method = "SQUASH" })).AssertStatus(HttpStatusCode.OK);
+        (await Post(host, alice, token, "/auto-merge", new { opKey = Key(), enable = true, method = "SQUASH", acceptsLaterCommits = true })).AssertStatus(HttpStatusCode.OK);
         Assert.Equal(("SQUASH", "alice", w.Head), w.Repo.AutoMerge[12]);
         (await Post(host, alice, token, "/auto-merge", new { opKey = Key(), enable = false })).AssertStatus(HttpStatusCode.OK);
 
@@ -294,10 +298,25 @@ public sealed class PullMergeWriteTests
         var (host, writer, alice, token, _) = await StartAsync(w);
         await using var __ = host;
 
-        (await Post(host, alice, token, "/auto-merge", new { opKey = Key(), enable = true, method = "MERGE" })).AssertStatus(HttpStatusCode.UnprocessableEntity);
+        (await Post(host, alice, token, "/auto-merge", new { opKey = Key(), enable = true, method = "MERGE", acceptsLaterCommits = true })).AssertStatus(HttpStatusCode.UnprocessableEntity);
         w.Repo.AutoMergeAllowed = true;
         PushTo(w, new string('9', 40));
-        (await Post(host, alice, token, "/auto-merge", new { opKey = Key(), enable = true, method = "MERGE" })).AssertStatus(HttpStatusCode.Conflict);
+        (await Post(host, alice, token, "/auto-merge", new { opKey = Key(), enable = true, method = "MERGE", acceptsLaterCommits = true })).AssertStatus(HttpStatusCode.Conflict);
         Assert.Empty(writer.Writes);
+    }
+
+    /// <summary>Without the person's yes to later commits being merged, auto-merge is not turned on.</summary>
+    [Fact]
+    public async Task Auto_merge_needs_the_persons_yes_to_later_commits_being_merged()
+    {
+        var w = Build();
+        var (host, writer, alice, token, _) = await StartAsync(w);
+        await using var __ = host;
+
+        var response = await Post(host, alice, token, "/auto-merge", new { opKey = Key(), enable = true, method = "MERGE" });
+
+        response.AssertStatus(HttpStatusCode.BadRequest);
+        Assert.Contains("consent", await response.Body(), StringComparison.Ordinal);
+        Assert.Empty(writer.Calls);
     }
 }

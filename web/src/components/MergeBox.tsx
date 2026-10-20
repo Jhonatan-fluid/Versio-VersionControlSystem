@@ -36,6 +36,8 @@ export function MergeBox({ owner, repo, snap, state, onChanged, onStale }: Merge
   const [message, setMessage] = useState('');
   const [pending, setPending] = useState<Pending | null>(null);
   const [busy, setBusy] = useState(false);
+  // Auto-merge's own yes: that it may merge commits pushed after this review.
+  const [accepts, setAccepts] = useState(false);
   const [note, setNote] = useState<string | null>(null);
 
   if (state.state === 'loading') {
@@ -76,7 +78,7 @@ export function MergeBox({ owner, repo, snap, state, onChanged, onStale }: Merge
     const path = p.kind === 'merge' ? '/merge' : p.kind === 'update' ? '/update-branch' : '/auto-merge';
     const body = p.kind === 'merge'
       ? { method: p.method, title: title.trim() || undefined, message: message.trim() || undefined }
-      : p.kind === 'auto-on' ? { enable: true, method: p.method }
+      : p.kind === 'auto-on' ? { enable: true, method: p.method, acceptsLaterCommits: true }
       : p.kind === 'auto-off' ? { enable: false }
       : {};
     // Each is safe to send again (GitHub's own head precondition), so each confirmation is a fresh key.
@@ -95,7 +97,9 @@ export function MergeBox({ owner, repo, snap, state, onChanged, onStale }: Merge
 
   const question = !pending ? null
     : pending.kind === 'merge' ? `Merge ${where} at commit ${at} by ${methodShort[pending.method] ?? pending.method}? This cannot be undone from here.`
-    : pending.kind === 'auto-on' ? `Have GitHub merge ${where} later, when its required reviews and checks pass, by ${methodShort[pending.method] ?? pending.method} — and only commit ${at}: any push turns it off.`
+    // Said as it is (found by review, 2026-10-20): GitHub turns auto-merge off only for a push by
+    // someone without write access. It is not a merge of this commit, and the first wording said it was.
+    : pending.kind === 'auto-on' ? `Have GitHub merge ${where} later, by ${methodShort[pending.method] ?? pending.method}, whenever its required reviews and checks pass. It merges what the branch holds then: commits pushed after your review of ${at} by anyone with write access are merged too, unreviewed unless the repository requires a fresh approval for them.`
     : pending.kind === 'auto-off' ? `Turn off auto-merge for ${where}?`
     : `Bring ${snap.baseLabel} into ${snap.headLabel}? This adds a commit to the branch, so the review is then of an older commit and the page asks you to reload.`;
 
@@ -127,7 +131,7 @@ export function MergeBox({ owner, repo, snap, state, onChanged, onStale }: Merge
       )}
       {m.autoMerge ? (
         <p className="merge-auto">
-          Auto-merge is on ({methodShort[m.autoMerge.method] ?? m.autoMerge.method}), set by {m.autoMerge.by}. GitHub merges when the requirements pass; a push turns it off.
+          Auto-merge is on ({methodShort[m.autoMerge.method] ?? m.autoMerge.method}), set by {m.autoMerge.by}. GitHub merges what the branch holds when the requirements pass, including later pushes by people with write access.
           {m.canDisableAutoMerge && <button type="button" className="link-button" disabled={busy} onClick={() => setPending({ kind: 'auto-off' })}>Turn off</button>}
         </p>
       ) : (
@@ -138,9 +142,14 @@ export function MergeBox({ owner, repo, snap, state, onChanged, onStale }: Merge
       {pending && question && (
         <div className="merge-confirm" role="alertdialog" aria-label="Confirm">
           <p>{question}</p>
+          {pending.kind === 'auto-on' && (
+            <label className="merge-accept">
+              <input type="checkbox" checked={accepts} onChange={(e) => setAccepts(e.target.checked)} /> I understand it may merge commits pushed after my review
+            </label>
+          )}
           <div className="comment-actions">
-            <button type="button" className="button-quiet" onClick={() => setPending(null)} disabled={busy}>Cancel</button>
-            <button type="button" className="button" onClick={() => run(pending)} disabled={busy}>{busy ? 'Working...' : 'Confirm'}</button>
+            <button type="button" className="button-quiet" onClick={() => { setPending(null); setAccepts(false); }} disabled={busy}>Cancel</button>
+            <button type="button" className="button" onClick={() => run(pending)} disabled={busy || (pending.kind === 'auto-on' && !accepts)}>{busy ? 'Working...' : 'Confirm'}</button>
           </div>
         </div>
       )}

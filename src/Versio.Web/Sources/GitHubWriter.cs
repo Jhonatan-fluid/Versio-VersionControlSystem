@@ -220,9 +220,11 @@ public sealed class GitHubWriter(IHttpClientFactory clients, IOptions<WebOptions
         """;
 
     /// <remarks>
-    /// <c>expectedHeadOid</c>: auto-merge is a FUTURE merge, whenever the requirements pass, and with
-    /// this it is a future merge of exactly the reviewed commit — a later push turns it off, by
-    /// GitHub's contract, rather than merging code nobody reviewed.
+    /// <c>expectedHeadOid</c> makes GitHub refuse to turn auto-merge on unless the head is still the
+    /// reviewed commit. That is all it does. It does not pin the merge to that commit: GitHub turns
+    /// auto-merge off when someone WITHOUT write access pushes, and a push by someone with it stays
+    /// eligible and is merged when the requirements pass. An earlier comment here said otherwise
+    /// (found by review, 2026-10-20); the endpoint asks for that consent instead of promising it away.
     /// </remarks>
     public Task<WriteResult<bool>> EnableAutoMergeAsync(RepoAccess access, string pullNodeId, string method, string expectedHeadSha, CancellationToken ct) =>
         MutateAsync(access, EnableAutoMergeMutation, new { pull = pullNodeId, method, head = expectedHeadSha }, _ => true, ct);

@@ -12,7 +12,11 @@ public sealed class MergeEndpoint;
 /// <param name="Message">The merge commit's message; null for GitHub's own.</param>
 public sealed record MergeRequest(string? OpKey, string? Method, string? Title, string? Message) : WriteRequest(OpKey);
 
-public sealed record AutoMergeRequest(string? OpKey, bool Enable, string? Method) : WriteRequest(OpKey);
+/// <param name="AcceptsLaterCommits">
+/// The person's own yes to what auto-merge is: a merge of whatever the branch holds when the
+/// requirements pass, which can include commits pushed after their review. Required to turn it on.
+/// </param>
+public sealed record AutoMergeRequest(string? OpKey, bool Enable, string? Method, bool AcceptsLaterCommits = false) : WriteRequest(OpKey);
 
 /// <summary>
 /// Merging (docs/web/PLAN.md, *Pull request review*, slice 6, S11): merge, squash or rebase;
@@ -22,10 +26,21 @@ public sealed record AutoMergeRequest(string? OpKey, bool Enable, string? Method
 /// </summary>
 /// <remarks>
 /// <para>
-/// <b>What is merged is what was reviewed.</b> The merge carries the snapshot's head as GitHub's
-/// atomic <c>sha</c> precondition, update-branch its <c>expected_head_sha</c>, auto-merge its
-/// <c>expectedHeadOid</c>. The server's own staleness check before each (head AND base, C1) narrows
-/// the window; GitHub's precondition closes it.
+/// <b>What is merged now is what was reviewed.</b> The merge carries the snapshot's head as
+/// GitHub's atomic <c>sha</c> precondition, update-branch its <c>expected_head_sha</c>. The server's
+/// own staleness check before each (head AND base, C1) narrows the window; GitHub's precondition
+/// closes it.
+/// </para>
+/// <para>
+/// <b>Auto-merge is a different authorization, and is asked for as one.</b> It is a later merge of
+/// whatever the branch holds when the requirements pass. <c>expectedHeadOid</c> only makes GitHub
+/// refuse to turn it on if the head already moved; afterwards GitHub turns it off for a push by
+/// someone WITHOUT write access, not for one by someone with it, whose commits are merged too. So it
+/// is not "a merge of this commit" — the first version said it was, on the page and here, and that
+/// was wrong (found by review, 2026-10-20). Turning it on requires the person's explicit yes to
+/// exactly that (<see cref="AutoMergeRequest.AcceptsLaterCommits"/>). The guard that does pin a
+/// later commit to a fresh review is the repository's own: a required approval with "Dismiss stale
+/// pull request approvals when new commits are pushed".
 /// </para>
 /// <para>
 /// <b>No admin bypass, ever.</b> GitHub lets an administrator merge through the API past required
@@ -106,6 +121,11 @@ public static partial class PullWriteEndpoints
             if (request.Enable && (request.Method is null || !MergeMethods.Contains(request.Method)))
             {
                 return Invalid("method", "Choose merge, squash or rebase.");
+            }
+
+            if (request.Enable && !request.AcceptsLaterCommits)
+            {
+                return Invalid("consent", "Auto-merge can merge commits pushed after your review. Confirm that, or merge now instead.");
             }
 
             string? node = null;

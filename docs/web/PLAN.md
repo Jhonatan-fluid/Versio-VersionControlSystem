@@ -663,8 +663,10 @@ only use of Contents write; **no admin bypass, ever**.
    and ready, labels the repository already has (none is created: GitHub would make a missing one
    silently, a repository-wide change), and assignees GitHub says can be assigned (it drops the
    others while answering success). Edit controls follow GitHub's `viewerCanUpdate`.
-6. Merge, update-branch and auto-merge (with `expectedHeadOid`; it is a *future* merge of this
-   exact commit, described as such) — a separate release gate. **Branch deletion deferred**: no
+6. Merge, update-branch and auto-merge (with `expectedHeadOid`; ~~it is a *future* merge of this
+   exact commit, described as such~~ — **wrong, corrected 2026-10-20**: `expectedHeadOid` only
+   checks the head when auto-merge is turned on; GitHub turns it off for a push by someone
+   *without* write access, and merges later pushes by people with it) — a separate release gate. **Branch deletion deferred**: no
    atomic precondition exists, and read-then-delete could lose pushed work; the repository's
    "Automatically delete head branches" setting does it instead. **Built 2026-10-20; its
    real-GitHub gate waits for the App with Contents write.** As built: `Web:Writes:Merge` (off by
@@ -677,8 +679,12 @@ only use of Contents write; **no admin bypass, ever**.
    UNKNOWN for everyone. `mergeStateStatus` is read in its own query (with the `merge-info-preview`
    media type), so if GitHub refuses that field only the merge box goes — failing closed — and the
    summary's "this changed" signal stays. Methods follow the repository's settings. The merge box
-   asks before every action, naming the pull request, its branches, the commit and the method;
-   auto-merge is worded as what it is, a later merge of only this commit that any push turns off.
+   asks before every action, naming the pull request, its branches, the commit and the method.
+   Auto-merge is a different authorization and is asked for as one: a later merge of whatever the
+   branch holds when the requirements pass, which can include commits pushed after the review.
+   Turning it on needs the person's explicit yes to that (`acceptsLaterCommits`, refused 400
+   without it). What pins a later commit to a fresh review is the repository's own branch
+   protection — a required approval with "dismiss stale approvals" — and the docs say so.
 
 Release gates: each slice's mutation checks red when broken; writes on one throwaway repository
 first, merge last; the external penetration test with writes on, before anyone but the owner has
