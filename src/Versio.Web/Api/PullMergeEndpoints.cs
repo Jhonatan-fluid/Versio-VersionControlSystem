@@ -129,8 +129,13 @@ public static partial class PullWriteEndpoints
                     }
 
                     var parents = await w.Source.GetCommitParentsAsync(who, owner, repo, live.Value.HeadSha, ct).ConfigureAwait(false);
+                    // Both parents: the reviewed head first, and the base second — the commit the
+                    // precondition pinned (the snapshot's base tip), or the base's live tip should it
+                    // have moved since. A merge of an unrelated commit onto the head has the same shape
+                    // and is not this update (found by review, 2026-10-20).
                     return parents.Ok
-                        ? RepoResult<string>.Of(parents.Value!.Count == 2 && parents.Value[0] == s.HeadSha ? "updated" : "")
+                        ? RepoResult<string>.Of(parents.Value!.Count == 2 && parents.Value[0] == s.HeadSha
+                            && (parents.Value[1] == s.BaseSha || parents.Value[1] == live.Value.BaseTipSha) ? "updated" : "")
                         : parents.As<string>();
                 },
                 idempotent: true, ct).ConfigureAwait(false)).WithMetadata(new MergeEndpoint());

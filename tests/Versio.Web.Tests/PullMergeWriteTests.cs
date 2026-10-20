@@ -290,6 +290,30 @@ public sealed class PullMergeWriteTests
     }
 
     /// <summary>
+    /// A merge onto the reviewed head of something that is not the base has the update's shape — two
+    /// parents, the head first — and is not the update: the base was never brought in (found by
+    /// review, 2026-10-20).
+    /// </summary>
+    [Fact]
+    public async Task A_lost_update_with_a_merge_of_something_else_since_is_not_called_done()
+    {
+        var w = Build();
+        var (host, writer, alice, token, _) = await StartAsync(w);
+        await using var __ = host;
+        writer.Next.Enqueue(FakeWriter.Mode.LostBefore);
+        var key = Key();
+        (await Post(host, alice, token, "/update-branch", new { opKey = key })).AssertStatus(HttpStatusCode.Accepted);
+        var merged = new string('q', 40);
+        w.Repo.Parents[merged] = [w.Head, new string('7', 40)];
+        PushTo(w, merged);
+
+        var retry = await Post(host, alice, token, "/update-branch", new { opKey = key });
+
+        Assert.NotEqual(HttpStatusCode.OK, retry.StatusCode);
+        Assert.DoesNotContain("\"outcome\":\"done\"", await retry.Body(), StringComparison.Ordinal);
+    }
+
+    /// <summary>
     /// The update names a base; retargeted after the page opened, the confirmation is of a base the
     /// pull request no longer has, and nothing is brought in (found by review, 2026-10-20).
     /// </summary>
