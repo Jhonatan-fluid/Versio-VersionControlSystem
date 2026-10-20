@@ -112,12 +112,37 @@ public sealed class PullWriteTests
         var (host, writer, alice, token) = await StartAsync(Build(), settings);
         await using var _ = host;
 
+        // The body too: the same JSON as a route that does not exist, so "off" cannot be told from
+        // "absent", and the page reads it as a refusal — nothing was sent — not as "may have posted".
+        var absent = await (await Post(host, "/no-such-route", new { opKey = Key() }, alice, Headers(token))).Body();
+        Assert.Contains("\"error\":\"not-found\"", absent, StringComparison.Ordinal);
         foreach (var (path, method) in new[] { ("/comments", "POST"), ("/line-comments", "POST"), ("/threads/T_here1234/replies", "POST"), ("/threads/T_here1234/resolve", "POST"), ("/comments/C_1abcd", "PATCH"), ("/comments/C_1abcd/delete", "POST"), ("/markdown", "POST") })
         {
-            (await Post(host, path, new { opKey = Key(), body = "hi" }, alice, Headers(token), method)).AssertStatus(HttpStatusCode.NotFound);
+            var response = await Post(host, path, new { opKey = Key(), body = "hi" }, alice, Headers(token), method);
+            response.AssertStatus(HttpStatusCode.NotFound);
+            Assert.Equal(absent, await response.Body());
         }
 
         Assert.Empty(writer.Calls);
+    }
+
+    /// <summary>
+    /// The limiter answers before any write runs: said in this server's JSON, which the page reads as
+    /// "nothing was posted". An empty 429 read as "may or may not" and locked the box (found by
+    /// review, 2026-10-20).
+    /// </summary>
+    [Fact]
+    public async Task A_write_over_the_session_limit_is_refused_in_this_servers_own_words()
+    {
+        var settings = new Dictionary<string, string?>(WritesOn) { ["Web:Writes:PerSessionPerMinute"] = "1" };
+        var (host, _, alice, token) = await StartAsync(Build(), settings);
+        await using var _ = host;
+
+        await Post(host, "/comments", new { opKey = Key(), body = "One." }, alice, Headers(token));
+        var limited = await Post(host, "/comments", new { opKey = Key(), body = "Two." }, alice, Headers(token));
+
+        limited.AssertStatus(HttpStatusCode.TooManyRequests);
+        Assert.Contains("\"error\":\"rate-limited\"", await limited.Body(), StringComparison.Ordinal);
     }
 
     /// <summary>S4: each check alone refuses — the custom header, a JSON body, and the browser's own word on the origin.</summary>

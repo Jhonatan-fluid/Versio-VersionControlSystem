@@ -498,13 +498,13 @@ public static partial class PullWriteEndpoints
             // S9 first, as 404: with writes off for this repository, a write route does not exist.
             if (!ApiEndpoints.Valid(owner, repo) || !options.Value.Writable(owner, repo))
             {
-                return Results.NotFound();
+                return ApiEndpoints.NotFoundJson();
             }
 
             // S11: the merge tier is its own switch on top, and likewise does not exist without it.
             if (http.GetEndpoint()?.Metadata.GetMetadata<MergeEndpoint>() is not null && !options.Value.Writes.Merge)
             {
-                return Results.NotFound();
+                return ApiEndpoints.NotFoundJson();
             }
 
             // S4: a header no cross-site request can send without a preflight this server never

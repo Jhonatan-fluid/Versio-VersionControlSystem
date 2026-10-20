@@ -604,6 +604,16 @@ public static partial class ApiEndpoints
             ? ""
             : "<div class=\"md-page\">" + MarkdownHtml.Fragment(Markdown.Parse(markdown)) + "</div>";
 
+    /// <summary>
+    /// The API's one "not found": the unknown route's, the switched-off write's (S9) and the merge
+    /// tier's alike, so a write route that is off cannot be told from one that does not exist. A
+    /// JSON body, because the page's write rule reads anything else as "may or may not have been
+    /// posted" — and an empty 404 is this server's own answer, given before anything was sent
+    /// (found by review, 2026-10-20).
+    /// </summary>
+    internal static IResult NotFoundJson() =>
+        Results.Json(new { error = "not-found", message = "Not found, or not visible to you." }, statusCode: 404);
+
     internal static bool Valid(string owner, string repo) => Name().IsMatch(owner) && Name().IsMatch(repo) && repo is not ("." or "..");
 
     internal static bool ValidRef(string? reference) =>
