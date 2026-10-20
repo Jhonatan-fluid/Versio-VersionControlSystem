@@ -95,6 +95,19 @@ its revision as much as its route — must be fixed when its key is made; and "n
 "refused" is a claim that needs the whole evidence, never the first page or the first error.
 Web 337 -> 343, vitest 112 -> 118.
 
+**Then a review of my own, through `81d214d`, found seven more** — the same three shapes again,
+one level further out. Keys: the revision binding orphaned entries recorded before it (a deploy
+away from a duplicate); the merge box used a fresh key per confirmation, so a merge that happened
+came back as "not open"; and the server's own pre-write refusals (the limiter's 429, the kill
+switch's 404) had no body, so the page's careful rule read them as "may have posted". Proof:
+update-branch called any moved head "updated", someone else's push included. Cost and drift: checks
+pages past the first were re-read every poll, the thread-revision check cost four calls a file view
+(now read in the threads' own answer, exact and free), and the revision check existed twice. Each
+fixed in its own commit (`059a886` to `7fafc5c`) with a reproducing test and killed mutations.
+**Rule worth keeping:** a rule that classifies answers ("only this server's JSON is a refusal") makes
+every answer this server gives a case of it — the server's own bodies have to be audited against the
+rule, not just the client's reading of them. Web 343 -> 351, vitest 118 -> 120.
+
 ---
 
 ### A pull request's "What changed" compared against the base branch's tip, so later commits on the base read as reverted
