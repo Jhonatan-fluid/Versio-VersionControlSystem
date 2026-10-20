@@ -363,6 +363,9 @@ describe('PullPage writes', () => {
   for (const [what, reply] of [
     ["a proxy's 504 page", { status: 504, body: '<html><body>Gateway Time-out</body></html>' }],
     ['a 500 with no outcome', { status: 500, body: { error: 'internal' } }],
+    // Found by review (2026-10-20): null threw and left the box stuck posting; {} on a 200 cleared the key.
+    ['JSON null on a 200', { status: 200, body: null }],
+    ['{} on a 200', { status: 200, body: {} }],
   ] as const) {
     it(`keeps the key after ${what}, and the retry is the same operation`, async () => {
       const { host, root } = await render('/acme/plant/pull/12', { writable: true, writes: { '/comments': reply } });

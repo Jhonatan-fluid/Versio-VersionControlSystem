@@ -438,23 +438,42 @@ async function send(url: string, method: 'POST' | 'PATCH', headers: Record<strin
     // The request may or may not have reached the server: exactly the unknown case.
     return { status: 0, outcome: 'unknown', message: 'The connection dropped. This may or may not have been posted; refresh to check.' };
   }
-  let json: Omit<WriteAnswer, 'status'> = {};
-  let ours = false;
+  let parsed: unknown;
   try {
-    json = await response.json();
-    ours = typeof json === 'object' && json !== null;
+    parsed = await response.json();
   } catch {
     // Not JSON: not this server's answer (it always answers JSON), so something in between spoke.
   }
-  // Only this server's own answer can say a write was refused, and so that nothing happened. A
-  // 5xx, or anything that is not its JSON — a proxy's 502 or 504 page, a load balancer's timeout —
-  // may come after the request went through and GitHub did it: that is "unknown", and the key is
-  // kept, exactly as for a dropped connection. Reading it as a refusal cleared the key, and the
-  // next click could post the same comment twice (found by review, 2026-10-20).
-  if (json.outcome === undefined && (response.status >= 500 || !ours)) {
-    return { status: response.status, outcome: 'unknown', message: 'No clear answer came back. This may or may not have been posted; refresh to check before posting it again.' };
+  return readWriteAnswer(response.status, parsed);
+}
+
+const outcomes = ['done', 'pending', 'unknown'] as const;
+
+/**
+ * What a write's answer means, read defensively. Only this server's own answer can say a write
+ * happened or was refused: an object with an outcome it knows on a 2xx, or an object naming its
+ * error on a 4xx. Everything else — a proxy's 502 or 504 page, a 5xx, JSON `null`, `{}` on a 200,
+ * an array, a number — may come after the request went through and GitHub did it, so it is
+ * "unknown" and the caller keeps the key, exactly as for a dropped connection.
+ *
+ * Twice found by review (2026-10-20): first a proxy's page read as a refusal and cleared the key;
+ * then, after that fix, JSON `null` threw on `.outcome` and left the caller stuck submitting, and
+ * `{}` on a 200 still read as a refusal. The rule is now stated once, here, by what IS known rather
+ * than by listing what is not.
+ */
+export function readWriteAnswer(status: number, parsed: unknown): WriteAnswer {
+  const body = parsed !== null && typeof parsed === 'object' && !Array.isArray(parsed) ? (parsed as Record<string, unknown>) : null;
+  const text = (key: string) => (body && typeof body[key] === 'string' ? (body[key] as string) : undefined);
+  const outcome = outcomes.find((o) => o === body?.outcome);
+  if (outcome && status >= 200 && status < 300) {
+    return { ...body, status, outcome, id: text('id'), message: text('message') };
   }
-  return { status: response.status, ...json };
+  const error = text('error');
+  if (!outcome && error && status >= 400 && status < 500) {
+    return { ...body, status, outcome: undefined, error, message: text('message') };
+  }
+  // Fields the server sent besides (the Markdown preview's html) are kept; the meaning is not.
+  return { ...body, status, outcome: 'unknown', error: undefined, message: 'No clear answer came back. This may or may not have been posted; refresh to check before posting it again.' };
 }
 
 async function get<T>(url: string, signal?: AbortSignal, headers?: Record<string, string>): Promise<T> {
