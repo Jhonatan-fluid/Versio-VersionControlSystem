@@ -148,7 +148,9 @@ public sealed class FixturePreview
         // to look at the comment boxes, replies and resolve buttons. Posts land in the fake
         // writer, so a new comment does not appear in the threads afterwards; the boxes' outcomes do.
         var writes = Environment.GetEnvironmentVariable("VERSIO_WEB_PREVIEW_WRITES") == "1";
-        var writer = new FakeWriter();
+        // The writer keeps pending reviews and viewed marks in the repository it is given, which the
+        // reads then serve back: without it, "Start a review" in the preview was a 500 (2026-10-19).
+        var writer = new FakeWriter { Repo = repo };
         writer.Threads["T-new"] = ("acme/plant", 1, false);
         writer.Threads["T-old"] = ("acme/plant", 1, true);
         if (writes)
