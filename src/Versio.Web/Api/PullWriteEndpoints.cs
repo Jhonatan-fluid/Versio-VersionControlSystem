@@ -700,7 +700,15 @@ public static partial class PullWriteEndpoints
             bool idempotent, CancellationToken ct)
         {
             var who = (RepoAccess)http.Items[AccessItem]!;
-            var (snapshot, refused) = snapshots.Open(http.Request.Headers[PullEndpoints.SnapshotHeader].ToString(), owner, repo, number, PullEndpoints.Viewer(who));
+            var token = http.Request.Headers[PullEndpoints.SnapshotHeader].ToString();
+            var (snapshot, refused) = snapshots.Open(token, owner, repo, number, PullEndpoints.Viewer(who));
+            if (snapshot is null && refused == SnapshotRefusal.Expired
+                && snapshots.OpenExpired(token, owner, repo, number, PullEndpoints.Viewer(who)) is { } old)
+            {
+                return await SettleAsync(who, old, owner, repo, number, request, action, payloadHash,
+                    (w, s, k, since) => reconcile(w, s!, k, since), ct).ConfigureAwait(false);
+            }
+
             if (snapshot is null)
             {
                 return refused == SnapshotRefusal.Expired
@@ -732,6 +740,55 @@ public static partial class PullWriteEndpoints
                 (w, _, k, since) => reconcile(w, k, since),
                 idempotent, ct);
 
+        /// <summary>
+        /// The revision an operation is about is part of what it IS. The same key under another
+        /// snapshot is another operation and is refused as one ("op-mismatch"), never run: a retry of
+        /// an approval that never reached the server, after a push and a reload, carried the new
+        /// snapshot and would have approved a commit the person never saw (found by review,
+        /// 2026-10-20). The page sends a retry with the snapshot it was first sent under.
+        /// </summary>
+        private static string Bound(string payloadHash, ReviewSnapshot? snapshot) =>
+            snapshot is null ? payloadHash : ReviewTags.PayloadHash(payloadHash, snapshot.HeadSha, snapshot.BaseSha);
+
+        private string LedgerKey(RepoAccess who, string action, string owner, string repo, int number, string key) =>
+            string.Join('|', PullEndpoints.Viewer(who), action, $"{owner}/{repo}".ToLowerInvariant(), number, key);
+
+        /// <summary>
+        /// A retry under an expired snapshot: it learns how its own operation ended, and starts
+        /// nothing. Done is done; in flight is in flight; unknown or abandoned is reconciled (a read);
+        /// anything else — nothing recorded, refused, a different payload — is "reload".
+        /// </summary>
+        private async Task<IResult> SettleAsync(
+            RepoAccess who, ReviewSnapshot old, string owner, string repo, int number, WriteRequest request, string action, string payloadHash,
+            Func<RepoAccess, ReviewSnapshot?, string, DateTimeOffset, Task<RepoResult<string>>> reconcile, CancellationToken ct)
+        {
+            var expired = Results.Json(new { error = "snapshot-expired", message = "This review was loaded too long ago. Reload the pull request." }, statusCode: 409);
+            if (ReviewTags.CheckKey(request.OpKey, clock.UtcNow) != KeyCheck.Ok)
+            {
+                return expired;
+            }
+
+            var key = request.OpKey!;
+            var ledgerKey = LedgerKey(who, action, owner, repo, number, key);
+            var entry = await ledger.FindAsync(ledgerKey, ct).ConfigureAwait(false);
+            if (entry is null || entry.PayloadHash != Bound(payloadHash, old))
+            {
+                return expired;
+            }
+
+            switch (entry.State)
+            {
+                case OperationState.Succeeded:
+                    return Results.Ok(new { outcome = "done", id = entry.Result });
+                case OperationState.Pending when clock.UtcNow - entry.Reserved < AbandonedAfter:
+                    return Results.Json(new { outcome = "pending", message = "Still being posted." }, statusCode: 202);
+                case OperationState.Pending or OperationState.Unknown:
+                    return await ReconcileAsync(who, old, key, entry, reconcile, ledgerKey, action, owner, repo, number).ConfigureAwait(false) ?? UnknownResult();
+                default:
+                    return expired;
+            }
+        }
+
         private async Task<IResult> RunOpenedAsync(
             HttpContext http, RepoAccess who, ReviewSnapshot? snapshot, string owner, string repo, int number, WriteRequest request, string action, string payloadHash,
             Func<RepoAccess, ReviewSnapshot?, Task<IResult?>>? precondition,
@@ -739,6 +796,7 @@ public static partial class PullWriteEndpoints
             Func<RepoAccess, ReviewSnapshot?, string, DateTimeOffset, Task<RepoResult<string>>> reconcile,
             bool idempotent, CancellationToken ct)
         {
+            payloadHash = Bound(payloadHash, snapshot);
             var now = clock.UtcNow;
             switch (ReviewTags.CheckKey(request.OpKey, now))
             {
@@ -750,7 +808,7 @@ public static partial class PullWriteEndpoints
             }
 
             var key = request.OpKey!;
-            var ledgerKey = string.Join('|', PullEndpoints.Viewer(who), action, $"{owner}/{repo}".ToLowerInvariant(), number, key);
+            var ledgerKey = LedgerKey(who, action, owner, repo, number, key);
             var reservation = await ledger.ReserveAsync(ledgerKey, payloadHash, now, ct).ConfigureAwait(false);
             if (!reservation.Fresh && reservation.Existing is { } existing)
             {

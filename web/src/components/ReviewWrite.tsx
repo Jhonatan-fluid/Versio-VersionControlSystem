@@ -18,6 +18,8 @@ interface Draft {
   opKey: string | null;
   /** Where the held key was sent: a retry goes there and nowhere else. */
   target?: string | null;
+  /** The snapshot the held key was sent under: a retry goes with it, never with a newer one. */
+  sentWith?: string | null;
 }
 
 /** Drafts survive a reload, a "load the latest" and a dropped connection: losing someone's words is the failure that matters. */
@@ -40,6 +42,14 @@ function writeDraft(slot: string, draft: Draft | null) {
   } catch {
     // Private mode or storage off: the draft lives as long as the page does.
   }
+}
+
+/**
+ * The snapshot a write goes under: the one its held key was first sent under, when there is one,
+ * otherwise the page's. The token is all that differs; the server reads every revision from it.
+ */
+export function sentUnder(snap: ReviewSnapshot, sentWith: string | null | undefined): ReviewSnapshot {
+  return sentWith && sentWith !== snap.token ? { ...snap, token: sentWith } : snap;
 }
 
 /** What the person is told about a write that did not simply succeed. */
@@ -110,10 +120,13 @@ export function CommentBox({ owner, repo, snap, slot, path, method = 'POST', pay
       return;
     }
     const opKey = draft.opKey ?? newOpKey();
-    setDraft({ ...draft, opKey, target: to });
+    // A retry goes under the snapshot the key was first sent under, which the server binds into
+    // the operation: after a push and a reload it is never applied to the new revision instead.
+    const under = sentUnder(snap, draft.opKey !== null ? draft.sentWith : null);
+    setDraft({ ...draft, opKey, target: to, sentWith: under.token });
     setBusy(true);
     setNote(null);
-    const answer = await api.review.write(owner, repo, snap, to, method, { ...payload, body: draft.body, opKey });
+    const answer = await api.review.write(owner, repo, under, to, method, { ...payload, body: draft.body, opKey });
     setBusy(false);
     if (answer.outcome === 'done') {
       writeDraft(slot, null);
@@ -126,7 +139,7 @@ export function CommentBox({ owner, repo, snap, slot, path, method = 'POST', pay
       onStale?.();
     }
     if (!keepKey(answer)) {
-      setDraft((d) => ({ ...d, opKey: null }));
+      setDraft((d) => ({ ...d, opKey: null, sentWith: null }));
     }
     setNote(describe(answer));
   }
@@ -155,7 +168,7 @@ export function CommentBox({ owner, repo, snap, slot, path, method = 'POST', pay
       <div className="comment-actions">
         <button type="button" className="button-quiet" onClick={showPreview} disabled={!draft.body.trim()}>{preview === null ? 'Preview' : 'Write'}</button>
         {locked && !busy && (
-          <button type="button" className="button-quiet" onClick={() => { setDraft({ ...draft, opKey: null }); setNote(null); }} title="Edit the text again; a new submission follows">
+          <button type="button" className="button-quiet" onClick={() => { setDraft({ ...draft, opKey: null, sentWith: null }); setNote(null); }} title="Edit the text again; a new submission follows">
             Edit text
           </button>
         )}
@@ -190,6 +203,7 @@ interface ActionProps {
  */
 export function ActionButton({ owner, repo, snap, path, payload, label, confirm, onDone }: ActionProps) {
   const [opKey, setOpKey] = useState<string | null>(null);
+  const [sentWith, setSentWith] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState<string | null>(null);
 
@@ -198,9 +212,11 @@ export function ActionButton({ owner, repo, snap, path, payload, label, confirm,
       return;
     }
     const key = opKey ?? newOpKey();
+    const under = sentUnder(snap, opKey !== null ? sentWith : null);
     setOpKey(key);
+    setSentWith(under.token);
     setBusy(true);
-    const answer = await api.review.write(owner, repo, snap, path, 'POST', { ...payload, opKey: key });
+    const answer = await api.review.write(owner, repo, under, path, 'POST', { ...payload, opKey: key });
     setBusy(false);
     if (answer.outcome === 'done') {
       setOpKey(null);

@@ -300,6 +300,63 @@ public sealed class PullWriteTests
         Assert.Contains(answers, r => r.StatusCode == HttpStatusCode.Accepted);
     }
 
+    /// <summary>
+    /// The revision is part of the operation: the same key under another snapshot is refused as a
+    /// different operation and nothing is sent. Found by review (2026-10-20): a retry of an approval
+    /// that never reached the server, after a push and a reload, carried the new snapshot.
+    /// </summary>
+    [Fact]
+    public async Task A_retry_under_another_snapshot_is_another_operation_and_nothing_is_sent()
+    {
+        var w = Build();
+        var (host, writer, alice, first) = await StartAsync(w);
+        await using var _ = host;
+        var key = Key();
+        writer.Next.Enqueue(FakeWriter.Mode.LostBefore);
+        (await Post(host, "/comments", new { opKey = key, body = "Approve-ish." }, alice, Headers(first))).AssertStatus(HttpStatusCode.Accepted);
+
+        w.Repo.Pulls[0] = (w.Repo.Pulls[0].Info with { HeadSha = new string('9', 40) }, w.Repo.Pulls[0].Body);
+        w.Repo.MergeBases[(w.MainTip, new string('9', 40))] = w.Start;
+        var second = JsonDocument.Parse(await (await host.GetAsync("/api/repos/acme/plant/pulls/12/snapshot", alice)).Body()).RootElement.GetProperty("token").GetString()!;
+        var retry = await Post(host, "/comments", new { opKey = key, body = "Approve-ish." }, alice, Headers(second));
+
+        retry.AssertStatus(HttpStatusCode.UnprocessableEntity);
+        Assert.Contains("op-mismatch", await retry.Body(), StringComparison.Ordinal);
+        Assert.Single(writer.Writes);
+    }
+
+    /// <summary>
+    /// Keys outlive snapshots (a week against eight hours). A retry under its own, now expired,
+    /// snapshot learns how its operation ended — here, that GitHub did post it after all — and a
+    /// fresh write under an expired snapshot is still refused: settling reads, it never starts.
+    /// </summary>
+    [Fact]
+    public async Task A_retry_under_its_expired_snapshot_settles_its_own_operation_and_starts_nothing()
+    {
+        var clock = new Versio.Core.Abstractions.FakeClock(DateTimeOffset.UtcNow);
+        var (host, writer, _, _) = await StartAsync(Build(), more: s => s.AddSingleton<Versio.Core.Abstractions.IClock>(clock));
+        await using var __ = host;
+        var sessions = host.Services.GetRequiredService<SessionStore>();
+        var session = await sessions.CreateAsync(42, "alice", "alice", "", "alice-token", DateTimeOffset.UtcNow.AddDays(3), null, DateTimeOffset.UtcNow.AddMonths(6));
+        var alice = $"{AccessResolver.SessionCookie}={session.Id}";
+        var token = JsonDocument.Parse(await (await host.GetAsync("/api/repos/acme/plant/pulls/12/snapshot", alice)).Body()).RootElement.GetProperty("token").GetString()!;
+        var key = Key();
+        writer.Next.Enqueue(FakeWriter.Mode.LostBefore);
+        (await Post(host, "/comments", new { opKey = key, body = "Late." }, alice, Headers(token))).AssertStatus(HttpStatusCode.Accepted);
+        // It did reach GitHub after all, by the time anyone looks.
+        writer.Comments["C_lateabcd"] = new FakeWriter.Comment("C_lateabcd", "IssueComment", "acme/plant", 12, "alice", ReviewTags.WithOperation("Late.", key), DateTimeOffset.UtcNow, null);
+
+        clock.Advance(ReviewSnapshots.Lifetime + TimeSpan.FromMinutes(1));
+        var settled = await Post(host, "/comments", new { opKey = key, body = "Late." }, alice, Headers(token));
+        var fresh = await Post(host, "/comments", new { opKey = Key(), body = "New." }, alice, Headers(token));
+
+        settled.AssertStatus(HttpStatusCode.OK);
+        Assert.Equal("C_lateabcd", Json(await settled.Body()).GetProperty("id").GetString());
+        fresh.AssertStatus(HttpStatusCode.Conflict);
+        Assert.Contains("snapshot-expired", await fresh.Body(), StringComparison.Ordinal);
+        Assert.Single(writer.Writes);
+    }
+
     /// <summary>The in-memory ledger, holding readers of a failed entry until as many as asked have read it.</summary>
     private sealed class HoldingLedger : IOperationLedger
     {
@@ -328,6 +385,8 @@ public sealed class PullWriteTests
         public Task RecordAsync(string key, OperationEntry entry, CancellationToken ct) => _inner.RecordAsync(key, entry, ct);
 
         public Task<bool> TryTakeOverAsync(string key, Reservation seen, OperationEntry next, CancellationToken ct) => _inner.TryTakeOverAsync(key, seen, next, ct);
+
+        public Task<OperationEntry?> FindAsync(string key, CancellationToken ct) => _inner.FindAsync(key, ct);
     }
 
     /// <summary>
@@ -382,13 +441,15 @@ public sealed class PullWriteTests
     [Fact]
     public async Task After_a_crash_mid_write_the_retry_reconciles_instead_of_posting_again()
     {
-        var (host, writer, alice, token) = await StartAsync(Build());
+        var w = Build();
+        var (host, writer, alice, token) = await StartAsync(w);
         await using var _ = host;
         var key = Key(DateTimeOffset.UtcNow.AddMinutes(-3));
         var reserved = DateTimeOffset.UtcNow.AddMinutes(-2);
         var ledger = host.Services.GetRequiredService<IOperationLedger>();
         await ledger.RecordAsync($"user:alice|comment|acme/plant|12|{key}",
-            new OperationEntry(ReviewTags.PayloadHash("Crashed."), OperationState.Pending, null, reserved, reserved), CancellationToken.None);
+            // The hash as the server forms it: the payload, bound to the snapshot's head and base.
+            new OperationEntry(ReviewTags.PayloadHash(ReviewTags.PayloadHash("Crashed."), w.Head, w.MainTip), OperationState.Pending, null, reserved, reserved), CancellationToken.None);
         writer.Comments["C_crashabcd"] = new FakeWriter.Comment("C_crashabcd", "IssueComment", "acme/plant", 12, "alice", ReviewTags.WithOperation("Crashed.", key), reserved, null);
 
         var retry = await Post(host, "/comments", new { opKey = key, body = "Crashed." }, alice, Headers(token));

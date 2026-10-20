@@ -63,6 +63,8 @@ interface Options {
   merge?: Record<string, unknown>;
   /** GitHub listed more checks than were read. */
   checksCut?: boolean;
+  /** A push happened and the page was reloaded: a newer snapshot, on a newer head. */
+  newer?: boolean;
 }
 
 let calls: { url: string; snapshot: string | null; method: string; csrf: string | null; body: Record<string, unknown> | null }[] = [];
@@ -70,8 +72,8 @@ let calls: { url: string; snapshot: string | null; method: string; csrf: string 
 function answer(url: string, o: Options): unknown {
   if (url.endsWith('/snapshot')) {
     return {
-      token, number: 12, title: 'Fix interlock', author: 'jo', when: '2026-10-17T09:00:00Z', draft: false,
-      baseRef: 'main', baseLabel: 'main', headLabel: 'fix', baseSha: 'c'.repeat(40), mergeBaseSha: 'b'.repeat(40), headSha: head,
+      token: o.newer ? 'newer-token' : token, number: 12, title: 'Fix interlock', author: 'jo', when: '2026-10-17T09:00:00Z', draft: false,
+      baseRef: 'main', baseLabel: 'main', headLabel: 'fix', baseSha: 'c'.repeat(40), mergeBaseSha: 'b'.repeat(40), headSha: o.newer ? 'e'.repeat(40) : head,
       issuedAt: '2026-10-17T09:00:00Z', html: '<div class="md-page"><p>The delay was wrong.</p></div>', writable: o.writable ?? false, canMerge: o.canMerge ?? false,
     };
   }
@@ -647,6 +649,48 @@ describe('PullPage review', () => {
     const sent = [...before, ...writes()];
     expect(sent.map((w) => w.url.slice(w.url.indexOf('/reviews')))).toEqual(['/reviews/PRR_1/submit', '/reviews/PRR_1/submit']);
     expect(sent[1]!.body).toMatchObject({ event: 'COMMENT', body: '', opKey: sent[0]!.body?.opKey });
+    act(() => again.root.unmount());
+  });
+
+  it('a retry after a push and a reload goes under the snapshot it was first sent under, never the newer one', async () => {
+    const unknown = { status: 202, body: { outcome: 'unknown', message: 'This may or may not have been posted.' } };
+    const first = await render('/acme/plant/pull/12', { writable: true, writes: { '/reviews': unknown } });
+    await click(button(first.host, 'Review changes')!, first.host);
+    await click(radio(first.host, 'APPROVE')!, first.host);
+    await click(button(first.host, 'Submit: Approve')!, first.host);
+    const before = writes();
+    act(() => first.root.unmount());
+    document.body.innerHTML = '';
+
+    // A push, and the page reloaded onto it: the page's snapshot is now another revision.
+    const again = await render('/acme/plant/pull/12', { writable: true, newer: true });
+    await click(button(again.host, 'Review changes')!, again.host);
+    await click(button(again.host, 'Try again')!, again.host);
+
+    const sent = [...before, ...writes()];
+    expect(sent.map((w) => w.snapshot)).toEqual([token, token]);
+    expect(sent[1]!.body?.opKey).toBe(sent[0]!.body?.opKey);
+    act(() => again.root.unmount());
+  });
+
+  it('a comment retried after a reload goes under its own snapshot too', async () => {
+    const unknown = { status: 202, body: { outcome: 'unknown', message: 'This may or may not have been posted.' } };
+    const first = await render('/acme/plant/pull/12', { writable: true, writes: { '/comments': unknown } });
+    const box = first.host.querySelector('.comment-box')!;
+    await act(async () => {
+      const textarea = box.querySelector('textarea')!;
+      Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')!.set!.call(textarea, 'Maybe.');
+      textarea.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    await click(button(box, 'Comment')!, first.host);
+    const before = writes();
+    act(() => first.root.unmount());
+    document.body.innerHTML = '';
+
+    const again = await render('/acme/plant/pull/12', { writable: true, newer: true });
+    await click(button(again.host.querySelector('.comment-box')!, 'Try again')!, again.host);
+
+    expect([...before, ...writes()].map((w) => w.snapshot)).toEqual([token, token]);
     act(() => again.root.unmount());
   });
 

@@ -132,6 +132,35 @@ public sealed class ReviewSnapshots(IDataProtectionProvider protection, IClock c
         return age < -ClockSkew || age > Lifetime ? (null, SnapshotRefusal.Expired) : (snapshot, SnapshotRefusal.None);
     }
 
+    /// <summary>
+    /// An EXPIRED snapshot, if it was sealed here and names this repository, pull request and
+    /// viewer — for settling an operation already recorded under it, and for nothing else.
+    /// </summary>
+    /// <remarks>
+    /// Operation keys live a week; snapshots eight hours. A retry of a write whose answer was lost
+    /// carries the snapshot it was first sent under (so it can never be applied to another
+    /// revision), and that snapshot may have expired meanwhile. It may still find out how its own
+    /// operation ended — read-only — but never start one: that needs an unexpired snapshot.
+    /// </remarks>
+    public ReviewSnapshot? OpenExpired(string? token, string owner, string repo, int number, string viewer)
+    {
+        var (_, refusal) = Open(token, owner, repo, number, viewer);
+        if (refusal != SnapshotRefusal.Expired)
+        {
+            return null;
+        }
+
+        try
+        {
+            var snapshot = JsonSerializer.Deserialize<ReviewSnapshot>(_seal.Unprotect(token!), Json);
+            return snapshot is not null && clock.UtcNow - snapshot.IssuedAt > Lifetime ? snapshot : null;
+        }
+        catch (Exception e) when (e is CryptographicException or JsonException or FormatException)
+        {
+            return null;
+        }
+    }
+
     internal static readonly TimeSpan ClockSkew = TimeSpan.FromMinutes(2);
 
     /// <summary>Far above a real token (a few hundred characters), far below anything costly to try.</summary>

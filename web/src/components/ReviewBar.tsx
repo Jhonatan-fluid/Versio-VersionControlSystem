@@ -3,7 +3,7 @@ import type { CoverageSummary, PendingReviewView, ReviewFile, ReviewSnapshot, Re
 import { api } from '../api';
 import type { Async } from '../useAsync';
 import { useAsync } from '../useAsync';
-import { ActionButton, describe, newOpKey } from './ReviewWrite';
+import { ActionButton, describe, newOpKey, sentUnder } from './ReviewWrite';
 
 export type ReviewEvent = 'COMMENT' | 'APPROVE' | 'REQUEST_CHANGES';
 
@@ -158,6 +158,15 @@ interface Held {
    * review, 2026-10-20).
    */
   target?: Target | null;
+  /**
+   * The snapshot the held key was sent under. A retry goes with it: sent with the page's newer one,
+   * after a push and a reload, an approval that never reached the server would approve a commit the
+   * person never saw (found by review, 2026-10-20). The server binds the revision into the
+   * operation, so the new one would be refused as a different operation anyway.
+   */
+  sentWith?: string | null;
+  /** That snapshot's head, which the message after submitting names: the commit reviewed, not the page's now. */
+  sentHead?: string | null;
 }
 
 type Target = ReturnType<typeof reviewTarget>;
@@ -208,10 +217,12 @@ function ReviewDialog({ owner, repo, snap, slot, pending, author, notes, onOpenP
       return;
     }
     const opKey = held.opKey ?? newOpKey();
-    setHeld({ ...held, event, opKey, target });
+    const under = sentUnder(snap, held.opKey !== null ? held.sentWith : null);
+    const head = held.opKey !== null && held.sentHead ? held.sentHead : snap.headSha;
+    setHeld({ ...held, event, opKey, target, sentWith: under.token, sentHead: head });
     setBusy(true);
     setNote(null);
-    const answer: WriteAnswer = await api.review.write(owner, repo, snap, target.path, 'POST',
+    const answer: WriteAnswer = await api.review.write(owner, repo, under, target.path, 'POST',
       { event, body: held.body, opKey, ...(target.commit ? { commit: target.commit } : {}) });
     setBusy(false);
     if (answer.outcome === 'done') {
@@ -220,15 +231,15 @@ function ReviewDialog({ owner, repo, snap, slot, pending, author, notes, onOpenP
       } catch {
         // Storage off.
       }
-      setHeld({ body: '', event: 'COMMENT', opKey: null, target: null });
-      onDone(`${eventWords[event]} submitted on ${(target.commit ?? snap.headSha).slice(0, 8)}.`);
+      setHeld({ body: '', event: 'COMMENT', opKey: null, target: null, sentWith: null });
+      onDone(`${eventWords[event]} submitted on ${(target.commit ?? head).slice(0, 8)}.`);
       return;
     }
     if (answer.error === 'snapshot-stale' || answer.error === 'snapshot-expired') {
       onStale();
     }
     if (answer.outcome !== 'unknown' && answer.outcome !== 'pending') {
-      setHeld((h) => ({ ...h, opKey: null, target: null }));
+      setHeld((h) => ({ ...h, opKey: null, target: null, sentWith: null }));
     }
     setNote(describe(answer));
   }
@@ -277,7 +288,7 @@ function ReviewDialog({ owner, repo, snap, slot, pending, author, notes, onOpenP
       {note && <p className="notice comment-note" role="status">{note}</p>}
       <div className="comment-actions">
         {locked && !busy && (
-          <button type="button" className="button-quiet" onClick={() => { setHeld({ ...held, opKey: null, target: null }); setNote(null); }}>Edit</button>
+          <button type="button" className="button-quiet" onClick={() => { setHeld({ ...held, opKey: null, target: null, sentWith: null }); setNote(null); }}>Edit</button>
         )}
         <button type="button" className="button-quiet" onClick={onCancel}>Cancel</button>
         <button type="button" className="button" onClick={submit} disabled={busy || (needsWords && !held.body.trim())}>

@@ -65,6 +65,9 @@ public interface IOperationLedger
     /// 2026-10-20). A compare-and-set lets exactly one of them through.
     /// </remarks>
     Task<bool> TryTakeOverAsync(string key, Reservation seen, OperationEntry next, CancellationToken ct);
+
+    /// <summary>The entry under <paramref name="key"/>, or null; reserves nothing. For settling a retry that may not start a write.</summary>
+    Task<OperationEntry?> FindAsync(string key, CancellationToken ct);
 }
 
 /// <summary>The single-instance ledger. Its limits are on <see cref="IOperationLedger"/>.</summary>
@@ -85,6 +88,9 @@ public sealed class MemoryOperationLedger : IOperationLedger
         _entries[key] = entry;
         return Task.CompletedTask;
     }
+
+    public Task<OperationEntry?> FindAsync(string key, CancellationToken ct) =>
+        Task.FromResult(_entries.TryGetValue(key, out var entry) ? entry : null);
 
     /// <remarks>Entries are records, so "still exactly what was read" is value equality, which TryUpdate compares atomically.</remarks>
     public Task<bool> TryTakeOverAsync(string key, Reservation seen, OperationEntry next, CancellationToken ct) =>
@@ -135,6 +141,12 @@ public sealed class RedisOperationLedger(IConnectionMultiplexer redis) : IOperat
         end
         return 0
         """;
+
+    public async Task<OperationEntry?> FindAsync(string key, CancellationToken ct)
+    {
+        var held = await redis.GetDatabase().StringGetAsync(Prefix + key).ConfigureAwait(false);
+        return held.HasValue ? JsonSerializer.Deserialize<OperationEntry>(held.ToString(), Json) : null;
+    }
 
     public async Task<bool> TryTakeOverAsync(string key, Reservation seen, OperationEntry next, CancellationToken ct)
     {
