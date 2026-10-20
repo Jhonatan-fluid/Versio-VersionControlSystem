@@ -225,8 +225,16 @@ internal sealed class FakeWriter : IRepoWriter
             return Task.FromResult(WriteResult<bool>.Refused(RepoFailure.Upstream, "expected head sha didn't match current head ref."));
         }
 
+        var mode = Next.TryDequeue(out var m) ? m : Mode.Done;
+        if (mode is Mode.Refused or Mode.LostBefore)
+        {
+            return Task.FromResult(mode == Mode.Refused ? WriteResult<bool>.Refused(RepoFailure.Upstream, "Validation Failed") : WriteResult<bool>.Unknown());
+        }
+
+        // GitHub's update: a merge commit, the old head its first parent and the base its second.
+        Repo.Parents[new string('u', 40)] = [expectedHeadSha, Repo.Refs[live.BaseRef]];
         Replace(number, (info, body) => (info with { HeadSha = new string('u', 40) }, body));
-        return Task.FromResult(WriteResult<bool>.Done(true));
+        return Task.FromResult(mode == Mode.LostAfter ? WriteResult<bool>.Unknown() : WriteResult<bool>.Done(true));
     }
 
     public Task<WriteResult<bool>> EnableAutoMergeAsync(RepoAccess access, string pullNodeId, string method, string expectedHeadSha, CancellationToken ct) =>

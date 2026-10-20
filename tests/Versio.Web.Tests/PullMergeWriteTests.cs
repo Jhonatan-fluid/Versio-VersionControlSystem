@@ -251,6 +251,45 @@ public sealed class PullMergeWriteTests
     }
 
     /// <summary>
+    /// A lost answer to an update is settled by what the head is: GitHub's merge of the base onto the
+    /// reviewed head is "updated"; someone else's push, with GitHub refusing this update, is not
+    /// (found in review, 2026-10-20: "the head moved" alone called that one done).
+    /// </summary>
+    [Fact]
+    public async Task A_lost_update_is_done_only_when_the_head_is_GitHubs_merge_of_the_base()
+    {
+        var w = Build();
+        var (host, writer, alice, token, _) = await StartAsync(w);
+        await using var __ = host;
+        writer.Next.Enqueue(FakeWriter.Mode.LostAfter);
+
+        var updated = await Post(host, alice, token, "/update-branch", new { opKey = Key() });
+
+        updated.AssertStatus(HttpStatusCode.OK);
+        Assert.True(JsonDocument.Parse(await updated.Body()).RootElement.GetProperty("reconciled").GetBoolean());
+    }
+
+    [Fact]
+    public async Task A_lost_update_with_someone_elses_push_since_is_not_called_done()
+    {
+        var w = Build();
+        var (host, writer, alice, token, _) = await StartAsync(w);
+        await using var __ = host;
+        writer.Next.Enqueue(FakeWriter.Mode.LostBefore);
+        var key = Key();
+        (await Post(host, alice, token, "/update-branch", new { opKey = key })).AssertStatus(HttpStatusCode.Accepted);
+        // Bob pushes onto the reviewed head: one parent, not GitHub's merge.
+        var pushed = new string('p', 40);
+        w.Repo.Parents[pushed] = [w.Head];
+        PushTo(w, pushed);
+
+        var retry = await Post(host, alice, token, "/update-branch", new { opKey = key });
+
+        Assert.NotEqual(HttpStatusCode.OK, retry.StatusCode);
+        Assert.DoesNotContain("\"outcome\":\"done\"", await retry.Body(), StringComparison.Ordinal);
+    }
+
+    /// <summary>
     /// The update names a base; retargeted after the page opened, the confirmation is of a base the
     /// pull request no longer has, and nothing is brought in (found by review, 2026-10-20).
     /// </summary>

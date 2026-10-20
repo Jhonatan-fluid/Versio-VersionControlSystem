@@ -110,10 +110,29 @@ public static partial class PullWriteEndpoints
                         : null);
                 },
                 async (who, s, key) => Done(await w.Writer.UpdateBranchAsync(who, owner, repo, number, s.HeadSha, CancellationToken.None).ConfigureAwait(false), "updated"),
-                // The head moved off the reviewed commit: the update happened (GitHub's
-                // expected_head_sha refuses it once anything else has moved it).
-                async (who, s, key, since) => Reconciled(await w.Source.GetPullSummaryAsync(who, owner, repo, number, ct).ConfigureAwait(false),
-                    live => live.HeadSha != s.HeadSha, "updated"),
+                // Done only when the head is GitHub's update: a merge commit whose parents are the
+                // reviewed head and the base. "The head moved" alone also matches someone else's push
+                // with GitHub refusing this update — reported as "updated" when it was not (found in
+                // review, 2026-10-20). A merge of the base made by hand reads the same, and its effect
+                // is the same: the branch is up to date with its base.
+                async (who, s, key, since) =>
+                {
+                    var live = await w.Source.GetPullSummaryAsync(who, owner, repo, number, ct).ConfigureAwait(false);
+                    if (!live.Ok)
+                    {
+                        return live.As<string>();
+                    }
+
+                    if (live.Value!.HeadSha == s.HeadSha)
+                    {
+                        return RepoResult<string>.Of("");
+                    }
+
+                    var parents = await w.Source.GetCommitParentsAsync(who, owner, repo, live.Value.HeadSha, ct).ConfigureAwait(false);
+                    return parents.Ok
+                        ? RepoResult<string>.Of(parents.Value!.Count == 2 && parents.Value[0] == s.HeadSha ? "updated" : "")
+                        : parents.As<string>();
+                },
                 idempotent: true, ct).ConfigureAwait(false)).WithMetadata(new MergeEndpoint());
 
         pulls.MapWrite("POST", "/auto-merge", async (string owner, string repo, int number, AutoMergeRequest request, HttpContext http, Writes w, CancellationToken ct) =>

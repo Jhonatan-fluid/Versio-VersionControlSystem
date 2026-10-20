@@ -196,6 +196,7 @@ public sealed class GitHubRepoSourceTests : IAsyncLifetime
             http.Response.Headers.ETag = "\"runs-1\"";
             return Results.Json(new { check_runs = new[] { new { name = "build", status = "completed", conclusion = "success", html_url = "https://ci.example/1" } } });
         });
+        app.MapGet("/repos/acme/plant/commits/{sha}", (string sha) => Results.Json(new { sha, parents = new[] { new { sha = new string('a', 40) }, new { sha = new string('b', 40) } } }));
         app.MapGet("/repos/acme/plant/commits/{sha}/status", () => Results.Json(new
         {
             statuses = new[] { new { context = "legacy", state = "pending", target_url = "javascript:alert(1)" } },
@@ -701,5 +702,13 @@ public sealed class GitHubRepoSourceTests : IAsyncLifetime
 
         Assert.Equal(GitHubRepoSource.PendingCommentPages * 100, review.Comments.Count);
         Assert.True(review.Truncated);
+    }
+
+    [Fact]
+    public async Task A_commits_parents_are_read_first_parent_first()
+    {
+        var parents = await Source().GetCommitParentsAsync(Alice, "acme", "plant", new string('u', 40), CancellationToken.None);
+
+        Assert.Equal([new string('a', 40), new string('b', 40)], parents.Value!);
     }
 }

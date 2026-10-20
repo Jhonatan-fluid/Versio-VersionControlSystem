@@ -316,6 +316,9 @@ public interface IRepoSource
     /// <summary>The paths the viewer marked viewed on the pull request (GitHub keeps this per person).</summary>
     Task<RepoResult<IReadOnlyList<string>>> GetViewedAsync(RepoAccess access, string owner, string repo, int number, CancellationToken ct);
 
+    /// <summary>A commit's parents, first parent first: what tells GitHub's update-branch merge from someone's push.</summary>
+    Task<RepoResult<IReadOnlyList<string>>> GetCommitParentsAsync(RepoAccess access, string owner, string repo, string sha, CancellationToken ct);
+
     /// <summary>The pull request's merge state, the methods the repository allows, and auto-merge.</summary>
     Task<RepoResult<MergeState>> GetMergeStateAsync(RepoAccess access, string owner, string repo, int number, CancellationToken ct);
 

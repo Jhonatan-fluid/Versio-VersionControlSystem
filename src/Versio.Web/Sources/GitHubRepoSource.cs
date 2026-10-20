@@ -395,6 +395,10 @@ public sealed class GitHubRepoSource(
                 Oid(p, "mergeCommit"));
         }, ct, preview: "application/vnd.github.merge-info-preview+json");
 
+    public Task<RepoResult<IReadOnlyList<string>>> GetCommitParentsAsync(RepoAccess access, string owner, string repo, string sha, CancellationToken ct) =>
+        GetJsonAsync<IReadOnlyList<string>>(access, $"repos/{E(owner)}/{E(repo)}/commits/{E(sha)}",
+            root => root.GetProperty("parents").EnumerateArray().Select(p => Text(p, "sha")).ToList(), ct);
+
     public Task<RepoResult<IReadOnlyList<PullLabel>>> GetLabelsAsync(RepoAccess access, string owner, string repo, CancellationToken ct) =>
         GetJsonAsync<IReadOnlyList<PullLabel>>(access, $"repos/{E(owner)}/{E(repo)}/labels?per_page=100",
             root => root.EnumerateArray().Select(l => new PullLabel(Text(l, "name"), HexColor(Text(l, "color")))).ToList(), ct);

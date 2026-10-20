@@ -128,6 +128,9 @@ internal sealed class FakeGitHub : IRepoSource
         /// <summary>Tokens GitHub says may not edit the pull requests (viewerCanUpdate false); everyone else may.</summary>
         public HashSet<string> CannotUpdate { get; } = new(StringComparer.Ordinal);
 
+        /// <summary>Each commit's parents, first parent first; a commit not listed has none known.</summary>
+        public Dictionary<string, List<string>> Parents { get; } = new(StringComparer.Ordinal);
+
         /// <summary>Commits whose checks are reported cut short.</summary>
         public HashSet<string> ChecksCut { get; } = new(StringComparer.Ordinal);
 
@@ -471,6 +474,13 @@ internal sealed class FakeGitHub : IRepoSource
             r.Value.MergeMethods.ToList(), r.Value.AutoMergeAllowed, auto?.Item1, auto?.Item2,
             state == "OPEN" && auto is null, auto is not null, "PR_" + number.ToString(System.Globalization.CultureInfo.InvariantCulture),
             r.Value.MergeCommits.TryGetValue(number, out var commit) ? commit : null)));
+    }
+
+    public Task<RepoResult<IReadOnlyList<string>>> GetCommitParentsAsync(RepoAccess access, string owner, string repo, string sha, CancellationToken ct)
+    {
+        var r = See(access, owner, repo, "parents " + sha);
+        return Task.FromResult(!r.Ok ? r.As<IReadOnlyList<string>>()
+            : r.Value!.Parents.TryGetValue(sha, out var parents) ? RepoResult<IReadOnlyList<string>>.Of(parents.ToList()) : RepoResult<IReadOnlyList<string>>.Fail(RepoFailure.NotFound));
     }
 
     public Task<RepoResult<IReadOnlyList<PullLabel>>> GetLabelsAsync(RepoAccess access, string owner, string repo, CancellationToken ct)
