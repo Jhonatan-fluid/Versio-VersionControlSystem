@@ -52,6 +52,19 @@ export function sentUnder(snap: ReviewSnapshot, sentWith: string | null | undefi
   return sentWith && sentWith !== snap.token ? { ...snap, token: sentWith } : snap;
 }
 
+/**
+ * A held key saved without the snapshot it was sent under: an operation from before revisions were
+ * recorded with keys. Retrying it under the page's snapshot could apply it to a revision the person
+ * never saw — an approval of a newer commit — and the revision it WAS for is not known, so it is
+ * not retried at all. The person checks GitHub and, if need be, submits again deliberately (found
+ * by review, 2026-10-20: sentUnder quietly substituted today's snapshot).
+ */
+export function unrecoverable(opKey: string | null | undefined, sentWith: string | null | undefined): boolean {
+  return Boolean(opKey) && !sentWith;
+}
+
+export const UNRECOVERABLE = 'This was submitted by an earlier version of Versio, which did not record which version of the pull request it was for, so it cannot be retried safely. Check on GitHub whether it went through; if it did not, choose Edit and submit it again.';
+
 /** What the person is told about a write that did not simply succeed. */
 export function describe(answer: WriteAnswer): string {
   if (answer.outcome === 'unknown') {
@@ -135,7 +148,7 @@ function DraftBox({ owner, repo, snap, slot, path, method = 'POST', payload, ini
   // different operation, and the first may already have happened — so while a key is held only a
   // retry of that target is offered, never the other button.
   async function submit(to: string = path) {
-    if (!draft.body.trim() || busy || (draft.opKey !== null && draft.target && draft.target !== to)) {
+    if (!draft.body.trim() || busy || orphan || (draft.opKey !== null && draft.target && draft.target !== to)) {
       return;
     }
     const opKey = draft.opKey ?? newOpKey();
@@ -170,6 +183,7 @@ function DraftBox({ owner, repo, snap, slot, path, method = 'POST', payload, ini
   // Once submitted, the text is the key's payload: changing it would make the retry a different
   // write, which the server refuses. Editing again means starting over with a new key.
   const locked = draft.opKey !== null;
+  const orphan = unrecoverable(draft.opKey, draft.sentWith);
   return (
     <div className="comment-box">
       {preview === null ? (
@@ -183,6 +197,7 @@ function DraftBox({ owner, repo, snap, slot, path, method = 'POST', payload, ini
       ) : (
         <div className="comment-preview fragment" dangerouslySetInnerHTML={{ __html: sanitize(preview) }} />
       )}
+      {orphan && <p className="notice comment-note" role="status">{UNRECOVERABLE}</p>}
       {note && <p className="notice comment-note" role="status">{note}</p>}
       <div className="comment-actions">
         <button type="button" className="button-quiet" onClick={showPreview} disabled={!draft.body.trim()}>{preview === null ? 'Preview' : 'Write'}</button>
@@ -197,7 +212,7 @@ function DraftBox({ owner, repo, snap, slot, path, method = 'POST', payload, ini
             {alternative.label}
           </button>
         )}
-        <button type="button" className="button" onClick={() => submit(locked && draft.target ? draft.target : path)} disabled={busy || !draft.body.trim()}>
+        <button type="button" className="button" onClick={() => submit(locked && draft.target ? draft.target : path)} disabled={busy || orphan || !draft.body.trim()}>
           {busy ? 'Posting...' : locked ? `Try again` : submitLabel}
         </button>
       </div>

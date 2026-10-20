@@ -807,6 +807,38 @@ describe('PullPage review', () => {
     act(() => root.unmount());
   });
 
+  // Found by review (2026-10-20): saved before snapshots were kept with keys, these were retried
+  // under the page's current snapshot — an approval of a commit the person never saw.
+  it('an approval saved without its snapshot is not retried under the current one, and Edit starts afresh', async () => {
+    const key = `${Date.now()}-${'a'.repeat(32)}`;
+    sessionStorage.setItem('versio:draft:acme/plant#12:review', JSON.stringify({ body: '', event: 'APPROVE', opKey: key, target: { path: '/reviews', historical: false } }));
+    const { host, root } = await render('/acme/plant/pull/12', { writable: true, newer: true });
+    await click(button(host, 'Review changes')!, host);
+
+    expect(host.querySelector('.review-dialog')?.textContent).toContain('cannot be retried safely');
+    expect(button(host, 'Try again')!.disabled).toBe(true);
+    await click(button(host, 'Try again')!, host);
+    expect(writes()).toHaveLength(0);
+
+    await click(button(host.querySelector('.review-dialog')!, 'Edit')!, host);
+    await click(button(host, 'Submit: Approve')!, host);
+    expect(writes()).toHaveLength(1);
+    expect(writes()[0]!.body?.opKey).not.toBe(key);
+    expect(writes()[0]!.snapshot).toBe('newer-token');
+    act(() => root.unmount());
+  });
+
+  it('a comment saved without its snapshot is not retried either', async () => {
+    sessionStorage.setItem('versio:draft:acme/plant#12:conversation', JSON.stringify({ body: 'Old words.', opKey: `${Date.now()}-${'b'.repeat(32)}`, target: '/comments' }));
+    const { host, root } = await render('/acme/plant/pull/12', { writable: true, newer: true });
+    const box = host.querySelector('.comment-box')!;
+
+    expect(box.textContent).toContain('cannot be retried safely');
+    expect(button(box, 'Try again')!.disabled).toBe(true);
+    expect(writes()).toHaveLength(0);
+    act(() => root.unmount());
+  });
+
   it('submits a pending review made on the reviewed head as that review', async () => {
     const { host, root } = await render('/acme/plant/pull/12', { writable: true, pending: pendingOn(head) });
     expect(host.querySelector('.review-bar')?.textContent).toContain('1 comment');

@@ -3,7 +3,7 @@ import type { CoverageSummary, PendingReviewView, ReviewFile, ReviewSnapshot, Re
 import { api } from '../api';
 import type { Async } from '../useAsync';
 import { useAsync } from '../useAsync';
-import { ActionButton, describe, newOpKey, releasesKey, sentUnder } from './ReviewWrite';
+import { ActionButton, describe, newOpKey, releasesKey, sentUnder, UNRECOVERABLE, unrecoverable } from './ReviewWrite';
 
 export type ReviewEvent = 'COMMENT' | 'APPROVE' | 'REQUEST_CHANGES';
 
@@ -188,12 +188,13 @@ function ReviewDialog({ owner, repo, snap, slot, pending, author, notes, onOpenP
   const [held, setHeld] = useState<Held>(() => readHeld(slot));
   const [busy, setBusy] = useState(false);
   // A key kept over a reload means an earlier submission's outcome is not known: said, so "Try again" is understood as checking first.
-  const [note, setNote] = useState<string | null>(() => (readHeld(slot).opKey ? 'Your last submission may or may not have gone through. Try again checks first, and never submits twice.' : null));
+  const [note, setNote] = useState<string | null>(() => (readHeld(slot).opKey && readHeld(slot).sentWith ? 'Your last submission may or may not have gone through. Try again checks first, and never submits twice.' : null));
   const target: Target = held.opKey !== null && held.target ? held.target : reviewTarget(pending);
   // GitHub refuses an author's approval or request for changes on their own pull request: not offered.
   const events: ReviewEvent[] = author ? ['COMMENT'] : ['COMMENT', 'APPROVE', 'REQUEST_CHANGES'];
   const event = events.includes(held.event) ? held.event : 'COMMENT';
   const locked = held.opKey !== null;
+  const orphan = unrecoverable(held.opKey, held.sentWith);
   // Words are needed where the server needs them: for a request for changes, and for a comment
   // only as a one-shot review (a pending review's comments are its content). Asked of the target
   // the key was sent to, not of whether a pending review exists now: after a lost answer and a
@@ -214,7 +215,7 @@ function ReviewDialog({ owner, repo, snap, slot, pending, author, notes, onOpenP
   }, [slot, held]);
 
   async function submit() {
-    if (busy || (needsWords && !held.body.trim())) {
+    if (busy || orphan || (needsWords && !held.body.trim())) {
       return;
     }
     const opKey = held.opKey ?? newOpKey();
@@ -286,13 +287,14 @@ function ReviewDialog({ owner, repo, snap, slot, pending, author, notes, onOpenP
         ))}
         {author && <span className="muted"> You opened this pull request, so GitHub accepts only a comment from you.</span>}
       </fieldset>
+      {orphan && <p className="notice comment-note" role="status">{UNRECOVERABLE}</p>}
       {note && <p className="notice comment-note" role="status">{note}</p>}
       <div className="comment-actions">
         {locked && !busy && (
           <button type="button" className="button-quiet" onClick={() => { setHeld({ ...held, opKey: null, target: null, sentWith: null }); setNote(null); }}>Edit</button>
         )}
         <button type="button" className="button-quiet" onClick={onCancel}>Cancel</button>
-        <button type="button" className="button" onClick={submit} disabled={busy || (needsWords && !held.body.trim())}>
+        <button type="button" className="button" onClick={submit} disabled={busy || orphan || (needsWords && !held.body.trim())}>
           {busy ? 'Submitting...' : locked ? 'Try again' : `Submit: ${eventWords[event]}`}
         </button>
       </div>
