@@ -180,6 +180,14 @@ public sealed class GitHubRepoSourceTests : IAsyncLifetime
             if (sha is ['f', ..] or ['b', ..])
             {
                 var page = int.Parse(http.Request.Query["page"].ToString() is { Length: > 0 } p ? p : "1", System.Globalization.CultureInfo.InvariantCulture);
+                var etag = $"\"pg-{sha[0]}-{page}\"";
+                if (http.Request.Headers.IfNoneMatch.ToString() == etag)
+                {
+                    Interlocked.Increment(ref _notModified);
+                    return Results.StatusCode(304);
+                }
+
+                http.Response.Headers.ETag = etag;
                 var total = sha[0] == 'f' ? 101 : 5000;
                 var runs = Enumerable.Range((page - 1) * 100, Math.Max(0, Math.Min(100, total - ((page - 1) * 100))))
                     .Select(i => new { name = $"run {i}", status = "completed", conclusion = i == 100 ? "failure" : "success", html_url = "https://ci.example/r" })
@@ -710,5 +718,19 @@ public sealed class GitHubRepoSourceTests : IAsyncLifetime
         var parents = await Source().GetCommitParentsAsync(Alice, "acme", "plant", new string('u', 40), CancellationToken.None);
 
         Assert.Equal([new string('a', 40), new string('b', 40)], parents.Value!);
+    }
+
+    /// <summary>Every page of a long checks list is polled with its own ETag: an unchanged poll is all 304s (found in review, 2026-10-20).</summary>
+    [Fact]
+    public async Task An_unchanged_poll_of_a_long_checks_list_is_all_not_modified()
+    {
+        var source = Source();
+        var first = await source.GetChecksAsync(Alice, "acme", "plant", new string('f', 40), CancellationToken.None);
+        var before = _notModified;
+
+        var again = await source.GetChecksAsync(Alice, "acme", "plant", new string('f', 40), CancellationToken.None);
+
+        Assert.Equal(first.Value!.Checks, again.Value!.Checks);
+        Assert.Equal(before + 2, _notModified);
     }
 }

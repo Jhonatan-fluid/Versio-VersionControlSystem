@@ -829,8 +829,8 @@ public sealed class GitHubRepoSource(
     /// Both lists are paged by GitHub. Only the first page of each was read until a review
     /// supplied 100 passing check runs and one failing one: the failure was never shown, and nothing
     /// said the list was cut (2026-10-20). Every page is now read, to a bound; past it the answer
-    /// says it was cut. The first page goes with its ETag, so an unchanged poll still costs nothing;
-    /// a new run changes its <c>total_count</c>, and so the first page, so a poll is never fooled.
+    /// says it was cut. Every page goes with its own ETag, so an unchanged poll still costs nothing;
+    /// a changed page answers in full, and a new run changes <c>total_count</c> on every page.
     /// </remarks>
     public async Task<RepoResult<CheckList>> GetChecksAsync(RepoAccess access, string owner, string repo, string commitSha, CancellationToken ct)
     {
@@ -880,7 +880,9 @@ public sealed class GitHubRepoSource(
         var total = first.Value.Total;
         for (var page = 2; all.Count < total && page <= MaxCheckPages; page++)
         {
-            var next = await GetJsonAsync(access, $"{relative}?per_page=100&page={page.ToString(CultureInfo.InvariantCulture)}", Page, ct).ConfigureAwait(false);
+            // With its own ETag too: an unchanged poll of a long list was one 304 and nine full
+            // reads, every 30 s per viewer (found in review, 2026-10-20). Now every page is a 304.
+            var next = await GetConditionalAsync(access, $"{relative}?per_page=100&page={page.ToString(CultureInfo.InvariantCulture)}", Page, ct).ConfigureAwait(false);
             if (!next.Ok)
             {
                 // A later page that cannot be read: what was read, said to be cut — never passed off as all.
