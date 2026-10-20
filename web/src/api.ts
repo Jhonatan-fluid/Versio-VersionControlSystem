@@ -181,6 +181,8 @@ export interface ReviewSnapshot {
   token: string;
   /** Whether to draw write controls: writes on for this repository and a signed-in person. */
   writable: boolean;
+  /** Whether to draw the merge box: the merge tier on as well (S11). */
+  canMerge?: boolean;
   number: number;
   title: string;
   author: string;
@@ -265,6 +267,26 @@ export interface ReviewFileView {
   coverage: 'complete' | 'partial' | 'raw';
   placements: ThreadPlacement[];
   gaps: CoverageGap[];
+}
+
+/**
+ * The merge box's read (slice 6). tier false: merging is switched off here, and nothing is shown.
+ * error: GitHub could not say whether a merge is allowed, and none is offered.
+ */
+export interface MergeStateView {
+  tier: boolean;
+  error?: string;
+  state: string;
+  merged: boolean;
+  headSha: string;
+  mergeStateStatus: string;
+  mergeable: boolean;
+  blocked: string | null;
+  methods: string[];
+  autoMergeAllowed: boolean;
+  autoMerge: { method: string; by: string } | null;
+  canDisableAutoMerge: boolean;
+  mergeCommit: string | null;
 }
 
 /** The viewer's pending review: one per person per pull request, created on the commit it will approve. */
@@ -472,6 +494,8 @@ export const api = {
       get<ReviewCommits>(`${reviewBase(owner, repo, s.number)}/commits`, signal, sealed(s)),
     pending: (owner: string, repo: string, s: ReviewSnapshot, signal?: AbortSignal) =>
       get<PendingReviewView>(`${reviewBase(owner, repo, s.number)}/reviews/pending`, signal, sealed(s)),
+    mergeState: (owner: string, repo: string, s: ReviewSnapshot, signal?: AbortSignal) =>
+      get<MergeStateView>(`${reviewBase(owner, repo, s.number)}/merge-state`, signal, sealed(s)),
     viewed: (owner: string, repo: string, s: ReviewSnapshot, signal?: AbortSignal) =>
       get<{ paths: string[] }>(`${reviewBase(owner, repo, s.number)}/viewed`, signal, sealed(s)),
     coverage: (owner: string, repo: string, s: ReviewSnapshot, signal?: AbortSignal) =>

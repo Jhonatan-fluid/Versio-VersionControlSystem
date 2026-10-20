@@ -58,6 +58,9 @@ interface Options {
   canUpdate?: boolean;
   merged?: boolean;
   draftLive?: boolean;
+  /** Whether the snapshot says the merge tier is on, and what the merge-state read answers. */
+  canMerge?: boolean;
+  merge?: Record<string, unknown>;
 }
 
 let calls: { url: string; snapshot: string | null; method: string; csrf: string | null; body: Record<string, unknown> | null }[] = [];
@@ -67,7 +70,7 @@ function answer(url: string, o: Options): unknown {
     return {
       token, number: 12, title: 'Fix interlock', author: 'jo', when: '2026-10-17T09:00:00Z', draft: false,
       baseRef: 'main', baseLabel: 'main', headLabel: 'fix', baseSha: 'c'.repeat(40), mergeBaseSha: 'b'.repeat(40), headSha: head,
-      issuedAt: '2026-10-17T09:00:00Z', html: '<div class="md-page"><p>The delay was wrong.</p></div>', writable: o.writable ?? false,
+      issuedAt: '2026-10-17T09:00:00Z', html: '<div class="md-page"><p>The delay was wrong.</p></div>', writable: o.writable ?? false, canMerge: o.canMerge ?? false,
     };
   }
   if (url.endsWith('/status')) {
@@ -108,6 +111,9 @@ function answer(url: string, o: Options): unknown {
         { id: 'GONE', path: 'src/Pump.st', pathLabel: 'src/Pump.st', resolved: false, outdated: true, line: null, startLine: null, side: 'RIGHT', originalLine: 9, subject: 'LINE', truncated: false, ...may, comments: [comment('c3', '<p>an old remark</p>')] },
       ],
     };
+  }
+  if (url.endsWith('/merge-state')) {
+    return o.merge ?? { tier: false };
   }
   if (url.endsWith('/reviews/pending')) {
     return { review: o.pending ?? null };
@@ -883,5 +889,113 @@ describe('PullPage metadata', () => {
 
     expect(host.querySelector('.review-stale')).not.toBeNull();
     act(() => root.unmount());
+  });
+});
+
+// Slice 6 (docs/web/PLAN.md, S11): the merge box merges only the reviewed commit, only when anyone
+// could, and asks first in words that name the pull request, its branches and the commit.
+describe('PullPage merge box', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    document.body.innerHTML = '';
+    sessionStorage.clear();
+  });
+
+  async function click(element: Element, host: HTMLElement) {
+    await act(async () => {
+      (element as HTMLElement).click();
+    });
+    await settle(host, () => false);
+  }
+
+  const button = (root: ParentNode, label: string) => Array.from(root.querySelectorAll('button')).find((b) => b.textContent === label);
+  const writes = () => calls.filter((c) => c.method !== 'GET' && !c.url.endsWith('/markdown'));
+  const ready = { tier: true, state: 'OPEN', merged: false, headSha: head, mergeStateStatus: 'CLEAN', mergeable: true, blocked: null,
+    methods: ['MERGE', 'SQUASH'], autoMergeAllowed: true, autoMerge: null, canDisableAutoMerge: false, mergeCommit: null };
+
+  it('draws nothing and asks nothing without the merge tier', async () => {
+    const { host, root } = await render('/acme/plant/pull/12', { writable: true, canMerge: false, merge: ready });
+
+    expect(host.querySelector('.merge-box')).toBeNull();
+    expect(calls.some((c) => c.url.endsWith('/merge-state'))).toBe(false);
+    act(() => root.unmount());
+  });
+
+  it('asks first, naming the pull request, its branches, the commit and the method, and merges only on yes', async () => {
+    const { host, root } = await render('/acme/plant/pull/12', { writable: true, canMerge: true, merge: ready });
+    const box = () => host.querySelector('.merge-box')!;
+    await act(async () => {
+      const select = box().querySelector<HTMLSelectElement>('select')!;
+      Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value')!.set!.call(select, 'SQUASH');
+      select.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+
+    await click(button(box(), 'Merge...')!, host);
+    expect(box().querySelector('.merge-confirm')?.textContent).toContain(`Merge #12 (fix → main) at commit ${head.slice(0, 8)} by squash`);
+    await click(button(box(), 'Cancel')!, host);
+    expect(writes()).toHaveLength(0);
+
+    await click(button(box(), 'Merge...')!, host);
+    await click(button(box(), 'Confirm')!, host);
+    const posted = writes()[0]!;
+    expect(posted.url.endsWith('/pulls/12/merge')).toBe(true);
+    expect(posted.body).toMatchObject({ method: 'SQUASH' });
+    expect(posted.snapshot).toBe(token);
+    act(() => root.unmount());
+  });
+
+  it('offers no merge past what protects the branch, only auto-merge of exactly this commit', async () => {
+    const blocked = { ...ready, mergeStateStatus: 'BLOCKED', mergeable: false, blocked: 'Required reviews or checks have not passed.' };
+    const { host, root } = await render('/acme/plant/pull/12', { writable: true, canMerge: true, merge: blocked });
+    const box = () => host.querySelector('.merge-box')!;
+
+    expect(box().textContent).toContain('Required reviews or checks have not passed.');
+    expect(button(box(), 'Merge...')).toBeUndefined();
+    await click(button(box(), 'Merge automatically when ready...')!, host);
+    expect(box().querySelector('.merge-confirm')?.textContent).toContain(`only commit ${head.slice(0, 8)}: any push turns it off`);
+    await click(button(box(), 'Confirm')!, host);
+
+    expect(writes()[0]!.url.endsWith('/auto-merge')).toBe(true);
+    expect(writes()[0]!.body).toMatchObject({ enable: true, method: 'MERGE' });
+    act(() => root.unmount());
+  });
+
+  it('brings a branch that is behind up to date, after asking', async () => {
+    const behind = { ...ready, mergeStateStatus: 'BEHIND', mergeable: false, blocked: 'The branch must be brought up to date with its base first.' };
+    const { host, root } = await render('/acme/plant/pull/12', { writable: true, canMerge: true, merge: behind });
+
+    await click(button(host.querySelector('.merge-box')!, 'Update branch...')!, host);
+    await click(button(host.querySelector('.merge-box')!, 'Confirm')!, host);
+
+    expect(writes()[0]!.url.endsWith('/update-branch')).toBe(true);
+    act(() => root.unmount());
+  });
+
+  it('offers nothing when GitHub cannot say, or when the pull request has moved past the reviewed commit', async () => {
+    const unknown = await render('/acme/plant/pull/12', { writable: true, canMerge: true, merge: { tier: true, error: 'upstream' } });
+    expect(unknown.host.querySelector('.merge-box')?.textContent).toContain('no merge is offered');
+    expect(unknown.host.querySelectorAll('.merge-box button')).toHaveLength(0);
+    act(() => unknown.root.unmount());
+    document.body.innerHTML = '';
+
+    const moved = await render('/acme/plant/pull/12', { writable: true, canMerge: true, merge: { ...ready, headSha: 'f'.repeat(40) } });
+    expect(moved.host.querySelector('.merge-box')?.textContent).toContain('Load the latest to merge it');
+    expect(button(moved.host.querySelector('.merge-box')!, 'Merge...')).toBeUndefined();
+    act(() => moved.root.unmount());
+  });
+
+  it('says auto-merge is on and turns it off, and says a merged pull request is merged', async () => {
+    const on = await render('/acme/plant/pull/12', { writable: true, canMerge: true,
+      merge: { ...ready, mergeable: false, mergeStateStatus: 'BLOCKED', blocked: 'x', autoMerge: { method: 'SQUASH', by: 'jo' }, canDisableAutoMerge: true } });
+    expect(on.host.querySelector('.merge-auto')?.textContent).toContain('set by jo');
+    await click(button(on.host.querySelector('.merge-box')!, 'Turn off')!, on.host);
+    await click(button(on.host.querySelector('.merge-box')!, 'Confirm')!, on.host);
+    expect(writes()[0]!.body).toMatchObject({ enable: false });
+    act(() => on.root.unmount());
+    document.body.innerHTML = '';
+
+    const merged = await render('/acme/plant/pull/12', { writable: true, canMerge: true, merge: { ...ready, merged: true, state: 'MERGED', mergeCommit: 'a'.repeat(40) } });
+    expect(merged.host.querySelector('.merge-box')?.textContent).toContain('Merged as aaaaaaaa');
+    act(() => merged.root.unmount());
   });
 });

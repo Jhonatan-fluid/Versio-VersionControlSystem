@@ -4,6 +4,7 @@ import type { CoverageGap, Layout, Me, PaneView, PendingReviewView, ReviewCommit
 import { ApiError, api } from '../api';
 import type { Annotation } from '../components/FragmentHost';
 import { FragmentHost } from '../components/FragmentHost';
+import { MergeBox } from '../components/MergeBox';
 import { ErrorPanel } from '../components/Pane';
 import { AssigneesEditor, BaseEditor, LabelsEditor, StateActions, TitleEditor } from '../components/PullMeta';
 import { ReviewBar, ReviewersEditor } from '../components/ReviewBar';
@@ -180,6 +181,8 @@ export function PullPage({ me }: { me: Me | null }) {
   // Read again after every write: a title, a label or a close shows at once, not at the next poll.
   const status = usePolled(snap ? (s) => api.review.status(owner, repo, snap, s) : null, token, changed);
   const live = status?.summary ?? null;
+  // The merge box's state: read only with the merge tier on, and again after every write.
+  const mergeState = useAsync((s) => (snap?.canMerge && tab === 'conversation' ? api.review.mergeState(owner, repo, snap, s) : never()), [token, tab, changed]);
   const [editing, setEditing] = useState<'title' | 'base' | null>(null);
   const files = useAsync((s) => (snap ? api.review.files(owner, repo, snap, s) : never()), [token]);
   const threads = useAsync((s) => (snap ? api.review.threads(owner, repo, snap, s) : never()), [token, changed]);
@@ -378,6 +381,9 @@ export function PullPage({ me }: { me: Me | null }) {
               onChanged={writer.onChanged} onStale={writer.onStale} onOpenPath={(p) => go('files', p)} />
           )}
           {tab === 'conversation' && <Conversation snap={snap!} live={live} timeline={timeline} writer={writer} onOpenPath={(p) => navigate(blobUrl(owner, repo, snap!.headSha, p))} />}
+          {tab === 'conversation' && writer && snap!.canMerge && (
+            <MergeBox owner={owner} repo={repo} snap={writer.snap} state={mergeState} onChanged={writer.onChanged} onStale={writer.onStale} />
+          )}
           {tab === 'commits' && <Commits commits={commits} />}
           {tab === 'checks' && <Checks status={status} />}
           {tab === 'files' && (

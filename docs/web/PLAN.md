@@ -666,7 +666,19 @@ only use of Contents write; **no admin bypass, ever**.
 6. Merge, update-branch and auto-merge (with `expectedHeadOid`; it is a *future* merge of this
    exact commit, described as such) — a separate release gate. **Branch deletion deferred**: no
    atomic precondition exists, and read-then-delete could lose pushed work; the repository's
-   "Automatically delete head branches" setting does it instead.
+   "Automatically delete head branches" setting does it instead. **Built 2026-10-20; its
+   real-GitHub gate waits for the App with Contents write.** As built: `Web:Writes:Merge` (off by
+   default, on top of `Web:Writes:Enabled`) — without it `/merge`, `/update-branch` and `/auto-merge`
+   answer 404 and the snapshot's `canMerge` is false. The merge carries `sha` = the snapshot's head,
+   update-branch `expected_head_sha`, auto-merge `expectedHeadOid`; each first checks the snapshot
+   against the live head and base. **No admin bypass, enforced rather than assumed**: GitHub's API
+   lets an administrator merge past required reviews and checks, so the server merges only when
+   `mergeStateStatus` is CLEAN, UNSTABLE or HAS_HOOKS, and refuses BLOCKED, BEHIND, DIRTY, DRAFT and
+   UNKNOWN for everyone. `mergeStateStatus` is read in its own query (with the `merge-info-preview`
+   media type), so if GitHub refuses that field only the merge box goes — failing closed — and the
+   summary's "this changed" signal stays. Methods follow the repository's settings. The merge box
+   asks before every action, naming the pull request, its branches, the commit and the method;
+   auto-merge is worded as what it is, a later merge of only this commit that any push turns off.
 
 Release gates: each slice's mutation checks red when broken; writes on one throwaway repository
 first, merge last; the external penetration test with writes on, before anyone but the owner has

@@ -158,6 +158,14 @@ button { font: inherit; color: inherit; }
 .new-pull-branches label { display: inline-flex; gap: 6px; align-items: center; }
 .new-pull-title { font: 600 15px var(--ui); color: var(--fg); background: var(--surface-card); border: 1px solid var(--border); border-radius: 6px; padding: 6px 8px; }
 .new-pull-body { width: 100%; min-height: 220px; font: 13px/1.45 var(--ui); color: var(--fg); background: var(--surface-card); border: 1px solid var(--border); border-radius: 6px; padding: 8px; resize: vertical; }
+.merge-box { border: 1px solid var(--border); border-radius: 6px; background: var(--surface-card); padding: 10px 12px; margin: 16px 0; font-size: 13px; display: flex; flex-direction: column; gap: 8px; }
+.merge-box p { margin: 0; }
+.merge-fields { display: flex; flex-direction: column; gap: 6px; width: 100%; max-width: 700px; }
+.merge-fields input, .merge-fields select { font: 13px var(--ui); color: var(--fg); background: var(--surface-card); border: 1px solid var(--border); border-radius: 6px; padding: 4px 6px; max-width: 100%; }
+.merge-fields textarea { min-height: 60px; font: 13px var(--ui); color: var(--fg); background: var(--surface-card); border: 1px solid var(--border); border-radius: 6px; padding: 6px; }
+.merge-ready { display: flex; flex-direction: column; gap: 8px; align-items: flex-start; }
+.merge-auto .link-button { margin-left: 8px; }
+.merge-confirm { border: 1px solid var(--notice-border); border-radius: 6px; padding: 8px 10px; background: var(--notice-bg); }
 .new-pull-draft { font-size: 13px; display: inline-flex; gap: 6px; align-items: center; }
 .reviewers-add { display: flex; gap: 6px; margin-top: 4px; }
 .reviewers-add input { flex: 1; min-width: 0; font: 13px var(--ui); color: var(--fg); background: var(--surface-card); border: 1px solid var(--border); border-radius: 6px; padding: 3px 6px; }
