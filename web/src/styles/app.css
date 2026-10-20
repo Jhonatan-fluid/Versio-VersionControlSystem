@@ -129,6 +129,9 @@ button { font: inherit; color: inherit; }
 
 .fragment { min-width: 0; }
 .fragment .cd-num { cursor: pointer; }
+.can-comment td.mt-name, .can-comment .ld-head { cursor: pointer; }
+.can-comment td.mt-name:hover, .can-comment .ld-head:hover { text-decoration: underline dotted; }
+tr.thread-row > td { padding: 4px 8px 8px 32px; background: transparent; }
 .fragment .is-target { outline: 2px solid var(--accent); outline-offset: -2px; }
 .fragment .cd-page, .fragment .mt-page, .fragment .ld-page { margin-bottom: 16px; }
 

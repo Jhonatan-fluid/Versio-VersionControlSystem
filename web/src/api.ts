@@ -222,10 +222,26 @@ export interface ReviewFiles {
   files: ReviewFile[];
 }
 
+/**
+ * Where one thread goes on a rendered drawing, decided by the server from the drawing's own anchors
+ * (docs/web/PLAN.md, C3): on an element (exact, moved, line), on a drawn source line (hint), or
+ * nowhere, with the reason (unplaced).
+ */
+export interface ThreadPlacement {
+  threadId: string;
+  outcome: 'exact' | 'moved' | 'line' | 'hint' | 'unplaced';
+  dom: string | null;
+  reason: string | null;
+  hintPath: string | null;
+  hintSide: 'LEFT' | 'RIGHT' | null;
+  hintLine: number | null;
+}
+
 /** A changed file's drawing, and how far it can be trusted: "partial" until its renderer proves coverage (C4). */
 export interface ReviewFileView {
   view: View;
   coverage: 'partial' | 'raw';
+  placements: ThreadPlacement[];
 }
 
 export interface ReviewStatus {
@@ -368,8 +384,8 @@ export const api = {
       get<ReviewSnapshot>(`${reviewBase(owner, repo, number)}/snapshot`, signal),
     files: (owner: string, repo: string, s: ReviewSnapshot, signal?: AbortSignal) =>
       get<ReviewFiles>(`${reviewBase(owner, repo, s.number)}/files`, signal, sealed(s)),
-    fileView: (owner: string, repo: string, s: ReviewSnapshot, path: string, view: PaneView, layout: Layout, signal?: AbortSignal) =>
-      get<ReviewFileView>(`${reviewBase(owner, repo, s.number)}/files/view${query({ path, view, layout })}`, signal, sealed(s)),
+    fileView: (owner: string, repo: string, s: ReviewSnapshot, path: string, view: PaneView, layout: Layout, from?: string, signal?: AbortSignal) =>
+      get<ReviewFileView>(`${reviewBase(owner, repo, s.number)}/files/view${query({ path, from, view, layout })}`, signal, sealed(s)),
     status: (owner: string, repo: string, s: ReviewSnapshot, signal?: AbortSignal) =>
       get<ReviewStatus>(`${reviewBase(owner, repo, s.number)}/status`, signal, sealed(s)),
     threads: (owner: string, repo: string, s: ReviewSnapshot, signal?: AbortSignal) =>

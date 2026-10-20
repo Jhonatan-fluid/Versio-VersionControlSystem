@@ -21,7 +21,7 @@ UX remainder) is built and tested as of 2026-08-25** — UX-6 find boxes, UX-7 `
 Escape, UX-8 copy-a-commit, UX-12 amend-while-unpushed — and its visual half joins the
 eyeball list in item 2. Do not start from `archive/` or a handoff.
 
-**Tests:** 3,667 across twelve projects (plus 49 vitest in `web/`), last counted 2026-10-17
+**Tests:** 3,696 across twelve projects (plus 56 vitest in `web/`), last counted 2026-10-19
 on `ReviewFixes` — Integration 172 and App 783 after the review fixes; the toolchain-gated
 counts (TIA 5, TwinCAT 6, CODESYS 55) are from their last gate runs, not re-run for the count. **The Rendered view of an ST object reads like the IDE (2026-09-20):** no
 `@@` line, one gutter, a Declaration / Implementation divider, and the implementation
@@ -61,18 +61,18 @@ marking, duplicate-param keys, and the detail-pane lookup. All of them are in
 
 | Project | Tests | Time | Needs |
 |---|---|---|---|
-| `Versio.Core.Tests` | 1,770 | under a second | nothing |
+| `Versio.Core.Tests` | 1,784 | under a second | nothing |
 | `Versio.Integration.Tests` | 174 | ~10 s | real git |
 | `Versio.App.Tests` | 789 | 6 m 35 s on 2026-10-10; 8 m 38 s on 2026-10-05; ~3.6 min on 2026-09-22 | nothing |
 | `Versio.Arch.Tests` | 36 | instant | nothing |
-| `Versio.Plc.Codesys.Pure.Tests` | 369 | under a second | nothing |
+| `Versio.Plc.Codesys.Pure.Tests` | 371 | under a second | nothing |
 | `Versio.Plc.Codesys.Parity.Tests` | 97 | ~15 s | `python` on PATH — skips cleanly without it, so check the count |
-| `Versio.Plc.TiaPortal.Pure.Tests` | 96 | instant | nothing |
+| `Versio.Plc.TiaPortal.Pure.Tests` | 98 | instant | nothing |
 | `Versio.Plc.TiaPortal.Tests` | 5 | seconds when skipped; minutes when Portal runs the import gate | **real TIA Portal** — skips without Openness membership or LFS content |
 | `Versio.Plc.TwinCat.Pure.Tests` | 23 | instant | nothing |
 | `Versio.Plc.TwinCat.Tests` | 6 | seconds when skipped; ~5 min when XAE runs the import gate | **real TwinCAT XAE** — skips without `TcXaeShell.DTE.17.0` or the fixture |
-| `Versio.Web.Tests` | 247 | a few seconds | nothing — GitHub is faked |
-| `web/` (vitest) | 49 | ~20 s | the pinned Node in `web/.node` |
+| `Versio.Web.Tests` | 258 | a few seconds | nothing — GitHub is faked |
+| `web/` (vitest) | 56 | ~20 s | the pinned Node in `web/.node` |
 | `Versio.Plc.Codesys.Tests` | 55 | **~30 min**; 41 m 14 s, 55/55, on 2026-10-11 on `WebViewer` | **real CODESYS** |
 
 The first ten are the loop to work in — about thirty seconds plus the UI suite. The last is
@@ -396,7 +396,20 @@ One list. Reorder it; do not copy it into another file.
    killed or explained (the body cap has a second wall). Looked at in the preview with a signed-in preview session. **Its real-GitHub gate is
    the owner's**: the App needs Pull requests and Issues write; then post, lose the network
    mid-post, and resolve on a throwaway repository. Not run yet: `RedisOperationLedger` against a
-   real Redis. Next: slice 3, rendered anchors.
+   real Redis. **Slice 3 built 2026-10-19**: comments sit on member rows and ladder networks.
+   Parsers record each row's and network's file lines (TIA and CODESYS XML with line info, ST
+   declarations shifted to the file, a File-Based Storage header counted); renderers emit
+   `data-anchors` and return the same anchors; `AnchorMatcher` finds a comment again by key plus
+   revision or content, finds a renumbered network as Moved, and refuses whenever two candidates
+   exist. The server resolves a clicked element from its own rendering, posts it at the element's
+   own lines inside GitHub's hunks (or on the file), writes the tag, and places threads on
+   drawings; a tag that disagrees with GitHub's current line places nothing. Element-level
+   anchors deferred (PLAN.md). Seen in the preview: a comment written on network 2 lands, moved,
+   on the renumbered network 1. Next: slice 4, coverage evidence and reviews.
+   **A loose end seen once, 2026-10-19:** `PerformanceTests.A_page_load_asks_GitHub_for_each_thing_once`
+   failed one full Web run and passed three after; not investigated. A suspect, unproven: the
+   loader's resolution cache is written after its single-flight finishes, so a request arriving in
+   between resolves again.
    **Left, all needing the owner or a deployment:**
    - **register the GitHub App** (on GitHub: read-only Contents and Metadata, a callback at
      `/auth/callback`) and run sign-in against real GitHub; until then the server runs

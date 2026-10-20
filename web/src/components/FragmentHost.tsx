@@ -34,7 +34,13 @@ interface Props {
    * A gutter click on a diff row, with both of its file lines: the new side's (data-line) and the
    * old side's (data-old-line). A review comment needs the side; a link to a line does not.
    */
-  onRowPick?: (row: { line: number | null; oldLine: number | null }) => void;
+  onRowPick?: (row: { line: number | null; oldLine: number | null; fileLine: number | null; oldFileLine: number | null; srcPath: string | null }) => void;
+  /**
+   * A click on a drawn element a review comment can sit on — a member's name, a network's heading —
+   * with the anchor ids it stands for (its <c>data-anchors</c>). Only those two targets, so a click
+   * on a type link or a ladder control still does what it always did.
+   */
+  onAnchorPick?: (anchors: string[]) => void;
 }
 
 /**
@@ -42,7 +48,7 @@ interface Props {
  * fragment is sanitised (the third wall), placed, and then only read, through the data-* markers
  * the renderers promise.
  */
-export function FragmentHost({ html, path, onOpenPath, line, onLine, annotations, onPlaced, onRowPick }: Props) {
+export function FragmentHost({ html, path, onOpenPath, line, onLine, annotations, onPlaced, onRowPick, onAnchorPick }: Props) {
   const host = useRef<HTMLDivElement>(null);
   const clean = useMemo(() => sanitize(html), [html]);
   const [slots, setSlots] = useState<Map<string, HTMLElement>>(() => new Map());
@@ -65,20 +71,33 @@ export function FragmentHost({ html, path, onOpenPath, line, onLine, annotations
         if (!target) {
           continue;
         }
-        let after: Element = target.closest('.cd-drow, .cd-split, .cd-row') ?? target;
+        let after: Element = target.closest('.cd-drow, .cd-split, .cd-row, tr.mt-row, section.ld-row') ?? target;
         // Several threads on one row stack in the order given.
         while (after.nextElementSibling?.classList.contains('thread-slot')) {
           after = after.nextElementSibling;
         }
-        const slot = document.createElement('div');
-        slot.className = 'thread-slot';
-        after.after(slot);
+        // A table row's slot is a table row of its own, one cell across: a div between rows of a
+        // tbody is invalid markup, and browsers move it out of the table, away from its row.
+        let slot: HTMLElement;
+        if (after instanceof HTMLTableRowElement || after.closest('tbody')) {
+          const row = document.createElement('tr');
+          row.className = 'thread-slot thread-row';
+          const cell = document.createElement('td');
+          cell.colSpan = Math.max(1, (after as HTMLTableRowElement).cells?.length ?? 1);
+          row.appendChild(cell);
+          after.after(row);
+          slot = cell;
+        } else {
+          slot = document.createElement('div');
+          slot.className = 'thread-slot';
+          after.after(slot);
+        }
         made.set(a.key, slot);
       }
     }
     setSlots(made);
     placedReport.current?.([...made.keys()]);
-    return () => made.forEach((slot) => slot.remove());
+    return () => made.forEach((slot) => (slot.closest('tr.thread-row') ?? slot).remove());
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [clean, wantedKey]);
 
@@ -191,12 +210,30 @@ export function FragmentHost({ html, path, onOpenPath, line, onLine, annotations
       return;
     }
 
+    if (onAnchorPick) {
+      const target = element.closest<HTMLElement>('td.mt-name, td.mt-mark, .ld-head');
+      const anchored = target?.closest<HTMLElement>('[data-anchors]');
+      const ids = anchored?.dataset.anchors?.split(' ').filter((id) => id.length > 0) ?? [];
+      if (ids.length > 0) {
+        onAnchorPick(ids);
+        return;
+      }
+    }
+
     const gutter = element.closest<HTMLElement>('.cd-num');
     const row = gutter?.parentElement;
     if (row && onRowPick) {
       // In a side-by-side diff the gutter sits in a cell, and the cell carries its own side's line.
+      // A drawn source block names its file (data-src-path): its rows' file lines are lines of THAT
+      // file, which under a member table is not the one on screen.
       const n = (v: string | undefined) => (v && /^\d+$/.test(v) ? Number(v) : null);
-      onRowPick({ line: n(row.dataset.line), oldLine: n(row.dataset.oldLine) });
+      onRowPick({
+        line: n(row.dataset.line),
+        oldLine: n(row.dataset.oldLine),
+        fileLine: n(row.dataset.fileLine),
+        oldFileLine: n(row.dataset.oldFileLine),
+        srcPath: row.closest<HTMLElement>('[data-src-path]')?.dataset.srcPath || null,
+      });
       return;
     }
     const number = row?.dataset.line;

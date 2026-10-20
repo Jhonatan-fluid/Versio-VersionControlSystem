@@ -2,7 +2,8 @@ import { act } from 'react';
 import { createRoot } from 'react-dom/client';
 import { MemoryRouter, Route, Routes } from 'react-router';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { PullPage, threadSelector } from './PullPage';
+import type { ThreadPlacement } from '../api';
+import { PullPage, placementSelector, threadSelector } from './PullPage';
 
 // The review page (docs/web/PLAN.md, *Pull request review*, slice 1): everything read against one
 // snapshot, threads under their lines on Raw, nothing unplaceable lost, and a reload offered —
@@ -23,7 +24,13 @@ const rawDiff = `<div class="cd-page cd-diff">
 // A rendered body as SourceHtml draws it: data-line is the line within its SECTION, not the file
 // line GitHub means. A thread placed by it would sit on the wrong line, which is why rendered views
 // list threads instead of placing them until anchors exist (slice 3).
-const renderedSource = '<div class="cd-page"><div class="cd-row" data-line="3" data-file-line="9"><span class="cd-num">3</span>run := TRUE;</div></div>';
+// A drawn interface: a member table parsed from the .xml layer, and the code body under it, which
+// is a block of ANOTHER file, the .st — exactly why every block names its own file.
+const renderedSource =
+  '<div class="mt-page" data-src-path="src/Pump.xml"><table class="mt-table"><tbody>' +
+  '<tr class="mt-row mt-modified" data-path="run" data-change="modified" data-anchors="r-new-0 r-old-0"><td class="mt-mark">M</td><td class="mt-name">run</td><td class="mt-type">BOOL</td></tr>' +
+  '</tbody></table></div>' +
+  '<div class="cd-page" data-src-path="src/Pump.st"><div class="cd-row" data-line="3" data-file-line="9"><span class="cd-num">3</span>run := TRUE;</div></div>';
 
 const hostile = '<div class="md-page"><p>Why?<img src="x" onerror="window.__pwned=1"><script>window.__pwned=1</script></p></div>';
 
@@ -32,6 +39,8 @@ interface Options {
   writable?: boolean;
   /** What each write answers, by path suffix; done by default. */
   writes?: Record<string, { status: number; body: unknown }>;
+  /** Where the server placed each thread on the drawing. */
+  placements?: ThreadPlacement[];
 }
 
 let calls: { url: string; snapshot: string | null; method: string; csrf: string | null; body: Record<string, unknown> | null }[] = [];
@@ -61,6 +70,7 @@ function answer(url: string, o: Options): unknown {
     const raw = url.includes('view=raw');
     return {
       coverage: raw ? 'raw' : 'partial',
+      placements: raw ? [] : o.placements ?? [],
       view: { kind: raw ? 'diff' : 'table', title: 'Pump', path: 'src/Pump.st', html: raw ? rawDiff : renderedSource, notices: [], layers: ['src/Pump.st'], layerLabels: ['src/Pump.st'] },
     };
   }
@@ -348,5 +358,112 @@ describe('PullPage writes', () => {
     expect(posted.url.endsWith('/threads/NEW3/resolve')).toBe(true);
     expect(posted.body?.resolved).toBe(true);
     act(() => root.unmount());
+  });
+});
+
+describe('PullPage on a drawing', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    document.body.innerHTML = '';
+    sessionStorage.clear();
+  });
+
+  const placement = (threadId: string, rest: Partial<ThreadPlacement>): ThreadPlacement => ({
+    threadId, outcome: 'unplaced', dom: null, reason: null, hintPath: null, hintSide: null, hintLine: null, ...rest,
+  });
+
+  async function click(element: Element, host: HTMLElement) {
+    await act(async () => {
+      (element as HTMLElement).click();
+    });
+    await settle(host, () => false);
+  }
+
+  const writes = () => calls.filter((c) => c.method !== 'GET' && !c.url.endsWith('/markdown'));
+
+  it('puts a thread the server placed on a member row under that row, in a table row of its own', async () => {
+    const { host, root } = await render('/acme/plant/pull/12?tab=files&path=src%2FPump.st', {
+      placements: [placement('NEW3', { outcome: 'exact', dom: 'r-new-0' }), placement('GONE', { reason: 'gone' })],
+    });
+
+    const row = host.querySelector('tr[data-anchors~="r-new-0"]')!;
+    expect(row.nextElementSibling?.matches('tr.thread-row')).toBe(true);
+    expect(row.nextElementSibling?.querySelector('[data-thread="NEW3"]')).not.toBeNull();
+    // Not placed by the server: listed, never guessed onto something.
+    expect(host.querySelector('.unplaced [data-thread="GONE"]')).not.toBeNull();
+    expect(host.querySelector('.unplaced [data-thread="NEW3"]')).toBeNull();
+    act(() => root.unmount());
+  });
+
+  it('says so when a thread was found again on a renumbered element', async () => {
+    const { host, root } = await render('/acme/plant/pull/12?tab=files&path=src%2FPump.st', {
+      placements: [placement('NEW3', { outcome: 'moved', dom: 'r-new-0' })],
+    });
+
+    expect(host.querySelector('[data-thread="NEW3"]')?.textContent).toContain('moved here');
+    act(() => root.unmount());
+  });
+
+  it('puts a hinted thread on the drawn line of ITS file, not on a line of the same number elsewhere', async () => {
+    const { host, root } = await render('/acme/plant/pull/12?tab=files&path=src%2FPump.st', {
+      placements: [placement('NEW3', { outcome: 'hint', hintPath: 'src/Pump.st', hintSide: 'RIGHT', hintLine: 9 })],
+    });
+
+    const line = host.querySelector('[data-src-path="src/Pump.st"] [data-file-line="9"]')!;
+    expect(line.nextElementSibling?.querySelector('[data-thread="NEW3"]')).not.toBeNull();
+    act(() => root.unmount());
+  });
+
+  it("opens a comment on a member from its name and posts only the element's id, never what it is", async () => {
+    const { host, root } = await render('/acme/plant/pull/12?tab=files&path=src%2FPump.st', { writable: true });
+
+    await click(host.querySelector('tr[data-anchors~="r-new-0"] td.mt-name')!, host);
+    const draft = host.querySelector('.thread-draft')!;
+    expect(draft.textContent).toContain('this member');
+    await act(async () => {
+      const textarea = draft.querySelector('textarea')!;
+      Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')!.set!.call(textarea, 'Why TRUE?');
+      textarea.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    await click(Array.from(draft.querySelectorAll('button')).find((b) => b.textContent === 'Comment')!, host);
+
+    const posted = writes()[0]!;
+    expect(posted.url.endsWith('/anchor-comments')).toBe(true);
+    expect(posted.body).toMatchObject({ path: 'src/Pump.st', dom: 'r-new-0', body: 'Why TRUE?' });
+    expect(Object.keys(posted.body!).sort()).toEqual(['body', 'dom', 'opKey', 'path']);
+    act(() => root.unmount());
+  });
+
+  it("comments on a drawn code line as a line of the code's own file", async () => {
+    const { host, root } = await render('/acme/plant/pull/12?tab=files&path=src%2FPump.st', { writable: true });
+
+    await click(host.querySelector('[data-src-path="src/Pump.st"] .cd-num')!, host);
+    const draft = host.querySelector('.thread-draft')!;
+    await act(async () => {
+      const textarea = draft.querySelector('textarea')!;
+      Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')!.set!.call(textarea, 'And here?');
+      textarea.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    await click(Array.from(draft.querySelectorAll('button')).find((b) => b.textContent === 'Comment')!, host);
+
+    // File line 9 of the .st, not section line 3, and not a line of the .xml the table came from.
+    expect(writes()[0]!.body).toMatchObject({ path: 'src/Pump.st', line: 9, side: 'RIGHT' });
+    act(() => root.unmount());
+  });
+});
+
+describe('placementSelector', () => {
+  const base: ThreadPlacement = { threadId: 't', outcome: 'exact', dom: 'n-new-3', reason: null, hintPath: null, hintSide: null, hintLine: null };
+
+  it('places only what the server placed, by an id of the shape renderers emit', () => {
+    expect(placementSelector(base)).toBe('[data-anchors~="n-new-3"]');
+    expect(placementSelector({ ...base, outcome: 'unplaced' })).toBeNull();
+    expect(placementSelector({ ...base, dom: 'n-new-3"] , body [x' })).toBeNull();
+  });
+
+  it('keeps a hinted path inside its attribute', () => {
+    const selector = placementSelector({ ...base, outcome: 'hint', dom: null, hintPath: 'a"b\\c.st', hintSide: 'LEFT', hintLine: 4 })!;
+    expect(selector).toBe('[data-src-path="a\\"b\\\\c.st"] [data-old-file-line="4"]');
+    expect(() => document.querySelector(selector)).not.toThrow();
   });
 });

@@ -616,7 +616,17 @@ only use of Contents write; **no admin bypass, ever**.
    every test, and a multi-instance deployment needs that one look first.
 3. Rendered anchors with provenance (C3, C6), parser line info in the pure packs, the markers
    contract (the drifted `data-network` / `data-element` names reconciled with the code's
-   `data-net` / `data-key`).
+   `data-net` / `data-key`). **Built 2026-10-19; its real-GitHub gate waits for the App.** As
+   built: the markers contract is `data-anchors` (a list of ids, one per side an element stands
+   for — an unchanged or merged network is drawn once, for both) and `data-src-path` on every
+   member table, ladder and source block, pinned by a test that the anchor list and the markup
+   name the same things. Kinds are `row` and `net`; **element-level anchors are deferred**: a
+   contact lives inside its network's SVG, where no thread can be drawn beside it, so a comment on
+   an element would be placed on its network anyway. Comments name only the clicked anchor id; the
+   server re-renders and takes the anchor from its own rendering (`/anchor-comments`). Drawn source
+   lines take ordinary line comments in their own file (`data-src-path` + file line). Renamed files
+   are compared with their old path when GitHub reports the rename. Coverage (C4) is unchanged:
+   every drawing still says it may be partial.
 4. Coverage evidence (C4), pending reviews, approval and request changes (C2).
 5. Pull request creation (same-repository branches) and metadata.
 6. Merge, update-branch and auto-merge (with `expectedHeadOid`; it is a *future* merge of this

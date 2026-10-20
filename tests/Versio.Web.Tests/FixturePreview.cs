@@ -1,6 +1,11 @@
 using System.Text;
+using System.Xml.Linq;
 using Microsoft.Extensions.DependencyInjection;
+using Versio.Core.Iec.Ladder;
+using Versio.Core.Review;
+using Versio.Plc.Codesys;
 using Versio.Web.Auth;
+using Versio.Web.Review;
 using Versio.Web.Sources;
 using Xunit;
 
@@ -61,6 +66,12 @@ public sealed class FixturePreview
             "Enable				: BOOL := TRUE;", "Enable				: BOOL := FALSE;");
         Edit("fixtures/projects/MachineWithMembers/Device/Plc Logic/Application/Simulation.st",
             "Glob_Var.TempActual-0.1;", "Glob_Var.TempActual-0.2;");
+        // Signals loses its first network, so every network after it is renumbered: the case review
+        // anchors exist for (a comment on network 2 is found again on network 1).
+        var signalsPath = "fixtures/projects/RefrigeratorControl/Device/Plc Logic/Application/Signals.xml";
+        var signals = XDocument.Parse(Encoding.UTF8.GetString(changed[signalsPath]).TrimStart('\uFEFF'), LoadOptions.PreserveWhitespace);
+        signals.Descendants().First(e => e.Name.LocalName == "List2" && (string?)e.Attribute("Name") == "NetworkList").Elements().First().Remove();
+        changed[signalsPath] = Encoding.UTF8.GetBytes(signals.ToString(SaveOptions.DisableFormatting));
         var next = github.Commit(repo, "next", changed);
 
         // The pulls and releases tabs have something to look at: next as an open pull request —
@@ -80,6 +91,7 @@ public sealed class FixturePreview
             new PullFile(alarm, "modified", null, "@@ -9 +9 @@\n-\tEnable\t\t\t\t: BOOL := TRUE;\n+\tEnable\t\t\t\t: BOOL := FALSE;"),
             // Shaped like GitHub's: three lines of context each side, so lines 19-25 take comments.
             new PullFile(simulation, "modified", null, "@@ -19,7 +19,7 @@\n a\n b\n c\n-x\n+y\n d\n e\n f"),
+            new PullFile(signalsPath, "modified", null, "@@ -25,4 +25,1 @@\n a\n-b\n-c\n-d"),
         ], false);
         var when = DateTimeOffset.Now.AddHours(-2);
         repo.Threads[1] = new ReviewThreadList(
@@ -93,6 +105,12 @@ public sealed class FixturePreview
                 [new ReviewComment("C3", "sam", "This old value is the bug.", when, next, next, CanEdit: true, CanDelete: true)], false, CanReply: true, CanUnresolve: true),
             new ReviewThread("T-gone", alarm, false, true, null, null, "RIGHT", 4, "LINE",
                 [new ReviewComment("C4", "sam", "An earlier remark on a line that has since moved.", when.AddDays(-1), null, next)], false),
+            // Written on github.com on the struct's changed line, no tag: placed on the row holding it.
+            new ReviewThread("T-row", alarm, false, false, 9, null, "RIGHT", 9, "LINE",
+                [new ReviewComment("C5", "lee", "Off by default means a fresh controller raises nothing. Intended?", when.AddMinutes(30), next, next)], false, CanReply: true, CanResolve: true),
+            // Written in Versio on network 2 before network 1 was deleted: found again, as moved, on network 1.
+            new ReviewThread("T-net", signalsPath, false, true, null, null, "RIGHT", 40, "LINE",
+                [new ReviewComment("C6", "sam", ReviewTags.WithAnchor("Does this rung still need the second timer?", $"{DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()}-previewpreviewpreview", NetworkTwo(files[signalsPath], signalsPath)), when.AddHours(-1), null, next)], false, CanReply: true, CanResolve: true),
         ], false);
         repo.Checks[next] =
         [
@@ -149,6 +167,14 @@ public sealed class FixturePreview
         }
 
         await Task.Delay(TimeSpan.FromMinutes(25));
+    }
+
+    /// <summary>The anchor a comment written on Signals' network 2, at the older commit, would carry.</summary>
+    private static SemanticAnchor NetworkTwo(byte[] signals, string path)
+    {
+        var body = CodesysProjectFormat.Instance.TryParseLadder(path, Encoding.UTF8.GetString(signals))!.Body;
+        var two = LadderHtml.Anchors(LadderDiff.Compare(null, body), path).Single(a => a.Dom == "n-new-2");
+        return new SemanticAnchor("net", path, ReviewSide.New, "an-earlier-head", two.Container, two.Key, two.Fingerprint);
     }
 
     /// <summary>

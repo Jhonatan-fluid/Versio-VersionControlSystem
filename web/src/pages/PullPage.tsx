@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router';
-import type { Layout, Me, PaneView, ReviewCommits, ReviewFile, ReviewFileView, ReviewSnapshot, ReviewStatus, ReviewThread, ReviewThreads, ReviewTimeline } from '../api';
+import type { Layout, Me, PaneView, ReviewCommits, ReviewFile, ReviewFileView, ReviewSnapshot, ReviewStatus, ReviewThread, ReviewThreads, ReviewTimeline, ThreadPlacement } from '../api';
 import { ApiError, api } from '../api';
 import type { Annotation } from '../components/FragmentHost';
 import { FragmentHost } from '../components/FragmentHost';
@@ -84,6 +84,27 @@ interface Writer {
   onStale: () => void;
 }
 
+/** An attribute value for a selector: quotes and backslashes escaped, so a path cannot end it. */
+function attr(value: string): string {
+  return value.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+}
+
+/**
+ * Where a thread sits on a rendered drawing, from the server's placement: on the element whose
+ * data-anchors names it, or — a hint — on a drawn source line of its own file. Null when the server
+ * placed it nowhere: the page lists it, never guesses.
+ */
+export function placementSelector(p: ThreadPlacement): string | null {
+  if (p.dom && /^[rn]-(new|old)-\d+$/.test(p.dom) && (p.outcome === 'exact' || p.outcome === 'moved' || p.outcome === 'line')) {
+    return `[data-anchors~="${p.dom}"]`;
+  }
+  if (p.outcome === 'hint' && p.hintPath && p.hintLine !== null && Number.isInteger(p.hintLine)) {
+    const marker = p.hintSide === 'LEFT' ? 'data-old-file-line' : 'data-file-line';
+    return `[data-src-path="${attr(p.hintPath)}"] [${marker}="${p.hintLine}"]`;
+  }
+  return null;
+}
+
 /** Where a thread sits in a Raw text diff: GitHub's side and line are the diff rows' own markers. */
 export function threadSelector(thread: ReviewThread): string | null {
   if (thread.subject !== 'LINE' || thread.line === null || !Number.isInteger(thread.line)) {
@@ -129,9 +150,11 @@ export function PullPage({ me }: { me: Me | null }) {
   const threads = useAsync((s) => (snap ? api.review.threads(owner, repo, snap, s) : never()), [token, changed]);
   const timeline = useAsync((s) => (snap && tab === 'conversation' ? api.review.timeline(owner, repo, snap, s) : never()), [token, tab, changed]);
   const commits = useAsync((s) => (snap && tab === 'commits' ? api.review.commits(owner, repo, snap, s) : never()), [token, tab]);
+  // A renamed file is drawn against its old path, which only the files list (from GitHub) knows.
+  const from = files.state === 'ok' ? files.value.files.find((f) => f.path === path)?.previousPath ?? undefined : undefined;
   const fileView = useAsync(
-    (s) => (snap && tab === 'files' && path ? api.review.fileView(owner, repo, snap, path, view, layout, s) : never()),
-    [token, tab, path, view, layout],
+    (s) => (snap && tab === 'files' && path && files.state !== 'loading' ? api.review.fileView(owner, repo, snap, path, view, layout, from, s) : never()),
+    [token, tab, path, view, layout, from, files.state],
   );
 
   const signIn = me?.signInAvailable && !me.signedIn ? api.signInUrl(location.pathname + location.search) : null;
@@ -441,37 +464,61 @@ interface FileReviewProps {
  */
 function FileReview({ writer, path, file, result, threads, threadsState, view, layout, onView, onLayout, onLayer, onOpenPath, signInUrl }: FileReviewProps) {
   const [placed, setPlaced] = useState<string[]>([]);
-  // A new line comment being written: on Raw only, where rows are file lines GitHub understands,
-  // and only on a file GitHub takes line comments on.
-  const [drafting, setDrafting] = useState<{ side: 'LEFT' | 'RIGHT'; line: number } | null>(null);
+  // A new comment being written. On Raw, on a diff line (the diff's own numbers are file lines).
+  // On a drawing, on an element the server will resolve (a member row, a network), or on a drawn
+  // source line of the file its block names — a code body under a table is another file.
+  type Draft =
+    | { kind: 'line'; side: 'LEFT' | 'RIGHT'; line: number; file: string }
+    | { kind: 'anchor'; dom: string };
+  const [drafting, setDrafting] = useState<Draft | null>(null);
   const [fileComment, setFileComment] = useState(false);
   useEffect(() => setDrafting(null), [path, view]);
   const canLine = writer !== null && view === 'raw' && file?.inline === true;
+  const canDraw = writer !== null && view === 'rendered';
+  const placements = result.state === 'ok' ? result.value.placements : [];
   const annotations: Annotation[] = useMemo(() => {
-    if (view !== 'raw') {
-      return [];
-    }
-    const placedThreads: Annotation[] = threads.flatMap((t) => {
-      const selector = threadSelector(t);
-      return selector ? [{ key: t.id, selector, content: <Thread thread={t} writer={writer} onOpenPath={onOpenPath} /> }] : [];
-    });
+    const byId = new Map(threads.map((t) => [t.id, t]));
+    const placedThreads: Annotation[] = view === 'raw'
+      ? threads.flatMap((t) => {
+          const selector = threadSelector(t);
+          return selector ? [{ key: t.id, selector, content: <Thread thread={t} writer={writer} onOpenPath={onOpenPath} /> }] : [];
+        })
+      : placements.flatMap((p) => {
+          const thread = byId.get(p.threadId);
+          const selector = placementSelector(p);
+          return thread && selector
+            ? [{ key: thread.id, selector, content: <Thread thread={thread} writer={writer} onOpenPath={onOpenPath} moved={p.outcome === 'moved'} /> }]
+            : [];
+        });
     if (drafting && writer) {
-      const where = `${drafting.side}:${drafting.line}`;
+      const where = drafting.kind === 'anchor' ? drafting.dom : `${drafting.file}:${drafting.side}:${drafting.line}`;
+      const selector = drafting.kind === 'anchor'
+        ? `[data-anchors~="${drafting.dom}"]`
+        : view === 'raw'
+          ? (drafting.side === 'LEFT' ? `[data-old-line="${drafting.line}"]` : `[data-line="${drafting.line}"]`)
+          : `[data-src-path="${attr(drafting.file)}"] [${drafting.side === 'LEFT' ? 'data-old-file-line' : 'data-file-line'}="${drafting.line}"]`;
+      const what = drafting.kind === 'anchor'
+        ? `New comment on this ${drafting.dom.startsWith('n-') ? 'network' : 'member'}${drafting.dom.includes('-old-') ? ', as it was' : ''}`
+        : `New comment on ${drafting.side === 'LEFT' ? 'old' : 'new'} line ${drafting.line}`;
       placedThreads.push({
         key: `draft:${where}`,
-        selector: drafting.side === 'LEFT' ? `[data-old-line="${drafting.line}"]` : `[data-line="${drafting.line}"]`,
+        selector,
         content: (
           <div className="thread thread-draft">
-            <header className="thread-head muted">New comment on {drafting.side === 'LEFT' ? 'old' : 'new'} line {drafting.line}</header>
-            <CommentBox owner={writer.owner} repo={writer.repo} snap={writer.snap} slot={`${writer.slots}:line:${path}:${where}`} path="/line-comments"
-              payload={{ path, line: drafting.line, side: drafting.side }} submitLabel="Comment" onCancel={() => setDrafting(null)}
+            <header className="thread-head muted">{what}</header>
+            <CommentBox owner={writer.owner} repo={writer.repo} snap={writer.snap} slot={`${writer.slots}:draft:${path}:${where}`}
+              path={drafting.kind === 'anchor' ? '/anchor-comments' : '/line-comments'}
+              payload={drafting.kind === 'anchor'
+                ? { path, from: file?.previousPath ?? undefined, dom: drafting.dom }
+                : { path: drafting.file, line: drafting.line, side: drafting.side }}
+              submitLabel="Comment" onCancel={() => setDrafting(null)}
               onDone={() => { setDrafting(null); writer.onChanged(); }} onStale={writer.onStale} />
           </div>
         ),
       });
     }
     return placedThreads;
-  }, [threads, view, onOpenPath, drafting, writer, path]);
+  }, [threads, view, onOpenPath, drafting, writer, path, placements, file]);
   const unplaced = threads.filter((t) => !placed.includes(t.id));
 
   if (result.state === 'loading') {
@@ -524,6 +571,7 @@ function FileReview({ writer, path, file, result, threads, threadsState, view, l
       {writer && (
         <div className="file-comment">
           {canLine && <span className="muted">Click a line number to comment on that line. </span>}
+          {canDraw && <span className="muted">Click a member's name, a network's heading or a line number to comment on it. </span>}
           {writer && view === 'raw' && file && !file.inline && <span className="muted">Comments on this file go on the whole file. </span>}
           {fileComment ? (
             <CommentBox owner={writer.owner} repo={writer.repo} snap={writer.snap} slot={`${writer.slots}:file:${path}`} path="/line-comments" payload={{ path }}
@@ -536,27 +584,45 @@ function FileReview({ writer, path, file, result, threads, threadsState, view, l
       {unplaced.length > 0 && (
         <section className="unplaced" aria-label="Comments not on a line shown here">
           <h3 className="panel-title">
-            {/* Rendered views do not place threads yet (their row numbers are not file lines; anchors
-                are slice 3), so every thread is listed; Raw places the ones on a current line. */}
-            {view === 'raw' ? 'Comments not on a line shown here' : 'Comments on this file — Raw shows the ones on a current line in place'}
+            {/* Whatever the server could not place on something drawn (an outdated line, a file
+                comment, an element that is gone or ambiguous) is listed here, never guessed. */}
+            {view === 'raw' ? 'Comments not on a line shown here' : 'Comments not on anything drawn here'}
           </h3>
           {unplaced.map((t) => <Thread key={t.id} thread={t} writer={writer} onOpenPath={onOpenPath} />)}
         </section>
       )}
+      <div className={canDraw ? 'can-comment' : undefined}>
       <FragmentHost html={v.html} path={v.path} onOpenPath={onOpenPath} line={null} onLine={() => {}} annotations={annotations} onPlaced={setPlaced}
         onRowPick={canLine ? (row) => {
           // A context row has both numbers: it is commented on the new side, as GitHub does.
           const side = row.line !== null ? 'RIGHT' : 'LEFT';
           const line = row.line ?? row.oldLine;
           if (line !== null) {
-            setDrafting({ side, line });
+            setDrafting({ kind: 'line', side, line, file: path });
+          }
+        } : canDraw ? (row) => {
+          // A drawn source line names its file line on each side it exists on; the new side wins
+          // for an unchanged line, as on Raw. A row whose block names no file cannot be commented.
+          const side = row.fileLine !== null ? 'RIGHT' : 'LEFT';
+          const line = row.fileLine ?? row.oldFileLine;
+          if (line !== null && row.srcPath) {
+            setDrafting({ kind: 'line', side, line, file: row.srcPath });
+          }
+        } : undefined}
+        onAnchorPick={canDraw ? (ids) => {
+          // An element standing for both sides is commented on as it is now; one only on the older
+          // side (removed) as it was.
+          const dom = ids.find((id) => id.includes('-new-')) ?? ids[0];
+          if (dom) {
+            setDrafting({ kind: 'anchor', dom });
           }
         } : undefined} />
+      </div>
     </div>
   );
 }
 
-function Thread({ thread, writer, onOpenPath }: { thread: ReviewThread; writer: Writer | null; onOpenPath: (p: string) => void }) {
+function Thread({ thread, writer, onOpenPath, moved = false }: { thread: ReviewThread; writer: Writer | null; onOpenPath: (p: string) => void; moved?: boolean }) {
   const [replying, setReplying] = useState(false);
   const [editing, setEditing] = useState<string | null>(null);
   const where = thread.subject === 'FILE' ? 'on the file'
@@ -567,6 +633,8 @@ function Thread({ thread, writer, onOpenPath }: { thread: ReviewThread; writer: 
       <header className="thread-head muted">
         {thread.resolved && <span className="row-badge">resolved</span>}
         {thread.outdated && <span className="row-badge">outdated</span>}
+        {/* Found by its content after the element was renumbered: said, so nobody reads it as written here. */}
+        {moved && <span className="row-badge" title="Written on this element under another number; found again by its content">moved here</span>}
         {where}
         {writer && (thread.resolved ? thread.canUnresolve : thread.canResolve) && (
           <span className="thread-tools">
