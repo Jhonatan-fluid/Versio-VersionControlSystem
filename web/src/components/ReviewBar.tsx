@@ -113,7 +113,8 @@ export function ReviewBar({ owner, repo, snap, slots, status, pending, files, op
         </p>
       )}
       {open && pending.state === 'ok' && (
-        <ReviewDialog owner={owner} repo={repo} snap={snap} slot={`${slots}:review`} pending={review} author={author}
+        // Keyed by its draft's slot, as CommentBox is: one pull request's review never saved under another's.
+        <ReviewDialog key={`${slots}:review`} owner={owner} repo={repo} snap={snap} slot={`${slots}:review`} pending={review} author={author}
           notes={coverage.state === 'loading' ? null : approvalNotes(files, opened, viewed, coverage.state === 'ok' ? coverage.value : null)} onOpenPath={onOpenPath} onStale={onStale}
           onCancel={() => setOpen(false)}
           onDone={(what) => {

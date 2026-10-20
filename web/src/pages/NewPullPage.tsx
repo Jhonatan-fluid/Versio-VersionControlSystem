@@ -51,6 +51,13 @@ function writeForm(slot: string, form: Form | null) {
  * second pull request.
  */
 export function NewPullPage({ me }: { me: Me | null }) {
+  // One form per repository: kept mounted across a change of repository, its state would be saved
+  // into the next repository's draft (the comment box's defect, found by review, 2026-10-20).
+  const { owner = '', repo = '' } = useParams();
+  return <NewPullForm key={`${owner}/${repo}`} me={me} />;
+}
+
+function NewPullForm({ me }: { me: Me | null }) {
   const { owner = '', repo = '' } = useParams();
   const [search] = useSearchParams();
   const navigate = useNavigate();

@@ -1,6 +1,6 @@
 import { act } from 'react';
 import { createRoot } from 'react-dom/client';
-import { MemoryRouter, Route, Routes, useLocation } from 'react-router';
+import { MemoryRouter, Route, Routes, useLocation, useNavigate } from 'react-router';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { NewPullPage } from './NewPullPage';
 import { PullsPage } from './PullsPage';
@@ -38,6 +38,15 @@ function Where() {
   return <output data-testid="where">{location.pathname}</output>;
 }
 
+
+/** Lets a test move the router as a link click would, without leaving the page under test. */
+let jump: (to: string) => void = () => {};
+function Jumper() {
+  const navigate = useNavigate();
+  jump = navigate;
+  return null;
+}
+
 async function render(path: string, o: Options = {}) {
   calls = [];
   vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
@@ -56,6 +65,7 @@ async function render(path: string, o: Options = {}) {
   await act(async () => {
     root.render(
       <MemoryRouter initialEntries={[path]}>
+        <Jumper />
         <Routes>
           <Route path="/:owner/:repo/pulls/new" element={<NewPullPage me={null} />} />
           <Route path="/:owner/:repo/pulls" element={<PullsPage me={null} />} />
@@ -175,6 +185,21 @@ describe('NewPullPage', () => {
 
     expect(host.querySelector<HTMLTextAreaElement>('.new-pull-body')!.value).toBe('My own words');
     expect(host.querySelector<HTMLInputElement>('.new-pull-title')!.value).toBe('Kept');
+    act(() => root.unmount());
+  });
+
+  it("another repository's form starts empty: one repository's draft is never saved under another's", async () => {
+    const { host, root } = await render('/acme/plant/pulls/new?head=feature');
+    await fill(host.querySelector<HTMLInputElement>('.new-pull-title')!, 'Plant change');
+
+    await act(async () => {
+      jump('/acme/other/pulls/new');
+    });
+    await settle();
+
+    expect(host.querySelector<HTMLInputElement>('.new-pull-title')!.value).toBe('');
+    expect(JSON.parse(sessionStorage.getItem('versio:new-pull:acme/plant')!).title).toBe('Plant change');
+    expect(sessionStorage.getItem('versio:new-pull:acme/other') ?? '').not.toContain('Plant change');
     act(() => root.unmount());
   });
 

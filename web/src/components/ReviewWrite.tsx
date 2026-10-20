@@ -101,7 +101,15 @@ interface CommentBoxProps {
  * A comment being written: the text, a preview drawn by the server's Markdown, and the outcome of
  * posting it said plainly. The draft is never cleared until the server says the comment is posted.
  */
-export function CommentBox({ owner, repo, snap, slot, path, method = 'POST', payload, initial, submitLabel, placeholder, onDone, onCancel, onStale, alternative }: CommentBoxProps) {
+export function CommentBox(props: CommentBoxProps) {
+  // One box per draft. React reuses a component when only its props change — the file comment box
+  // stays mounted as the person moves from file to file — and the box's state then held one file's
+  // draft while saving it under the next file's slot: "Pump draft" overwrote Valve's (found by
+  // review, 2026-10-20). Keyed by its slot, a new draft is a new box that reads its own.
+  return <DraftBox key={props.slot} {...props} />;
+}
+
+function DraftBox({ owner, repo, snap, slot, path, method = 'POST', payload, initial, submitLabel, placeholder, onDone, onCancel, onStale, alternative }: CommentBoxProps) {
   const [draft, setDraft] = useState<Draft>(() => {
     const kept = readDraft(slot);
     return kept.body || kept.opKey ? kept : { body: initial ?? '', opKey: null };

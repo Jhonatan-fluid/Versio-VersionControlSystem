@@ -1,6 +1,6 @@
 import { act } from 'react';
 import { createRoot } from 'react-dom/client';
-import { MemoryRouter, Route, Routes } from 'react-router';
+import { MemoryRouter, Route, Routes, useNavigate } from 'react-router';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { CoverageGap, CoverageSummary, PendingReviewView, ThreadPlacement } from '../api';
 import { PullPage, placementSelector, threadSelector } from './PullPage';
@@ -65,6 +65,8 @@ interface Options {
   checksCut?: boolean;
   /** A push happened and the page was reloaded: a newer snapshot, on a newer head. */
   newer?: boolean;
+  /** A second changed file, to move between. */
+  twoFiles?: boolean;
 }
 
 let calls: { url: string; snapshot: string | null; method: string; csrf: string | null; body: Record<string, unknown> | null }[] = [];
@@ -91,8 +93,11 @@ function answer(url: string, o: Options): unknown {
   }
   if (url.endsWith('/files')) {
     return {
-      patchSource: 'pull', githubListCut: false, total: 1, truncated: false,
-      files: [{ path: 'src/Pump.st', label: 'src/Pump.st', change: 'modified', previousPath: null, previousLabel: null, object: 'Pump', inline: true, inlineUnavailable: null }],
+      patchSource: 'pull', githubListCut: false, total: o.twoFiles ? 2 : 1, truncated: false,
+      files: [
+        { path: 'src/Pump.st', label: 'src/Pump.st', change: 'modified', previousPath: null, previousLabel: null, object: 'Pump', inline: true, inlineUnavailable: null },
+        ...(o.twoFiles ? [{ path: 'src/Valve.st', label: 'src/Valve.st', change: 'modified', previousPath: null, previousLabel: null, object: 'Valve', inline: true, inlineUnavailable: null }] : []),
+      ],
     };
   }
   if (url.includes('/files/view')) {
@@ -146,6 +151,15 @@ function answer(url: string, o: Options): unknown {
   return { owner: 'acme', name: 'plant', private: false, defaultBranch: 'main' };
 }
 
+
+/** Lets a test move the router as a link click would, without leaving the page under test. */
+let jump: (to: string) => void = () => {};
+function Jumper() {
+  const navigate = useNavigate();
+  jump = navigate;
+  return null;
+}
+
 async function render(path: string, o: Options = {}) {
   calls = [];
   vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
@@ -167,6 +181,7 @@ async function render(path: string, o: Options = {}) {
   await act(async () => {
     root.render(
       <MemoryRouter initialEntries={[path]}>
+        <Jumper />
         <Routes>
           <Route path="/:owner/:repo/pull/:number" element={<PullPage me={null} />} />
         </Routes>
@@ -671,6 +686,51 @@ describe('PullPage review', () => {
     expect(sent.map((w) => w.snapshot)).toEqual([token, token]);
     expect(sent[1]!.body?.opKey).toBe(sent[0]!.body?.opKey);
     act(() => again.root.unmount());
+  });
+
+  it("moving between files never saves one file's draft under another's", async () => {
+    const { host, root } = await render('/acme/plant/pull/12?tab=files&path=src%2FValve.st&view=raw', { writable: true, twoFiles: true });
+    const fill = async (text: string) => {
+      await act(async () => {
+        const textarea = host.querySelector<HTMLTextAreaElement>('.file-comment textarea')!;
+        Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')!.set!.call(textarea, text);
+        textarea.dispatchEvent(new Event('input', { bubbles: true }));
+      });
+    };
+    const open = (file: string) => click(host.querySelector(`.changes button[title="${file}"]`)!, host);
+    const draftOf = (file: string) => {
+      const slot = Object.keys(sessionStorage).find((k) => k.endsWith(`:file:${file}`));
+      return slot ? (JSON.parse(sessionStorage.getItem(slot)!) as { body: string }).body : null;
+    };
+
+    await click(button(host, 'Comment on the whole file')!, host);
+    await fill('Valve draft');
+    await open('src/Pump.st');
+    if (!host.querySelector('.file-comment textarea')) {
+      await click(button(host, 'Comment on the whole file')!, host);
+    }
+    expect(host.querySelector<HTMLTextAreaElement>('.file-comment textarea')!.value).toBe('');
+    await fill('Pump draft');
+    await open('src/Valve.st');
+
+    expect(draftOf('src/Valve.st')).toBe('Valve draft');
+    expect(draftOf('src/Pump.st')).toBe('Pump draft');
+    expect(host.querySelector<HTMLTextAreaElement>('.file-comment textarea')?.value ?? 'Valve draft').toBe('Valve draft');
+    act(() => root.unmount());
+  });
+
+  it("going to another pull request starts its page afresh: one's open title edit never carries over", async () => {
+    const { host, root } = await render('/acme/plant/pull/12', { writable: true });
+    await click(button(host.querySelector('h1')!, 'Edit')!, host);
+    expect(host.querySelector('.title-editor')).not.toBeNull();
+
+    await act(async () => {
+      jump('/acme/plant/pull/13');
+    });
+    await settle(host);
+
+    expect(host.querySelector('.title-editor')).toBeNull();
+    act(() => root.unmount());
   });
 
   it('a comment retried after a reload goes under its own snapshot too', async () => {

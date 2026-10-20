@@ -156,6 +156,14 @@ export function threadSelector(thread: ReviewThread): string | null {
  * showing a drawing of one commit with comments placed for another.
  */
 export function PullPage({ me }: { me: Me | null }) {
+  // A new pull request is a new page: the router keeps this one mounted when only the number
+  // changes, and its editors (title, description, the review) hold state that belongs to one pull
+  // request — what an edit replaces, a draft — which must never carry over to the next.
+  const { owner = '', repo = '', number = '' } = useParams();
+  return <PullReview key={`${owner}/${repo}#${number}`} me={me} />;
+}
+
+function PullReview({ me }: { me: Me | null }) {
   const { owner = '', repo = '', number = '' } = useParams();
   const n = Number(number);
   const [search, setSearch] = useSearchParams();
