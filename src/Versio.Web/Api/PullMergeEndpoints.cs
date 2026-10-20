@@ -80,6 +80,15 @@ public static partial class PullWriteEndpoints
             await w.RunAsync(http, owner, repo, number, request, "update-branch", ReviewTags.PayloadHash("update"),
                 precondition: async (who, s) =>
                 {
+                    // The confirmation named a base: brought in only if it is still that base, at that
+                    // commit. Without this, a base retargeted after the page opened was merged into the
+                    // branch under a confirmation that named the old one (found by review, 2026-10-20).
+                    // GitHub's expected_head_sha guards the head; this guards the base.
+                    if (await w.StaleAsync(who, s, ct).ConfigureAwait(false) is { } stale)
+                    {
+                        return stale;
+                    }
+
                     var (refusal, state) = await w.MergeStateAsync(who, s, ct).ConfigureAwait(false);
                     return refusal ?? (state!.State != "OPEN"
                         ? Results.Json(new { error = "not-open", message = "Only an open pull request's branch is brought up to date." }, statusCode: 409)

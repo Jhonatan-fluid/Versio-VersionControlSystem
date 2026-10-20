@@ -250,6 +250,26 @@ public sealed class PullMergeWriteTests
         Assert.True(status.GetProperty("headMoved").GetBoolean());
     }
 
+    /// <summary>
+    /// The update names a base; retargeted after the page opened, the confirmation is of a base the
+    /// pull request no longer has, and nothing is brought in (found by review, 2026-10-20).
+    /// </summary>
+    [Fact]
+    public async Task Bringing_the_branch_up_to_date_is_refused_once_the_base_was_retargeted()
+    {
+        var w = Build();
+        var (host, writer, alice, token, _) = await StartAsync(w);
+        await using var __ = host;
+        w.GitHub.Commit(w.Repo, "release", new Dictionary<string, byte[]>(w.Repo.Commits[w.Repo.Refs["main"]], StringComparer.Ordinal));
+        w.Repo.Pulls[0] = (w.Repo.Pulls[0].Info with { BaseRef = "release" }, w.Repo.Pulls[0].Body);
+
+        var response = await Post(host, alice, token, "/update-branch", new { opKey = Key() });
+
+        response.AssertStatus(HttpStatusCode.Conflict);
+        Assert.Contains("snapshot-stale", await response.Body(), StringComparison.Ordinal);
+        Assert.DoesNotContain(writer.Calls, c => c.Action == "update-branch");
+    }
+
     /// <summary>Auto-merge is a future merge of exactly this commit: a later push turns it off, by GitHub's contract.</summary>
     [Fact]
     public async Task Auto_merge_is_turned_on_for_exactly_the_reviewed_head_and_off_again()

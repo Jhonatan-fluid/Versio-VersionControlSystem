@@ -894,7 +894,7 @@ public static partial class PullWriteEndpoints
         }
 
         /// <summary>The pull request moved past the snapshot: 409, or the refusal that stopped the check.</summary>
-        private async Task<IResult?> StaleAsync(RepoAccess who, ReviewSnapshot s, CancellationToken ct)
+        internal async Task<IResult?> StaleAsync(RepoAccess who, ReviewSnapshot s, CancellationToken ct)
         {
             var pull = await source.GetPullAsync(who, s.Owner, s.Repo, s.Number, ct).ConfigureAwait(false);
             var baseTip = pull.Ok ? await source.ResolveCommitAsync(who, s.Owner, s.Repo, pull.Value!.Pull.BaseRef, ct).ConfigureAwait(false) : null;
