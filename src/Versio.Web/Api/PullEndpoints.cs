@@ -284,12 +284,65 @@ public static class PullEndpoints
                     labels = live.Labels.Select(l => new { name = CodeHtml.Spelled(l.Name), color = l.Color }),
                     assignees = live.Assignees.Select(CodeHtml.Spelled),
                     reviewers = live.Reviewers.Select(r => new { login = CodeHtml.Spelled(r.Login), state = r.State }),
+                    // GitHub refuses an author's approval: the page offers it to nobody else.
+                    viewerIsAuthor = live.ViewerIsAuthor,
+                    viewerLastReviewCommit = live.ViewerLastReviewCommit,
                 },
                 checksError = checks.Ok ? null : Problem(checks.Failure),
                 checks = checks.Ok
                     ? checks.Value!.Select(c => new { name = CodeHtml.Spelled(c.Name), status = c.Status, conclusion = c.Conclusion, url = c.Url, source = c.Source })
                     : null,
             });
+        });
+
+        // The viewer's pending review: what the review bar shows, and what decides whether "Submit"
+        // means this review or a historical one (C2). Visible only to its author, so it is read with
+        // the viewer's own credential and never cached across people.
+        pulls.MapGet("/reviews/pending", async (string owner, string repo, int number, HttpContext http, AccessResolver access,
+            ReviewSnapshots snapshots, IRepoSource source, CancellationToken ct) =>
+        {
+            var opened = await OpenAsync(owner, repo, number, http, access, snapshots, ct).ConfigureAwait(false);
+            if (opened.Refusal is { } refusal)
+            {
+                return refusal;
+            }
+
+            var pending = await source.GetPendingReviewAsync(opened.Access!, owner, repo, number, ct).ConfigureAwait(false);
+            if (!pending.Ok)
+            {
+                return ApiEndpoints.Refused(pending.Failure, http);
+            }
+
+            var review = pending.Value!.Review;
+            return Results.Ok(new
+            {
+                review = review is null ? null : new
+                {
+                    id = review.Id,
+                    commit = review.Commit,
+                    onSnapshotHead = review.Commit == opened.Snapshot!.HeadSha,
+                    comments = review.Comments.Select(c => new
+                    {
+                        id = c.Id,
+                        path = c.Path,
+                        pathLabel = CodeHtml.Spelled(c.Path),
+                        html = ApiEndpoints.MarkdownFragment(ReviewTags.Strip(c.Body)),
+                    }),
+                },
+            });
+        });
+
+        pulls.MapGet("/viewed", async (string owner, string repo, int number, HttpContext http, AccessResolver access,
+            ReviewSnapshots snapshots, IRepoSource source, CancellationToken ct) =>
+        {
+            var opened = await OpenAsync(owner, repo, number, http, access, snapshots, ct).ConfigureAwait(false);
+            if (opened.Refusal is { } refusal)
+            {
+                return refusal;
+            }
+
+            var viewed = await source.GetViewedAsync(opened.Access!, owner, repo, number, ct).ConfigureAwait(false);
+            return viewed.Ok ? Results.Ok(new { paths = viewed.Value }) : ApiEndpoints.Refused(viewed.Failure, http);
         });
 
         pulls.MapGet("/threads", async (string owner, string repo, int number, HttpContext http, AccessResolver access,

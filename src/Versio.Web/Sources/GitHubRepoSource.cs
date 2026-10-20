@@ -276,6 +276,8 @@ public sealed class GitHubRepoSource(
               assignees(first: 20) { nodes { login } }
               reviewRequests(first: 30) { nodes { requestedReviewer { __typename ... on User { login } ... on Team { name } } } }
               latestOpinionatedReviews(first: 30) { nodes { author { login } state } }
+              id viewerDidAuthor
+              viewerLatestReview { state commit { oid } }
             }
           }
         }
@@ -321,8 +323,89 @@ public sealed class GitHubRepoSource(
                 p.GetProperty("labels").GetProperty("nodes").EnumerateArray()
                     .Select(l => new PullLabel(l.GetProperty("name").GetString() ?? "", HexColor(Text(l, "color")))).ToList(),
                 p.GetProperty("assignees").GetProperty("nodes").EnumerateArray().Select(a => Text(a, "login")).ToList(),
-                reviewers);
+                reviewers)
+            {
+                ViewerIsAuthor = Bool(p, "viewerDidAuthor"),
+                // A pending review is not a review the viewer has given: "since your last review" counts submitted ones.
+                ViewerLastReviewCommit = p.TryGetProperty("viewerLatestReview", out var last) && last.ValueKind == JsonValueKind.Object && Text(last, "state") != "PENDING"
+                    ? Oid(last, "commit")
+                    : null,
+                NodeId = Text(p, "id"),
+            };
         }, ct);
+
+    private const string PendingQuery = """
+        query($owner: String!, $repo: String!, $number: Int!) {
+          repository(owner: $owner, name: $repo) {
+            pullRequest(number: $number) {
+              reviews(states: PENDING, first: 10) {
+                nodes {
+                  id viewerDidAuthor author { login } commit { oid }
+                  comments(first: 100) { nodes { id path body } }
+                }
+              }
+            }
+          }
+        }
+        """;
+
+    /// <remarks>
+    /// Another person's pending review is invisible to the viewer, but the author check is made all
+    /// the same: a review the viewer did not author is never treated as theirs to submit (C2).
+    /// </remarks>
+    public Task<RepoResult<PendingReviewRead>> GetPendingReviewAsync(RepoAccess access, string owner, string repo, int number, CancellationToken ct) =>
+        GraphAsync(access, PendingQuery, new { owner, repo, number }, data =>
+        {
+            var mine = PullRequestNode(data).GetProperty("reviews").GetProperty("nodes").EnumerateArray().FirstOrDefault(r => Bool(r, "viewerDidAuthor"));
+            return new PendingReviewRead(mine.ValueKind != JsonValueKind.Object
+                ? null
+                : new PendingReview(
+                    mine.GetProperty("id").GetString() ?? "",
+                    Login(mine, "author"),
+                    Oid(mine, "commit") ?? "",
+                    mine.GetProperty("comments").GetProperty("nodes").EnumerateArray()
+                        .Select(c => new PendingComment(Text(c, "id"), Text(c, "path"), Text(c, "body"))).ToList()));
+        }, ct);
+
+    private const string ViewedQuery = """
+        query($owner: String!, $repo: String!, $number: Int!, $after: String) {
+          repository(owner: $owner, name: $repo) {
+            pullRequest(number: $number) {
+              files(first: 100, after: $after) { pageInfo { hasNextPage endCursor } nodes { path viewerViewedState } }
+            }
+          }
+        }
+        """;
+
+    /// <summary>Viewed paths, paged to GitHub's own end of the file list (bounded: 30 pages).</summary>
+    public async Task<RepoResult<IReadOnlyList<string>>> GetViewedAsync(RepoAccess access, string owner, string repo, int number, CancellationToken ct)
+    {
+        var viewed = new List<string>();
+        string? after = null;
+        for (var page = 0; page < PullFilePages; page++)
+        {
+            var one = await GraphAsync(access, ViewedQuery, new { owner, repo, number, after }, data =>
+            {
+                var files = PullRequestNode(data).GetProperty("files");
+                var info = files.GetProperty("pageInfo");
+                return (Paths: files.GetProperty("nodes").EnumerateArray().Where(f => Text(f, "viewerViewedState") == "VIEWED").Select(f => Text(f, "path")).ToList(),
+                    Next: info.GetProperty("hasNextPage").GetBoolean() ? Text(info, "endCursor") : null);
+            }, ct).ConfigureAwait(false);
+            if (!one.Ok)
+            {
+                return one.As<IReadOnlyList<string>>();
+            }
+
+            viewed.AddRange(one.Value.Paths);
+            after = one.Value.Next;
+            if (after is not { Length: > 0 })
+            {
+                break;
+            }
+        }
+
+        return RepoResult<IReadOnlyList<string>>.Of(viewed);
+    }
 
     private const string ThreadsQuery = """
         query($owner: String!, $repo: String!, $number: Int!, $after: String) {

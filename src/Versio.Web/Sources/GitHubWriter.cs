@@ -103,6 +103,93 @@ public sealed class GitHubWriter(IHttpClientFactory clients, IOptions<WebOptions
     public Task<WriteResult<bool>> SetThreadResolvedAsync(RepoAccess access, string threadId, bool resolved, CancellationToken ct) =>
         MutateAsync(access, resolved ? ResolveMutation : UnresolveMutation, new { id = threadId }, _ => true, ct);
 
+    public Task<WriteResult<string>> SubmitReviewAsync(RepoAccess access, string owner, string repo, int number, string commit, string reviewEvent, string body, CancellationToken ct) =>
+        RestAsync(access, HttpMethod.Post, $"repos/{E(owner)}/{E(repo)}/pulls/{N(number)}/reviews", new { commit_id = commit, @event = reviewEvent, body },
+            root => root.GetProperty("node_id").GetString() ?? "", ct);
+
+    private const string StartPendingMutation = """
+        mutation($pull: ID!, $commit: GitObjectID!) {
+          addPullRequestReview(input: { pullRequestId: $pull, commitOID: $commit }) { pullRequestReview { id } }
+        }
+        """;
+
+    public Task<WriteResult<string>> StartPendingReviewAsync(RepoAccess access, string pullNodeId, string commit, CancellationToken ct) =>
+        MutateAsync(access, StartPendingMutation, new { pull = pullNodeId, commit },
+            data => data.GetProperty("addPullRequestReview").GetProperty("pullRequestReview").GetProperty("id").GetString() ?? "", ct);
+
+    private const string AddPendingThreadMutation = """
+        mutation($review: ID!, $path: String!, $body: String!, $line: Int, $side: DiffSide, $startLine: Int, $startSide: DiffSide, $subject: PullRequestReviewThreadSubjectType) {
+          addPullRequestReviewThread(input: { pullRequestReviewId: $review, path: $path, body: $body, line: $line, side: $side, startLine: $startLine, startSide: $startSide, subjectType: $subject }) { thread { id } }
+        }
+        """;
+
+    public Task<WriteResult<string>> AddPendingThreadAsync(RepoAccess access, string reviewId, LineComment c, CancellationToken ct) =>
+        MutateAsync(access, AddPendingThreadMutation,
+            new
+            {
+                review = reviewId,
+                path = c.Path,
+                body = c.Body,
+                line = c.Line,
+                side = c.Line is null ? null : c.Side,
+                startLine = c.StartLine is { } s && s != c.Line ? s : (int?)null,
+                startSide = c.StartLine is { } s2 && s2 != c.Line ? c.Side : null,
+                subject = c.Line is null ? "FILE" : "LINE",
+            },
+            data => data.GetProperty("addPullRequestReviewThread").GetProperty("thread").GetProperty("id").GetString() ?? "", ct);
+
+    private const string SubmitPendingMutation = """
+        mutation($review: ID!, $event: PullRequestReviewEvent!, $body: String) {
+          submitPullRequestReview(input: { pullRequestReviewId: $review, event: $event, body: $body }) { pullRequestReview { id state } }
+        }
+        """;
+
+    public Task<WriteResult<bool>> SubmitPendingReviewAsync(RepoAccess access, string reviewId, string reviewEvent, string body, CancellationToken ct) =>
+        MutateAsync(access, SubmitPendingMutation, new { review = reviewId, @event = reviewEvent, body }, _ => true, ct);
+
+    private const string DeletePendingMutation = """
+        mutation($review: ID!) { deletePullRequestReview(input: { pullRequestReviewId: $review }) { clientMutationId } }
+        """;
+
+    public Task<WriteResult<bool>> DeletePendingReviewAsync(RepoAccess access, string reviewId, CancellationToken ct) =>
+        MutateAsync(access, DeletePendingMutation, new { review = reviewId }, _ => true, ct);
+
+    /// <remarks>Two calls when both lists are set: the additions first. Each is safe to repeat, so a reconciliation simply runs both again.</remarks>
+    public async Task<WriteResult<bool>> SetReviewersAsync(RepoAccess access, string owner, string repo, int number, IReadOnlyList<string> add, IReadOnlyList<string> remove, CancellationToken ct)
+    {
+        var path = $"repos/{E(owner)}/{E(repo)}/pulls/{N(number)}/requested_reviewers";
+        if (add.Count > 0)
+        {
+            var added = await RestAsync(access, HttpMethod.Post, path, new { reviewers = add }, _ => true, ct).ConfigureAwait(false);
+            if (added.Outcome != WriteOutcome.Done)
+            {
+                return added;
+            }
+        }
+
+        return remove.Count > 0
+            ? await RestAsync(access, HttpMethod.Delete, path, new { reviewers = remove }, _ => true, ct).ConfigureAwait(false)
+            : WriteResult<bool>.Done(true);
+    }
+
+    private const string MarkViewedMutation = """
+        mutation($pull: ID!, $path: String!) { markFileAsViewed(input: { pullRequestId: $pull, path: $path }) { clientMutationId } }
+        """;
+
+    private const string UnmarkViewedMutation = """
+        mutation($pull: ID!, $path: String!) { unmarkFileAsViewed(input: { pullRequestId: $pull, path: $path }) { clientMutationId } }
+        """;
+
+    public Task<WriteResult<bool>> SetViewedAsync(RepoAccess access, string pullNodeId, string path, bool viewed, CancellationToken ct) =>
+        MutateAsync(access, viewed ? MarkViewedMutation : UnmarkViewedMutation, new { pull = pullNodeId, path }, _ => true, ct);
+
+    public Task<RepoResult<string>> FindTaggedReviewAsync(RepoAccess access, string owner, string repo, int number, string tag, CancellationToken ct) =>
+        GetAsync(access, $"repos/{E(owner)}/{E(repo)}/pulls/{N(number)}/reviews?per_page=100", root => root.EnumerateArray()
+            .Where(r => r.GetProperty("user").GetProperty("login").GetString() == access.Who
+                        && r.TryGetProperty("body", out var b) && (b.GetString() ?? "").Contains(tag, StringComparison.Ordinal))
+            .Select(r => r.GetProperty("node_id").GetString() ?? "")
+            .FirstOrDefault() ?? "", ct);
+
     // ---- the reads only writes need -------------------------------------------------------------
 
     private const string NodeQuery = """
@@ -112,6 +199,7 @@ public sealed class GitHubWriter(IHttpClientFactory clients, IOptions<WebOptions
             ... on PullRequestReviewThread { pullRequest { number repository { nameWithOwner } } }
             ... on PullRequestReviewComment { author { login } pullRequest { number repository { nameWithOwner } } }
             ... on IssueComment { author { login } issue { number } repository { nameWithOwner } }
+            ... on PullRequestReview { author { login } state commit { oid } pullRequest { number repository { nameWithOwner } } }
           }
         }
         """;
@@ -133,6 +221,11 @@ public sealed class GitHubWriter(IHttpClientFactory clients, IOptions<WebOptions
                 "PullRequestReviewThread" or "PullRequestReviewComment" => new NodeOwner(type,
                     node.GetProperty("pullRequest").GetProperty("repository").GetProperty("nameWithOwner").GetString() ?? "",
                     node.GetProperty("pullRequest").GetProperty("number").GetInt32(), author),
+                "PullRequestReview" => new NodeOwner(type,
+                    node.GetProperty("pullRequest").GetProperty("repository").GetProperty("nameWithOwner").GetString() ?? "",
+                    node.GetProperty("pullRequest").GetProperty("number").GetInt32(), author,
+                    node.GetProperty("state").GetString(),
+                    node.TryGetProperty("commit", out var c) && c.ValueKind == JsonValueKind.Object ? c.GetProperty("oid").GetString() : null),
                 "IssueComment" => new NodeOwner(type,
                     node.GetProperty("repository").GetProperty("nameWithOwner").GetString() ?? "",
                     node.GetProperty("issue").GetProperty("number").GetInt32(), author),

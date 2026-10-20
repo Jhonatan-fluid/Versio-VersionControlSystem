@@ -27,7 +27,9 @@ public sealed record WriteResult<T>(WriteOutcome Outcome, T? Value, RepoFailure 
 }
 
 /// <summary>What a GraphQL node id points at: its type, the repository and pull request it belongs to, its author.</summary>
-public sealed record NodeOwner(string Type, string Repository, int Number, string? Author);
+/// <param name="State">A review's state (PENDING, APPROVED, ...); null for anything else.</param>
+/// <param name="Commit">A review's commit; null for anything else.</param>
+public sealed record NodeOwner(string Type, string Repository, int Number, string? Author, string? State = null, string? Commit = null);
 
 /// <summary>A comment on a line, or on a whole file when <paramref name="Line"/> is null.</summary>
 /// <param name="Commit">The commit it is written against: always the review snapshot's head.</param>
@@ -62,6 +64,31 @@ public interface IRepoWriter
     Task<WriteResult<bool>> DeleteCommentAsync(RepoAccess access, string commentId, string type, CancellationToken ct);
 
     Task<WriteResult<bool>> SetThreadResolvedAsync(RepoAccess access, string threadId, bool resolved, CancellationToken ct);
+
+    /// <summary>
+    /// A review created and submitted in one call, on <paramref name="commit"/>: the atomic form, with
+    /// no pending state in between (docs/web/PLAN.md, C2).
+    /// </summary>
+    /// <param name="reviewEvent">APPROVE, REQUEST_CHANGES or COMMENT.</param>
+    Task<WriteResult<string>> SubmitReviewAsync(RepoAccess access, string owner, string repo, int number, string commit, string reviewEvent, string body, CancellationToken ct);
+
+    /// <summary>Starts the viewer's pending review ON <paramref name="commit"/>: the commit it will approve is fixed here, not at submission.</summary>
+    Task<WriteResult<string>> StartPendingReviewAsync(RepoAccess access, string pullNodeId, string commit, CancellationToken ct);
+
+    /// <summary>Adds a draft comment to a pending review: on a line (or range), or on the whole file when the line is null.</summary>
+    Task<WriteResult<string>> AddPendingThreadAsync(RepoAccess access, string reviewId, LineComment comment, CancellationToken ct);
+
+    Task<WriteResult<bool>> SubmitPendingReviewAsync(RepoAccess access, string reviewId, string reviewEvent, string body, CancellationToken ct);
+
+    Task<WriteResult<bool>> DeletePendingReviewAsync(RepoAccess access, string reviewId, CancellationToken ct);
+
+    /// <summary>Requests reviews from <paramref name="add"/> and withdraws them from <paramref name="remove"/> (people, by login).</summary>
+    Task<WriteResult<bool>> SetReviewersAsync(RepoAccess access, string owner, string repo, int number, IReadOnlyList<string> add, IReadOnlyList<string> remove, CancellationToken ct);
+
+    Task<WriteResult<bool>> SetViewedAsync(RepoAccess access, string pullNodeId, string path, bool viewed, CancellationToken ct);
+
+    /// <summary>The id of the viewer's submitted review on this pull request whose body carries <paramref name="tag"/>; empty when none.</summary>
+    Task<RepoResult<string>> FindTaggedReviewAsync(RepoAccess access, string owner, string repo, int number, string tag, CancellationToken ct);
 
     /// <summary>What a node id is and where it belongs: checked before any mutation names it (S7).</summary>
     Task<RepoResult<NodeOwner>> NodeOwnerAsync(RepoAccess access, string nodeId, CancellationToken ct);

@@ -118,7 +118,36 @@ public sealed record PullSummary(
     string? BaseTipSha,
     IReadOnlyList<PullLabel> Labels,
     IReadOnlyList<string> Assignees,
-    IReadOnlyList<PullReviewer> Reviewers);
+    IReadOnlyList<PullReviewer> Reviewers)
+{
+    /// <summary>The viewer opened this pull request: GitHub refuses an author's approval or request for changes.</summary>
+    public bool ViewerIsAuthor { get; init; }
+
+    /// <summary>The commit of the viewer's latest submitted review, for "changes since your last review"; null when none.</summary>
+    public string? ViewerLastReviewCommit { get; init; }
+
+    /// <summary>The pull request's GraphQL node id, which the review and viewed-file mutations name.</summary>
+    public string NodeId { get; init; } = "";
+}
+
+/// <summary>One comment of a pending review, as its author sees it. <paramref name="Body"/> is Markdown: untrusted.</summary>
+public sealed record PendingComment(string Id, string Path, string Body);
+
+/// <summary>
+/// The viewer's own pending review on a pull request: started, not submitted, visible only to them.
+/// GitHub allows one per person per pull request.
+/// </summary>
+/// <param name="Commit">The commit it was created on, which is the commit it will approve (docs/web/PLAN.md, C2).</param>
+public sealed record PendingReview(string Id, string Author, string Commit, IReadOnlyList<PendingComment> Comments);
+
+/// <summary>
+/// The answer to "does the viewer have a pending review": <paramref name="Review"/> null is "no".
+/// </summary>
+/// <remarks>
+/// A wrapper because <see cref="RepoResult{T}.Ok"/> needs a value: a bare null review read as a
+/// failed read, and the first run of the review tests refused every approval as "not found".
+/// </remarks>
+public sealed record PendingReviewRead(PendingReview? Review);
 
 /// <summary>One comment in a review thread. <paramref name="Body"/> is Markdown written by anyone who can comment: untrusted.</summary>
 /// <param name="CanEdit">GitHub's own word on whether the viewer may edit it (viewerCanUpdate); controls follow it, GitHub still decides.</param>
@@ -248,6 +277,12 @@ public interface IRepoSource
 
     /// <summary>The pull request's commits, oldest first, up to GitHub's 250.</summary>
     Task<RepoResult<PullCommitList>> GetPullCommitsAsync(RepoAccess access, string owner, string repo, int number, CancellationToken ct);
+
+    /// <summary>The viewer's pending review on the pull request, if they have one.</summary>
+    Task<RepoResult<PendingReviewRead>> GetPendingReviewAsync(RepoAccess access, string owner, string repo, int number, CancellationToken ct);
+
+    /// <summary>The paths the viewer marked viewed on the pull request (GitHub keeps this per person).</summary>
+    Task<RepoResult<IReadOnlyList<string>>> GetViewedAsync(RepoAccess access, string owner, string repo, int number, CancellationToken ct);
 
     /// <summary>Every check run and commit status on one commit.</summary>
     Task<RepoResult<IReadOnlyList<CheckInfo>>> GetChecksAsync(RepoAccess access, string owner, string repo, string commitSha, CancellationToken ct);

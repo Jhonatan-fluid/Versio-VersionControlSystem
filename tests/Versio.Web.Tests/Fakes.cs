@@ -96,6 +96,17 @@ internal sealed class FakeGitHub : IRepoSource
         /// <summary>The branch's commits per pull request, oldest first.</summary>
         public Dictionary<int, PullCommitList> PullCommits { get; } = [];
 
+        /// <summary>The viewer's pending review per pull request, by user token: GitHub shows each person only their own.</summary>
+        public Dictionary<(int Number, string Token), PendingReview> Pending { get; } = [];
+
+        /// <summary>Viewed paths per pull request, by user token.</summary>
+        public Dictionary<(int Number, string Token), List<string>> Viewed { get; } = [];
+
+        /// <summary>The pull request's author, and each person's latest submitted review commit, by user token.</summary>
+        public Dictionary<int, string> PullAuthorToken { get; } = [];
+
+        public Dictionary<(int Number, string Token), string> LastReviewCommit { get; } = [];
+
         /// <summary>Check runs and statuses per commit.</summary>
         public Dictionary<string, IReadOnlyList<CheckInfo>> Checks { get; } = new(StringComparer.Ordinal);
 
@@ -355,7 +366,26 @@ internal sealed class FakeGitHub : IRepoSource
         var people = r.Value.PullPeople.TryGetValue(number, out var known) ? known : ([], []);
         return Task.FromResult(RepoResult<PullSummary>.Of(new PullSummary(
             "OPEN", p.Draft, false, "MERGEABLE", null, p.HeadSha, p.BaseRef,
-            r.Value.Refs.TryGetValue(p.BaseRef, out var tip) ? tip : null, people.Labels, [], people.Reviewers)));
+            r.Value.Refs.TryGetValue(p.BaseRef, out var tip) ? tip : null, people.Labels, [], people.Reviewers)
+        {
+            ViewerIsAuthor = access.Token is { } token && r.Value.PullAuthorToken.TryGetValue(number, out var author) && author == token,
+            ViewerLastReviewCommit = access.Token is { } t && r.Value.LastReviewCommit.TryGetValue((number, t), out var last) ? last : null,
+            NodeId = "PR_" + number.ToString(System.Globalization.CultureInfo.InvariantCulture),
+        }));
+    }
+
+    public Task<RepoResult<PendingReviewRead>> GetPendingReviewAsync(RepoAccess access, string owner, string repo, int number, CancellationToken ct)
+    {
+        var r = SeeGraph(access, owner, repo, "pending " + number);
+        return Task.FromResult(!r.Ok ? r.As<PendingReviewRead>()
+            : RepoResult<PendingReviewRead>.Of(new PendingReviewRead(access.Token is { } t && r.Value!.Pending.TryGetValue((number, t), out var p) ? p : null)));
+    }
+
+    public Task<RepoResult<IReadOnlyList<string>>> GetViewedAsync(RepoAccess access, string owner, string repo, int number, CancellationToken ct)
+    {
+        var r = SeeGraph(access, owner, repo, "viewed " + number);
+        return Task.FromResult(!r.Ok ? r.As<IReadOnlyList<string>>()
+            : RepoResult<IReadOnlyList<string>>.Of(access.Token is { } t && r.Value!.Viewed.TryGetValue((number, t), out var v) ? v.ToList() : []));
     }
 
     public Task<RepoResult<ReviewThreadList>> GetReviewThreadsAsync(RepoAccess access, string owner, string repo, int number, CancellationToken ct)

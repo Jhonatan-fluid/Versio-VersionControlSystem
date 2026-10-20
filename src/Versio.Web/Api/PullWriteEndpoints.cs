@@ -29,6 +29,19 @@ public sealed record LineCommentRequest(string? OpKey, string? Body, string? Pat
 /// <param name="Dom">The anchor id the person clicked (a <c>data-anchors</c> entry); everything else about it is the server's to know.</param>
 public sealed record AnchorCommentRequest(string? OpKey, string? Body, string? Path, string? From, string? Dom) : WriteRequest(OpKey);
 
+/// <param name="Event">APPROVE, REQUEST_CHANGES or COMMENT.</param>
+public sealed record ReviewRequest(string? OpKey, string? Event, string? Body) : WriteRequest(OpKey);
+
+/// <param name="Commit">The commit the pending review was created on, as the dialog showed it: the historical route submits nothing else.</param>
+public sealed record HistoricalReviewRequest(string? OpKey, string? Event, string? Body, string? Commit) : WriteRequest(OpKey);
+
+/// <summary>A draft comment for the viewer's pending review: on a drawn element (Dom), a line, or the whole file.</summary>
+public sealed record PendingThreadRequest(string? OpKey, string? Body, string? Path, int? Line, string? Side, int? StartLine, string? From, string? Dom) : WriteRequest(OpKey);
+
+public sealed record ReviewersRequest(string? OpKey, string[]? Add, string[]? Remove) : WriteRequest(OpKey);
+
+public sealed record ViewedRequest(string? OpKey, string? Path, bool Viewed) : WriteRequest(OpKey);
+
 public sealed record ResolveRequest(string? OpKey, bool Resolved) : WriteRequest(OpKey);
 
 public sealed record PreviewRequest(string? Body);
@@ -135,6 +148,8 @@ public static partial class PullWriteEndpoints
                 idempotent: false, ct).ConfigureAwait(false);
         });
 
+        MapReviews(pulls);
+
         pulls.MapWrite("POST", "/threads/{threadId}/replies", async (string owner, string repo, int number, string threadId, CommentRequest request, HttpContext http, Writes w, CancellationToken ct) =>
         {
             if (Body(request.Body) is not { } body)
@@ -199,6 +214,211 @@ public static partial class PullWriteEndpoints
         pulls.MapWrite("POST", "/markdown", (PreviewRequest request) =>
             Results.Ok(new { html = request.Body is { Length: > 0 and <= MaxBodyChars } b ? ApiEndpoints.MarkdownFragment(ReviewTags.Strip(b)) : "" }));
     }
+
+    private static readonly string[] Events = ["APPROVE", "REQUEST_CHANGES", "COMMENT"];
+
+    /// <summary>
+    /// Reviews (docs/web/PLAN.md, *Pull request review*, C2): a one-shot review, the pending review's
+    /// draft comments, its submission — on the snapshot's head, or as historical on its own older
+    /// commit — and discarding it; requesting reviewers; marking files viewed.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>What an approval guarantees, and what it does not.</b> A review is bound to the commit it is
+    /// CREATED on: a one-shot review is one REST call carrying <c>commit_id</c>, created and submitted
+    /// together; a pending review is created with <c>commitOID</c>. Submitting takes no commit at all,
+    /// which is why the commit is fixed at creation. What nothing in GitHub's API can guarantee is that
+    /// the head did not move between our check and GitHub's submit; the check narrows that, the page
+    /// re-reads the state after submitting and says when it moved, and branch protection's "dismiss
+    /// stale approvals" does the rest. The plan says exactly this, and claims no more.
+    /// </para>
+    /// <para>
+    /// <b>A pending review is resumed only if it is the viewer's and was created on the snapshot's
+    /// head.</b> One on an older commit can be submitted only through the historical route, which names
+    /// that commit and refuses any other, so a reviewer never approves a commit they did not see named.
+    /// Moving its comments to a new review is deferred: GitHub allows one pending review per person per
+    /// pull request, so a new one cannot be created beside it to copy into (PLAN.md, C2).
+    /// </para>
+    /// </remarks>
+    private static void MapReviews(RouteGroupBuilder pulls)
+    {
+        pulls.MapWrite("POST", "/reviews", async (string owner, string repo, int number, ReviewRequest request, HttpContext http, Writes w, CancellationToken ct) =>
+        {
+            if (Event(request.Event, request.Body, oneShot: true) is { } invalid)
+            {
+                return invalid;
+            }
+
+            var body = request.Body ?? "";
+            return await w.RunAsync(http, owner, repo, number, request, "review", ReviewTags.PayloadHash(request.Event, body),
+                precondition: (who, s) => w.ReviewPreconditionAsync(who, s, ct),
+                (who, s, key) => w.Writer.SubmitReviewAsync(who, owner, repo, number, s.HeadSha, request.Event!, ReviewTags.WithOperation(body, key), CancellationToken.None),
+                (who, s, key, since) => w.Writer.FindTaggedReviewAsync(who, owner, repo, number, ReviewTags.OperationTag(key), ct),
+                idempotent: false, ct).ConfigureAwait(false);
+        });
+
+        pulls.MapWrite("POST", "/reviews/pending/threads", async (string owner, string repo, int number, PendingThreadRequest request, HttpContext http, Writes w, CancellationToken ct) =>
+        {
+            if (Body(request.Body) is not { } body)
+            {
+                return Invalid("body", "A comment needs some text.");
+            }
+
+            if (!ApiEndpoints.ValidPath(request.Path) || (request.From is not null && !ApiEndpoints.ValidPath(request.From))
+                || (request.Dom is not null && !AnchorDom().IsMatch(request.Dom))
+                || (request.Line is { } l && (l < 1 || request.Side is not ("LEFT" or "RIGHT")))
+                || (request.StartLine is { } st && (request.Line is not { } end || st < 1 || st > end)))
+            {
+                return Invalid("target", "That is not something in this file.");
+            }
+
+            (LineComment Comment, Versio.Core.Review.SemanticAnchor? Anchor, string? Review, string PullNode)? target = null;
+            return await w.RunAsync(http, owner, repo, number, request, "pending-thread",
+                ReviewTags.PayloadHash(body, request.Path, request.From, request.Dom, request.Line?.ToString(System.Globalization.CultureInfo.InvariantCulture), request.Side, request.StartLine?.ToString(System.Globalization.CultureInfo.InvariantCulture)),
+                precondition: async (who, s) =>
+                {
+                    var (refusal, found) = await w.PendingThreadPreconditionAsync(http, who, s, request, body, ct).ConfigureAwait(false);
+                    target = found;
+                    return refusal;
+                },
+                async (who, s, key) =>
+                {
+                    var (comment, anchor, review, pullNode) = target!.Value;
+                    var reviewId = review;
+                    if (reviewId is null)
+                    {
+                        // The review is created here, on the snapshot's head: the commit it will approve.
+                        var started = await w.Writer.StartPendingReviewAsync(who, pullNode, s.HeadSha, CancellationToken.None).ConfigureAwait(false);
+                        if (started.Outcome != WriteOutcome.Done)
+                        {
+                            return started;
+                        }
+
+                        reviewId = started.Value!;
+                    }
+
+                    var tagged = anchor is null ? ReviewTags.WithOperation(body, key) : ReviewTags.WithAnchor(body, key, anchor);
+                    return await w.Writer.AddPendingThreadAsync(who, reviewId, comment with { Body = tagged }, CancellationToken.None).ConfigureAwait(false);
+                },
+                // Only the viewer sees their pending review: reconciled by its comments' tags.
+                async (who, s, key, since) =>
+                {
+                    var pending = await w.Source.GetPendingReviewAsync(who, owner, repo, number, ct).ConfigureAwait(false);
+                    return pending.Ok
+                        ? RepoResult<string>.Of(pending.Value!.Review?.Comments.FirstOrDefault(c => ReviewTags.Carries(c.Body, key))?.Id ?? "")
+                        : pending.As<string>();
+                },
+                idempotent: false, ct).ConfigureAwait(false);
+        });
+
+        pulls.MapWrite("POST", "/reviews/{reviewId}/submit", async (string owner, string repo, int number, string reviewId, ReviewRequest request, HttpContext http, Writes w, CancellationToken ct) =>
+        {
+            if (Event(request.Event, request.Body, oneShot: false) is { } invalid)
+            {
+                return invalid;
+            }
+
+            var body = request.Body ?? "";
+            return await w.RunAsync(http, owner, repo, number, request, "submit", ReviewTags.PayloadHash(reviewId, request.Event, body),
+                precondition: (who, s) => w.PendingPreconditionAsync(who, s, reviewId, commit: null, stale: true, ct),
+                async (who, s, key) => Done(await w.Writer.SubmitPendingReviewAsync(who, reviewId, request.Event!, ReviewTags.WithOperation(body, key), CancellationToken.None).ConfigureAwait(false), reviewId),
+                (who, s, key, since) => w.SubmittedAsync(who, reviewId, ct),
+                idempotent: false, ct).ConfigureAwait(false);
+        });
+
+        // An older pending review, submitted as what it is: on the commit it was created on, which the
+        // dialog named and this request repeats. Exempt from the snapshot's staleness rule because it
+        // does not claim to describe the current head (C1's one exception).
+        pulls.MapWrite("POST", "/reviews/{reviewId}/submit-historical", async (string owner, string repo, int number, string reviewId, HistoricalReviewRequest request, HttpContext http, Writes w, CancellationToken ct) =>
+        {
+            if (Event(request.Event, request.Body, oneShot: false) is { } invalid)
+            {
+                return invalid;
+            }
+
+            if (request.Commit is not { Length: 40 } commit || !commit.All(Uri.IsHexDigit))
+            {
+                return Invalid("commit", "Name the commit the review is on.");
+            }
+
+            var body = request.Body ?? "";
+            return await w.RunAsync(http, owner, repo, number, request, "submit-historical", ReviewTags.PayloadHash(reviewId, request.Event, body, commit),
+                precondition: (who, s) => w.PendingPreconditionAsync(who, s, reviewId, commit, stale: false, ct),
+                async (who, s, key) => Done(await w.Writer.SubmitPendingReviewAsync(who, reviewId, request.Event!, ReviewTags.WithOperation(body, key), CancellationToken.None).ConfigureAwait(false), reviewId),
+                (who, s, key, since) => w.SubmittedAsync(who, reviewId, ct),
+                idempotent: false, ct).ConfigureAwait(false);
+        });
+
+        pulls.MapWrite("POST", "/reviews/{reviewId}/discard", async (string owner, string repo, int number, string reviewId, WriteRequest request, HttpContext http, Writes w, CancellationToken ct) =>
+            await w.RunAsync(http, owner, repo, number, request, "discard", ReviewTags.PayloadHash(reviewId),
+                precondition: (who, s) => w.PendingPreconditionAsync(who, s, reviewId, commit: "any", stale: false, ct),
+                async (who, s, key) => Done(await w.Writer.DeletePendingReviewAsync(who, reviewId, CancellationToken.None).ConfigureAwait(false), reviewId),
+                // Gone is done; still there is not, and deleting again is harmless.
+                async (who, s, key, since) =>
+                {
+                    var node = await w.Writer.NodeOwnerAsync(who, reviewId, ct).ConfigureAwait(false);
+                    return node.Ok ? RepoResult<string>.Of("") : node.Failure == RepoFailure.NotFound ? RepoResult<string>.Of(reviewId) : node.As<string>();
+                },
+                idempotent: true, ct).ConfigureAwait(false));
+
+        pulls.MapWrite("POST", "/reviewers", async (string owner, string repo, int number, ReviewersRequest request, HttpContext http, Writes w, CancellationToken ct) =>
+        {
+            var add = request.Add ?? [];
+            var remove = request.Remove ?? [];
+            if (add.Length + remove.Length is 0 or > 15 || add.Concat(remove).Any(l => !Login().IsMatch(l)))
+            {
+                return Invalid("reviewers", "Name up to fifteen people by their GitHub login.");
+            }
+
+            return await w.RunAsync(http, owner, repo, number, request, "reviewers", ReviewTags.PayloadHash(string.Join(',', add), "|", string.Join(',', remove)),
+                precondition: null,
+                async (who, s, key) => Done(await w.Writer.SetReviewersAsync(who, owner, repo, number, add, remove, CancellationToken.None).ConfigureAwait(false), "reviewers"),
+                // Safe to repeat: an uncertain change is simply made again.
+                (who, s, key, since) => Task.FromResult(RepoResult<string>.Of("")),
+                idempotent: true, ct).ConfigureAwait(false);
+        });
+
+        pulls.MapWrite("POST", "/viewed", async (string owner, string repo, int number, ViewedRequest request, HttpContext http, Writes w, CancellationToken ct) =>
+        {
+            if (!ApiEndpoints.ValidPath(request.Path))
+            {
+                return Invalid("path", "That is not a file of this pull request.");
+            }
+
+            string? pullNode = null;
+            return await w.RunAsync(http, owner, repo, number, request, "viewed", ReviewTags.PayloadHash(request.Path, request.Viewed ? "1" : "0"),
+                precondition: async (who, s) =>
+                {
+                    var summary = await w.Source.GetPullSummaryAsync(who, owner, repo, number, ct).ConfigureAwait(false);
+                    pullNode = summary.Ok ? summary.Value!.NodeId : null;
+                    return pullNode is { Length: > 0 } ? null : ApiEndpoints.Refused(summary.Ok ? RepoFailure.Upstream : summary.Failure);
+                },
+                async (who, s, key) => Done(await w.Writer.SetViewedAsync(who, pullNode!, request.Path!, request.Viewed, CancellationToken.None).ConfigureAwait(false), request.Path!),
+                (who, s, key, since) => Task.FromResult(RepoResult<string>.Of("")),
+                idempotent: true, ct).ConfigureAwait(false);
+        });
+    }
+
+    /// <summary>A review event, and the body GitHub requires with it: a one-shot comment or request for changes says something.</summary>
+    private static IResult? Event(string? reviewEvent, string? body, bool oneShot)
+    {
+        if (reviewEvent is null || !Events.Contains(reviewEvent))
+        {
+            return Invalid("event", "Choose Comment, Approve or Request changes.");
+        }
+
+        if (body is { Length: > MaxBodyChars })
+        {
+            return Invalid("body", "That is too long to post.");
+        }
+
+        return (reviewEvent == "REQUEST_CHANGES" || (oneShot && reviewEvent == "COMMENT")) && string.IsNullOrWhiteSpace(body)
+            ? Invalid("body", "Say what should change.")
+            : null;
+    }
+
+    [GeneratedRegex("^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})$")]
+    private static partial Regex Login();
 
     /// <summary>Registers a write route with the rules every write shares (S1, S4, S8, S9).</summary>
     public static RouteHandlerBuilder MapWrite(this RouteGroupBuilder group, string method, string pattern, Delegate handler)
@@ -324,6 +544,113 @@ public static partial class PullWriteEndpoints
         Versio.Web.Rendering.ViewService views, ApiEndpoints.Loader load)
     {
         public IRepoWriter Writer => writer;
+
+        public IRepoSource Source => source;
+
+        /// <summary>A one-shot review's preconditions: the snapshot still the pull request's, and no pending review in the way.</summary>
+        /// <remarks>GitHub keeps one pending review per person per pull request; a one-shot review beside it is refused there, and said here first.</remarks>
+        internal async Task<IResult?> ReviewPreconditionAsync(RepoAccess who, ReviewSnapshot s, CancellationToken ct)
+        {
+            if (await StaleAsync(who, s, ct).ConfigureAwait(false) is { } stale)
+            {
+                return stale;
+            }
+
+            var pending = await source.GetPendingReviewAsync(who, s.Owner, s.Repo, s.Number, ct).ConfigureAwait(false);
+            if (!pending.Ok)
+            {
+                return ApiEndpoints.Refused(pending.Failure);
+            }
+
+            return pending.Value!.Review is null
+                ? null
+                : Results.Json(new { error = "pending-exists", message = "You have a review in progress. Submit or discard it." }, statusCode: 409);
+        }
+
+        /// <summary>
+        /// A draft comment's preconditions: the snapshot current, the target valid (a line GitHub takes,
+        /// or a drawn element resolved from the server's own rendering), and the viewer's pending review
+        /// either absent (it will be created on the snapshot's head) or created on that head.
+        /// </summary>
+        internal async Task<(IResult? Refusal, (LineComment, Versio.Core.Review.SemanticAnchor?, string?, string)? Found)> PendingThreadPreconditionAsync(
+            HttpContext http, RepoAccess who, ReviewSnapshot s, PendingThreadRequest request, string body, CancellationToken ct)
+        {
+            LineComment comment;
+            Versio.Core.Review.SemanticAnchor? anchor = null;
+            if (request.Dom is { } dom)
+            {
+                var (refusal, found) = await AnchorPreconditionAsync(http, who, s, request.Path!, request.From, dom, body, ct).ConfigureAwait(false);
+                if (refusal is not null)
+                {
+                    return (refusal, null);
+                }
+
+                (comment, anchor) = found!.Value;
+            }
+            else
+            {
+                comment = new LineComment("", request.Path!, request.Line, request.Side ?? "RIGHT", request.StartLine, body);
+                if (await LinePreconditionAsync(who, s, comment, ct).ConfigureAwait(false) is { } refused)
+                {
+                    return (refused, null);
+                }
+            }
+
+            var summary = await source.GetPullSummaryAsync(who, s.Owner, s.Repo, s.Number, ct).ConfigureAwait(false);
+            var pending = await source.GetPendingReviewAsync(who, s.Owner, s.Repo, s.Number, ct).ConfigureAwait(false);
+            if (!summary.Ok || !pending.Ok)
+            {
+                return (ApiEndpoints.Refused(summary.Ok ? pending.Failure : summary.Failure), null);
+            }
+
+            if (pending.Value!.Review is { } existing && existing.Commit != s.HeadSha)
+            {
+                return (Results.Json(new { error = "pending-older", commit = existing.Commit, message = "Your review in progress is on an older commit. Submit it as it is, or discard it." }, statusCode: 409), null);
+            }
+
+            return (null, (comment, anchor, pending.Value.Review?.Id, summary.Value!.NodeId));
+        }
+
+        /// <summary>
+        /// A pending review's preconditions for submitting or discarding it: it is a review of THIS pull
+        /// request (S7), the viewer's own, still pending, and on the commit this route allows — the
+        /// snapshot's head (<paramref name="commit"/> null), the named older commit (historical), or any
+        /// ("any", discarding).
+        /// </summary>
+        internal async Task<IResult?> PendingPreconditionAsync(RepoAccess who, ReviewSnapshot s, string reviewId, string? commit, bool stale, CancellationToken ct)
+        {
+            if (stale && await StaleAsync(who, s, ct).ConfigureAwait(false) is { } moved)
+            {
+                return moved;
+            }
+
+            var (refusal, node) = await OwnerOfAsync(who, s, reviewId, ["PullRequestReview"], ct).ConfigureAwait(false);
+            if (refusal is not null)
+            {
+                return refusal;
+            }
+
+            if (node!.Author != who.Who || node.State != "PENDING")
+            {
+                log.Warn(LogCategory.Web, $"review refused (C2: {reviewId} is not {who.Who}'s pending review)");
+                return Results.Json(new { error = "not-your-pending-review", message = "That is not a review of yours in progress." }, statusCode: 409);
+            }
+
+            var wanted = commit ?? s.HeadSha;
+            if (wanted != "any" && node.Commit != wanted)
+            {
+                return Results.Json(new { error = "pending-older", commit = node.Commit, message = "This review is on another commit than the one named. Reload, and check which commit you are approving." }, statusCode: 409);
+            }
+
+            return null;
+        }
+
+        /// <summary>A submitted review is no longer pending: that is the reconciliation's answer.</summary>
+        internal async Task<RepoResult<string>> SubmittedAsync(RepoAccess who, string reviewId, CancellationToken ct)
+        {
+            var node = await writer.NodeOwnerAsync(who, reviewId, ct).ConfigureAwait(false);
+            return node.Ok ? RepoResult<string>.Of(node.Value!.State is { } state && state != "PENDING" ? reviewId : "") : node.As<string>();
+        }
 
         /// <summary>
         /// One write, start to finish: snapshot, key, reservation, preconditions, the call, the record.

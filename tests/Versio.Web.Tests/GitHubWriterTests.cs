@@ -46,6 +46,7 @@ public sealed class GitHubWriterTests : IAsyncLifetime
             return Results.Json(new { node_id = "IC_late" }, statusCode: 201);
         });
         app.MapPost("/repos/acme/plant/pulls/12/comments", () => Results.Json(new { node_id = "PRRC_1" }, statusCode: 201));
+        app.MapPost("/repos/acme/plant/pulls/12/reviews", () => Results.Json(new { node_id = "PRR_1" }, statusCode: 200));
         app.MapPost("/graphql", async (HttpContext http) =>
         {
             using var doc = await System.Text.Json.JsonDocument.ParseAsync(http.Request.Body);
@@ -54,6 +55,11 @@ public sealed class GitHubWriterTests : IAsyncLifetime
             if (id == "refused")
             {
                 return Results.Json(new { data = (object?)null, errors = new[] { new { type = "FORBIDDEN", message = "Resource not accessible by integration" } } });
+            }
+
+            if (query.Contains("addPullRequestReview(", StringComparison.Ordinal))
+            {
+                return Results.Json(new { data = new { addPullRequestReview = new { pullRequestReview = new { id = "PRR_pending" } } } });
             }
 
             return query.Contains("resolveReviewThread", StringComparison.Ordinal)
@@ -147,6 +153,25 @@ public sealed class GitHubWriterTests : IAsyncLifetime
 
         Assert.Equal("PRRC_mine", found.Value);
         Assert.Contains(_requests, r => r.Path.StartsWith("/repos/acme/plant/issues/12/comments?since=", StringComparison.Ordinal));
+    }
+
+    /// <summary>
+    /// A review is bound to the commit it is CREATED on (docs/web/PLAN.md, C2): the one-shot form
+    /// carries commit_id, and a pending review is started with commitOID — submitting takes none.
+    /// </summary>
+    [Fact]
+    public async Task A_review_names_its_commit_when_it_is_created_both_ways()
+    {
+        var commit = new string('d', 40);
+
+        var oneShot = await Writer().SubmitReviewAsync(Alice, "acme", "plant", 12, commit, "APPROVE", "", CancellationToken.None);
+        var pending = await Writer().StartPendingReviewAsync(Alice, "PR_12", commit, CancellationToken.None);
+
+        Assert.Equal(("PRR_1", "PRR_pending"), (oneShot.Value, pending.Value));
+        var review = _requests.Single(r => r.Path == "/repos/acme/plant/pulls/12/reviews").Body;
+        Assert.Contains($"\"commit_id\":\"{commit}\"", review, StringComparison.Ordinal);
+        Assert.Contains("\"event\":\"APPROVE\"", review, StringComparison.Ordinal);
+        Assert.Contains($"\"commit\":\"{commit}\"", _requests.Single(r => r.Body.Contains("addPullRequestReview(", StringComparison.Ordinal)).Body, StringComparison.Ordinal);
     }
 
     [Fact]
