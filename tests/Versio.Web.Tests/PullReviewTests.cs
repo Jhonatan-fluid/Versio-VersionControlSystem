@@ -376,6 +376,22 @@ public sealed class PullReviewTests
         Assert.Equal("sign-in", status.GetProperty("summaryError").GetString());
         Assert.Equal(JsonValueKind.Null, status.GetProperty("summary").ValueKind);
         Assert.Equal("success", status.GetProperty("checks")[0].GetProperty("conclusion").GetString());
+        Assert.False(status.GetProperty("checksTruncated").GetBoolean());
+    }
+
+    /// <summary>A checks list cut short is said to be, so the page never shows a partial list as all of them.</summary>
+    [Fact]
+    public async Task Checks_cut_short_are_reported_as_cut()
+    {
+        var w = Build();
+        w.Repo.Checks[w.Head] = [new CheckInfo("build", "completed", "success", "https://ci.example/1", "check-run")];
+        w.Repo.ChecksCut.Add(w.Head);
+        await using var host = await TestHost.StartAsync(w.GitHub);
+        var (token, _) = await SnapshotAsync(host);
+
+        var status = Json(await (await WithSnapshot(host, "/api/repos/acme/plant/pulls/12/status", token)).Body());
+
+        Assert.True(status.GetProperty("checksTruncated").GetBoolean());
     }
 
     /// <summary>

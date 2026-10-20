@@ -333,6 +333,8 @@ export interface ReviewStatus {
     viewerCanUpdate: boolean;
   } | null;
   checksError: string | null;
+  /** More checks than were read: shown as cut, so a failure past the bound is never hidden behind passes. */
+  checksTruncated?: boolean;
   checks: { name: string; status: string; conclusion: string | null; url: string | null; source: string }[] | null;
 }
 

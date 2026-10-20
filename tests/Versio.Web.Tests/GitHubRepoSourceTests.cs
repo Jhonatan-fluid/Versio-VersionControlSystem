@@ -151,8 +151,20 @@ public sealed class GitHubRepoSourceTests : IAsyncLifetime
         });
 
         // Checks with an ETag: a request carrying it gets 304, as GitHub answers an unchanged poll.
-        app.MapGet("/repos/acme/plant/commits/{sha}/check-runs", (HttpContext http) =>
+        app.MapGet("/repos/acme/plant/commits/{sha}/check-runs", (string sha, HttpContext http) =>
         {
+            // Paged as GitHub pages them: 100 passing runs, and the failing one on page 2 — or, for
+            // the other commit, far more than any bound reads.
+            if (sha is ['f', ..] or ['b', ..])
+            {
+                var page = int.Parse(http.Request.Query["page"].ToString() is { Length: > 0 } p ? p : "1", System.Globalization.CultureInfo.InvariantCulture);
+                var total = sha[0] == 'f' ? 101 : 5000;
+                var runs = Enumerable.Range((page - 1) * 100, Math.Max(0, Math.Min(100, total - ((page - 1) * 100))))
+                    .Select(i => new { name = $"run {i}", status = "completed", conclusion = i == 100 ? "failure" : "success", html_url = "https://ci.example/r" })
+                    .ToArray();
+                return Results.Json(new { total_count = total, check_runs = runs });
+            }
+
             if (http.Request.Headers.IfNoneMatch.ToString() == "\"runs-1\"")
             {
                 Interlocked.Increment(ref _notModified);
@@ -411,11 +423,37 @@ public sealed class GitHubRepoSourceTests : IAsyncLifetime
         var first = await source.GetChecksAsync(Alice, "acme", "plant", new string('d', 40), CancellationToken.None);
         var second = await source.GetChecksAsync(Alice, "acme", "plant", new string('d', 40), CancellationToken.None);
 
-        Assert.Equal(first.Value, second.Value);
-        Assert.Equal("https://ci.example/1", first.Value![0].Url);
-        Assert.Equal(("legacy", "pending", (string?)null, (string?)null), (first.Value[1].Name, first.Value[1].Status, first.Value[1].Conclusion, first.Value[1].Url));
+        Assert.Equal(first.Value!.Checks, second.Value!.Checks);
+        var checks = first.Value.Checks;
+        Assert.Equal("https://ci.example/1", checks[0].Url);
+        Assert.Equal(("legacy", "pending", (string?)null, (string?)null), (checks[1].Name, checks[1].Status, checks[1].Conclusion, checks[1].Url));
+        Assert.False(first.Value.Truncated);
         Assert.Equal(2, _requests.Count(r => r.Path.Contains("/check-runs", StringComparison.Ordinal)));
         Assert.Equal(1, _notModified);
+    }
+
+    /// <summary>
+    /// Found in review (2026-10-20): 100 passing check runs and one failing one on page 2 showed as
+    /// all green. Every page is read; the failure is there.
+    /// </summary>
+    [Fact]
+    public async Task A_failing_check_on_the_second_page_is_read()
+    {
+        var checks = (await Source().GetChecksAsync(Alice, "acme", "plant", new string('f', 40), CancellationToken.None)).Value!;
+
+        Assert.Equal(101 + 1, checks.Checks.Count);
+        Assert.Contains(checks.Checks, c => c.Conclusion == "failure");
+        Assert.False(checks.Truncated);
+    }
+
+    /// <summary>Past the bound, the list is said to be cut: never a partial list passed off as all of them.</summary>
+    [Fact]
+    public async Task Checks_past_the_bound_are_reported_cut()
+    {
+        var checks = (await Source().GetChecksAsync(Alice, "acme", "plant", new string('b', 40), CancellationToken.None)).Value!;
+
+        Assert.Equal((GitHubRepoSource.MaxCheckPages * 100) + 1, checks.Checks.Count);
+        Assert.True(checks.Truncated);
     }
 
     [Fact]

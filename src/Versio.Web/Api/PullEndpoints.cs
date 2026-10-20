@@ -410,8 +410,11 @@ public static class PullEndpoints
                 },
                 checksError = checks.Ok ? null : Problem(checks.Failure),
                 checks = checks.Ok
-                    ? checks.Value!.Select(c => new { name = CodeHtml.Spelled(c.Name), status = c.Status, conclusion = c.Conclusion, url = c.Url, source = c.Source })
+                    ? checks.Value!.Checks.Select(c => new { name = CodeHtml.Spelled(c.Name), status = c.Status, conclusion = c.Conclusion, url = c.Url, source = c.Source })
                     : null,
+                // More checks than were read: the page says the list is cut, so a failure past the
+                // bound is never hidden behind a list of passes.
+                checksTruncated = checks.Ok && checks.Value!.Truncated,
             });
         });
 

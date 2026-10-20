@@ -61,6 +61,8 @@ interface Options {
   /** Whether the snapshot says the merge tier is on, and what the merge-state read answers. */
   canMerge?: boolean;
   merge?: Record<string, unknown>;
+  /** GitHub listed more checks than were read. */
+  checksCut?: boolean;
 }
 
 let calls: { url: string; snapshot: string | null; method: string; csrf: string | null; body: Record<string, unknown> | null }[] = [];
@@ -82,7 +84,7 @@ function answer(url: string, o: Options): unknown {
         reviewers: [{ login: 'kim', state: 'REQUESTED' }], viewerIsAuthor: o.viewerIsAuthor ?? false, viewerLastReviewCommit: o.lastReview ?? null,
         title: o.live?.title ?? 'Fix interlock', titleText: o.live?.title ?? 'Fix interlock', markdown: o.live?.markdown ?? 'The delay was wrong.',
         html: `<div class="md-page"><p>${o.live?.markdown ?? 'The delay was wrong.'}</p></div>`, viewerCanUpdate: o.canUpdate ?? true },
-      checksError: null, checks: [{ name: 'build', status: 'completed', conclusion: 'failure', url: 'https://ci.example/1', source: 'check-run' }],
+      checksError: null, checks: [{ name: 'build', status: 'completed', conclusion: 'failure', url: 'https://ci.example/1', source: 'check-run' }], checksTruncated: o.checksCut ?? false,
     };
   }
   if (url.endsWith('/files')) {
@@ -252,6 +254,18 @@ describe('PullPage', () => {
     await settle(host, () => calls.filter((c) => c.url.endsWith('/snapshot')).length === 2);
     expect(calls.filter((c) => c.url.endsWith('/snapshot')).length).toBe(2);
     act(() => root.unmount());
+  });
+
+  it('says a checks list cut short is cut, on the tab and beside the counts', async () => {
+    const cut = await render('/acme/plant/pull/12?tab=checks', { checksCut: true });
+    expect(cut.host.querySelector('.pane .notice')?.textContent).toContain('more checks than were read');
+    act(() => cut.root.unmount());
+    document.body.innerHTML = '';
+
+    const whole = await render('/acme/plant/pull/12?tab=checks');
+    expect(whole.host.textContent).not.toContain('more checks than were read');
+    expect(whole.host.textContent).not.toContain('more on GitHub than shown');
+    act(() => whole.root.unmount());
   });
 
   it('marks commits that arrived after the reviewed head', async () => {

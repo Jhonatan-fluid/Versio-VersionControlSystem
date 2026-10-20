@@ -476,6 +476,7 @@ function Summary({ status, writer }: { status: ReviewStatus | null; writer: Writ
           {checks.length === 0 ? 'No checks' : `${checks.length} check${checks.length === 1 ? '' : 's'}`}
           {failed > 0 && <>, <span className="error-text">{failed} failed</span></>}
           {running > 0 && `, ${running} running`}
+          {status.checksTruncated && <>, <span className="error-text">more on GitHub than shown</span></>}
         </p>
       )}
     </div>
@@ -605,6 +606,10 @@ function Checks({ status }: { status: ReviewStatus | null }) {
     return <p className="muted">No checks ran on the version you are reviewing.</p>;
   }
   return (
+    <>
+    {status.checksTruncated && (
+      <p className="notice" role="note">GitHub lists more checks than were read here. A failing one may be among those not shown: see them all on GitHub.</p>
+    )}
     <ul className="row-list checks">
       {status.checks.map((c, i) => (
         <li key={`${c.source}-${c.name}-${i}`} className={`check check-${c.conclusion ?? c.status}`}>
@@ -616,6 +621,7 @@ function Checks({ status }: { status: ReviewStatus | null }) {
         </li>
       ))}
     </ul>
+    </>
   );
 }
 

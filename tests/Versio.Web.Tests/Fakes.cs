@@ -128,6 +128,9 @@ internal sealed class FakeGitHub : IRepoSource
         /// <summary>Tokens GitHub says may not edit the pull requests (viewerCanUpdate false); everyone else may.</summary>
         public HashSet<string> CannotUpdate { get; } = new(StringComparer.Ordinal);
 
+        /// <summary>Commits whose checks are reported cut short.</summary>
+        public HashSet<string> ChecksCut { get; } = new(StringComparer.Ordinal);
+
         /// <summary>GitHub's mergeStateStatus per pull request; CLEAN when not set.</summary>
         public Dictionary<int, string> MergeStatus { get; } = [];
 
@@ -482,11 +485,11 @@ internal sealed class FakeGitHub : IRepoSource
         return Task.FromResult(r.Ok ? RepoResult<bool>.Of(r.Value!.Assignable.Contains(login)) : r.As<bool>());
     }
 
-    public Task<RepoResult<IReadOnlyList<CheckInfo>>> GetChecksAsync(RepoAccess access, string owner, string repo, string commitSha, CancellationToken ct)
+    public Task<RepoResult<CheckList>> GetChecksAsync(RepoAccess access, string owner, string repo, string commitSha, CancellationToken ct)
     {
         var r = See(access, owner, repo, "checks " + commitSha);
-        return Task.FromResult(!r.Ok ? r.As<IReadOnlyList<CheckInfo>>()
-            : RepoResult<IReadOnlyList<CheckInfo>>.Of(r.Value!.Checks.TryGetValue(commitSha, out var c) ? c : []));
+        return Task.FromResult(!r.Ok ? r.As<CheckList>()
+            : RepoResult<CheckList>.Of(new CheckList(r.Value!.Checks.TryGetValue(commitSha, out var c) ? c : [], r.Value.ChecksCut.Contains(commitSha))));
     }
 
     public Task<RepoResult<IReadOnlyList<ReleaseInfo>>> GetReleasesAsync(RepoAccess access, string owner, string repo, int limit, CancellationToken ct)

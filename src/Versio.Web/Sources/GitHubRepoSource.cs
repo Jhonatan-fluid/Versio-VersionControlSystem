@@ -765,32 +765,81 @@ public sealed class GitHubRepoSource(
     /// to the page as a link (security rule 6 of *Pull request review*).
     /// </para>
     /// </remarks>
-    public async Task<RepoResult<IReadOnlyList<CheckInfo>>> GetChecksAsync(RepoAccess access, string owner, string repo, string commitSha, CancellationToken ct)
+    /// <summary>The most pages of check runs, and of statuses, read for one commit: 1,000 of each.</summary>
+    internal const int MaxCheckPages = 10;
+
+    /// <remarks>
+    /// Both lists are paged by GitHub. Only the first page of each was read until a review
+    /// supplied 100 passing check runs and one failing one: the failure was never shown, and nothing
+    /// said the list was cut (2026-10-20). Every page is now read, to a bound; past it the answer
+    /// says it was cut. The first page goes with its ETag, so an unchanged poll still costs nothing;
+    /// a new run changes its <c>total_count</c>, and so the first page, so a poll is never fooled.
+    /// </remarks>
+    public async Task<RepoResult<CheckList>> GetChecksAsync(RepoAccess access, string owner, string repo, string commitSha, CancellationToken ct)
     {
-        var runs = await GetConditionalAsync<IReadOnlyList<CheckInfo>>(access, $"repos/{E(owner)}/{E(repo)}/commits/{E(commitSha)}/check-runs?per_page=100",
-            root => root.GetProperty("check_runs").EnumerateArray().Select(r => new CheckInfo(
-                r.GetProperty("name").GetString() ?? "",
-                r.GetProperty("status").GetString() ?? "",
-                Text(r, "conclusion") is { Length: > 0 } c ? c : null,
-                Https(Text(r, "html_url")),
-                "check-run")).ToList(), ct).ConfigureAwait(false);
+        var runs = await PagedChecksAsync(access, $"repos/{E(owner)}/{E(repo)}/commits/{E(commitSha)}/check-runs", "check_runs", r => new CheckInfo(
+            r.GetProperty("name").GetString() ?? "",
+            r.GetProperty("status").GetString() ?? "",
+            Text(r, "conclusion") is { Length: > 0 } c ? c : null,
+            Https(Text(r, "html_url")),
+            "check-run"), ct).ConfigureAwait(false);
         if (!runs.Ok)
         {
             return runs;
         }
 
-        var statuses = await GetConditionalAsync<IReadOnlyList<CheckInfo>>(access, $"repos/{E(owner)}/{E(repo)}/commits/{E(commitSha)}/status",
-            root => root.GetProperty("statuses").EnumerateArray().Select(s =>
+        var statuses = await PagedChecksAsync(access, $"repos/{E(owner)}/{E(repo)}/commits/{E(commitSha)}/status", "statuses", s =>
+        {
+            var state = s.GetProperty("state").GetString() ?? "";
+            return new CheckInfo(
+                s.GetProperty("context").GetString() ?? "",
+                state == "pending" ? "pending" : "completed",
+                state == "pending" ? null : state,
+                Https(Text(s, "target_url")),
+                "status");
+        }, ct).ConfigureAwait(false);
+        return statuses.Ok
+            ? RepoResult<CheckList>.Of(new CheckList([.. runs.Value!.Checks, .. statuses.Value!.Checks], runs.Value.Truncated || statuses.Value.Truncated))
+            : statuses;
+    }
+
+    /// <summary>One paged list of checks: every page while GitHub's <c>total_count</c> says there is more, to <see cref="MaxCheckPages"/>.</summary>
+    private async Task<RepoResult<CheckList>> PagedChecksAsync(RepoAccess access, string relative, string property, Func<JsonElement, CheckInfo> one, CancellationToken ct)
+    {
+        (IReadOnlyList<CheckInfo> Items, int Total) Page(JsonElement root)
+        {
+            var items = root.GetProperty(property).EnumerateArray().Select(one).ToList();
+            // No total_count: the page is the whole list (and an older answer shape reads as one page).
+            return (items, Int(root, "total_count") ?? items.Count);
+        }
+
+        var first = await GetConditionalAsync(access, $"{relative}?per_page=100&page=1", Page, ct).ConfigureAwait(false);
+        if (!first.Ok)
+        {
+            return first.As<CheckList>();
+        }
+
+        var all = first.Value.Items.ToList();
+        var total = first.Value.Total;
+        for (var page = 2; all.Count < total && page <= MaxCheckPages; page++)
+        {
+            var next = await GetJsonAsync(access, $"{relative}?per_page=100&page={page.ToString(CultureInfo.InvariantCulture)}", Page, ct).ConfigureAwait(false);
+            if (!next.Ok)
             {
-                var state = s.GetProperty("state").GetString() ?? "";
-                return new CheckInfo(
-                    s.GetProperty("context").GetString() ?? "",
-                    state == "pending" ? "pending" : "completed",
-                    state == "pending" ? null : state,
-                    Https(Text(s, "target_url")),
-                    "status");
-            }).ToList(), ct).ConfigureAwait(false);
-        return statuses.Ok ? RepoResult<IReadOnlyList<CheckInfo>>.Of([.. runs.Value!, .. statuses.Value!]) : statuses;
+                // A later page that cannot be read: what was read, said to be cut — never passed off as all.
+                log.Warn(LogCategory.Web, $"checks page {page} of {Redact(relative)} unreadable ({next.Failure}); the list is shown as cut");
+                return RepoResult<CheckList>.Of(new CheckList(all, true));
+            }
+
+            if (next.Value.Items.Count == 0)
+            {
+                break;
+            }
+
+            all.AddRange(next.Value.Items);
+        }
+
+        return RepoResult<CheckList>.Of(new CheckList(all, all.Count < total));
     }
 
     private static string? Https(string url) =>

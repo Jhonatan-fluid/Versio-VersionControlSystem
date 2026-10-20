@@ -231,6 +231,10 @@ public sealed record PullCommitList(IReadOnlyList<PullCommit> Commits, bool Trun
 /// <param name="Url">Where its log is, https only, or null: a CI's link is not ours to vouch for, so it is only ever opened, never fetched.</param>
 public sealed record CheckInfo(string Name, string Status, string? Conclusion, string? Url, string Source);
 
+/// <summary>A commit's checks, and whether there were more than were read.</summary>
+/// <param name="Truncated">GitHub listed more check runs or statuses than the bounded paging read: the page says so, never shows a partial list as whole.</param>
+public sealed record CheckList(IReadOnlyList<CheckInfo> Checks, bool Truncated);
+
 /// <summary>A published release as the list shows it. Drafts are never listed.</summary>
 public sealed record ReleaseInfo(string Tag, string Name, string Author, DateTimeOffset When, bool Prerelease);
 
@@ -325,7 +329,7 @@ public interface IRepoSource
     Task<RepoResult<bool>> CanAssignAsync(RepoAccess access, string owner, string repo, string login, CancellationToken ct);
 
     /// <summary>Every check run and commit status on one commit.</summary>
-    Task<RepoResult<IReadOnlyList<CheckInfo>>> GetChecksAsync(RepoAccess access, string owner, string repo, string commitSha, CancellationToken ct);
+    Task<RepoResult<CheckList>> GetChecksAsync(RepoAccess access, string owner, string repo, string commitSha, CancellationToken ct);
 
     /// <summary>The published releases, newest first, up to <paramref name="limit"/>.</summary>
     Task<RepoResult<IReadOnlyList<ReleaseInfo>>> GetReleasesAsync(RepoAccess access, string owner, string repo, int limit, CancellationToken ct);
