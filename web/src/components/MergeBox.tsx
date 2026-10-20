@@ -2,7 +2,7 @@ import { useState } from 'react';
 import type { MergeStateView, ReviewSnapshot } from '../api';
 import { api } from '../api';
 import type { Async } from '../useAsync';
-import { describe, newOpKey } from './ReviewWrite';
+import { describe, newOpKey, sentUnder } from './ReviewWrite';
 
 const methodWords: Record<string, string> = { MERGE: 'Create a merge commit', SQUASH: 'Squash and merge', REBASE: 'Rebase and merge' };
 const methodShort: Record<string, string> = { MERGE: 'a merge commit', SQUASH: 'squash', REBASE: 'rebase' };
@@ -38,6 +38,11 @@ export function MergeBox({ owner, repo, snap, state, onChanged, onStale }: Merge
   const [busy, setBusy] = useState(false);
   // Auto-merge's own yes: that it may merge commits pushed after this review.
   const [accepts, setAccepts] = useState(false);
+  // The key of an action whose outcome is not known, with what it was and the snapshot it went
+  // under: confirming the same action again is the same operation, which the server reconciles.
+  // A fresh key per confirmation made a merge that had happened, its answer lost, come back as
+  // "This pull request is not open" — a failure reported for a success (found in review, 2026-10-20).
+  const [held, setHeld] = useState<{ id: string; key: string; sentWith: string } | null>(null);
   const [note, setNote] = useState<string | null>(null);
 
   if (state.state === 'loading') {
@@ -81,10 +86,17 @@ export function MergeBox({ owner, repo, snap, state, onChanged, onStale }: Merge
       : p.kind === 'auto-on' ? { enable: true, method: p.method, acceptsLaterCommits: true }
       : p.kind === 'auto-off' ? { enable: false }
       : {};
-    // Each is safe to send again (GitHub's own head precondition), so each confirmation is a fresh key.
-    const answer = await api.review.write(owner, repo, snap, path, 'POST', { ...body, opKey: newOpKey() });
+    const id = JSON.stringify([path, body]);
+    const same = held?.id === id ? held : null;
+    const key = same?.key ?? newOpKey();
+    const under = sentUnder(snap, same?.sentWith);
+    setHeld({ id, key, sentWith: under.token });
+    const answer = await api.review.write(owner, repo, under, path, 'POST', { ...body, opKey: key });
     setBusy(false);
     setPending(null);
+    if (answer.outcome !== 'unknown' && answer.outcome !== 'pending') {
+      setHeld(null);
+    }
     if (answer.outcome === 'done') {
       onChanged();
       return;

@@ -1168,6 +1168,35 @@ describe('PullPage merge box', () => {
     act(() => root.unmount());
   });
 
+  it('confirming a merge again after an unknown outcome is the same operation, and a refusal lets the key go', async () => {
+    const unknown = { status: 202, body: { outcome: 'unknown', message: 'This may or may not have been posted.' } };
+    const { host, root } = await render('/acme/plant/pull/12', { writable: true, canMerge: true, merge: ready, writes: { '/merge': unknown } });
+    const box = () => host.querySelector('.merge-box')!;
+    for (let i = 0; i < 2; i++) {
+      await click(button(box(), 'Merge...')!, host);
+      await click(button(box(), 'Confirm')!, host);
+    }
+
+    const [first, second] = writes();
+    expect(second!.body?.opKey).toBe(first!.body?.opKey);
+    expect(second!.snapshot).toBe(first!.snapshot);
+    act(() => root.unmount());
+  });
+
+  it('after a refusal the next merge is a new operation', async () => {
+    const refused = { status: 409, body: { error: 'not-mergeable', message: 'Required reviews or checks have not passed.' } };
+    const { host, root } = await render('/acme/plant/pull/12', { writable: true, canMerge: true, merge: ready, writes: { '/merge': refused } });
+    const box = () => host.querySelector('.merge-box')!;
+    for (let i = 0; i < 2; i++) {
+      await click(button(box(), 'Merge...')!, host);
+      await click(button(box(), 'Confirm')!, host);
+    }
+
+    const [first, second] = writes();
+    expect(second!.body?.opKey).not.toBe(first!.body?.opKey);
+    act(() => root.unmount());
+  });
+
   it('brings a branch that is behind up to date, after asking', async () => {
     const behind = { ...ready, mergeStateStatus: 'BEHIND', mergeable: false, blocked: 'The branch must be brought up to date with its base first.' };
     const { host, root } = await render('/acme/plant/pull/12', { writable: true, canMerge: true, merge: behind });
