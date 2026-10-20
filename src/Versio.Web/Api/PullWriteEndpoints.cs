@@ -24,6 +24,11 @@ public sealed record CommentRequest(string? OpKey, string? Body) : WriteRequest(
 
 public sealed record LineCommentRequest(string? OpKey, string? Body, string? Path, int? Line, string? Side, int? StartLine) : WriteRequest(OpKey);
 
+/// <param name="Path">The file on screen, whose drawing holds the element.</param>
+/// <param name="From">A renamed file's old path, as the files list gave it, so the drawing is the one the page showed.</param>
+/// <param name="Dom">The anchor id the person clicked (a <c>data-anchors</c> entry); everything else about it is the server's to know.</param>
+public sealed record AnchorCommentRequest(string? OpKey, string? Body, string? Path, string? From, string? Dom) : WriteRequest(OpKey);
+
 public sealed record ResolveRequest(string? OpKey, bool Resolved) : WriteRequest(OpKey);
 
 public sealed record PreviewRequest(string? Body);
@@ -95,6 +100,37 @@ public static partial class PullWriteEndpoints
                 ReviewTags.PayloadHash(body, comment.Path, comment.Line?.ToString(System.Globalization.CultureInfo.InvariantCulture), comment.Side, comment.StartLine?.ToString(System.Globalization.CultureInfo.InvariantCulture)),
                 precondition: (who, s) => w.LinePreconditionAsync(who, s, comment, ct),
                 (who, s, key) => w.Writer.AddLineCommentAsync(who, owner, repo, number, comment with { Commit = s.HeadSha, Body = ReviewTags.WithOperation(body, key) }, CancellationToken.None),
+                (who, s, key, since) => w.Writer.FindTaggedCommentAsync(who, owner, repo, number, ReviewTags.OperationTag(key), since, ct),
+                idempotent: false, ct).ConfigureAwait(false);
+        });
+
+        // A comment on a drawn element: a member row, a network (docs/web/PLAN.md, C3). The page
+        // names only the element it clicked; the server re-renders the snapshot's drawing, finds that
+        // anchor, decides the GitHub line from GitHub's own hunks (or the whole file when the diff
+        // shows none of the element's lines), and writes the anchor tag itself.
+        pulls.MapWrite("POST", "/anchor-comments", async (string owner, string repo, int number, AnchorCommentRequest request, HttpContext http, Writes w, CancellationToken ct) =>
+        {
+            if (Body(request.Body) is not { } body)
+            {
+                return Invalid("body", "A comment needs some text.");
+            }
+
+            if (!ApiEndpoints.ValidPath(request.Path) || (request.From is not null && !ApiEndpoints.ValidPath(request.From))
+                || request.Dom is null || !AnchorDom().IsMatch(request.Dom))
+            {
+                return Invalid("anchor", "That is not something drawn in this file.");
+            }
+
+            (LineComment Comment, Versio.Core.Review.SemanticAnchor Anchor)? resolved = null;
+            return await w.RunAsync(http, owner, repo, number, request, "anchor-comment", ReviewTags.PayloadHash(body, request.Path, request.From, request.Dom),
+                precondition: async (who, s) =>
+                {
+                    var (refusal, found) = await w.AnchorPreconditionAsync(http, who, s, request.Path!, request.From, request.Dom, body, ct).ConfigureAwait(false);
+                    resolved = found;
+                    return refusal;
+                },
+                (who, s, key) => w.Writer.AddLineCommentAsync(who, owner, repo, number,
+                    resolved!.Value.Comment with { Commit = s.HeadSha, Body = ReviewTags.WithAnchor(body, key, resolved.Value.Anchor) }, CancellationToken.None),
                 (who, s, key, since) => w.Writer.FindTaggedCommentAsync(who, owner, repo, number, ReviewTags.OperationTag(key), since, ct),
                 idempotent: false, ct).ConfigureAwait(false);
         });
@@ -283,7 +319,9 @@ public static partial class PullWriteEndpoints
     }
 
     /// <summary>What a write needs, injected once.</summary>
-    public sealed class Writes(IRepoWriter writer, IRepoSource source, IOperationLedger ledger, ReviewSnapshots snapshots, PullReview review, IClock clock, IVersioLogger log)
+    public sealed class Writes(
+        IRepoWriter writer, IRepoSource source, IOperationLedger ledger, ReviewSnapshots snapshots, PullReview review, IClock clock, IVersioLogger log,
+        Versio.Web.Rendering.ViewService views, ApiEndpoints.Loader load)
     {
         public IRepoWriter Writer => writer;
 
@@ -407,12 +445,63 @@ public static partial class PullWriteEndpoints
             Results.Json(new { outcome = "unknown", message = "This may or may not have been posted. Refresh to check before posting it again." }, statusCode: 202);
 
         /// <summary>A line comment's preconditions: the pull request still at this snapshot, and a line GitHub will take.</summary>
-        internal async Task<IResult?> LinePreconditionAsync(RepoAccess who, ReviewSnapshot s, LineComment comment, CancellationToken ct)
+        /// <summary>
+        /// A comment on a drawn element's preconditions: the pull request still at this snapshot, the
+        /// element really in the snapshot's drawing of that file, and where GitHub will take it.
+        /// </summary>
+        /// <remarks>
+        /// <para>
+        /// <b>The drawing is rendered again here</b>, from the snapshot's SHAs, the same way the page
+        /// was given it (rendered, unified — the anchors do not depend on the layout). It is cached,
+        /// so this usually costs nothing. The page said only which element; what the element IS —
+        /// its source layer, container, key, fingerprint, lines — comes from this rendering, so a
+        /// page cannot place a comment on, or write a tag for, something it was not shown.
+        /// </para>
+        /// <para>
+        /// <b>The comment goes on the element's own lines</b> that GitHub's diff shows, within one
+        /// hunk, as a range ending on the last; when the diff shows none of them (an unchanged
+        /// network, or a file with no patch) it goes on the whole file, and the tag still says which
+        /// element. Never on a nearby line: on github.com that would read as a remark about whatever
+        /// that line belongs to.
+        /// </para>
+        /// </remarks>
+        internal async Task<(IResult? Refusal, (LineComment, Versio.Core.Review.SemanticAnchor)? Found)> AnchorPreconditionAsync(
+            HttpContext http, RepoAccess who, ReviewSnapshot s, string path, string? from, string dom, string body, CancellationToken ct)
         {
-            // Lines are positions in ONE revision. The comment is written against the snapshot's head
-            // either way, but if the pull request moved, the reviewer is placing it on a drawing that
-            // is no longer the pull request; they reload first. This narrows the race; GitHub's
-            // commit_id is what pins the comment (C1, C2).
+            if (await StaleAsync(who, s, ct).ConfigureAwait(false) is { } stale)
+            {
+                return (stale, null);
+            }
+
+            var older = await load.ModelAsync(http, s.Owner, s.Repo, s.MergeBaseSha, ct).ConfigureAwait(false);
+            var newer = older.Ok ? await load.ModelAsync(http, s.Owner, s.Repo, s.HeadSha, ct).ConfigureAwait(false) : older;
+            if (!older.Ok || !newer.Ok)
+            {
+                return (ApiEndpoints.Refused(older.Ok ? newer.Failure : older.Failure), null);
+            }
+
+            var drawn = await views.CompareAsync(who, older.Value.Model, newer.Value.Model, path, Versio.Web.Rendering.PaneView.Rendered, false, ct, from).ConfigureAwait(false);
+            var anchor = drawn.Ok ? drawn.Value!.Anchors.SingleOrDefault(a => a.Dom == dom) : null;
+            if (anchor is null)
+            {
+                log.Info(LogCategory.Web, $"anchor comment refused: {dom} is not drawn in {s.Owner}/{s.Repo}#{s.Number} {path}");
+                return (Results.Json(new { error = "anchor-not-found", message = "That element is not in this version's drawing. Reload the file." }, statusCode: 422), null);
+            }
+
+            var side = anchor.Side == Versio.Core.Review.ReviewSide.New ? "RIGHT" : "LEFT";
+            var semantic = new Versio.Core.Review.SemanticAnchor(anchor.Kind, anchor.SourcePath, anchor.Side,
+                anchor.Side == Versio.Core.Review.ReviewSide.New ? s.HeadSha : s.MergeBaseSha, anchor.Container, anchor.Key, anchor.Fingerprint);
+            var (patch, _) = await review.PatchForAsync(who, s, anchor.SourcePath, ct).ConfigureAwait(false);
+            var at = patch is not null && anchor.Lines is { } span ? HunkLines.Parse(patch).Placement(side, span.Start, span.End) : null;
+            var comment = at is { } place
+                ? new LineComment("", anchor.SourcePath, place.Line, side, place.StartLine, body)
+                : new LineComment("", anchor.SourcePath, null, side, null, body);
+            return (null, (comment, semantic));
+        }
+
+        /// <summary>The pull request moved past the snapshot: 409, or the refusal that stopped the check.</summary>
+        private async Task<IResult?> StaleAsync(RepoAccess who, ReviewSnapshot s, CancellationToken ct)
+        {
             var pull = await source.GetPullAsync(who, s.Owner, s.Repo, s.Number, ct).ConfigureAwait(false);
             var baseTip = pull.Ok ? await source.ResolveCommitAsync(who, s.Owner, s.Repo, pull.Value!.Pull.BaseRef, ct).ConfigureAwait(false) : null;
             if (!pull.Ok || baseTip is not { Ok: true } || pull.Value!.Pull.HeadSha != s.HeadSha || pull.Value.Pull.BaseRef != s.BaseRef || baseTip.Value != s.BaseSha)
@@ -420,6 +509,20 @@ public static partial class PullWriteEndpoints
                 return pull.Ok && baseTip is { Ok: true }
                     ? Results.Json(new { error = "snapshot-stale", message = "This pull request changed after you opened it. Load the latest, then comment." }, statusCode: 409)
                     : ApiEndpoints.Refused(pull.Ok ? baseTip!.Failure : pull.Failure);
+            }
+
+            return null;
+        }
+
+        internal async Task<IResult?> LinePreconditionAsync(RepoAccess who, ReviewSnapshot s, LineComment comment, CancellationToken ct)
+        {
+            // Lines are positions in ONE revision. The comment is written against the snapshot's head
+            // either way, but if the pull request moved, the reviewer is placing it on a drawing that
+            // is no longer the pull request; they reload first. This narrows the race; GitHub's
+            // commit_id is what pins the comment (C1, C2).
+            if (await StaleAsync(who, s, ct).ConfigureAwait(false) is { } stale)
+            {
+                return stale;
             }
 
             if (comment.Line is not { } line)
@@ -495,4 +598,8 @@ public static partial class PullWriteEndpoints
 
     [GeneratedRegex("^[A-Za-z0-9_=-]{4,128}$")]
     private static partial Regex NodeId();
+
+    /// <summary>The anchor ids renderers emit: a kind letter, a side, and an index or a number.</summary>
+    [GeneratedRegex("^[rn]-(new|old)-[0-9]{1,6}$")]
+    private static partial Regex AnchorDom();
 }

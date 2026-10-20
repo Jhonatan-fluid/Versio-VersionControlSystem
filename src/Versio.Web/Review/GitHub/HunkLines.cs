@@ -82,6 +82,34 @@ public sealed partial class HunkLines
         return start is not { } from || from == line || (from < line && map.TryGetValue(from, out var startHunk) && startHunk == hunk);
     }
 
+    /// <summary>
+    /// Where a comment on an element spanning <paramref name="start"/>..<paramref name="end"/> goes
+    /// on GitHub: the element's lines that GitHub's diff shows, within ONE hunk (GitHub refuses a
+    /// range across two) — the hunk holding most of them — as a range ending on its last line.
+    /// Null when the diff shows none of the element's lines: the comment then goes on the file.
+    /// </summary>
+    /// <remarks>
+    /// The element's own lines, not merely nearby ones: a comment about a network pinned to a line
+    /// of the network after it would read, on github.com, as a comment about the wrong network.
+    /// </remarks>
+    public (int Line, int? StartLine)? Placement(string side, int start, int end)
+    {
+        var map = side == "LEFT" ? _left : _right;
+        var best = map.Where(kv => kv.Key >= start && kv.Key <= end)
+            .GroupBy(kv => kv.Value, kv => kv.Key)
+            .OrderByDescending(g => g.Count())
+            .ThenBy(g => g.Key)
+            .FirstOrDefault();
+        if (best is null)
+        {
+            return null;
+        }
+
+        var first = best.Min();
+        var last = best.Max();
+        return (last, first == last ? null : first);
+    }
+
     [GeneratedRegex(@"^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@")]
     private static partial Regex Header();
 }

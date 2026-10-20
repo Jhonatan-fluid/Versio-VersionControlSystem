@@ -38,6 +38,15 @@ public sealed record ViewResult(
 {
     /// <summary>Each layer's path for display, spelled; the page's chips show these, and ask for <see cref="Layers"/>.</summary>
     public IReadOnlyList<string> LayerLabels => Layers.Select(CodeHtml.Spelled).ToList();
+
+    /// <summary>
+    /// What a review comment can sit on in this drawing, matching the fragment's <c>data-anchors</c>
+    /// (docs/web/PLAN.md, *Pull request review*, C3). Server-side only: placing a thread and
+    /// translating a comment to GitHub lines are decided here, never from what a page says an
+    /// element is.
+    /// </summary>
+    [System.Text.Json.Serialization.JsonIgnore]
+    public IReadOnlyList<Versio.Core.Review.RenderedAnchor> Anchors { get; init; } = [];
 }
 
 /// <summary>
@@ -85,7 +94,7 @@ public sealed class ViewService(
     IVersioLogger log)
 {
     /// <summary>Bumped whenever any renderer's output changes, so no stale fragment is served.</summary>
-    public const int RendererVersion = 3;
+    public const int RendererVersion = 4;
 
     private WebOptions O => options.Value;
 
@@ -107,8 +116,13 @@ public sealed class ViewService(
     }
 
     /// <summary>One object in two commits: the older one, then the newer.</summary>
+    /// <param name="oldPath">
+    /// Where the object was in the older commit, when it was renamed: its older layers are read from
+    /// there and compared as the layers they became. Only a rename the caller was told about (GitHub
+    /// reports them); null compares path with path.
+    /// </param>
     public async Task<RepoResult<ViewResult>> CompareAsync(
-        RepoAccess access, RepoModel older, RepoModel newer, string path, PaneView view, bool sideBySide, CancellationToken ct)
+        RepoAccess access, RepoModel older, RepoModel newer, string path, PaneView view, bool sideBySide, CancellationToken ct, string? oldPath = null)
     {
         var node = newer.NodeFor(path) ?? older.NodeFor(path);
         if (node is null)
@@ -116,15 +130,46 @@ public sealed class ViewService(
             return RepoResult<ViewResult>.Fail(RepoFailure.NotFound);
         }
 
-        var reads = await Task.WhenAll(ReadAllAsync(access, older, node, ct), ReadAllAsync(access, newer, node, ct)).ConfigureAwait(false);
-        var before = reads[0];
+        var oldNode = oldPath is null ? node : older.NodeFor(oldPath) ?? node;
+        var reads = await Task.WhenAll(ReadAllAsync(access, older, oldNode, ct), ReadAllAsync(access, newer, node, ct)).ConfigureAwait(false);
+        var before = ReferenceEquals(oldNode, node) ? reads[0] : Renamed(reads[0], node);
         var after = reads[1];
         var shown = Shown(node, path);
-        var key = Key("compare", newer, older.CommitSha + ".." + newer.CommitSha + ":" + shown, view, sideBySide, after, before);
+        var key = Key("compare", newer, older.CommitSha + ".." + newer.CommitSha + ":" + shown + (oldPath is null ? "" : "<-" + oldPath), view, sideBySide, after, before);
         return await CachedAsync(key, path, () => view == PaneView.Raw
             ? RawCompare(shown, before, after, sideBySide)
             : RenderedCompare(older, newer, node, shown, before, after, sideBySide), notice => Plain(shown, after.ContainsKey(shown) ? after : before, notice),
             Lasting(before.Values.Concat(after.Values)) && !older.Partial && !newer.Partial).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// A renamed object's older layers, keyed by the layers they became: each by the part of its file
+    /// name after the object's name (<c>.st</c>, <c>.xml</c>, <c>.gvl.st</c>), which a rename keeps.
+    /// </summary>
+    /// <remarks>
+    /// The drawing then compares the object with itself, as GitHub's rename does, instead of drawing
+    /// the old path as deleted and the new one as wholly added — which reads as every line changed.
+    /// A layer with no counterpart keeps its old path and is shown as gone. Moved here from slice 1
+    /// of pull request review (docs/web/PLAN.md), because review anchors need the same mapping.
+    /// </remarks>
+    private static IReadOnlyDictionary<string, Layer> Renamed(IReadOnlyDictionary<string, Layer> older, ProjectTreeNode node)
+    {
+        static string Suffix(string path)
+        {
+            var file = path[(path.LastIndexOf('/') + 1)..];
+            var dot = file.IndexOf('.', StringComparison.Ordinal);
+            return dot < 0 ? "" : file[dot..];
+        }
+
+        var result = new Dictionary<string, Layer>(StringComparer.Ordinal);
+        foreach (var layer in older.Values)
+        {
+            var match = node.Files.FirstOrDefault(f => Suffix(f) == Suffix(layer.Path) && !result.ContainsKey(f));
+            var target = match ?? layer.Path;
+            result[target] = layer with { Path = target };
+        }
+
+        return result;
     }
 
     /// <summary>The paths that differ between two commits, with what happened to each.</summary>
@@ -346,13 +391,14 @@ public sealed class ViewService(
                 // A member's type that changed between the two versions changes this block's
                 // meaning while its own text may not move: highlighted, and said above the table.
                 var changedPaths = ChangedPaths(olderModel, newerModel).Select(c => c.Path).ToHashSet(StringComparer.Ordinal);
-                var compared = LinkTypes(Reword(MemberTableDiff.Compare(baseline, current)), path, newerModel, changedPaths, olderModel);
+                var compared = LinkTypes(Reword(MemberTableDiff.Compare(baseline, current)), path, newerModel, changedPaths, olderModel) with { SourcePath = path };
                 if (compared.Members.Any(m => m.ReferenceChanged))
                 {
                     notices.Add(TypeChangedNotice);
                 }
 
-                var html = new StringBuilder(MemberTableHtml.Fragment(WebNote(compared)));
+                var html = new StringBuilder(MemberTableHtml.Fragment(WebNote(compared), compared: true));
+                var anchors = new List<Versio.Core.Review.RenderedAnchor>(MemberTableHtml.Anchors(compared, compared: true));
                 // A highlighted type counts as drawn: it is the highlight. Counting only the rows'
                 // own changes said "the type changed" and "nothing this view draws did" together
                 // (found in review).
@@ -360,7 +406,7 @@ public sealed class ViewService(
                 var codeChanged = false;
                 if (compared.IsInterface)
                 {
-                    codeChanged = AppendInterfaceCode(html, format, node, after, before, sideBySide);
+                    codeChanged = AppendInterfaceCode(html, format, node, after, before, sideBySide, anchors);
                 }
 
                 if (changedFiles && !tableChanged && !codeChanged)
@@ -368,7 +414,7 @@ public sealed class ViewService(
                     notices.Add(NothingDrawnChanged);
                 }
 
-                return Result("table", node, shown, html.ToString(), notices);
+                return Result("table", node, shown, html.ToString(), notices) with { Anchors = anchors };
             }
         }
 
@@ -392,7 +438,8 @@ public sealed class ViewService(
                 }
 
                 return Result("ladder", node, shown,
-                    LadderHtml.Fragment(comparison, (newLadder ?? oldLadder!).Style, sideBySide ? LadderView.SideBySide : LadderView.Merged, CompareWording), notices);
+                    LadderHtml.Fragment(comparison, (newLadder ?? oldLadder!).Style, sideBySide ? LadderView.SideBySide : LadderView.Merged, CompareWording, path), notices)
+                    with { Anchors = LadderHtml.Anchors(comparison, path) };
             }
         }
 
@@ -408,7 +455,7 @@ public sealed class ViewService(
             notices.Add(NothingDrawnChanged);
         }
 
-        return Result("source", node, shown, SourceHtml.Fragment(rows, LanguageFor(shown), sideBySide ? SourceView.SideBySide : SourceView.Unified), notices);
+        return Result("source", node, shown, SourceHtml.Fragment(rows, LanguageFor(shown), sideBySide ? SourceView.SideBySide : SourceView.Unified, shown), notices);
     }
 
     private ViewResult RawCompare(string shown, IReadOnlyDictionary<string, Layer> before, IReadOnlyDictionary<string, Layer> after, bool sideBySide)
@@ -443,9 +490,11 @@ public sealed class ViewService(
     /// The code under an interface table: the ladder when the primary layer is one, else the
     /// code body. Returns whether the code changed between the two versions.
     /// </summary>
+    /// <param name="anchors">Where a comparison's review anchors go: the code's ladder adds its networks.</param>
     private static bool AppendInterfaceCode(
         StringBuilder html, IPlcProjectFormat format, ProjectTreeNode node,
-        IReadOnlyDictionary<string, Layer> newer, IReadOnlyDictionary<string, Layer>? older, bool sideBySide = false)
+        IReadOnlyDictionary<string, Layer> newer, IReadOnlyDictionary<string, Layer>? older, bool sideBySide = false,
+        List<Versio.Core.Review.RenderedAnchor>? anchors = null)
     {
         if (node.PrimaryFile is not { } code)
         {
@@ -463,7 +512,8 @@ public sealed class ViewService(
                 : ladderNew is null
                     ? LadderDiff.Compare(ladderOld!.Body, new LadderBody(ladderOld.Body.BlockName, []))
                     : LadderDiff.Compare(ladderOld?.Body, ladderNew.Body);
-            html.Append(LadderHtml.Fragment(comparison, (ladderNew ?? ladderOld!).Style, sideBySide ? LadderView.SideBySide : LadderView.Merged, older is null ? SingleWording : CompareWording));
+            html.Append(LadderHtml.Fragment(comparison, (ladderNew ?? ladderOld!).Style, sideBySide ? LadderView.SideBySide : LadderView.Merged, older is null ? SingleWording : CompareWording, code));
+            anchors?.AddRange(LadderHtml.Anchors(comparison, code));
             return older is not null && comparison.HasChanges;
         }
 
@@ -479,7 +529,7 @@ public sealed class ViewService(
             rows = StSourceLayout.Mark(rows, oldText, newText);
         }
 
-        html.Append(SourceHtml.Fragment(rows, LanguageFor(code), sideBySide ? SourceView.SideBySide : SourceView.Unified));
+        html.Append(SourceHtml.Fragment(rows, LanguageFor(code), sideBySide ? SourceView.SideBySide : SourceView.Unified, code));
         return older is not null && rows.Any(r => r is SourceRemovedLine or SourceCodeLine { Change: SourceChange.Added });
     }
 

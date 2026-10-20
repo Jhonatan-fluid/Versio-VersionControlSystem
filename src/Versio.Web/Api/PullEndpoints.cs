@@ -15,7 +15,12 @@ namespace Versio.Web.Api;
 /// "partial" for every rendered view until its renderer reports field-level evidence
 /// (docs/web/PLAN.md, C4); "raw" for the text diff, which shows every changed line.
 /// </param>
-public sealed record PullFileView(ViewResult View, string Coverage);
+/// <param name="Placements">
+/// Where each review thread on this file goes on a rendered drawing (docs/web/PLAN.md, C3), decided
+/// here from the drawing's own anchors; empty on Raw, where the page places threads by the diff's
+/// line markers, or when the threads could not be read.
+/// </param>
+public sealed record PullFileView(ViewResult View, string Coverage, IReadOnlyList<Versio.Web.Review.GitHub.ThreadPlacement> Placements);
 
 /// <summary>
 /// Pull request review, read side (docs/web/PLAN.md, *Pull request review*, slice 1). Every route
@@ -133,11 +138,13 @@ public static class PullEndpoints
             });
         });
 
-        pulls.MapGet("/files/view", async (string owner, string repo, int number, string? path, string? view, string? layout,
+        // "from" is a renamed file's old path, as the files list reported it (from GitHub): the
+        // drawing compares the object with itself across the rename rather than as a delete and an add.
+        pulls.MapGet("/files/view", async (string owner, string repo, int number, string? path, string? from, string? view, string? layout,
             HttpContext http, AccessResolver access, ReviewSnapshots snapshots, ApiEndpoints.Loader load, ViewService views,
-            IVersioLogger log, CancellationToken ct) =>
+            IRepoSource source, IVersioLogger log, CancellationToken ct) =>
         {
-            if (!ApiEndpoints.ValidPath(path))
+            if (!ApiEndpoints.ValidPath(path) || (from is not null && !ApiEndpoints.ValidPath(from)))
             {
                 return Results.NotFound();
             }
@@ -155,11 +162,27 @@ public static class PullEndpoints
             }
 
             var pane = ApiEndpoints.Pane(view);
-            var result = await views.CompareAsync(models.Access!, models.MergeBase!, models.Head!, path!, pane, ApiEndpoints.SideBySide(layout), ct).ConfigureAwait(false);
+            var result = await views.CompareAsync(models.Access!, models.MergeBase!, models.Head!, path!, pane, ApiEndpoints.SideBySide(layout), ct, from).ConfigureAwait(false);
             ApiEndpoints.Audit(log, models.Access!, models.Head!, path!, $"review #{number} {view}");
-            return result.Ok
-                ? Results.Ok(new PullFileView(result.Value!, pane == PaneView.Raw ? "raw" : "partial"))
-                : ApiEndpoints.Refused(result.Failure, http);
+            if (!result.Ok)
+            {
+                return ApiEndpoints.Refused(result.Failure, http);
+            }
+
+            // Placements only for a drawing: Raw's rows are the diff's own lines, which the page
+            // places by directly. A thread read that fails leaves every thread listed by the page,
+            // never placed by a guess.
+            IReadOnlyList<Versio.Web.Review.GitHub.ThreadPlacement> placements = [];
+            if (pane == PaneView.Rendered)
+            {
+                var threads = await source.GetReviewThreadsAsync(opened.Access!, owner, repo, number, ct).ConfigureAwait(false);
+                if (threads.Ok)
+                {
+                    placements = Versio.Web.Review.GitHub.ThreadPlacements.Place(threads.Value!.Threads, result.Value!.Anchors, opened.Snapshot!, result.Value.Path, from);
+                }
+            }
+
+            return Results.Ok(new PullFileView(result.Value!, pane == PaneView.Raw ? "raw" : "partial", placements));
         });
     }
 
