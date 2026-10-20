@@ -183,14 +183,33 @@ public static partial class PullWriteEndpoints
             }
 
             NodeOwner? target = null;
+            Versio.Core.Review.SemanticAnchor? anchor = null;
             return await w.RunAsync(http, owner, repo, number, request, "edit", ReviewTags.PayloadHash(commentId, body),
                 precondition: async (who, s) =>
                 {
                     var (refusal, node) = await w.OwnerOfAsync(who, s, commentId, ["IssueComment", "PullRequestReviewComment"], ct).ConfigureAwait(false);
                     target = node;
-                    return refusal;
+                    if (refusal is not null)
+                    {
+                        return refusal;
+                    }
+
+                    // An edit changes the words, not what the comment is on. The body is rewritten
+                    // whole, so the anchor the comment already carries is read here, from GitHub, and
+                    // written again — never one the page sent. Without this an edited comment on a
+                    // member or a network lost its anchor and fell off the drawing (found by review,
+                    // 2026-10-20). Unreadable now: no edit, rather than one that drops the anchor.
+                    var current = await w.Writer.CommentBodyAsync(who, commentId, ct).ConfigureAwait(false);
+                    if (!current.Ok)
+                    {
+                        return ApiEndpoints.Refused(current.Failure);
+                    }
+
+                    anchor = ReviewTags.ReadAnchor(current.Value);
+                    return null;
                 },
-                async (who, s, key) => Done(await w.Writer.EditCommentAsync(who, commentId, target!.Type, ReviewTags.WithOperation(body, key), CancellationToken.None).ConfigureAwait(false), commentId),
+                async (who, s, key) => Done(await w.Writer.EditCommentAsync(who, commentId, target!.Type,
+                    anchor is null ? ReviewTags.WithOperation(body, key) : ReviewTags.WithAnchor(body, key, anchor), CancellationToken.None).ConfigureAwait(false), commentId),
                 async (who, s, key, since) => Reconciled(await w.Writer.CommentBodyAsync(who, commentId, ct).ConfigureAwait(false), b => ReviewTags.Carries(b, key), commentId),
                 idempotent: true, ct).ConfigureAwait(false);
         });

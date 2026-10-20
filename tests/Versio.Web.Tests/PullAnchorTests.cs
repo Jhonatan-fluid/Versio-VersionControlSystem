@@ -133,6 +133,30 @@ public sealed partial class PullAnchorTests
     }
 
     /// <summary>
+    /// Editing a comment changes its words, not what it is on: the anchor it carried is read from
+    /// GitHub and written again, so it stays on its row (found by review, 2026-10-20).
+    /// </summary>
+    [Fact]
+    public async Task An_edited_comment_keeps_the_anchor_it_had()
+    {
+        var w = Build();
+        var (host, writer, alice, token) = await StartAsync(w);
+        await using var _ = host;
+        var dom = RowDom(await View(host, token, alice, Struct), "Enable");
+        (await Comment(host, alice, token, Struct, dom)).AssertStatus(HttpStatusCode.OK);
+        var posted = Assert.Single(writer.Comments.Values);
+        var before = ReviewTags.ReadAnchor(posted.Body)!;
+
+        var edited = await host.SendAsync(HttpMethod.Patch, $"/api/repos/acme/plant/pulls/5/comments/{posted.Id}", alice, Headers(token),
+            JsonSerializer.Serialize(new { opKey = Key(), body = "Why off by default?" }));
+
+        edited.AssertStatus(HttpStatusCode.OK);
+        var body = writer.Comments[posted.Id].Body;
+        Assert.Equal("Why off by default?", ReviewTags.Strip(body));
+        Assert.Equal(before, ReviewTags.ReadAnchor(body));
+    }
+
+    /// <summary>
     /// A row GitHub's diff does not show (unchanged) has no line GitHub takes: the comment goes on the
     /// whole file, never on a nearby line, and the tag still says which row.
     /// </summary>
