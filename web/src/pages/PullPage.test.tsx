@@ -34,11 +34,18 @@ const renderedSource =
 
 const hostile = '<div class="md-page"><p>Why?<img src="x" onerror="window.__pwned=1"><script>window.__pwned=1</script></p></div>';
 
+/** A scripted write answer; a list is answered in order, its last repeating. `settled` sets X-Versio-Settled. */
+interface Reply {
+  status: number;
+  body: unknown;
+  settled?: boolean;
+}
+
 interface Options {
   stale?: boolean;
   writable?: boolean;
   /** What each write answers, by path suffix; done by default. */
-  writes?: Record<string, { status: number; body: unknown }>;
+  writes?: Record<string, Reply | Reply[]>;
   /** Where the server placed each thread on the drawing. */
   placements?: ThreadPlacement[];
   /** The viewer's pending review, if any. */
@@ -169,9 +176,14 @@ async function render(path: string, o: Options = {}) {
     calls.push({ url, snapshot: headers['X-Versio-Snapshot'] ?? null, method, csrf: headers['X-Versio-Request'] ?? null, body });
     if (method !== 'GET') {
       const scripted = Object.entries(o.writes ?? {}).find(([suffix]) => url.endsWith(suffix))?.[1];
-      const reply = scripted ?? { status: 200, body: url.endsWith('/markdown') ? { html: '<p>preview</p>' } : { outcome: 'done', id: 'NEW' } };
+      const reply: Reply = Array.isArray(scripted) ? (scripted.length > 1 ? scripted.shift()! : scripted[0]!)
+        : scripted ?? { status: 200, body: url.endsWith('/markdown') ? { html: '<p>preview</p>' } : { outcome: 'done', id: 'NEW' } };
       // A string body is sent as it is: a proxy's HTML error page, not this server's JSON.
-      return new Response(typeof reply.body === 'string' ? reply.body : JSON.stringify(reply.body), { status: reply.status, headers: { 'Content-Type': typeof reply.body === 'string' ? 'text/html' : 'application/json' } });
+      const headers: Record<string, string> = { 'Content-Type': typeof reply.body === 'string' ? 'text/html' : 'application/json' };
+      if (reply.settled) {
+        headers['X-Versio-Settled'] = '1';
+      }
+      return new Response(typeof reply.body === 'string' ? reply.body : JSON.stringify(reply.body), { status: reply.status, headers });
     }
     return new Response(JSON.stringify(answer(url, o)), { status: 200, headers: { 'Content-Type': 'application/json' } });
   }));
@@ -398,6 +410,41 @@ describe('PullPage writes', () => {
       act(() => root.unmount());
     });
   }
+
+  // Found by review (2026-10-20): a refusal of a RETRY proves only that the retry did nothing.
+  it('a retry refused by the rate limit keeps the key: the first attempt may have posted', async () => {
+    const unknown = { status: 202, body: { outcome: 'unknown', message: 'This may or may not have been posted.' } };
+    const limited = { status: 429, body: { error: 'rate-limited', message: 'Too many requests: this one was not acted on.' } };
+    const { host, root } = await render('/acme/plant/pull/12', { writable: true, writes: { '/comments': [unknown, limited, unknown] } });
+    const box = () => host.querySelector('.comment-box')!;
+
+    await type(box().querySelector('textarea')!, 'Maybe.');
+    await click(button(box(), 'Comment'), host);
+    await click(button(box(), 'Try again'), host);
+    await click(button(box(), 'Try again'), host);
+
+    const keys = writes().map((w) => w.body?.opKey);
+    expect(keys).toHaveLength(3);
+    expect(new Set(keys).size).toBe(1);
+    act(() => root.unmount());
+  });
+
+  it("a retry refused with the operation's own recorded outcome lets the key go", async () => {
+    const unknown = { status: 202, body: { outcome: 'unknown', message: 'This may or may not have been posted.' } };
+    const refused = { status: 422, body: { error: 'github-refused', message: 'GitHub refused this: Validation Failed' }, settled: true };
+    const { host, root } = await render('/acme/plant/pull/12', { writable: true, writes: { '/comments': [unknown, refused, unknown] } });
+    const box = () => host.querySelector('.comment-box')!;
+
+    await type(box().querySelector('textarea')!, 'Maybe.');
+    await click(button(box(), 'Comment'), host);
+    await click(button(box(), 'Try again'), host);
+    await click(button(box(), 'Comment'), host);
+
+    const [first, second, third] = writes().map((w) => w.body?.opKey);
+    expect(second).toBe(first);
+    expect(third).not.toBe(first);
+    act(() => root.unmount());
+  });
 
   it('writes a line comment from a gutter click on Raw, on the side of the row clicked', async () => {
     const { host, root } = await render('/acme/plant/pull/12?tab=files&path=src%2FPump.st&view=raw', { writable: true });

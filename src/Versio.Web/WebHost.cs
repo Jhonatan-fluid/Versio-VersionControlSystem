@@ -169,13 +169,15 @@ public static class WebHost
         builder.Services.AddRateLimiter(o =>
         {
             o.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
-            // The limiter answers before any endpoint runs, so nothing was written: said in this
-            // server's own JSON, which the page reads as a refusal. An empty 429 read as "may or may
-            // not have been posted" and locked the comment box (found by review, 2026-10-20).
+            // The limiter answers before any endpoint runs: THIS request did nothing, said in this
+            // server's own JSON, which the page reads as a refusal of this request. It says nothing
+            // about an earlier attempt under the same key, so it claims nothing about one either (the
+            // first wording said "nothing was posted", which is untrue on a retry; found by review,
+            // 2026-10-20), and it carries no settled mark, so a held key is kept.
             o.OnRejected = async (context, ct) =>
             {
                 context.HttpContext.Response.ContentType = "application/json";
-                await context.HttpContext.Response.WriteAsJsonAsync(new { error = "rate-limited", message = "Too many requests. Nothing was posted; wait a minute and try again." }, ct).ConfigureAwait(false);
+                await context.HttpContext.Response.WriteAsJsonAsync(new { error = "rate-limited", message = "Too many requests: this one was not acted on. Wait a minute, then try again." }, ct).ConfigureAwait(false);
             };
             // Writes per signed-in session (S8, and rule 8's per-user half): a session is one person,
             // so one person cannot spend their GitHub limit through us or flood a pull request. It

@@ -64,13 +64,24 @@ export function describe(answer: WriteAnswer): string {
 }
 
 /**
- * Whether the key must be kept for a retry: only when the write may have happened (unknown) or is
- * still happening (pending). After a refusal nothing was posted, so the text is the person's to
- * change again and the next submission is a new operation — keeping the key there locked the box
- * behind a "Try again" that could only meet the same refusal (seen in the preview, 2026-10-17).
+ * Whether an answer lets the operation's key go, so the next submission is a new operation.
+ *
+ * Done: yes. Unknown or pending: no — the write may have happened, or is happening. A refusal:
+ * on a FIRST attempt, yes — nothing else was ever sent, so nothing was posted, and keeping the key
+ * locked the box behind a "Try again" that could only meet the same refusal (seen in the preview,
+ * 2026-10-17). On a RETRY, only if the server says the refusal is the operation's recorded outcome
+ * (`settled`): a 429, a sign-in, a stale snapshot say only that THIS request did nothing, while the
+ * first may have succeeded. Letting the key go there sent the next submission under a new key,
+ * past reconciliation, and could post twice (found by review, 2026-10-20).
  */
-function keepKey(answer: WriteAnswer): boolean {
-  return answer.outcome === 'unknown' || answer.outcome === 'pending';
+export function releasesKey(answer: WriteAnswer, retry: boolean): boolean {
+  if (answer.outcome === 'done') {
+    return true;
+  }
+  if (answer.outcome === 'unknown' || answer.outcome === 'pending') {
+    return false;
+  }
+  return !retry || answer.settled === true;
 }
 
 interface CommentBoxProps {
@@ -146,7 +157,7 @@ function DraftBox({ owner, repo, snap, slot, path, method = 'POST', payload, ini
     if (answer.error === 'snapshot-stale' || answer.error === 'snapshot-expired') {
       onStale?.();
     }
-    if (!keepKey(answer)) {
+    if (releasesKey(answer, draft.opKey !== null)) {
       setDraft((d) => ({ ...d, opKey: null, sentWith: null }));
     }
     setNote(describe(answer));
@@ -232,7 +243,7 @@ export function ActionButton({ owner, repo, snap, path, payload, label, confirm,
       onDone();
       return;
     }
-    if (!keepKey(answer)) {
+    if (releasesKey(answer, opKey !== null)) {
       setOpKey(null);
     }
     setNote(describe(answer));

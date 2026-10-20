@@ -3,7 +3,7 @@ import type { CoverageSummary, PendingReviewView, ReviewFile, ReviewSnapshot, Re
 import { api } from '../api';
 import type { Async } from '../useAsync';
 import { useAsync } from '../useAsync';
-import { ActionButton, describe, newOpKey, sentUnder } from './ReviewWrite';
+import { ActionButton, describe, newOpKey, releasesKey, sentUnder } from './ReviewWrite';
 
 export type ReviewEvent = 'COMMENT' | 'APPROVE' | 'REQUEST_CHANGES';
 
@@ -239,7 +239,7 @@ function ReviewDialog({ owner, repo, snap, slot, pending, author, notes, onOpenP
     if (answer.error === 'snapshot-stale' || answer.error === 'snapshot-expired') {
       onStale();
     }
-    if (answer.outcome !== 'unknown' && answer.outcome !== 'pending') {
+    if (releasesKey(answer, held.opKey !== null)) {
       setHeld((h) => ({ ...h, opKey: null, target: null, sentWith: null }));
     }
     setNote(describe(answer));

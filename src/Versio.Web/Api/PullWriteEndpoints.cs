@@ -70,6 +70,19 @@ public sealed record PreviewRequest(string? Body);
 /// </remarks>
 public static partial class PullWriteEndpoints
 {
+    /// <summary>
+    /// Set on a refusal when it is this OPERATION's outcome, recorded in the ledger as failed — not
+    /// merely this request's. The page may let a held key go only on that, or on a first attempt.
+    /// </summary>
+    /// <remarks>
+    /// A refusal of a retry proves only that the retry did nothing: a rate limit, a sign-in, a stale
+    /// snapshot, a mismatch are all said before the ledger is consulted, while the first attempt
+    /// may well have succeeded. Reading such a refusal as "released" cleared the key after a 429,
+    /// and the next submission went under a new one and could post twice (found by review,
+    /// 2026-10-20). Only a precondition's or GitHub's refusal, recorded under the key, settles it.
+    /// </remarks>
+    public const string SettledHeader = "X-Versio-Settled";
+
     /// <summary>A pending reservation older than this has lost its request (a crash, a restart): it is reconciled, not waited on.</summary>
     internal static readonly TimeSpan AbandonedAfter = TimeSpan.FromSeconds(45);
 
@@ -712,7 +725,7 @@ public static partial class PullWriteEndpoints
             if (snapshot is null && refused == SnapshotRefusal.Expired
                 && snapshots.OpenExpired(token, owner, repo, number, PullEndpoints.Viewer(who)) is { } old)
             {
-                return await SettleAsync(who, old, owner, repo, number, request, action, payloadHash,
+                return await SettleAsync(http, who, old, owner, repo, number, request, action, payloadHash,
                     (w, s, k, since) => reconcile(w, s!, k, since), ct).ConfigureAwait(false);
             }
 
@@ -777,7 +790,7 @@ public static partial class PullWriteEndpoints
         /// anything else — nothing recorded, refused, a different payload — is "reload".
         /// </summary>
         private async Task<IResult> SettleAsync(
-            RepoAccess who, ReviewSnapshot old, string owner, string repo, int number, WriteRequest request, string action, string payloadHash,
+            HttpContext http, RepoAccess who, ReviewSnapshot old, string owner, string repo, int number, WriteRequest request, string action, string payloadHash,
             Func<RepoAccess, ReviewSnapshot?, string, DateTimeOffset, Task<RepoResult<string>>> reconcile, CancellationToken ct)
         {
             var expired = Results.Json(new { error = "snapshot-expired", message = "This review was loaded too long ago. Reload the pull request." }, statusCode: 409);
@@ -803,9 +816,14 @@ public static partial class PullWriteEndpoints
                 case OperationState.Pending or OperationState.Unknown:
                     return await ReconcileAsync(who, old, key, entry, reconcile, ledgerKey, action, owner, repo, number).ConfigureAwait(false) ?? UnknownResult();
                 default:
+                    // Failed: the ledger knows nothing was written under this key.
+                    Settled(http);
                     return expired;
             }
         }
+
+        /// <summary>The header that says a refusal is this operation's recorded outcome — see <see cref="SettledHeader"/>.</summary>
+        private static void Settled(HttpContext http) => http.Response.Headers[SettledHeader] = "1";
 
         private async Task<IResult> RunOpenedAsync(
             HttpContext http, RepoAccess who, ReviewSnapshot? snapshot, string owner, string repo, int number, WriteRequest request, string action, string payloadHash,
@@ -867,6 +885,7 @@ public static partial class PullWriteEndpoints
             {
                 await ledger.RecordAsync(ledgerKey, new OperationEntry(payloadHash, OperationState.Failed, null, now, clock.UtcNow), ct).ConfigureAwait(false);
                 Audit(who, action, owner, repo, number, snapshot, key, "refused by a precondition");
+                Settled(http);
                 return refusal;
             }
 
@@ -882,6 +901,7 @@ public static partial class PullWriteEndpoints
                 case WriteOutcome.Refused:
                     await ledger.RecordAsync(ledgerKey, new OperationEntry(payloadHash, OperationState.Failed, null, now, clock.UtcNow), CancellationToken.None).ConfigureAwait(false);
                     Audit(who, action, owner, repo, number, snapshot, key, $"refused by GitHub ({result.Failure})");
+                    Settled(http);
                     return RefusedByGitHub(result.Failure, result.Message, http);
                 default:
                     var entry = new OperationEntry(payloadHash, OperationState.Unknown, null, now, clock.UtcNow);

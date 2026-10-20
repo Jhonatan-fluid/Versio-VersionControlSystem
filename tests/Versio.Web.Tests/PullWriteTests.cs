@@ -405,6 +405,47 @@ public sealed class PullWriteTests
         Assert.Empty(writer.Writes);
     }
 
+    /// <summary>
+    /// A refusal says it is the operation's recorded outcome only when the ledger recorded it so:
+    /// GitHub's refusal and a precondition's. A rate limit and a mismatched retry speak for the
+    /// request alone, and must not let the page release a key whose first attempt may have posted
+    /// (found by review, 2026-10-20).
+    /// </summary>
+    [Fact]
+    public async Task Only_refusals_recorded_as_the_operations_outcome_are_marked_settled()
+    {
+        var settings = new Dictionary<string, string?>(WritesOn) { ["Web:Writes:PerSessionPerMinute"] = "3" };
+        var (host, writer, alice, token) = await StartAsync(Build(), settings);
+        await using var _ = host;
+        static bool Marked(HttpResponseMessage r) => r.Headers.TryGetValues(PullWriteEndpoints.SettledHeader, out var v) && v.Contains("1");
+
+        writer.Next.Enqueue(FakeWriter.Mode.Refused);
+        var byGitHub = await Post(host, "/comments", new { opKey = Key(), body = "No." }, alice, Headers(token));
+        var byPrecondition = await Post(host, "/line-comments", new { opKey = Key(), body = "Here?", path = "src/Pump.st", line = 99, side = "RIGHT" }, alice, Headers(token));
+        var key = Key();
+        writer.Next.Enqueue(FakeWriter.Mode.LostBefore);
+        await Post(host, "/comments", new { opKey = key, body = "One." }, alice, Headers(token));
+        var limited = await Post(host, "/comments", new { opKey = key, body = "One." }, alice, Headers(token));
+
+        Assert.Equal((HttpStatusCode.UnprocessableEntity, true), (byGitHub.StatusCode, Marked(byGitHub)));
+        Assert.Equal((HttpStatusCode.UnprocessableEntity, true), (byPrecondition.StatusCode, Marked(byPrecondition)));
+        Assert.Equal((HttpStatusCode.TooManyRequests, false), (limited.StatusCode, Marked(limited)));
+    }
+
+    [Fact]
+    public async Task A_mismatched_retry_is_not_marked_settled()
+    {
+        var (host, _, alice, token) = await StartAsync(Build());
+        await using var _ = host;
+        var key = Key();
+        await Post(host, "/comments", new { opKey = key, body = "First." }, alice, Headers(token));
+
+        var other = await Post(host, "/comments", new { opKey = key, body = "Other." }, alice, Headers(token));
+
+        other.AssertStatus(HttpStatusCode.UnprocessableEntity);
+        Assert.False(other.Headers.Contains(PullWriteEndpoints.SettledHeader));
+    }
+
     /// <summary>The in-memory ledger, holding readers of a failed entry until as many as asked have read it.</summary>
     private sealed class HoldingLedger : IOperationLedger
     {

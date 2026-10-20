@@ -2,7 +2,7 @@ import { useState } from 'react';
 import type { MergeStateView, ReviewSnapshot } from '../api';
 import { api } from '../api';
 import type { Async } from '../useAsync';
-import { describe, newOpKey, sentUnder } from './ReviewWrite';
+import { describe, newOpKey, releasesKey, sentUnder } from './ReviewWrite';
 
 const methodWords: Record<string, string> = { MERGE: 'Create a merge commit', SQUASH: 'Squash and merge', REBASE: 'Rebase and merge' };
 const methodShort: Record<string, string> = { MERGE: 'a merge commit', SQUASH: 'squash', REBASE: 'rebase' };
@@ -94,7 +94,7 @@ export function MergeBox({ owner, repo, snap, state, onChanged, onStale }: Merge
     const answer = await api.review.write(owner, repo, under, path, 'POST', { ...body, opKey: key });
     setBusy(false);
     setPending(null);
-    if (answer.outcome !== 'unknown' && answer.outcome !== 'pending') {
+    if (releasesKey(answer, same !== null)) {
       setHeld(null);
     }
     if (answer.outcome === 'done') {

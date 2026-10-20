@@ -3,7 +3,7 @@ import { Link, useNavigate, useParams, useSearchParams } from 'react-router';
 import type { Me } from '../api';
 import { api } from '../api';
 import { ErrorPanel } from '../components/Pane';
-import { describe, newOpKey } from '../components/ReviewWrite';
+import { describe, newOpKey, releasesKey } from '../components/ReviewWrite';
 import { Workbench } from '../components/Workbench';
 import { compareUrl, pullUrl, pullsUrl, treeUrl } from '../routes';
 import { useAsync } from '../useAsync';
@@ -110,7 +110,7 @@ function NewPullForm({ me }: { me: Me | null }) {
       navigate(pullUrl(owner, repo, Number(answer.id)));
       return;
     }
-    if (answer.outcome !== 'unknown' && answer.outcome !== 'pending') {
+    if (releasesKey(answer, form.opKey !== null)) {
       setForm((f) => ({ ...f, opKey: null }));
     }
     setNote(describe(answer));

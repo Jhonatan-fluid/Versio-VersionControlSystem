@@ -209,6 +209,8 @@ export interface WriteAnswer {
   id?: string;
   error?: string;
   message?: string;
+  /** The server recorded this refusal as the operation's own outcome (X-Versio-Settled): nothing was written under the key. */
+  settled?: boolean;
 }
 
 /** Why a file takes file-level comments only; null when its lines can take them. */
@@ -446,7 +448,8 @@ async function send(url: string, method: 'POST' | 'PATCH', headers: Record<strin
   } catch {
     // Not JSON: not this server's answer (it always answers JSON), so something in between spoke.
   }
-  return readWriteAnswer(response.status, parsed);
+  const answer = readWriteAnswer(response.status, parsed);
+  return response.headers.get('X-Versio-Settled') === '1' ? { ...answer, settled: true } : answer;
 }
 
 const outcomes = ['done', 'pending', 'unknown'] as const;
