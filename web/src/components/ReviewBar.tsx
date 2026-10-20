@@ -184,7 +184,12 @@ function ReviewDialog({ owner, repo, snap, slot, pending, author, notes, onOpenP
   const events: ReviewEvent[] = author ? ['COMMENT'] : ['COMMENT', 'APPROVE', 'REQUEST_CHANGES'];
   const event = events.includes(held.event) ? held.event : 'COMMENT';
   const locked = held.opKey !== null;
-  const needsWords = event === 'REQUEST_CHANGES' || (event === 'COMMENT' && !pending);
+  // Words are needed where the server needs them: for a request for changes, and for a comment
+  // only as a one-shot review (a pending review's comments are its content). Asked of the target
+  // the key was sent to, not of whether a pending review exists now: after a lost answer and a
+  // reload there is none, and asking that locked a retry behind a rule it never had to meet
+  // (found by review, 2026-10-20).
+  const needsWords = event === 'REQUEST_CHANGES' || (event === 'COMMENT' && target.path === '/reviews');
 
   useEffect(() => {
     try {

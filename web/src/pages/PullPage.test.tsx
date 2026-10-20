@@ -629,6 +629,27 @@ describe('PullPage review', () => {
     act(() => again.root.unmount());
   });
 
+  it('a pending review submitted as a comment with no words, answer lost, can still be retried after a reload', async () => {
+    const unknown = { status: 202, body: { outcome: 'unknown', message: 'This may or may not have been posted.' } };
+    const first = await render('/acme/plant/pull/12', { writable: true, pending: pendingOn(head), writes: { '/reviews/PRR_1/submit': unknown } });
+    await click(button(first.host, 'Finish your review')!, first.host);
+    await click(button(first.host, 'Submit: Comment')!, first.host);
+    const before = writes();
+    act(() => first.root.unmount());
+    document.body.innerHTML = '';
+
+    // GitHub submitted it: no pending review now, which once made the empty comment "need words".
+    const again = await render('/acme/plant/pull/12', { writable: true });
+    await click(button(again.host, 'Review changes')!, again.host);
+    expect(button(again.host, 'Try again')!.disabled).toBe(false);
+    await click(button(again.host, 'Try again')!, again.host);
+
+    const sent = [...before, ...writes()];
+    expect(sent.map((w) => w.url.slice(w.url.indexOf('/reviews')))).toEqual(['/reviews/PRR_1/submit', '/reviews/PRR_1/submit']);
+    expect(sent[1]!.body).toMatchObject({ event: 'COMMENT', body: '', opKey: sent[0]!.body?.opKey });
+    act(() => again.root.unmount());
+  });
+
   it('submits a pending review made on the reviewed head as that review', async () => {
     const { host, root } = await render('/acme/plant/pull/12', { writable: true, pending: pendingOn(head) });
     expect(host.querySelector('.review-bar')?.textContent).toContain('1 comment');
@@ -673,6 +694,19 @@ describe('PullPage review', () => {
     expect(radio(host, 'APPROVE')).toBeNull();
     expect(radio(host, 'REQUEST_CHANGES')).toBeNull();
     act(() => root.unmount());
+  });
+
+  it('asks for words before a one-shot comment, as the server does, but not for submitting a pending review', async () => {
+    const none = await render('/acme/plant/pull/12', { writable: true });
+    await click(button(none.host, 'Review changes')!, none.host);
+    expect(button(none.host, 'Submit: Comment')!.disabled).toBe(true);
+    act(() => none.root.unmount());
+    document.body.innerHTML = '';
+
+    const drafted = await render('/acme/plant/pull/12', { writable: true, pending: pendingOn(head) });
+    await click(button(drafted.host, 'Finish your review')!, drafted.host);
+    expect(button(drafted.host, 'Submit: Comment')!.disabled).toBe(false);
+    act(() => drafted.root.unmount());
   });
 
   it('asks for words before a request for changes', async () => {
