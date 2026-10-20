@@ -1,3 +1,5 @@
+using Versio.Core.Text;
+
 namespace Versio.Core.Iec.Ladder;
 
 /// <summary>
@@ -64,6 +66,12 @@ public sealed record LadderNetwork
     /// placeholder: dropping it would show a block with a network missing.
     /// </summary>
     public string? UnsupportedLanguage { get; init; }
+
+    /// <summary>
+    /// The file lines the network occupies in its vendor's file, when the parser knows them:
+    /// where a review comment on it is pinned (docs/web/PLAN.md, *Pull request review*, C3).
+    /// </summary>
+    public LineSpan? Lines { get; init; }
 
     /// <summary>Which graphical language the network is drawn in.</summary>
     /// <remarks>

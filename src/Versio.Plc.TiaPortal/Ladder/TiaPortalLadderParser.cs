@@ -101,7 +101,8 @@ public static class TiaPortalLadderParser
         XDocument doc;
         try
         {
-            doc = Versio.Core.Text.SafeXml.Parse(content);
+            // Line info kept: each network names the file lines it came from (docs/web/PLAN.md, C3).
+            doc = Versio.Core.Text.SafeXml.Parse(content, LoadOptions.SetLineInfo);
         }
         catch (System.Xml.XmlException)
         {
@@ -117,7 +118,7 @@ public static class TiaPortalLadderParser
         }
 
         var units = Children(Child(block!, "ObjectList"), "SW.Blocks.CompileUnit").ToList();
-        var networks = units.Select((unit, i) => Network(unit, i + 1, blockLanguage)).ToList();
+        var networks = units.Select((unit, i) => Network(unit, i + 1, blockLanguage) with { Lines = Versio.Core.Text.SafeXml.LinesOf(unit) }).ToList();
         return new LadderDocument(new LadderBody(Text(attributes!, "Name"), networks), Style);
     }
 

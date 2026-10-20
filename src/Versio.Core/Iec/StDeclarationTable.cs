@@ -1,5 +1,6 @@
 using System.Text;
 using Versio.Core.Projects;
+using Versio.Core.Text;
 
 namespace Versio.Core.Iec;
 
@@ -60,7 +61,22 @@ public static class StDeclarationTable
     /// <param name="fallbackName">
     /// The name to use when the text does not say one, as a global variable list does not.
     /// </param>
-    public static MemberTable? Parse(string? declaration, string fallbackName)
+    /// <param name="firstLine">
+    /// The file line the declaration's first line is, from 1: rows carry file lines
+    /// (<see cref="MemberRow.Lines"/>), and a declaration is often read out of a larger file — after a
+    /// vendor's header, or out of an XML element.
+    /// </param>
+    public static MemberTable? Parse(string? declaration, string fallbackName, int firstLine = 1)
+    {
+        var table = ParseLines(declaration, fallbackName);
+        return table is null ? null : table with
+        {
+            Members = table.Members.Select(r => r with { Lines = r.Lines?.Shift(firstLine) }).ToList(),
+        };
+    }
+
+    /// <summary><see cref="Parse"/>, with each row's lines as zero-based indexes into the declaration.</summary>
+    private static MemberTable? ParseLines(string? declaration, string fallbackName)
     {
         if (string.IsNullOrWhiteSpace(declaration))
         {
@@ -160,12 +176,12 @@ public static class StDeclarationTable
             if (type.Length > 0)
             {
                 AddHeading(rows, "Return");
-                rows.Add(Row(name, type, "", lines[header].Comment, "Return"));
+                rows.Add(Row(name, type, "", lines[header].Comment, "Return", new LineSpan(header, header)));
             }
         }
 
         string? section = null;
-        foreach (var (decl, comment, structural) in Declarations(
+        foreach (var (decl, comment, structural, from, to) in Declarations(
                      lines, header + 1, line => SectionOf(line, kind) is not null || IsEnd(line, "END_VAR")))
         {
             if (structural is not null)
@@ -185,7 +201,7 @@ public static class StDeclarationTable
                 AddHeading(rows, section);
             }
 
-            rows.AddRange(Rows(decl!, comment, section));
+            rows.AddRange(Rows(decl!, comment, section, new LineSpan(from, to)));
         }
 
         return new MemberTable { Name = name, Members = rows, IsInterface = true };
@@ -221,7 +237,7 @@ public static class StDeclarationTable
         var start = lines.FindIndex(header, l => Words(l.Code).Any(w => w.Equals(opener, StringComparison.OrdinalIgnoreCase)));
         var rows = Declarations(lines, start + 1, line => IsEnd(line, "END_" + opener))
             .TakeWhile(d => d.Structural is null)
-            .SelectMany(d => Rows(d.Declaration!, d.Comment, ""))
+            .SelectMany(d => Rows(d.Declaration!, d.Comment, "", new LineSpan(d.First, d.Last)))
             .ToList();
         return new MemberTable { Name = name, Members = rows, IsDataType = true };
     }
@@ -282,7 +298,7 @@ public static class StDeclarationTable
                 var member = assign >= 0 ? item[..assign].Trim() : item.Trim();
                 var value = assign >= 0 ? item[(assign + 2)..].Trim() : "";
                 var comment = line.Comment.Length > 0 ? line.Comment : string.Join(' ', pending);
-                rows.Add(Row(member, baseType, value, comment, "") with { TypeReference = "" });
+                rows.Add(Row(member, baseType, value, comment, "", new LineSpan(i, i)) with { TypeReference = "" });
                 pending.Clear();
             }
 
@@ -306,11 +322,11 @@ public static class StDeclarationTable
             ? words[1]
             : fallbackName;
 
-        var found = new List<(string Section, string Declaration, string Comment)>();
+        var found = new List<(string Section, string Declaration, string Comment, LineSpan Lines)>();
         static string First(string line) => Words(line).FirstOrDefault()?.TrimEnd(';').ToUpperInvariant() ?? "";
 
         string? section = null;
-        foreach (var (decl, comment, structural) in Declarations(
+        foreach (var (decl, comment, structural, from, to) in Declarations(
                      lines, header, line => First(line) is "VAR_GLOBAL" or "END_VAR" or "NAMESPACE" or "END_NAMESPACE"))
         {
             if (structural is not null)
@@ -321,20 +337,20 @@ public static class StDeclarationTable
 
             if (section is not null)
             {
-                found.Add((section, decl!, comment));
+                found.Add((section, decl!, comment, new LineSpan(from, to)));
             }
         }
 
         var headed = found.Select(f => f.Section).Distinct().Count() > 1;
         var rows = new List<MemberRow>();
-        foreach (var (s, decl, comment) in found)
+        foreach (var (s, decl, comment, span) in found)
         {
             if (headed && !rows.Any(r => r.IsSectionHeading && r.Section == s))
             {
                 AddHeading(rows, s);
             }
 
-            rows.AddRange(Rows(decl, comment, s));
+            rows.AddRange(Rows(decl, comment, s, span));
         }
 
         return name.Length == 0 ? null : new MemberTable { Name = name, Members = rows, IsVariableList = true };
@@ -351,13 +367,19 @@ public static class StDeclarationTable
     /// missing its semicolon) is handed back first, under the section it was written in, and
     /// only then does the caller close the section. Acting in the callback switched the section
     /// before the flushed row was seen, and the row landed under the next one.
+    /// <para>
+    /// Each comes with the zero-based indexes of its first and last line, so a row can say where
+    /// it was declared (<see cref="MemberRow.Lines"/>).
+    /// </para>
     /// </remarks>
-    private static IEnumerable<(string? Declaration, string Comment, string? Structural)> Declarations(
+    private static IEnumerable<(string? Declaration, string Comment, string? Structural, int First, int Last)> Declarations(
         List<Line> lines, int from, Func<string, bool> isStructural)
     {
         var pending = new List<string>();
         var buffer = new StringBuilder();
         var bufferComment = "";
+        var bufferFirst = 0;
+        var bufferLast = 0;
         for (var i = Math.Max(0, from); i < lines.Count; i++)
         {
             var line = lines[i];
@@ -382,16 +404,22 @@ public static class StDeclarationTable
                 if (buffer.Length > 0)
                 {
                     yield return (buffer.ToString().Trim().TrimEnd(';').Trim(),
-                        bufferComment.Length > 0 ? bufferComment : string.Join(' ', pending), null);
+                        bufferComment.Length > 0 ? bufferComment : string.Join(' ', pending), null, bufferFirst, bufferLast);
                     buffer.Clear();
                     bufferComment = "";
                 }
 
                 pending.Clear();
-                yield return (null, "", line.Code);
+                yield return (null, "", line.Code, i, i);
                 continue;
             }
 
+            if (buffer.Length == 0)
+            {
+                bufferFirst = i;
+            }
+
+            bufferLast = i;
             buffer.Append(buffer.Length == 0 ? "" : " ").Append(line.Code);
             if (line.Comment.Length > 0)
             {
@@ -404,7 +432,7 @@ public static class StDeclarationTable
             }
 
             yield return (buffer.ToString().TrimEnd().TrimEnd(';').Trim(),
-                bufferComment.Length > 0 ? bufferComment : string.Join(' ', pending), null);
+                bufferComment.Length > 0 ? bufferComment : string.Join(' ', pending), null, bufferFirst, bufferLast);
             buffer.Clear();
             bufferComment = "";
             pending.Clear();
@@ -412,7 +440,7 @@ public static class StDeclarationTable
     }
 
     /// <summary>One declaration's rows: <c>a, b : INT := 0</c> is two rows.</summary>
-    private static IEnumerable<MemberRow> Rows(string declaration, string comment, string section)
+    private static IEnumerable<MemberRow> Rows(string declaration, string comment, string section, LineSpan lines)
     {
         var colon = TopLevel(declaration, ':', skipAssign: true);
         if (colon < 0)
@@ -432,12 +460,13 @@ public static class StDeclarationTable
             // stays beside the name rather than being dropped.
             var at = raw.IndexOf(" AT ", StringComparison.OrdinalIgnoreCase);
             var name = at >= 0 ? $"{raw[..at].Trim()} ({raw[(at + 1)..].Trim()})" : raw;
-            yield return Row(name, type, value, comment, section);
+            yield return Row(name, type, value, comment, section, lines);
         }
     }
 
-    private static MemberRow Row(string name, string type, string value, string comment, string section) => new()
+    private static MemberRow Row(string name, string type, string value, string comment, string section, LineSpan lines) => new()
     {
+        Lines = lines,
         Path = name,
         Name = name,
         Datatype = type,

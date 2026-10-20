@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Text;
 using Versio.Core.Diff;
+using Versio.Core.Review;
 
 namespace Versio.Core.Projects;
 
@@ -33,11 +34,18 @@ namespace Versio.Core.Projects;
 /// Indentation is drawn with spans, not inline styles, so a strict content-security policy can
 /// forbid style attributes.
 /// </para>
+/// <para>
+/// <b>Each member row also carries <c>data-anchors</c></b>: the ids of the review anchors it stands
+/// for, one per side it exists on (<see cref="Anchors"/>), and the page carries the layer the rows
+/// were parsed from in <c>data-src-path</c>. One rule decides both (<see cref="Doms"/>), so the
+/// anchor list and the markup cannot disagree about which row is which.
+/// </para>
 /// </remarks>
 public static class MemberTableHtml
 {
     /// <summary>The fragment for <paramref name="table"/>, compared or not.</summary>
-    public static string Fragment(MemberTable table)
+    /// <param name="compared">A comparison: rows exist on the older side too, and say so in their anchors.</param>
+    public static string Fragment(MemberTable table, bool compared = false)
     {
         ArgumentNullException.ThrowIfNull(table);
 
@@ -80,15 +88,17 @@ public static class MemberTableHtml
         }
 
         body.Append("<th>COMMENT</th></tr></thead>\n<tbody>\n");
-        foreach (var row in table.Members)
+        for (var i = 0; i < table.Members.Count; i++)
         {
-            hidden += row.IsSectionHeading ? Section(body, row, columns) : Row(body, row, table);
+            var row = table.Members[i];
+            hidden += row.IsSectionHeading ? Section(body, row, columns) : Row(body, row, table, Doms(row, i, compared));
         }
 
         body.Append("</tbody>\n</table>\n");
 
         var html = new StringBuilder(head.Length + body.Length + 256);
-        html.Append("<div class=\"mt-page\" data-kind=\"").Append(Kind(table))
+        html.Append("<div class=\"mt-page\" data-src-path=\"").Append(CodeHtml.A(table.SourcePath))
+            .Append("\" data-kind=\"").Append(Kind(table))
             .Append("\" data-hidden-chars=\"").Append(hidden.ToString(CultureInfo.InvariantCulture)).Append("\">\n")
             .Append(head);
         CodeHtml.AppendNotice(html, hidden);
@@ -104,7 +114,50 @@ public static class MemberTableHtml
         return hidden;
     }
 
-    private static int Row(StringBuilder html, MemberRow row, MemberTable table)
+    /// <summary>
+    /// The review anchors a table's rows stand for: a row on the newer side unless it was removed,
+    /// and on the older side when the table is a comparison and the row is not new.
+    /// </summary>
+    public static IReadOnlyList<RenderedAnchor> Anchors(MemberTable table, bool compared)
+    {
+        ArgumentNullException.ThrowIfNull(table);
+        var anchors = new List<RenderedAnchor>();
+        for (var i = 0; i < table.Members.Count; i++)
+        {
+            var row = table.Members[i];
+            if (row.IsSectionHeading)
+            {
+                continue;
+            }
+
+            var (newDom, oldDom) = Doms(row, i, compared);
+            if (newDom is not null)
+            {
+                anchors.Add(new RenderedAnchor(newDom, "row", table.SourcePath, ReviewSide.New, table.Name, row.Path,
+                    AnchorMatcher.Print(row.Section, row.Name, row.Datatype, row.StartValue, row.ExternalAccess, row.Comment), row.Lines));
+            }
+
+            if (oldDom is not null)
+            {
+                // The older side shows what the row was: the "before" of each field that moved.
+                anchors.Add(new RenderedAnchor(oldDom, "row", table.SourcePath, ReviewSide.Old, table.Name, row.Path,
+                    AnchorMatcher.Print(row.Section, row.Name, row.DatatypeBefore ?? row.Datatype, row.StartValueBefore ?? row.StartValue,
+                        row.ExternalAccessBefore ?? row.ExternalAccess, row.CommentBefore ?? row.Comment), row.WasLines));
+            }
+        }
+
+        return anchors;
+    }
+
+    /// <summary>The anchor ids of one row on each side, or null where it does not exist on that side.</summary>
+    private static (string? New, string? Old) Doms(MemberRow row, int index, bool compared)
+    {
+        var at = index.ToString(CultureInfo.InvariantCulture);
+        return (row.Change == MemberChange.Removed ? null : "r-new-" + at,
+            compared && row.Change != MemberChange.Added ? "r-old-" + at : null);
+    }
+
+    private static int Row(StringBuilder html, MemberRow row, MemberTable table, (string? New, string? Old) doms)
     {
         var change = row.Change switch
         {
@@ -117,7 +170,8 @@ public static class MemberTableHtml
         html.Append("<tr class=\"mt-row").Append(row.Change == MemberChange.None ? "" : " mt-" + change)
             .Append(row.ReferenceChanged ? " mt-ref-changed" : "")
             .Append("\" data-path=\"").Append(CodeHtml.A(row.Path))
-            .Append("\" data-change=\"").Append(change).Append('"');
+            .Append("\" data-change=\"").Append(change).Append('"')
+            .Append(" data-anchors=\"").Append(string.Join(' ', new[] { doms.New, doms.Old }.Where(d => d is not null))).Append('"');
         if (row.Was.Length > 0)
         {
             // What the row said before, on hover, as the desktop's tooltip has it. An attribute

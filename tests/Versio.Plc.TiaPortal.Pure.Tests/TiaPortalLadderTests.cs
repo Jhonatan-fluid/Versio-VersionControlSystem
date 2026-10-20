@@ -395,4 +395,17 @@ public sealed class TiaPortalLadderTests
 
         Assert.True(new FileInfo(path).Length > 1000);
     }
+
+    /// <summary>Each network names the file line its compile unit starts on (docs/web/PLAN.md, C3).</summary>
+    [Fact]
+    public void Every_network_names_the_file_line_its_compile_unit_starts_on()
+    {
+        var path = Path.Combine(CyclicBlocks, "Cyclic interrupt.xml");
+        var lines = File.ReadAllText(path).Replace("\r\n", "\n").Split('\n');
+
+        var document = TiaPortalProjectFormat.Instance.TryParseLadder("x/Cyclic interrupt.xml", File.ReadAllText(path))!;
+
+        Assert.All(document.Body.Networks, n => Assert.Contains("<SW.Blocks.CompileUnit", lines[n.Lines!.Value.Start - 1], StringComparison.Ordinal));
+        Assert.Equal(document.Body.Networks.Count, document.Body.Networks.Select(n => n.Lines!.Value.Start).Distinct().Count());
+    }
 }

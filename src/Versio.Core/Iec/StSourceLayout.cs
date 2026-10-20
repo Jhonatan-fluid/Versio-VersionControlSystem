@@ -20,6 +20,13 @@ public sealed record SourceCodeLine(int Number, string Text, int FileLine) : Sou
 {
     /// <summary>Whether this line is new since the last commit. Set by <see cref="StSourceLayout.Mark"/>.</summary>
     public SourceChange Change { get; init; }
+
+    /// <summary>
+    /// For an unchanged line of a comparison, where it sat in the committed file, from 1; null
+    /// otherwise. Set by <see cref="StSourceLayout.Mark"/>: a review comment on the older side of an
+    /// unchanged line names this line, not <see cref="FileLine"/> (docs/web/PLAN.md, C3).
+    /// </summary>
+    public int? OldFileLine { get; init; }
 }
 
 /// <summary>What happened to a drawn line since the last commit.</summary>
@@ -50,7 +57,12 @@ public enum SourceSide
 }
 
 /// <summary>One cell of a side-by-side source row: a line of one version, numbered in that version.</summary>
-public sealed record SourceSplitCell(int Number, string Text, SourceSide Kind);
+/// <param name="FileLine">
+/// Where the line sits in its own version's file, from 1, or zero when unknown. <paramref name="Number"/>
+/// is the IDE's section-relative number and restarts at every divider, so it cannot say which file
+/// line a review comment belongs on; this can.
+/// </param>
+public sealed record SourceSplitCell(int Number, string Text, SourceSide Kind, int FileLine = 0);
 
 /// <summary>
 /// One row of source drawn side by side: the committed version on the left, the working one on
@@ -228,6 +240,7 @@ public static class StSourceLayout
         var steps = Diff.LineDiff.Compare(oldLines, newLines);
 
         var added = new HashSet<int>();
+        var sameOld = new Dictionary<int, int>();
         var removedBefore = new SortedDictionary<int, List<SourceRemovedLine>>();
         var nextNew = 0;
         var pending = new List<SourceRemovedLine>();
@@ -244,6 +257,9 @@ public static class StSourceLayout
                     continue;
                 case Diff.LineOp.Added:
                     added.Add(step.NewIndex);
+                    break;
+                case Diff.LineOp.Same:
+                    sameOld[step.NewIndex] = step.OldIndex;
                     break;
             }
 
@@ -272,7 +288,9 @@ public static class StSourceLayout
                     removedBefore.Remove(key);
                 }
 
-                marked.Add(added.Contains(index) ? line with { Change = SourceChange.Added } : line);
+                marked.Add(added.Contains(index) ? line with { Change = SourceChange.Added }
+                    : sameOld.TryGetValue(index, out var was) ? line with { OldFileLine = was + 1 }
+                    : line);
                 continue;
             }
 
@@ -339,16 +357,16 @@ public static class StSourceLayout
                         Flush();
                     }
 
-                    removed.Add(new SourceSplitCell(++oldNumber, gone.Text, SourceSide.Removed));
+                    removed.Add(new SourceSplitCell(++oldNumber, gone.Text, SourceSide.Removed, gone.OldFileLine));
                     break;
                 case SourceCodeLine { Change: SourceChange.Added } line:
-                    added.Add(new SourceSplitCell(line.Number, line.Text, SourceSide.Added));
+                    added.Add(new SourceSplitCell(line.Number, line.Text, SourceSide.Added, line.FileLine));
                     break;
                 case SourceCodeLine line:
                     Flush();
                     result.Add(new SourceSplitRow(
-                        new SourceSplitCell(++oldNumber, line.Text, SourceSide.Same),
-                        new SourceSplitCell(line.Number, line.Text, SourceSide.Same)));
+                        new SourceSplitCell(++oldNumber, line.Text, SourceSide.Same, line.OldFileLine ?? 0),
+                        new SourceSplitCell(line.Number, line.Text, SourceSide.Same, line.FileLine)));
                     break;
             }
         }

@@ -91,8 +91,10 @@ public static class CodesysLadderParser
             _ => null,
         };
 
+        // Each network's file lines, for a review comment pinned to it (docs/web/PLAN.md, C3).
+        var offset = LineOffset(relativePath, content);
         var networks = Items(implementation, "NetworkList")
-            .Select((network, i) => Network(network, i + 1, language))
+            .Select((network, i) => Network(network, i + 1, language) with { Lines = Versio.Core.Text.SafeXml.LinesOf(network, offset) })
             .ToList();
         return new LadderDocument(new LadderBody(name, networks), Style);
     }
@@ -146,7 +148,8 @@ public static class CodesysLadderParser
         XDocument doc;
         try
         {
-            doc = Versio.Core.Text.SafeXml.Parse(xml);
+            // Line info kept: the table's rows and the networks name the file lines they came from.
+            doc = Versio.Core.Text.SafeXml.Parse(xml, LoadOptions.SetLineInfo);
         }
         catch (XmlException)
         {
@@ -155,6 +158,25 @@ public static class CodesysLadderParser
 
         var (owner, name) = fileName is null ? Classic(doc) : (doc.Root, fileName);
         return owner is null ? null : (owner, name);
+    }
+
+    /// <summary>
+    /// How many lines of the file come before the XML <see cref="ObjectOf"/> parsed: a File-Based
+    /// Storage file's header, which the XML's own line numbers do not count. Zero for a classic
+    /// export, whose file is the XML.
+    /// </summary>
+    /// <remarks>
+    /// The XML is the file's tail (<see cref="CodesysV3File.Content"/> drops the header and the line
+    /// breaks after it), so the difference in line breaks is the header's height.
+    /// </remarks>
+    internal static int LineOffset(string relativePath, string content)
+    {
+        if (!relativePath.EndsWith(CodesysV3File.Extension, StringComparison.OrdinalIgnoreCase) || CodesysV3File.Content(content) is not { } xml)
+        {
+            return 0;
+        }
+
+        return content.Count(c => c == '\n') - xml.Count(c => c == '\n');
     }
 
     /// <summary>

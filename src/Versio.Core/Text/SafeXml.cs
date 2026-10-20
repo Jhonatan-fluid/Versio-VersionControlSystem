@@ -94,4 +94,34 @@ public static class SafeXml
         using var reader = XmlReader.Create(text, settings);
         return XDocument.Load(reader, options);
     }
+
+    /// <summary>
+    /// The file lines <paramref name="element"/> occupies, when the document was parsed with
+    /// <see cref="LoadOptions.SetLineInfo"/>; null otherwise.
+    /// </summary>
+    /// <remarks>
+    /// From the element's own start to the last line any descendant starts on: a reader reports
+    /// where elements begin, not where they close, so a closing tag on a line of its own is left
+    /// out. Close enough for what it is used for, pinning a review comment to the element's lines;
+    /// a closing tag is never what changed.
+    /// </remarks>
+    public static LineSpan? LinesOf(XElement element, int offset = 0)
+    {
+        ArgumentNullException.ThrowIfNull(element);
+        if (element is not IXmlLineInfo self || !self.HasLineInfo())
+        {
+            return null;
+        }
+
+        var end = self.LineNumber;
+        foreach (var node in element.DescendantNodes())
+        {
+            if (node is IXmlLineInfo info && info.HasLineInfo() && info.LineNumber > end)
+            {
+                end = info.LineNumber;
+            }
+        }
+
+        return new LineSpan(self.LineNumber + offset, end + offset);
+    }
 }

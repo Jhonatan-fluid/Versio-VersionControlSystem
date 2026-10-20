@@ -51,7 +51,8 @@ public static class MemberTableDiff
                 continue;
             }
 
-            var gone = row with { Change = MemberChange.Removed, Was = Describe(row), LinkGuid = null, ReferenceChanged = false };
+            // Its lines are the older version's: the side a comment on a removed row sits on.
+            var gone = row with { Change = MemberChange.Removed, Was = Describe(row), LinkGuid = null, ReferenceChanged = false, Lines = null, WasLines = row.Lines };
             if (lastSurvivor is null)
             {
                 removedAtStart.Add(gone);
@@ -79,6 +80,7 @@ public static class MemberTableDiff
                 rows.Add(row with
                 {
                     Change = MemberChange.Modified,
+                    WasLines = old.Lines,
                     Was = Describe(old),
                     DatatypeBefore = Before(old.Datatype, row.Datatype),
                     StartValueBefore = Before(old.StartValue, row.StartValue),
@@ -89,7 +91,8 @@ public static class MemberTableDiff
             }
             else
             {
-                rows.Add(row);
+                // Unchanged, but still on two sides: a comment on the older version's line needs it.
+                rows.Add(row with { WasLines = old.Lines });
             }
 
             if (removedAfter.TryGetValue(key, out var gone))

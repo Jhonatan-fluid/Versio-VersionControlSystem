@@ -41,7 +41,8 @@ public static class CodesysMemberTable
         {
             var lines = content.Replace("\r\n", "\n").Split('\n');
             var declaration = string.Join('\n', lines[sections.HeaderEnd..sections.DeclarationEnd]);
-            return StDeclarationTable.Parse(declaration, CodesysV3File.ObjectName(relativePath));
+            // The declaration starts after the header: rows name file lines (docs/web/PLAN.md, C3).
+            return StDeclarationTable.Parse(declaration, CodesysV3File.ObjectName(relativePath), sections.HeaderEnd + 1);
         }
 
         if (relativePath.EndsWith(".xml", StringComparison.OrdinalIgnoreCase)
@@ -59,10 +60,13 @@ public static class CodesysMemberTable
                 return null;
             }
 
-            var text = CodesysLadderParser.Named(
+            var blob = CodesysLadderParser.Named(
                 CodesysLadderParser.Named(CodesysLadderParser.Named(owner, "Interface"), "TextDocument"),
-                "TextBlobForSerialisation")?.Value;
-            return StDeclarationTable.Parse(text, name);
+                "TextBlobForSerialisation");
+            // The declaration text begins on its element's own line; an XML entity never adds a
+            // line, so the rows' lines are the file's from there on.
+            var first = blob is null ? null : Versio.Core.Text.SafeXml.LinesOf(blob, CodesysLadderParser.LineOffset(relativePath, content));
+            return StDeclarationTable.Parse(blob?.Value, name, first?.Start ?? 1);
         }
 
         return StDeclarationTable.FromSource(relativePath, content);

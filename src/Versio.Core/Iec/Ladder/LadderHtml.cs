@@ -62,7 +62,8 @@ public sealed record LadderWording(string Unchanged, string NoOldSide)
 public static class LadderHtml
 {
     /// <summary>The fragment for a compared block.</summary>
-    public static string Fragment(LadderComparison comparison, LadderStyle style, LadderView view = LadderView.Merged, LadderWording? wording = null)
+    /// <param name="sourcePath">The file the networks were parsed from, carried as <c>data-src-path</c> for review anchors.</param>
+    public static string Fragment(LadderComparison comparison, LadderStyle style, LadderView view = LadderView.Merged, LadderWording? wording = null, string sourcePath = "")
     {
         ArgumentNullException.ThrowIfNull(comparison);
         ArgumentNullException.ThrowIfNull(style);
@@ -73,7 +74,7 @@ public static class LadderHtml
         // halve its width.
         var twoColumns = view == LadderView.SideBySide && comparison.HasOldSide && comparison.HasChanges;
         var html = new StringBuilder();
-        html.Append("<div class=\"ld-page\" data-block=\"").Append(E(comparison.BlockName))
+        html.Append("<div class=\"ld-page\" data-src-path=\"").Append(E(sourcePath)).Append("\" data-block=\"").Append(E(comparison.BlockName))
             .Append("\" data-view=\"").Append(twoColumns ? "side-by-side" : "merged")
             .Append("\" data-changes-only=\"").Append(comparison.HasOldSide && comparison.HasChanges ? "true" : "false")
             .Append("\">\n");
@@ -107,6 +108,64 @@ public static class LadderHtml
         LadderChange.MovedAway => "moved-away",
         _ => change.ToString().ToLowerInvariant(),
     };
+
+    /// <summary>
+    /// The review anchors a comparison's networks stand for: each network on each side it exists on
+    /// (docs/web/PLAN.md, *Pull request review*, C3). A network's key is its title, or its number
+    /// when it has none — numbers are positional and shift on a delete, which is what the
+    /// fingerprint is for.
+    /// </summary>
+    /// <remarks>
+    /// A moved-away stub stands for nothing of its own: its network is the older side of the row it
+    /// moved to, and listing it twice would make every comment on it ambiguous.
+    /// </remarks>
+    public static IReadOnlyList<Review.RenderedAnchor> Anchors(LadderComparison comparison, string sourcePath)
+    {
+        ArgumentNullException.ThrowIfNull(comparison);
+        var anchors = new List<Review.RenderedAnchor>();
+        foreach (var row in comparison.Rows.Where(r => r.Change != LadderChange.MovedAway))
+        {
+            if (row.New is { } n)
+            {
+                anchors.Add(Anchor(n.Network, Review.ReviewSide.New, comparison.BlockName, sourcePath));
+            }
+
+            if (row.Old is { } o && comparison.HasOldSide)
+            {
+                anchors.Add(Anchor(o.Network, Review.ReviewSide.Old, comparison.BlockName, sourcePath));
+            }
+        }
+
+        return anchors;
+    }
+
+    private static Review.RenderedAnchor Anchor(LadderNetwork network, Review.ReviewSide side, string block, string sourcePath) =>
+        new(Dom(network, side), "net", sourcePath, side, block,
+            network.Title.Length > 0 ? "t:" + network.Title : "#" + network.Number.ToString(CultureInfo.InvariantCulture),
+            Review.AnchorMatcher.Print(LadderStructure.Fingerprint(network)), network.Lines);
+
+    private static string Dom(LadderNetwork network, Review.ReviewSide side) =>
+        (side == Review.ReviewSide.New ? "n-new-" : "n-old-") + network.Number.ToString(CultureInfo.InvariantCulture);
+
+    /// <summary>
+    /// The anchors a drawn side stands for: its own network, and the older one too when that is not
+    /// drawn on a side of its own (an unchanged or merged network is drawn once, for both).
+    /// </summary>
+    private static string Doms(LadderRow row, bool isOld, bool oldDrawnApart)
+    {
+        if (row.Change == LadderChange.MovedAway)
+        {
+            return "";
+        }
+
+        if (isOld)
+        {
+            return row.Old is { } o ? Dom(o.Network, Review.ReviewSide.Old) : "";
+        }
+
+        var doms = row.New is { } n ? Dom(n.Network, Review.ReviewSide.New) : "";
+        return !oldDrawnApart && row.Old is { } old ? (doms + " " + Dom(old.Network, Review.ReviewSide.Old)).Trim() : doms;
+    }
 
     /// <summary>The id a row is jumped to by: its network's number on the side it is drawn by.</summary>
     private static string RowId(LadderRow row) => row.New is { } n
@@ -181,12 +240,12 @@ public static class LadderHtml
 
         if (twoColumns)
         {
-            Side(html, row, row.Old, isOld: true, style);
-            Side(html, row, row.New, isOld: false, style);
+            Side(html, row, row.Old, isOld: true, style, oldDrawnApart: true);
+            Side(html, row, row.New, isOld: false, style, oldDrawnApart: true);
         }
         else
         {
-            Side(html, row, row.New ?? row.Old, isOld: row.New is null, style);
+            Side(html, row, row.New ?? row.Old, isOld: row.New is null, style, oldDrawnApart: false);
         }
 
         html.Append("</section>\n");
@@ -246,19 +305,19 @@ public static class LadderHtml
             .Append("\" data-change=\"").Append(change).Append("\">\n");
         if (merged is not null)
         {
-            Side(html, row, row.New, isOld: false, style, merged);
+            Side(html, row, row.New, isOld: false, style, oldDrawnApart: false, merged);
         }
         else
         {
-            Side(html, row, row.Old, isOld: true, style);
-            Side(html, row, row.New, isOld: false, style);
+            Side(html, row, row.Old, isOld: true, style, oldDrawnApart: true);
+            Side(html, row, row.New, isOld: false, style, oldDrawnApart: true);
         }
 
         html.Append("</section>\n");
     }
 
     private static void Side(
-        StringBuilder html, LadderRow row, LadderSide? side, bool isOld, LadderStyle style, MergedView? merged = null)
+        StringBuilder html, LadderRow row, LadderSide? side, bool isOld, LadderStyle style, bool oldDrawnApart, MergedView? merged = null)
     {
         var which = isOld ? "ld-old" : "ld-new";
         if (side is null)
@@ -282,7 +341,7 @@ public static class LadderHtml
         var titleChanged = row.HeaderChanged && other is not null && other.Network.Title != network.Title;
         var commentChanged = row.HeaderChanged && other is not null && other.Network.Comment != network.Comment;
 
-        html.Append("\">\n<header class=\"ld-head\">")
+        html.Append("\" data-anchors=\"").Append(Doms(row, isOld, oldDrawnApart)).Append("\">\n<header class=\"ld-head\">")
             .Append("<span class=\"ld-num\">").Append(E(style.UnitName)).Append(' ')
             .Append(network.Number.ToString(CultureInfo.InvariantCulture)).Append("</span>");
 

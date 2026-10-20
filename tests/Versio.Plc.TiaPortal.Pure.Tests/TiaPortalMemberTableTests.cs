@@ -613,4 +613,37 @@ public sealed class TiaPortalMemberTableTests
     {
         Assert.Null(Parse("broken.xml", "<Document><SW.Blocks.GlobalDB>"));
     }
+
+    /// <summary>Each row names the file line its member element starts on (docs/web/PLAN.md, C3).</summary>
+    [Fact]
+    public void Every_row_names_the_file_line_its_member_starts_on()
+    {
+        var xml = """
+            <?xml version="1.0" encoding="utf-8"?>
+            <Document>
+              <SW.Blocks.GlobalDB ID="0">
+                <AttributeList>
+                  <Interface>
+                    <Sections xmlns="http://www.siemens.com/automation/Openness/SW/Interface/v5">
+                      <Section Name="Static">
+                        <Member Name="Low" Datatype="Real" />
+                        <Member Name="High" Datatype="Real">
+                          <StartValue>2900.0</StartValue>
+                        </Member>
+                      </Section>
+                    </Sections>
+                  </Interface>
+                  <Name>Limits</Name>
+                </AttributeList>
+              </SW.Blocks.GlobalDB>
+            </Document>
+            """;
+        var lines = xml.Replace("\r\n", "\n").Split('\n');
+
+        var rows = MustParse(xml).Members.ToDictionary(m => m.Path);
+
+        Assert.Contains("Name=\"Low\"", lines[rows["Low"].Lines!.Value.Start - 1], StringComparison.Ordinal);
+        Assert.Contains("Name=\"High\"", lines[rows["High"].Lines!.Value.Start - 1], StringComparison.Ordinal);
+        Assert.Equal(rows["High"].Lines!.Value.Start + 1, rows["High"].Lines!.Value.End);
+    }
 }

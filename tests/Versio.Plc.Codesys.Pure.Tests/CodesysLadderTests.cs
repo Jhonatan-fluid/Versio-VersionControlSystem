@@ -374,4 +374,37 @@ public sealed class CodesysLadderTests
         File.WriteAllText(path, page.ToString());
         Assert.True(new FileInfo(path).Length > 1000);
     }
+
+    /// <summary>
+    /// Each network names the file lines it came from, in both containers — and in File-Based
+    /// Storage the XML starts after a header the XML's own numbering does not count, so a line
+    /// right in the XML is wrong in the file unless the header is added (docs/web/PLAN.md, C3).
+    /// </summary>
+    [Fact]
+    public void Every_network_names_the_file_line_its_element_starts_on_in_both_containers()
+    {
+        foreach (var (document, file) in new[] { (Classic(), ClassicFile), (Fbs(), FbsFile) })
+        {
+            var lines = File.ReadAllText(file).Replace("\r\n", "\n").Split('\n');
+            Assert.NotEmpty(document.Body.Networks);
+            Assert.All(document.Body.Networks, n =>
+            {
+                Assert.NotNull(n.Lines);
+                Assert.Contains("{d9a99d73-b633-47db-b876-a752acb25871}", lines[n.Lines!.Value.Start - 1], StringComparison.Ordinal);
+            });
+        }
+    }
+
+    /// <summary>A graphical POU's table rows name their lines inside the XML's declaration text, which starts on its element's own line.</summary>
+    [Fact]
+    public void A_graphical_pous_table_rows_name_their_lines_in_the_xml()
+    {
+        var text = File.ReadAllText(ClassicFile);
+        var lines = text.Replace("\r\n", "\n").Split('\n');
+
+        var table = CodesysProjectFormat.Instance.TryParseMemberTable("Device/Plc Logic/Application/Signals.xml", text)!;
+
+        var row = table.Members.Single(m => m.Path == "TON_0");
+        Assert.Contains("TON_0: TON;", lines[row.Lines!.Value.Start - 1], StringComparison.Ordinal);
+    }
 }

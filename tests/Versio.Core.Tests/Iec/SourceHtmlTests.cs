@@ -117,8 +117,26 @@ public sealed partial class SourceHtmlTests
         Assert.Contains("data-view=\"unified\"", unchanged, StringComparison.Ordinal);
         Assert.DoesNotContain("cd-split", unchanged, StringComparison.Ordinal);
         Assert.Contains("data-view=\"side-by-side\"", changed, StringComparison.Ordinal);
-        Assert.Contains("<div class=\"cd-cell cd-removed\" data-old-line=\"1\">", changed, StringComparison.Ordinal);
-        Assert.Contains("<div class=\"cd-cell cd-added\" data-line=\"1\">", changed, StringComparison.Ordinal);
+        // Each cell names its own version's file line too, beside the IDE's section number: that is
+        // what a review comment on it is pinned to (docs/web/PLAN.md, *Pull request review*, C3).
+        Assert.Contains("<div class=\"cd-cell cd-removed\" data-old-line=\"1\" data-old-file-line=\"1\">", changed, StringComparison.Ordinal);
+        Assert.Contains("<div class=\"cd-cell cd-added\" data-line=\"1\" data-file-line=\"1\">", changed, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// An unchanged line of a comparison names where it sat in the older file as well: a review
+    /// comment on the older side of an unchanged line belongs on THAT line, and the two differ as
+    /// soon as anything above it was added or removed.
+    /// </summary>
+    [Fact]
+    public void An_unchanged_line_carries_its_older_file_line_on_both_layouts()
+    {
+        var unified = Marked("a := 1;\nb := 2;\n", "x := 0;\na := 1;\nb := 2;\n");
+        var split = Marked("a := 1;\nb := 2;\n", "x := 0;\na := 1;\nb := 2;\n", SourceView.SideBySide);
+
+        Assert.Contains("data-file-line=\"2\" data-old-file-line=\"1\"", unified, StringComparison.Ordinal);
+        Assert.Contains("data-old-line=\"1\" data-old-file-line=\"1\"", split, StringComparison.Ordinal);
+        Assert.Contains("data-line=\"2\" data-file-line=\"2\"", split, StringComparison.Ordinal);
     }
 
     [Fact]

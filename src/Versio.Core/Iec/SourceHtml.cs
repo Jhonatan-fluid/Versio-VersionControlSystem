@@ -42,7 +42,8 @@ public static class SourceHtml
     public const int BlockRows = CodeHtml.BlockRows;
 
     /// <summary>The fragment for laid-out (and optionally <see cref="StSourceLayout.Mark"/>ed) rows.</summary>
-    public static string Fragment(IReadOnlyList<SourceRow> rows, SyntaxLanguage language, SourceView view = SourceView.Unified)
+    /// <param name="sourcePath">The file the rows are lines of, carried as <c>data-src-path</c>: a review thread on a file line is placed only in the block of its own file.</param>
+    public static string Fragment(IReadOnlyList<SourceRow> rows, SyntaxLanguage language, SourceView view = SourceView.Unified, string sourcePath = "")
     {
         ArgumentNullException.ThrowIfNull(rows);
         ArgumentNullException.ThrowIfNull(language);
@@ -56,7 +57,7 @@ public static class SourceHtml
             : UnifiedRows(body, rows, language);
 
         var html = new StringBuilder(body.Length + 512);
-        html.Append("<div class=\"cd-page\" data-view=\"").Append(split ? "side-by-side" : "unified")
+        html.Append("<div class=\"cd-page\" data-src-path=\"").Append(CodeHtml.A(sourcePath)).Append("\" data-view=\"").Append(split ? "side-by-side" : "unified")
             .Append("\" data-marked=\"").Append(marked ? "true" : "false")
             .Append("\" data-hidden-chars=\"").Append(hidden.ToString(CultureInfo.InvariantCulture))
             .Append("\">\n");
@@ -81,6 +82,7 @@ public static class SourceHtml
                     break;
                 case SourceRemovedLine gone:
                     html.Append("<div class=\"cd-row cd-removed\" data-old-line=\"").Append(N(gone.OldFileLine))
+                        .Append("\" data-old-file-line=\"").Append(N(gone.OldFileLine))
                         .Append("\" title=\"Removed (was line ").Append(N(gone.OldFileLine))
                         .Append(")\"><span class=\"cd-num\">&#8722;</span><code class=\"cd-code\"><del>");
                     hidden += CodeHtml.AppendLine(html, gone.Text, language);
@@ -89,8 +91,13 @@ public static class SourceHtml
                 case SourceCodeLine line:
                     html.Append("<div class=\"cd-row").Append(line.Change == SourceChange.Added ? " cd-added" : "")
                         .Append("\" data-line=\"").Append(N(line.Number))
-                        .Append("\" data-file-line=\"").Append(N(line.FileLine))
-                        .Append("\"><span class=\"cd-num\">").Append(N(line.Number))
+                        .Append("\" data-file-line=\"").Append(N(line.FileLine)).Append('"');
+                    if (line.OldFileLine is { } was)
+                    {
+                        html.Append(" data-old-file-line=\"").Append(N(was)).Append('"');
+                    }
+
+                    html.Append("><span class=\"cd-num\">").Append(N(line.Number))
                         .Append("</span><code class=\"cd-code\">");
                     hidden += CodeHtml.AppendLine(html, line.Text, language);
                     html.Append("</code></div>\n");
@@ -143,8 +150,15 @@ public static class SourceHtml
             _ => "",
         };
         html.Append("<div class=\"cd-cell").Append(kind).Append("\" ")
-            .Append(old ? "data-old-line" : "data-line").Append("=\"").Append(N(cell.Number))
-            .Append("\"><span class=\"cd-num\">").Append(N(cell.Number)).Append("</span><code class=\"cd-code\">");
+            .Append(old ? "data-old-line" : "data-line").Append("=\"").Append(N(cell.Number)).Append('"');
+        if (cell.FileLine > 0)
+        {
+            // The section numbers above restart at every divider; the file line is what a review
+            // comment names (docs/web/PLAN.md, C3).
+            html.Append(old ? " data-old-file-line=\"" : " data-file-line=\"").Append(N(cell.FileLine)).Append('"');
+        }
+
+        html.Append("><span class=\"cd-num\">").Append(N(cell.Number)).Append("</span><code class=\"cd-code\">");
         var hidden = CodeHtml.AppendLine(html, cell.Text, language);
         html.Append("</code></div>");
         return hidden;

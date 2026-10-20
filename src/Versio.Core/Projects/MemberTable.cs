@@ -1,3 +1,5 @@
+using Versio.Core.Text;
+
 namespace Versio.Core.Projects;
 
 /// <summary>
@@ -74,6 +76,22 @@ public sealed record MemberRow
     public bool ReferenceChanged { get; init; }
 
     public bool HasLink => LinkGuid is not null;
+
+    /// <summary>
+    /// The file lines this member is declared on in the version the row describes, when the
+    /// format knows them; for a compared row, the newer version's. Null for a removed row.
+    /// </summary>
+    /// <remarks>
+    /// Where a review comment on the row is pinned (docs/web/PLAN.md, *Pull request review*, C3),
+    /// in <see cref="MemberTable.SourcePath"/>. A placement, never evidence of what the row shows.
+    /// </remarks>
+    public LineSpan? Lines { get; init; }
+
+    /// <summary>
+    /// The lines the member was declared on in the OLDER version of a comparison: set for
+    /// unchanged, modified and removed rows, so a comment can sit on either side.
+    /// </summary>
+    public LineSpan? WasLines { get; init; }
 
     /// <summary>How this row differs from the last commit; <see cref="MemberChange.None"/> when unknown.</summary>
     public MemberChange Change { get; init; }
@@ -171,6 +189,13 @@ public sealed record MemberTable
     public string MemoryLayout { get; init; } = string.Empty;
 
     public IReadOnlyList<MemberRow> Members { get; init; } = [];
+
+    /// <summary>
+    /// The file the rows' <see cref="MemberRow.Lines"/> are lines of: the layer the table was
+    /// parsed from, which need not be the file on screen (a block's table comes from the
+    /// <c>.xml</c> beside its <c>.st</c>). Set by the host, which knows which layer it parsed.
+    /// </summary>
+    public string SourcePath { get; init; } = string.Empty;
 
     /// <summary>A named block, even one with no members yet.</summary>
     public bool IsValid => Name.Length > 0;

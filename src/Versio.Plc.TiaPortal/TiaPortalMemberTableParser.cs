@@ -58,7 +58,8 @@ public static class TiaPortalMemberTableParser
             // committed copy read through `git show` keeps it as a character in front of
             // <?xml, which XDocument rejects - so every changed table compared against
             // nothing and stayed unmarked (owner's demo, 2026-10-05). Same bytes, two readers.
-            doc = Versio.Core.Text.SafeXml.Parse(content.TrimStart('\uFEFF'));
+            // Line info kept: each row names the file lines it was declared on (docs/web/PLAN.md, C3).
+            doc = Versio.Core.Text.SafeXml.Parse(content.TrimStart('\uFEFF'), System.Xml.Linq.LoadOptions.SetLineInfo);
         }
         catch (System.Xml.XmlException)
         {
@@ -169,6 +170,7 @@ public static class TiaPortalMemberTableParser
             ExternalAccess = access,
             Comment = FirstComment(member),
             Depth = depth,
+            Lines = Versio.Core.Text.SafeXml.LinesOf(member),
         });
 
         foreach (var sub in Named(member, "Subelement"))
@@ -183,6 +185,7 @@ public static class TiaPortalMemberTableParser
                 StartValue = Text(sub, "StartValue"),
                 ExternalAccess = access,
                 Comment = FirstComment(sub),
+                Lines = Versio.Core.Text.SafeXml.LinesOf(sub),
                 Depth = depth + 1,
             });
         }
