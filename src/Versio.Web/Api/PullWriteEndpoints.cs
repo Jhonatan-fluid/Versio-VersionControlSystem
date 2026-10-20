@@ -758,8 +758,13 @@ public static partial class PullWriteEndpoints
                         break;
                 }
 
-                // Failed (nothing written), or an idempotent operation found undone: this request runs it.
-                await ledger.RecordAsync(ledgerKey, new OperationEntry(payloadHash, OperationState.Pending, null, now, now), ct).ConfigureAwait(false);
+                // Failed (nothing written), or an idempotent operation found undone: this request runs
+                // it — if it is the one that takes the key over. Another retry may have read the same
+                // entry; only one of them gets past here, the rest say "in progress".
+                if (!await ledger.TryTakeOverAsync(ledgerKey, reservation, new OperationEntry(payloadHash, OperationState.Pending, null, now, now), ct).ConfigureAwait(false))
+                {
+                    return Results.Json(new { outcome = "pending", message = "Still being posted." }, statusCode: 202);
+                }
             }
 
             if (precondition is not null && await precondition(who, snapshot).ConfigureAwait(false) is { } refusal)

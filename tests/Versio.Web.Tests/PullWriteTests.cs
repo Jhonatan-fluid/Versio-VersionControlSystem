@@ -59,12 +59,16 @@ public sealed class PullWriteTests
         return new World(github, repo, head, mainTip, start);
     }
 
-    private static async Task<(TestHost Host, FakeWriter Writer, string Alice, string Token)> StartAsync(World w, Dictionary<string, string?>? settings = null)
+    private static async Task<(TestHost Host, FakeWriter Writer, string Alice, string Token)> StartAsync(World w, Dictionary<string, string?>? settings = null, Action<IServiceCollection>? more = null)
     {
         var writer = new FakeWriter();
         writer.Threads["T_here1234"] = ("acme/plant", 12, false);
         writer.Threads["T_elsewhere"] = ("acme/other", 12, false);
-        var host = await TestHost.StartAsync(w.GitHub, settings ?? WritesOn, s => s.AddSingleton<IRepoWriter>(writer));
+        var host = await TestHost.StartAsync(w.GitHub, settings ?? WritesOn, s =>
+        {
+            s.AddSingleton<IRepoWriter>(writer);
+            more?.Invoke(s);
+        });
         var alice = SignIn(host);
         var snapshot = await host.GetAsync("/api/repos/acme/plant/pulls/12/snapshot", alice);
         snapshot.AssertStatus(HttpStatusCode.OK);
@@ -268,6 +272,62 @@ public sealed class PullWriteTests
         Assert.Single(writer.Writes);
         Assert.Contains(answers, r => r.StatusCode == HttpStatusCode.OK);
         Assert.Contains(answers, r => r.StatusCode == HttpStatusCode.Accepted);
+    }
+
+    /// <summary>
+    /// Two retries of a key whose first attempt GitHub refused, both reading "failed" before either
+    /// acts — the window the ledger holds them in here, which real timing hits only rarely. Taking
+    /// the key over is a compare-and-set, so one of them sends the comment and the other is told it
+    /// is in progress: one comment, not two (found by review, 2026-10-20).
+    /// </summary>
+    [Fact]
+    public async Task Two_retries_of_a_failed_attempt_take_the_key_over_once()
+    {
+        var ledger = new HoldingLedger();
+        var (host, writer, alice, token) = await StartAsync(Build(), more: s => s.AddSingleton<IOperationLedger>(ledger));
+        await using var _ = host;
+        var key = Key();
+        writer.Next.Enqueue(FakeWriter.Mode.Refused);
+        (await Post(host, "/comments", new { opKey = key, body = "Again." }, alice, Headers(token))).AssertStatus(HttpStatusCode.UnprocessableEntity);
+
+        ledger.HoldFailedReads = 2;
+        var a = Post(host, "/comments", new { opKey = key, body = "Again." }, alice, Headers(token));
+        var b = Post(host, "/comments", new { opKey = key, body = "Again." }, alice, Headers(token));
+        var answers = await Task.WhenAll(a, b);
+
+        Assert.Equal(2, writer.Writes.Count);
+        Assert.Contains(answers, r => r.StatusCode == HttpStatusCode.OK);
+        Assert.Contains(answers, r => r.StatusCode == HttpStatusCode.Accepted);
+    }
+
+    /// <summary>The in-memory ledger, holding readers of a failed entry until as many as asked have read it.</summary>
+    private sealed class HoldingLedger : IOperationLedger
+    {
+        private readonly MemoryOperationLedger _inner = new();
+        private readonly TaskCompletionSource _all = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private int _arrived;
+
+        public int HoldFailedReads { get; set; }
+
+        public async Task<Reservation> ReserveAsync(string key, string payloadHash, DateTimeOffset now, CancellationToken ct)
+        {
+            var found = await _inner.ReserveAsync(key, payloadHash, now, ct);
+            if (HoldFailedReads > 0 && found.Existing is { State: OperationState.Failed })
+            {
+                if (Interlocked.Increment(ref _arrived) >= HoldFailedReads)
+                {
+                    _all.TrySetResult();
+                }
+
+                await _all.Task.WaitAsync(TimeSpan.FromSeconds(10), ct);
+            }
+
+            return found;
+        }
+
+        public Task RecordAsync(string key, OperationEntry entry, CancellationToken ct) => _inner.RecordAsync(key, entry, ct);
+
+        public Task<bool> TryTakeOverAsync(string key, Reservation seen, OperationEntry next, CancellationToken ct) => _inner.TryTakeOverAsync(key, seen, next, ct);
     }
 
     /// <summary>

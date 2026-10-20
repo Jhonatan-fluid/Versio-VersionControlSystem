@@ -25,7 +25,8 @@ public sealed record OperationEntry(string PayloadHash, OperationState State, st
 /// <summary>What reserving an operation key found.</summary>
 /// <param name="Fresh">True: this request owns the key and makes the call.</param>
 /// <param name="Existing">The entry already there when <paramref name="Fresh"/> is false.</param>
-public sealed record Reservation(bool Fresh, OperationEntry? Existing);
+/// <param name="Version">The store's own stamp of <paramref name="Existing"/> as read (Redis: the stored text), for <see cref="IOperationLedger.TryTakeOverAsync"/>.</param>
+public sealed record Reservation(bool Fresh, OperationEntry? Existing, string? Version = null);
 
 /// <summary>
 /// Operation keys, reserved atomically before a write reaches GitHub (docs/web/PLAN.md, C5).
@@ -52,6 +53,18 @@ public interface IOperationLedger
 
     /// <summary>Records where the operation ended up. Only the reserving request, or a reconciliation, calls this.</summary>
     Task RecordAsync(string key, OperationEntry entry, CancellationToken ct);
+
+    /// <summary>
+    /// Takes over an existing entry — failed, or unknown and found undone, or abandoned — replacing it
+    /// with <paramref name="next"/> only if it is still exactly what <paramref name="seen"/> read.
+    /// True: this request owns the key and makes the call. False: another request took it first.
+    /// </summary>
+    /// <remarks>
+    /// The first reservation was always atomic; taking over was not. Two retries could both read
+    /// "failed", both write "pending" and both send a write that must happen once (found by review,
+    /// 2026-10-20). A compare-and-set lets exactly one of them through.
+    /// </remarks>
+    Task<bool> TryTakeOverAsync(string key, Reservation seen, OperationEntry next, CancellationToken ct);
 }
 
 /// <summary>The single-instance ledger. Its limits are on <see cref="IOperationLedger"/>.</summary>
@@ -72,6 +85,10 @@ public sealed class MemoryOperationLedger : IOperationLedger
         _entries[key] = entry;
         return Task.CompletedTask;
     }
+
+    /// <remarks>Entries are records, so "still exactly what was read" is value equality, which TryUpdate compares atomically.</remarks>
+    public Task<bool> TryTakeOverAsync(string key, Reservation seen, OperationEntry next, CancellationToken ct) =>
+        Task.FromResult(seen.Existing is { } was && _entries.TryUpdate(key, next, was));
 
     /// <summary>Forgets entries past the key lifetime: their keys are refused by age anyway (ReviewTags.CheckKey).</summary>
     private void Sweep(DateTimeOffset now)
@@ -105,7 +122,30 @@ public sealed class RedisOperationLedger(IConnectionMultiplexer redis) : IOperat
         }
 
         var held = await db.StringGetAsync(Prefix + key).ConfigureAwait(false);
-        return new Reservation(false, held.HasValue ? JsonSerializer.Deserialize<OperationEntry>(held.ToString(), Json) : null);
+        return held.HasValue
+            ? new Reservation(false, JsonSerializer.Deserialize<OperationEntry>(held.ToString(), Json), held.ToString())
+            : new Reservation(false, null);
+    }
+
+    /// <summary>Compare-and-set on the stored text itself, in one script: no read-modify-write gap between instances.</summary>
+    private const string TakeOverScript = """
+        if redis.call('GET', KEYS[1]) == ARGV[1] then
+          redis.call('SET', KEYS[1], ARGV[2], 'PX', ARGV[3])
+          return 1
+        end
+        return 0
+        """;
+
+    public async Task<bool> TryTakeOverAsync(string key, Reservation seen, OperationEntry next, CancellationToken ct)
+    {
+        if (seen.Version is null)
+        {
+            return false;
+        }
+
+        var taken = await redis.GetDatabase().ScriptEvaluateAsync(TakeOverScript, [(RedisKey)(Prefix + key)],
+            [seen.Version, JsonSerializer.Serialize(next, Json), (long)ReviewTags.KeyLifetime.TotalMilliseconds]).ConfigureAwait(false);
+        return (long)taken == 1;
     }
 
     public Task RecordAsync(string key, OperationEntry entry, CancellationToken ct) =>
