@@ -79,7 +79,7 @@ export function ReviewBar({ owner, repo, snap, slots, status, pending, files, op
         {pending.state === 'ok' && !review && <span className="muted">No review started. Comments added to a review stay private until you submit it.</span>}
         {review && (
           <span>
-            Your pending review: {review.comments.length} comment{review.comments.length === 1 ? '' : 's'}
+            Your pending review: {review.truncated ? 'more than ' : ''}{review.comments.length} comment{review.comments.length === 1 ? '' : 's'}{review.truncated ? ' (the rest are on GitHub)' : ''}
             {!review.onSnapshotHead && (
               <strong className="review-old"> on commit <code>{review.commit.slice(0, 8)}</code>, not the one you are reviewing</strong>
             )}

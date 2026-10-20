@@ -165,7 +165,8 @@ public sealed record PendingComment(string Id, string Path, string Body);
 /// GitHub allows one per person per pull request.
 /// </summary>
 /// <param name="Commit">The commit it was created on, which is the commit it will approve (docs/web/PLAN.md, C2).</param>
-public sealed record PendingReview(string Id, string Author, string Commit, IReadOnlyList<PendingComment> Comments);
+/// <param name="Truncated">More comments than were read: the page says so, and reconciliation does not read "not among them" as "not there".</param>
+public sealed record PendingReview(string Id, string Author, string Commit, IReadOnlyList<PendingComment> Comments, bool Truncated = false);
 
 /// <summary>
 /// The answer to "does the viewer have a pending review": <paramref name="Review"/> null is "no".

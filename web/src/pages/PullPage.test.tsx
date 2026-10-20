@@ -754,6 +754,12 @@ describe('PullPage review', () => {
     act(() => again.root.unmount());
   });
 
+  it('says a pending review with more comments than were read has more', async () => {
+    const { host, root } = await render('/acme/plant/pull/12', { writable: true, pending: { ...pendingOn(head), truncated: true } });
+    expect(host.querySelector('.review-bar')?.textContent).toContain('more than 1 comment (the rest are on GitHub)');
+    act(() => root.unmount());
+  });
+
   it('submits a pending review made on the reviewed head as that review', async () => {
     const { host, root } = await render('/acme/plant/pull/12', { writable: true, pending: pendingOn(head) });
     expect(host.querySelector('.review-bar')?.textContent).toContain('1 comment');

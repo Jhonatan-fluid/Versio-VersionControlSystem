@@ -295,6 +295,8 @@ export interface PendingReviewView {
     id: string;
     commit: string;
     onSnapshotHead: boolean;
+    /** More comments than were read: said, never shown as all of them. */
+    truncated?: boolean;
     comments: { id: string; path: string; pathLabel: string; html: string }[];
   } | null;
 }

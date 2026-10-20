@@ -326,9 +326,16 @@ public static partial class PullWriteEndpoints
                 async (who, s, key, since) =>
                 {
                     var pending = await w.Source.GetPendingReviewAsync(who, owner, repo, number, ct).ConfigureAwait(false);
-                    return pending.Ok
-                        ? RepoResult<string>.Of(pending.Value!.Review?.Comments.FirstOrDefault(c => ReviewTags.Carries(c.Body, key))?.Id ?? "")
-                        : pending.As<string>();
+                    if (!pending.Ok)
+                    {
+                        return pending.As<string>();
+                    }
+
+                    // Not among comments that were cut short is not "not there": unknown stays unknown.
+                    var review = pending.Value!.Review;
+                    return review?.Comments.FirstOrDefault(c => ReviewTags.Carries(c.Body, key)) is { } found
+                        ? RepoResult<string>.Of(found.Id)
+                        : review is { Truncated: true } ? RepoResult<string>.Fail(RepoFailure.Upstream) : RepoResult<string>.Of("");
                 },
                 idempotent: false, ct).ConfigureAwait(false);
         });

@@ -444,6 +444,8 @@ public static class PullEndpoints
                     id = review.Id,
                     commit = review.Commit,
                     onSnapshotHead = review.Commit == opened.Snapshot!.HeadSha,
+                    // More comments than were read: the page says so rather than showing part as all.
+                    truncated = review.Truncated,
                     comments = review.Comments.Select(c => new
                     {
                         id = c.Id,

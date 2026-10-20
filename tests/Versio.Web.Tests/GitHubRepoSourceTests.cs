@@ -119,6 +119,28 @@ public sealed class GitHubRepoSourceTests : IAsyncLifetime
                 return Results.Json(new { data = new { repository = new { pullRequest = (object?)null } }, errors = new[] { new { type = "NOT_FOUND", message = "Could not resolve" } } });
             }
 
+            // A pending review with more than a page of comments: pull request 7 ends on page 2 with the
+            // 101st; pull request 8 never ends, past any bound.
+            object PendingPage(int from, int count, bool more) => new
+            {
+                pageInfo = new { hasNextPage = more, endCursor = more ? $"p{from + count - 1}" : null },
+                nodes = Enumerable.Range(from, count).Select(i => new { id = $"PRRC_{i}", path = "a.st", body = $"draft {i}" }).ToArray(),
+            };
+            if (query.Contains("reviews(states: PENDING", StringComparison.Ordinal))
+            {
+                return Results.Json(new { data = new { repository = new { pullRequest = new { reviews = new { nodes = new[]
+                {
+                    new { id = "PRR_" + variables.GetProperty("number").GetInt32(), viewerDidAuthor = true, author = new { login = "alice" }, commit = new { oid = new string('d', 40) }, comments = PendingPage(1, 100, true) },
+                } } } } } });
+            }
+
+            if (query.Contains("on PullRequestReview { comments", StringComparison.Ordinal))
+            {
+                var endless = variables.GetProperty("id").GetString() == "PRR_8";
+                var from = int.Parse(variables.GetProperty("after").GetString()![1..], System.Globalization.CultureInfo.InvariantCulture) + 1;
+                return Results.Json(new { data = new { node = new { comments = endless ? PendingPage(from, 100, true) : PendingPage(from, 1, false) } } });
+            }
+
             if (query.Contains("node(id:", StringComparison.Ordinal))
             {
                 return Results.Json(new { data = new { node = new { comments = new { pageInfo = new { hasNextPage = false, endCursor = (string?)null }, nodes = new[] { Comment("C3") } } } } });
@@ -656,5 +678,28 @@ public sealed class GitHubRepoSourceTests : IAsyncLifetime
 
         Assert.Contains(_requests, r => r.Path.StartsWith("/repos/acme/plant%2F..%2F..%2Fevil%3F", StringComparison.Ordinal));
         Assert.DoesNotContain(_requests, r => r.Path.StartsWith("/evil", StringComparison.Ordinal));
+    }
+
+    /// <summary>
+    /// Found in review (2026-10-20): only a pending review's first 100 comments were read, so the
+    /// 101st was not shown and a draft's tag past it could not be found. Every page is read.
+    /// </summary>
+    [Fact]
+    public async Task A_pending_reviews_comments_are_read_past_the_first_hundred()
+    {
+        var review = (await Source().GetPendingReviewAsync(Alice, "acme", "plant", 7, CancellationToken.None)).Value!.Review!;
+
+        Assert.Equal(101, review.Comments.Count);
+        Assert.Equal("draft 101", review.Comments[^1].Body);
+        Assert.False(review.Truncated);
+    }
+
+    [Fact]
+    public async Task Past_the_bound_a_pending_review_says_its_comments_were_cut()
+    {
+        var review = (await Source().GetPendingReviewAsync(Alice, "acme", "plant", 8, CancellationToken.None)).Value!.Review!;
+
+        Assert.Equal(GitHubRepoSource.PendingCommentPages * 100, review.Comments.Count);
+        Assert.True(review.Truncated);
     }
 }

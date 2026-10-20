@@ -324,19 +324,65 @@ public sealed class GitHubWriter(IHttpClientFactory clients, IOptions<WebOptions
     /// and its body must carry the tag: someone else's pull request between the same branches is not
     /// this operation's.
     /// </remarks>
-    public Task<RepoResult<int>> FindCreatedPullAsync(RepoAccess access, string owner, string repo, string head, string @base, string tag, CancellationToken ct) =>
-        GetAsync(access, $"repos/{E(owner)}/{E(repo)}/pulls?state=all&head={E(owner + ":" + head)}&base={E(@base)}&per_page=100", root => root.EnumerateArray()
-            .Where(p => p.GetProperty("user").GetProperty("login").GetString() == access.Who
-                        && p.TryGetProperty("body", out var b) && b.ValueKind == JsonValueKind.String && (b.GetString() ?? "").Contains(tag, StringComparison.Ordinal))
-            .Select(p => p.GetProperty("number").GetInt32())
-            .FirstOrDefault(), ct);
+    /// <summary>The most pages a reconciliation search reads: 3,000 items. Past it the answer is "cannot tell", never "not there".</summary>
+    internal const int SearchPages = 30;
+
+    /// <summary>
+    /// Searches a REST list page by page for the item <paramref name="pick"/> recognises. Found: its
+    /// id. The end of the list reached without it: empty, which is "not there". The bound reached
+    /// first: a failure, which keeps the operation unknown.
+    /// </summary>
+    /// <remarks>
+    /// Every search read one page of 100 at first. An operation's tag past it — the 101st submitted
+    /// review, a busy pull request's 101st comment since the write — was "not found", which is
+    /// exactly the wrong answer for reconciliation: it says nothing happened when it did (found by
+    /// review, 2026-10-20). "Not found" is now only ever concluded from a whole list.
+    /// </remarks>
+    private async Task<RepoResult<string>> SearchAsync(RepoAccess access, string relative, Func<JsonElement, string?> pick, CancellationToken ct)
+    {
+        for (var page = 1; page <= SearchPages; page++)
+        {
+            var one = await GetAsync(access, $"{relative}{(relative.Contains('?', StringComparison.Ordinal) ? '&' : '?')}per_page=100&page={N(page)}", root =>
+            {
+                var items = root.EnumerateArray().ToList();
+                return (Found: items.Select(pick).FirstOrDefault(id => id is { Length: > 0 }), Count: items.Count);
+            }, ct).ConfigureAwait(false);
+            if (!one.Ok)
+            {
+                return one.As<string>();
+            }
+
+            if (one.Value.Found is { } found)
+            {
+                return RepoResult<string>.Of(found);
+            }
+
+            if (one.Value.Count < 100)
+            {
+                return RepoResult<string>.Of("");
+            }
+        }
+
+        log.Warn(LogCategory.Web, $"reconciliation search {relative.Split('?')[0]} passed {SearchPages} pages without an end; outcome stays unknown");
+        return RepoResult<string>.Fail(RepoFailure.Upstream);
+    }
+
+    /// <summary>The viewer's own item whose body carries <paramref name="tag"/>: its <paramref name="id"/>, or null.</summary>
+    private static Func<JsonElement, string?> Tagged(RepoAccess access, string tag, Func<JsonElement, string?> id) => item =>
+        item.TryGetProperty("user", out var user) && user.ValueKind == JsonValueKind.Object && user.TryGetProperty("login", out var login) && login.GetString() == access.Who
+        && item.TryGetProperty("body", out var b) && b.ValueKind == JsonValueKind.String && (b.GetString() ?? "").Contains(tag, StringComparison.Ordinal)
+            ? id(item)
+            : null;
+
+    public async Task<RepoResult<int>> FindCreatedPullAsync(RepoAccess access, string owner, string repo, string head, string @base, string tag, CancellationToken ct)
+    {
+        var found = await SearchAsync(access, $"repos/{E(owner)}/{E(repo)}/pulls?state=all&head={E(owner + ":" + head)}&base={E(@base)}",
+            Tagged(access, tag, p => p.GetProperty("number").GetInt32().ToString(CultureInfo.InvariantCulture)), ct).ConfigureAwait(false);
+        return found.Ok ? RepoResult<int>.Of(found.Value!.Length > 0 ? int.Parse(found.Value, CultureInfo.InvariantCulture) : 0) : found.As<int>();
+    }
 
     public Task<RepoResult<string>> FindTaggedReviewAsync(RepoAccess access, string owner, string repo, int number, string tag, CancellationToken ct) =>
-        GetAsync(access, $"repos/{E(owner)}/{E(repo)}/pulls/{N(number)}/reviews?per_page=100", root => root.EnumerateArray()
-            .Where(r => r.GetProperty("user").GetProperty("login").GetString() == access.Who
-                        && r.TryGetProperty("body", out var b) && (b.GetString() ?? "").Contains(tag, StringComparison.Ordinal))
-            .Select(r => r.GetProperty("node_id").GetString() ?? "")
-            .FirstOrDefault() ?? "", ct);
+        SearchAsync(access, $"repos/{E(owner)}/{E(repo)}/pulls/{N(number)}/reviews", Tagged(access, tag, r => r.GetProperty("node_id").GetString()), ct);
 
     // ---- the reads only writes need -------------------------------------------------------------
 
@@ -393,11 +439,7 @@ public sealed class GitHubWriter(IHttpClientFactory clients, IOptions<WebOptions
         var from = E(since.AddMinutes(-1).UtcDateTime.ToString("yyyy-MM-ddTHH:mm:ssZ", CultureInfo.InvariantCulture));
         foreach (var list in new[] { $"repos/{E(owner)}/{E(repo)}/issues/{N(number)}/comments", $"repos/{E(owner)}/{E(repo)}/pulls/{N(number)}/comments" })
         {
-            var found = await GetAsync(access, $"{list}?since={from}&per_page=100", root => root.EnumerateArray()
-                .Where(c => c.GetProperty("user").GetProperty("login").GetString() == access.Who
-                            && c.TryGetProperty("body", out var b) && (b.GetString() ?? "").Contains(tag, StringComparison.Ordinal))
-                .Select(c => c.GetProperty("node_id").GetString() ?? "")
-                .FirstOrDefault() ?? "", ct).ConfigureAwait(false);
+            var found = await SearchAsync(access, $"{list}?since={from}", Tagged(access, tag, c => c.GetProperty("node_id").GetString()), ct).ConfigureAwait(false);
             if (!found.Ok || found.Value!.Length > 0)
             {
                 return found;

@@ -425,7 +425,7 @@ public sealed class GitHubRepoSource(
               reviews(states: PENDING, first: 10) {
                 nodes {
                   id viewerDidAuthor author { login } commit { oid }
-                  comments(first: 100) { nodes { id path body } }
+                  comments(first: 100) { pageInfo { hasNextPage endCursor } nodes { id path body } }
                 }
               }
             }
@@ -433,23 +433,76 @@ public sealed class GitHubRepoSource(
         }
         """;
 
+    private const string PendingCommentsQuery = """
+        query($id: ID!, $after: String) {
+          node(id: $id) {
+            ... on PullRequestReview { comments(first: 100, after: $after) { pageInfo { hasNextPage endCursor } nodes { id path body } } }
+          }
+        }
+        """;
+
+    /// <summary>The most pages of a pending review's comments read: 1,000. Past it the review says it was cut.</summary>
+    internal const int PendingCommentPages = 10;
+
+    private static (List<PendingComment> Comments, string? Next) CommentsPage(JsonElement comments)
+    {
+        var info = comments.GetProperty("pageInfo");
+        return (comments.GetProperty("nodes").EnumerateArray().Select(c => new PendingComment(Text(c, "id"), Text(c, "path"), Text(c, "body"))).ToList(),
+            Bool(info, "hasNextPage") ? Text(info, "endCursor") : null);
+    }
+
     /// <remarks>
+    /// <para>
     /// Another person's pending review is invisible to the viewer, but the author check is made all
     /// the same: a review the viewer did not author is never treated as theirs to submit (C2).
+    /// </para>
+    /// <para>
+    /// Every comment is read, page by page, to a bound. Only the first 100 were, at first: the page
+    /// showed the rest as not there, and reconciling a draft comment past them could not find its
+    /// tag (found by review, 2026-10-20). Past the bound the review is marked cut, so neither the
+    /// page nor reconciliation reads a partial list as whole.
+    /// </para>
     /// </remarks>
-    public Task<RepoResult<PendingReviewRead>> GetPendingReviewAsync(RepoAccess access, string owner, string repo, int number, CancellationToken ct) =>
-        GraphAsync(access, PendingQuery, new { owner, repo, number }, data =>
+    public async Task<RepoResult<PendingReviewRead>> GetPendingReviewAsync(RepoAccess access, string owner, string repo, int number, CancellationToken ct)
+    {
+        var first = await GraphAsync(access, PendingQuery, new { owner, repo, number }, data =>
         {
             var mine = PullRequestNode(data).GetProperty("reviews").GetProperty("nodes").EnumerateArray().FirstOrDefault(r => Bool(r, "viewerDidAuthor"));
-            return new PendingReviewRead(mine.ValueKind != JsonValueKind.Object
-                ? null
-                : new PendingReview(
-                    mine.GetProperty("id").GetString() ?? "",
-                    Login(mine, "author"),
-                    Oid(mine, "commit") ?? "",
-                    mine.GetProperty("comments").GetProperty("nodes").EnumerateArray()
-                        .Select(c => new PendingComment(Text(c, "id"), Text(c, "path"), Text(c, "body"))).ToList()));
-        }, ct);
+            if (mine.ValueKind != JsonValueKind.Object)
+            {
+                return (Review: (PendingReview?)null, Next: (string?)null);
+            }
+
+            var (comments, next) = CommentsPage(mine.GetProperty("comments"));
+            return (Review: new PendingReview(mine.GetProperty("id").GetString() ?? "", Login(mine, "author"), Oid(mine, "commit") ?? "", comments), Next: next);
+        }, ct).ConfigureAwait(false);
+        if (!first.Ok)
+        {
+            return first.As<PendingReviewRead>();
+        }
+
+        var (review, after) = first.Value;
+        if (review is null || after is null)
+        {
+            return RepoResult<PendingReviewRead>.Of(new PendingReviewRead(review));
+        }
+
+        var all = review.Comments.ToList();
+        for (var page = 1; after is not null && page < PendingCommentPages; page++)
+        {
+            var more = await GraphAsync(access, PendingCommentsQuery, new { id = review.Id, after }, data => CommentsPage(data.GetProperty("node").GetProperty("comments")), ct).ConfigureAwait(false);
+            if (!more.Ok)
+            {
+                // A later page unreadable: what was read, said to be cut — never passed off as all of them.
+                return RepoResult<PendingReviewRead>.Of(new PendingReviewRead(review with { Comments = all, Truncated = true }));
+            }
+
+            all.AddRange(more.Value.Comments);
+            after = more.Value.Next;
+        }
+
+        return RepoResult<PendingReviewRead>.Of(new PendingReviewRead(review with { Comments = all, Truncated = after is not null }));
+    }
 
     private const string ViewedQuery = """
         query($owner: String!, $repo: String!, $number: Int!, $after: String) {

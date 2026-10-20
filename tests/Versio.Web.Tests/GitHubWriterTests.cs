@@ -50,6 +50,16 @@ public sealed class GitHubWriterTests : IAsyncLifetime
         app.MapPut("/repos/acme/plant/pulls/12/merge", () => Results.Json(new { sha = new string('m', 40), merged = true }));
         app.MapPut("/repos/acme/plant/pulls/13/merge", () => Results.Json(new { message = "Head branch was modified. Review and try the merge again." }, statusCode: 409));
         app.MapPut("/repos/acme/plant/pulls/12/update-branch", () => Results.Json(new { message = "Updating pull request branch." }, statusCode: 202));
+        // Submitted reviews, a page of others' before the viewer's own tagged one; and a list with no end.
+        app.MapGet("/repos/acme/plant/pulls/20/reviews", (HttpContext http) =>
+        {
+            var page = int.Parse(http.Request.Query["page"].ToString(), System.Globalization.CultureInfo.InvariantCulture);
+            return page == 1
+                ? Results.Json(Enumerable.Range(0, 100).Select(i => new { node_id = $"PRR_other{i}", user = new { login = "jo" }, body = "<!-- versio:op v1 K -->" }).ToArray())
+                : Results.Json(new object[] { new { node_id = "PRR_mine", user = new { login = "alice" }, body = "ok\n\n<!-- versio:op v1 K -->" } });
+        });
+        app.MapGet("/repos/acme/plant/pulls/21/reviews", () =>
+            Results.Json(Enumerable.Range(0, 100).Select(i => new { node_id = $"PRR_x{i}", user = new { login = "jo" }, body = "" }).ToArray()));
         app.MapPost("/repos/acme/plant/pulls", () => Results.Json(new { number = 13, node_id = "PR_13" }, statusCode: 201));
         app.MapPatch("/repos/acme/plant/pulls/12", () => Results.Json(new { number = 12 }));
         app.MapDelete("/repos/acme/plant/issues/12/labels/gone", () => Results.Json(new { message = "Label does not exist" }, statusCode: 404));
@@ -316,5 +326,21 @@ public sealed class GitHubWriterTests : IAsyncLifetime
         Assert.Equal(WriteOutcome.Unknown, untyped.Outcome);
         Assert.Equal(WriteOutcome.Refused, invalid.Outcome);
         Assert.Equal(WriteOutcome.Refused, refused.Outcome);
+    }
+
+    /// <summary>
+    /// "Not found" only from a whole list. Found in review (2026-10-20): one page was searched, so
+    /// a tag on the 101st review was "not there" — the wrong answer for reconciliation. Past the
+    /// bound the search cannot tell, and says so, so the operation stays unknown.
+    /// </summary>
+    [Fact]
+    public async Task Reconciliation_searches_every_page_and_past_the_bound_cannot_tell()
+    {
+        var found = await Writer().FindTaggedReviewAsync(Alice, "acme", "plant", 20, "<!-- versio:op v1 K -->", CancellationToken.None);
+        var endless = await Writer().FindTaggedReviewAsync(Alice, "acme", "plant", 21, "<!-- versio:op v1 K -->", CancellationToken.None);
+
+        Assert.Equal("PRR_mine", found.Value);
+        Assert.False(endless.Ok);
+        Assert.Equal(GitHubWriter.SearchPages, _requests.Count(r => r.Path.StartsWith("/repos/acme/plant/pulls/21/reviews", StringComparison.Ordinal)));
     }
 }
