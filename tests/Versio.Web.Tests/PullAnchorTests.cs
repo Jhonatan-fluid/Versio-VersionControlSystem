@@ -206,6 +206,26 @@ public sealed partial class PullAnchorTests
     }
 
     /// <summary>
+    /// After a push, GitHub's current line for a thread is a line of the NEW head; on the snapshot's
+    /// drawing it would land on whatever row holds that number now — another declaration (found by
+    /// review, 2026-10-20). Its current line is not used: listed, not placed.
+    /// </summary>
+    [Fact]
+    public async Task A_line_from_a_revision_past_the_snapshot_places_nothing()
+    {
+        var w = Build();
+        w.Repo.Threads[5] = new ReviewThreadList([Thread("T1", Struct, "Written on the new head.", int.Parse(Build().StructLine, System.Globalization.CultureInfo.InvariantCulture))], false);
+        var (host, _, alice, token) = await StartAsync(w);
+        await using var __ = host;
+        var pull = w.Repo.Pulls.Single(p => p.Info.Number == 5);
+        w.Repo.Pulls[w.Repo.Pulls.IndexOf(pull)] = (pull.Info with { HeadSha = new string('9', 40) }, pull.Body);
+
+        var placed = Placement(await View(host, token, alice, Struct), "T1");
+
+        Assert.Equal("unplaced", placed.GetProperty("outcome").GetString());
+    }
+
+    /// <summary>
     /// A tag never silently beats a line: when GitHub's current line for the thread is outside the
     /// element the tag names, one of them is wrong, and the thread is listed rather than placed.
     /// </summary>

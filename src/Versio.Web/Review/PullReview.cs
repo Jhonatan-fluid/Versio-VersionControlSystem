@@ -166,14 +166,61 @@ public sealed class PullReview(IRepoSource source, ReviewSnapshots snapshots, IV
         return (file?.Patch, Unavailable(github, file));
     }
 
+    /// <summary>
+    /// Whether the pull request, live, is still exactly the snapshot's revision: the same head, the
+    /// same base branch, and that branch at the same commit. GitHub's live answers about a pull
+    /// request — its files' patches, its threads' current lines — describe the comparison as it is
+    /// NOW, so they may be used for the snapshot only when this holds before and after reading them.
+    /// </summary>
+    /// <remarks>
+    /// The head alone was checked at first. Retargeting the base keeps the head and changes the
+    /// comparison, so patches of a different diff were accepted as this one's (found by review,
+    /// 2026-10-20). Not knowable counts as no.
+    /// </remarks>
+    private async Task<bool> IsSnapshotRevisionAsync(RepoAccess who, ReviewSnapshot snapshot, CancellationToken ct)
+    {
+        var pull = await source.GetPullAsync(who, snapshot.Owner, snapshot.Repo, snapshot.Number, ct).ConfigureAwait(false);
+        if (!pull.Ok || pull.Value!.Pull.HeadSha != snapshot.HeadSha || pull.Value.Pull.BaseRef != snapshot.BaseRef)
+        {
+            return false;
+        }
+
+        var tip = await source.ResolveCommitAsync(who, snapshot.Owner, snapshot.Repo, snapshot.BaseRef, ct).ConfigureAwait(false);
+        return tip.Ok && tip.Value == snapshot.BaseSha;
+    }
+
+    /// <summary>
+    /// The review threads, with GitHub's CURRENT lines kept only when they are this snapshot's.
+    /// </summary>
+    /// <remarks>
+    /// A thread's <c>line</c> is where it sits in the pull request's diff as it is now. After a push
+    /// or a base change, that is a line of another revision, and placing it on the snapshot's drawing
+    /// or Raw diff put a comment on a different declaration (found by review, 2026-10-20). Then the
+    /// current lines are dropped: every thread is listed by the page as not on a shown line, and only
+    /// an exact anchor (which names its own revision and content) still places one on a drawing.
+    /// </remarks>
+    public async Task<RepoResult<ReviewThreadList>> ThreadsAsync(RepoAccess who, ReviewSnapshot snapshot, CancellationToken ct)
+    {
+        var before = await IsSnapshotRevisionAsync(who, snapshot, ct).ConfigureAwait(false);
+        var threads = await source.GetReviewThreadsAsync(who, snapshot.Owner, snapshot.Repo, snapshot.Number, ct).ConfigureAwait(false);
+        if (!threads.Ok || (before && await IsSnapshotRevisionAsync(who, snapshot, ct).ConfigureAwait(false)))
+        {
+            return threads;
+        }
+
+        log.Info(LogCategory.Web, $"review threads {snapshot.Owner}/{snapshot.Repo}#{snapshot.Number}: the pull request is no longer at {Short(snapshot.HeadSha)}; its threads' current lines are not used");
+        return RepoResult<ReviewThreadList>.Of(threads.Value! with
+        {
+            Threads = threads.Value.Threads.Select(t => t with { Line = null, StartLine = null }).ToList(),
+        });
+    }
+
     private async Task<(PullFileList? Files, string Source)> PatchesAsync(RepoAccess who, ReviewSnapshot snapshot, CancellationToken ct)
     {
-        var before = await source.GetPullAsync(who, snapshot.Owner, snapshot.Repo, snapshot.Number, ct).ConfigureAwait(false);
-        if (before.Ok && before.Value!.Pull.HeadSha == snapshot.HeadSha)
+        if (await IsSnapshotRevisionAsync(who, snapshot, ct).ConfigureAwait(false))
         {
             var listed = await source.GetPullFilesAsync(who, snapshot.Owner, snapshot.Repo, snapshot.Number, ct).ConfigureAwait(false);
-            var after = await source.GetPullAsync(who, snapshot.Owner, snapshot.Repo, snapshot.Number, ct).ConfigureAwait(false);
-            if (listed.Ok && after.Ok && after.Value!.Pull.HeadSha == snapshot.HeadSha)
+            if (listed.Ok && await IsSnapshotRevisionAsync(who, snapshot, ct).ConfigureAwait(false))
             {
                 return (listed.Value, "pull");
             }

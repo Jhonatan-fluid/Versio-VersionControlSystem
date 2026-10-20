@@ -379,6 +379,65 @@ public sealed class PullReviewTests
     }
 
     /// <summary>
+    /// Retargeting the base keeps the head and changes the comparison, so GitHub's live patches are
+    /// another diff's: the snapshot's own compare is used (found by review, 2026-10-20). Likewise
+    /// when the base branch moved.
+    /// </summary>
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task A_base_retargeted_or_moved_since_the_snapshot_takes_patches_from_the_snapshots_compare(bool retarget)
+    {
+        var w = Build();
+        await using var host = await TestHost.StartAsync(w.GitHub);
+        var (token, _) = await SnapshotAsync(host);
+        if (retarget)
+        {
+            w.GitHub.Commit(w.Repo, "release", new Dictionary<string, byte[]>(w.Repo.Commits[w.Start], StringComparer.Ordinal));
+            w.Repo.Pulls[0] = (w.Repo.Pulls[0].Info with { BaseRef = "release" }, w.Repo.Pulls[0].Body);
+        }
+        else
+        {
+            w.Repo.Refs["main"] = new string('7', 40);
+        }
+
+        w.Repo.CompareFiles[(w.Start, w.Head)] = new PullFileList([new PullFile("src/Pump.st", "modified", null, "@@ -3 +3 @@")], false);
+
+        var body = Json(await (await WithSnapshot(host, "/api/repos/acme/plant/pulls/12/files", token)).Body());
+
+        Assert.Equal("compare", body.GetProperty("patchSource").GetString());
+    }
+
+    /// <summary>A thread's current line is kept only while the pull request is the snapshot's revision; after a push or a base change it is dropped.</summary>
+    [Theory]
+    [InlineData("none", 3)]
+    [InlineData("push", null)]
+    [InlineData("retarget", null)]
+    public async Task Threads_keep_their_current_lines_only_while_the_pull_request_is_the_snapshots_revision(string change, int? line)
+    {
+        var w = Build();
+        w.Repo.Threads[12] = new ReviewThreadList(
+            [new ReviewThread("T1", "src/Pump.st", false, false, 3, 2, "RIGHT", 3, "LINE", [new ReviewComment("C1", "jo", "Why?", When, w.Head, w.Head)], false)], false);
+        await using var host = await TestHost.StartAsync(w.GitHub);
+        var alice = SignIn(host);
+        var (token, _) = await SnapshotAsync(host, alice);
+        if (change == "push")
+        {
+            w.Open(new string('9', 40));
+        }
+        else if (change == "retarget")
+        {
+            w.GitHub.Commit(w.Repo, "release", new Dictionary<string, byte[]>(w.Repo.Commits[w.Start], StringComparer.Ordinal));
+            w.Repo.Pulls[0] = (w.Repo.Pulls[0].Info with { BaseRef = "release" }, w.Repo.Pulls[0].Body);
+        }
+
+        var thread = Json(await (await WithSnapshot(host, "/api/repos/acme/plant/pulls/12/threads", token, alice)).Body()).GetProperty("threads")[0];
+
+        Assert.Equal(line, thread.GetProperty("line").ValueKind == JsonValueKind.Null ? null : thread.GetProperty("line").GetInt32());
+        Assert.Equal(line is null, thread.GetProperty("startLine").ValueKind == JsonValueKind.Null);
+    }
+
+    /// <summary>
     /// Thread bodies are Markdown by anyone who can comment. They arrive rendered by Core — script
     /// escaped, never a tag — with authors and paths spelled.
     /// </summary>

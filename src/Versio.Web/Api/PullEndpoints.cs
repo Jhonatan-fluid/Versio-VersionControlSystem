@@ -152,7 +152,7 @@ public static class PullEndpoints
         // drawing compares the object with itself across the rename rather than as a delete and an add.
         pulls.MapGet("/files/view", async (string owner, string repo, int number, string? path, string? from, string? view, string? layout,
             HttpContext http, AccessResolver access, ReviewSnapshots snapshots, ApiEndpoints.Loader load, ViewService views,
-            IRepoSource source, IVersioLogger log, CancellationToken ct) =>
+            PullReview review, IVersioLogger log, CancellationToken ct) =>
         {
             if (!ApiEndpoints.ValidPath(path) || (from is not null && !ApiEndpoints.ValidPath(from)))
             {
@@ -185,7 +185,7 @@ public static class PullEndpoints
             IReadOnlyList<Versio.Web.Review.GitHub.ThreadPlacement> placements = [];
             if (pane == PaneView.Rendered)
             {
-                var threads = await source.GetReviewThreadsAsync(opened.Access!, owner, repo, number, ct).ConfigureAwait(false);
+                var threads = await review.ThreadsAsync(opened.Access!, opened.Snapshot!, ct).ConfigureAwait(false);
                 if (threads.Ok)
                 {
                     placements = Versio.Web.Review.GitHub.ThreadPlacements.Place(threads.Value!.Threads, result.Value!.Anchors, opened.Snapshot!, result.Value.Path, from);
@@ -466,7 +466,7 @@ public static class PullEndpoints
         });
 
         pulls.MapGet("/threads", async (string owner, string repo, int number, HttpContext http, AccessResolver access,
-            ReviewSnapshots snapshots, IRepoSource source, CancellationToken ct) =>
+            ReviewSnapshots snapshots, PullReview review, CancellationToken ct) =>
         {
             var opened = await OpenAsync(owner, repo, number, http, access, snapshots, ct).ConfigureAwait(false);
             if (opened.Refusal is { } refusal)
@@ -474,7 +474,7 @@ public static class PullEndpoints
                 return refusal;
             }
 
-            var threads = await source.GetReviewThreadsAsync(opened.Access!, owner, repo, number, ct).ConfigureAwait(false);
+            var threads = await review.ThreadsAsync(opened.Access!, opened.Snapshot!, ct).ConfigureAwait(false);
             if (!threads.Ok)
             {
                 return ApiEndpoints.Refused(threads.Failure, http);
