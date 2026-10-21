@@ -1262,6 +1262,35 @@ describe('PullPage merge box', () => {
     act(() => root.unmount());
   });
 
+  it("trying another merge action meanwhile does not drop the first one's unknown outcome", async () => {
+    const unknown = { status: 202, body: { outcome: 'unknown', message: 'This may or may not have been posted.' } };
+    const refused = { status: 409, body: { error: 'not-mergeable', message: 'Required reviews or checks have not passed.' } };
+    const { host, root } = await render('/acme/plant/pull/12', { writable: true, canMerge: true, merge: ready, writes: { '/merge': [unknown, refused, unknown] } });
+    const box = () => host.querySelector('.merge-box')!;
+    const message = async (text: string) => {
+      await act(async () => {
+        const input = box().querySelector<HTMLInputElement>('input[aria-label="Commit title"]')!;
+        Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, text);
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+      });
+    };
+    const confirm = async () => {
+      await click(button(box(), 'Merge...')!, host);
+      await click(button(box(), 'Confirm')!, host);
+    };
+
+    await confirm();
+    await message('Another title');
+    await confirm();
+    await message('');
+    await confirm();
+
+    const [first, other, again] = writes().map((w) => w.body?.opKey);
+    expect(other).not.toBe(first);
+    expect(again).toBe(first);
+    act(() => root.unmount());
+  });
+
   it('after a refusal the next merge is a new operation', async () => {
     const refused = { status: 409, body: { error: 'not-mergeable', message: 'Required reviews or checks have not passed.' } };
     const { host, root } = await render('/acme/plant/pull/12', { writable: true, canMerge: true, merge: ready, writes: { '/merge': refused } });

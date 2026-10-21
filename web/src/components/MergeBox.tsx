@@ -42,7 +42,10 @@ export function MergeBox({ owner, repo, snap, state, onChanged, onStale }: Merge
   // under: confirming the same action again is the same operation, which the server reconciles.
   // A fresh key per confirmation made a merge that had happened, its answer lost, come back as
   // "This pull request is not open" — a failure reported for a success (found in review, 2026-10-20).
-  const [held, setHeld] = useState<{ id: string; key: string; sentWith: string } | null>(null);
+  // One per action: trying another (or the same with another message) must not drop the first's
+  // unknown outcome — a single slot did, and the "not open" misreport came back (found in review,
+  // 2026-10-21).
+  const [held, setHeld] = useState<Record<string, { key: string; sentWith: string }>>({});
   const [note, setNote] = useState<string | null>(null);
 
   if (state.state === 'loading') {
@@ -87,15 +90,18 @@ export function MergeBox({ owner, repo, snap, state, onChanged, onStale }: Merge
       : p.kind === 'auto-off' ? { enable: false }
       : {};
     const id = JSON.stringify([path, body]);
-    const same = held?.id === id ? held : null;
+    const same = held[id] ?? null;
     const key = same?.key ?? newOpKey();
     const under = sentUnder(snap, same?.sentWith);
-    setHeld({ id, key, sentWith: under.token });
+    setHeld((h) => ({ ...h, [id]: { key, sentWith: under.token } }));
     const answer = await api.review.write(owner, repo, under, path, 'POST', { ...body, opKey: key });
     setBusy(false);
     setPending(null);
     if (releasesKey(answer, same !== null)) {
-      setHeld(null);
+      setHeld((h) => {
+        const { [id]: _, ...rest } = h;
+        return rest;
+      });
     }
     if (answer.outcome === 'done') {
       onChanged();
