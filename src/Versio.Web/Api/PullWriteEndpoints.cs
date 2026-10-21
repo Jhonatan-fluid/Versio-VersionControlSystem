@@ -855,6 +855,12 @@ public static partial class PullWriteEndpoints
                     return Results.Json(new { error = "op-mismatch", message = "This retry does not match what was first submitted." }, statusCode: 422);
                 }
 
+                // Recorded before revisions were bound (the bare hash): it may be SETTLED — found done,
+                // in flight, reconciled — but never run again. Its revision is not known, so running it
+                // under this request's snapshot could put an approval on a commit the person never saw;
+                // accepting the bare hash for a takeover reopened exactly what the binding closed
+                // (found in review, 2026-10-21).
+                var legacy = existing.PayloadHash != payloadHash;
                 switch (existing.State)
                 {
                     case OperationState.Succeeded:
@@ -864,12 +870,15 @@ public static partial class PullWriteEndpoints
                     case OperationState.Pending or OperationState.Unknown:
                         // Abandoned, or sent with no answer: find out before doing anything else.
                         var found = await ReconcileAsync(who, snapshot, key, existing, reconcile, ledgerKey, action, owner, repo, number).ConfigureAwait(false);
-                        if (found is not null || !idempotent)
+                        if (found is not null || !idempotent || legacy)
                         {
                             return found ?? UnknownResult();
                         }
 
                         break;
+                    case OperationState.Failed when legacy:
+                        Audit(who, action, owner, repo, number, snapshot, key, "refused: recorded before revisions were bound; not run again");
+                        return Results.Json(new { error = "operation-legacy", message = "This was submitted by an earlier version of Versio and cannot be retried. Nothing was posted; submit it again." }, statusCode: 422);
                 }
 
                 // Failed (nothing written), or an idempotent operation found undone: this request runs

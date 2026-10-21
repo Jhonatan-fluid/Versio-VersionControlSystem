@@ -446,6 +446,30 @@ public sealed class PullWriteTests
         Assert.False(other.Headers.Contains(PullWriteEndpoints.SettledHeader));
     }
 
+    /// <summary>
+    /// A pre-binding entry may be settled, never run again: its revision is not known, so running a
+    /// failed one under the retry's snapshot could apply it to a commit nobody reviewed (found in
+    /// review, 2026-10-21). A failed legacy entry is refused, and an unknown idempotent one stays
+    /// unknown rather than being run.
+    /// </summary>
+    [Theory]
+    [InlineData(OperationState.Failed, "/threads/T_here1234/resolve", "resolve", true)]
+    [InlineData(OperationState.Unknown, "/threads/T_here1234/resolve", "resolve", true)]
+    public async Task An_entry_recorded_before_revisions_were_bound_is_never_run_again(OperationState state, string path, string action, bool resolved)
+    {
+        var (host, writer, alice, token) = await StartAsync(Build());
+        await using var _ = host;
+        var key = Key(DateTimeOffset.UtcNow.AddMinutes(-3));
+        var reserved = DateTimeOffset.UtcNow.AddMinutes(-2);
+        await host.Services.GetRequiredService<IOperationLedger>().RecordAsync($"user:alice|{action}|acme/plant|12|{key}",
+            new OperationEntry(ReviewTags.PayloadHash("T_here1234", resolved ? "1" : "0"), state, null, reserved, reserved), CancellationToken.None);
+
+        var retry = await Post(host, path, new { opKey = key, resolved }, alice, Headers(token));
+
+        Assert.NotEqual(HttpStatusCode.OK, retry.StatusCode);
+        Assert.Empty(writer.Writes);
+    }
+
     /// <summary>The in-memory ledger, holding readers of a failed entry until as many as asked have read it.</summary>
     private sealed class HoldingLedger : IOperationLedger
     {
