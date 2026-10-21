@@ -825,6 +825,22 @@ public static partial class PullWriteEndpoints
         /// <summary>The header that says a refusal is this operation's recorded outcome — see <see cref="SettledHeader"/>.</summary>
         private static void Settled(HttpContext http) => http.Response.Headers[SettledHeader] = "1";
 
+        /// <summary>
+        /// Settled only when the ledger already held this key — a failed attempt taken over — so it
+        /// knows every attempt there was. A FRESH reservation knows of none: on a first attempt the
+        /// page needs no mark (it lets the key go anyway), and on a retry it means the ledger has
+        /// forgotten the earlier attempt (a single-instance restart, a lost Redis) — which proves
+        /// nothing about whether that one was written. Marking it settled let the page release a key
+        /// whose first attempt may have posted (found in review, 2026-10-21).
+        /// </summary>
+        private static void SettledIfKnown(HttpContext http, Reservation reservation)
+        {
+            if (!reservation.Fresh)
+            {
+                Settled(http);
+            }
+        }
+
         private async Task<IResult> RunOpenedAsync(
             HttpContext http, RepoAccess who, ReviewSnapshot? snapshot, string owner, string repo, int number, WriteRequest request, string action, string payloadHash,
             Func<RepoAccess, ReviewSnapshot?, Task<IResult?>>? precondition,
@@ -894,7 +910,7 @@ public static partial class PullWriteEndpoints
             {
                 await ledger.RecordAsync(ledgerKey, new OperationEntry(payloadHash, OperationState.Failed, null, now, clock.UtcNow), ct).ConfigureAwait(false);
                 Audit(who, action, owner, repo, number, snapshot, key, "refused by a precondition");
-                Settled(http);
+                SettledIfKnown(http, reservation);
                 return refusal;
             }
 
@@ -910,7 +926,7 @@ public static partial class PullWriteEndpoints
                 case WriteOutcome.Refused:
                     await ledger.RecordAsync(ledgerKey, new OperationEntry(payloadHash, OperationState.Failed, null, now, clock.UtcNow), CancellationToken.None).ConfigureAwait(false);
                     Audit(who, action, owner, repo, number, snapshot, key, $"refused by GitHub ({result.Failure})");
-                    Settled(http);
+                    SettledIfKnown(http, reservation);
                     return RefusedByGitHub(result.Failure, result.Message, http);
                 default:
                     var entry = new OperationEntry(payloadHash, OperationState.Unknown, null, now, clock.UtcNow);

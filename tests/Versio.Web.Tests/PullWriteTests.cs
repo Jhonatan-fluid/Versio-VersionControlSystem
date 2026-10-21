@@ -414,22 +414,50 @@ public sealed class PullWriteTests
     [Fact]
     public async Task Only_refusals_recorded_as_the_operations_outcome_are_marked_settled()
     {
-        var settings = new Dictionary<string, string?>(WritesOn) { ["Web:Writes:PerSessionPerMinute"] = "3" };
+        var settings = new Dictionary<string, string?>(WritesOn) { ["Web:Writes:PerSessionPerMinute"] = "5" };
         var (host, writer, alice, token) = await StartAsync(Build(), settings);
         await using var _ = host;
         static bool Marked(HttpResponseMessage r) => r.Headers.TryGetValues(PullWriteEndpoints.SettledHeader, out var v) && v.Contains("1");
 
-        writer.Next.Enqueue(FakeWriter.Mode.Refused);
-        var byGitHub = await Post(host, "/comments", new { opKey = Key(), body = "No." }, alice, Headers(token));
-        var byPrecondition = await Post(host, "/line-comments", new { opKey = Key(), body = "Here?", path = "src/Pump.st", line = 99, side = "RIGHT" }, alice, Headers(token));
+        // A retry of an attempt GitHub refused, refused again: the ledger knows every attempt.
         var key = Key();
+        writer.Next.Enqueue(FakeWriter.Mode.Refused);
+        writer.Next.Enqueue(FakeWriter.Mode.Refused);
+        await Post(host, "/comments", new { opKey = key, body = "No." }, alice, Headers(token));
+        var byGitHub = await Post(host, "/comments", new { opKey = key, body = "No." }, alice, Headers(token));
+
+        // The same for a precondition.
+        var line = Key();
+        await Post(host, "/line-comments", new { opKey = line, body = "Here?", path = "src/Pump.st", line = 99, side = "RIGHT" }, alice, Headers(token));
+        var byPrecondition = await Post(host, "/line-comments", new { opKey = line, body = "Here?", path = "src/Pump.st", line = 99, side = "RIGHT" }, alice, Headers(token));
+
+        // A rate limit speaks for the request alone.
+        var lost = Key();
         writer.Next.Enqueue(FakeWriter.Mode.LostBefore);
-        await Post(host, "/comments", new { opKey = key, body = "One." }, alice, Headers(token));
-        var limited = await Post(host, "/comments", new { opKey = key, body = "One." }, alice, Headers(token));
+        await Post(host, "/comments", new { opKey = lost, body = "One." }, alice, Headers(token));
+        var limited = await Post(host, "/comments", new { opKey = lost, body = "One." }, alice, Headers(token));
 
         Assert.Equal((HttpStatusCode.UnprocessableEntity, true), (byGitHub.StatusCode, Marked(byGitHub)));
         Assert.Equal((HttpStatusCode.UnprocessableEntity, true), (byPrecondition.StatusCode, Marked(byPrecondition)));
         Assert.Equal((HttpStatusCode.TooManyRequests, false), (limited.StatusCode, Marked(limited)));
+    }
+
+    /// <summary>
+    /// A key the ledger has never seen proves nothing about an earlier attempt the page held it for
+    /// (the ledger may have forgotten it): a refusal of it is not marked settled (found in review,
+    /// 2026-10-21).
+    /// </summary>
+    [Fact]
+    public async Task A_refusal_of_a_key_the_ledger_never_saw_is_not_marked_settled()
+    {
+        var (host, writer, alice, token) = await StartAsync(Build());
+        await using var _ = host;
+        writer.Next.Enqueue(FakeWriter.Mode.Refused);
+
+        var refused = await Post(host, "/comments", new { opKey = Key(), body = "Fresh." }, alice, Headers(token));
+
+        refused.AssertStatus(HttpStatusCode.UnprocessableEntity);
+        Assert.False(refused.Headers.Contains(PullWriteEndpoints.SettledHeader));
     }
 
     [Fact]
