@@ -122,6 +122,20 @@ field or a new recognition rule has to be read against the old answers, the old 
 the near-misses of the new rule — each of these three was exactly that. Web 351 -> 354, vitest
 120 -> 124.
 
+**A second review of my own, through `864dac3`, found six, and the severity kept falling.** A
+legacy failed entry could still be taken over and run on a newer revision (now: legacy entries
+settle, never run); the settled mark was set on a fresh reservation, where the ledger may simply
+have forgotten an earlier attempt (now: only for a key it already held); the merge box held one
+key for all its actions (now: one per action); update-branch accepted the live tip of a
+retargeted base; the refused-retry rule was tested at one of its five call sites; and ARCHITECTURE
+and the threat model still described the old key rule. Each fixed in its own commit (`d2cd19a` to
+`462b861`). **On the review loop itself:** the findings have moved from "every user, ordinary use"
+(duplicate comments and approvals, rounds one and two) to sequences of several unlikely events
+(data from before a deploy, a server restart mid-write, a retarget during a lost answer). The
+branch has never been deployed, so the legacy paths guard data that exists only on test machines
+and could be deleted rather than refined. More desk review now buys less than the real-GitHub gates
+and the penetration test would. Web 354 -> 358, vitest 124 -> 129.
+
 ---
 
 ### A pull request's "What changed" compared against the base branch's tip, so later commits on the base read as reverted

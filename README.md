@@ -234,7 +234,7 @@ Versio.sln
 │  ├─ Versio.Plc.TwinCat.Pure.Tests/ 23 pure vendor tests — format, planner, protocol
 │  ├─ Versio.Plc.TwinCat.Tests/ 6 tests against real TwinCAT XAE; skip with a count when
 │  │                            TcXaeShell.DTE.17.0 or the fixture is missing
-│  └─ Versio.Web.Tests/         354 tests of the web viewer against a faked GitHub: the
+│  └─ Versio.Web.Tests/         358 tests of the web viewer against a faked GitHub: the
 │                               renderers' choices over the real fixtures, the security
 │                               rules against the real host, sign-in end to end
 ├─ tools/                       PowerShell and python harnesses. tools/tia/ is the second
@@ -415,7 +415,7 @@ dotnet test tests/Versio.Core.Tests
 | `Versio.Plc.TiaPortal.Tests` | 5 | **a real TIA Portal**; skips cleanly without Openness membership | seconds when skipped |
 | `Versio.Plc.TwinCat.Pure.Tests` | 23 | nothing — the vendor's planner, format and protocol, pure | instant |
 | `Versio.Plc.TwinCat.Tests` | 6 | **a real TwinCAT XAE**; skips cleanly without `TcXaeShell.DTE.17.0` | seconds when skipped; ~5 min when XAE runs the import gate |
-| `Versio.Web.Tests` | 354 | nothing — the web viewer against a faked GitHub; one test starts the built server | a few seconds |
+| `Versio.Web.Tests` | 358 | nothing — the web viewer against a faked GitHub; one test starts the built server | a few seconds |
 | `Versio.Plc.Codesys.Tests` | 55 | **a real CODESYS**, and **skips cleanly** without one | **~30 min** |
 
 The first ten are the loop to work in. The last is the gate before a commit — and it is a
