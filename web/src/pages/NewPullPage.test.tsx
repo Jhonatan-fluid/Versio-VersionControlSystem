@@ -15,7 +15,7 @@ interface Options {
   writable?: boolean;
   template?: string | null;
   /** What the create answers; done with pull request 13 by default. */
-  create?: { status: number; body: unknown };
+  create?: { status: number; body: unknown } | { status: number; body: unknown }[];
 }
 
 let calls: { url: string; method: string; headers: Record<string, string>; body: Record<string, unknown> | null }[] = [];
@@ -54,7 +54,7 @@ async function render(path: string, o: Options = {}) {
     const body = typeof init?.body === 'string' ? (JSON.parse(init.body) as Record<string, unknown>) : null;
     calls.push({ url, method, headers: (init?.headers ?? {}) as Record<string, string>, body });
     if (method !== 'GET') {
-      const reply = o.create ?? { status: 200, body: { outcome: 'done', id: '13' } };
+      const reply = Array.isArray(o.create) ? (o.create.length > 1 ? o.create.shift()! : o.create[0]!) : o.create ?? { status: 200, body: { outcome: 'done', id: '13' } };
       return new Response(JSON.stringify(reply.body), { status: reply.status, headers: { 'Content-Type': 'application/json' } });
     }
     return new Response(JSON.stringify(answer(url, o)), { status: 200, headers: { 'Content-Type': 'application/json' } });
@@ -149,6 +149,19 @@ describe('NewPullPage', () => {
 
     const [first, second] = creates();
     expect(second!.body?.opKey).toBe(first!.body?.opKey);
+    act(() => root.unmount());
+  });
+
+  // Found in review (2026-10-21): only the comment box was tested for a refused RETRY.
+  it('a retry refused by the rate limit keeps the key: the first attempt may have opened one', async () => {
+    const { host, root } = await render('/acme/plant/pulls/new?head=feature', { create: [{ status: 202, body: { outcome: 'unknown', message: 'This may or may not have been posted.' } }, { status: 429, body: { error: 'rate-limited', message: 'Too many requests: this one was not acted on.' } }, { status: 202, body: { outcome: 'unknown', message: 'This may or may not have been posted.' } }] });
+    await fill(host.querySelector<HTMLInputElement>('.new-pull-title')!, 'Add the valve');
+    await click(button(host, 'Open merge request')!);
+    await click(button(host, 'Try again')!);
+    await click(button(host, 'Try again')!);
+
+    expect(new Set(creates().map((c) => c.body?.opKey)).size).toBe(1);
+    expect(creates()).toHaveLength(3);
     act(() => root.unmount());
   });
 

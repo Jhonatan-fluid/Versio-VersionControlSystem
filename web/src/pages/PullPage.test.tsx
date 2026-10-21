@@ -492,6 +492,17 @@ describe('PullPage writes', () => {
     act(() => root.unmount());
   });
 
+  it('a resolve retry refused by the rate limit keeps the key', async () => {
+    const { host, root } = await render('/acme/plant/pull/12?tab=files&path=src%2FPump.st&view=raw', { writable: true, writes: { '/resolve': [{ status: 202, body: { outcome: 'unknown', message: 'This may or may not have been posted.' } }, { status: 429, body: { error: 'rate-limited', message: 'Too many requests: this one was not acted on.' } }, { status: 202, body: { outcome: 'unknown', message: 'This may or may not have been posted.' } }] } });
+    for (let i = 0; i < 3; i++) {
+      await click(button(host.querySelector('[data-thread="NEW3"]')!, 'Resolve')!, host);
+    }
+
+    expect(writes()).toHaveLength(3);
+    expect(new Set(writes().map((w) => w.body?.opKey)).size).toBe(1);
+    act(() => root.unmount());
+  });
+
   it('resolves a thread with one click, naming the thread and the state wanted', async () => {
     const { host, root } = await render('/acme/plant/pull/12?tab=files&path=src%2FPump.st&view=raw', { writable: true });
 
@@ -836,6 +847,19 @@ describe('PullPage review', () => {
     expect(box.textContent).toContain('cannot be retried safely');
     expect(button(box, 'Try again')!.disabled).toBe(true);
     expect(writes()).toHaveLength(0);
+    act(() => root.unmount());
+  });
+
+  it('a review retry refused by the rate limit keeps the key', async () => {
+    const { host, root } = await render('/acme/plant/pull/12', { writable: true, writes: { '/reviews': [{ status: 202, body: { outcome: 'unknown', message: 'This may or may not have been posted.' } }, { status: 429, body: { error: 'rate-limited', message: 'Too many requests: this one was not acted on.' } }, { status: 202, body: { outcome: 'unknown', message: 'This may or may not have been posted.' } }] } });
+    await click(button(host, 'Review changes')!, host);
+    await click(radio(host, 'APPROVE')!, host);
+    await click(button(host, 'Submit: Approve')!, host);
+    await click(button(host, 'Try again')!, host);
+    await click(button(host, 'Try again')!, host);
+
+    expect(writes()).toHaveLength(3);
+    expect(new Set(writes().map((w) => w.body?.opKey)).size).toBe(1);
     act(() => root.unmount());
   });
 
@@ -1259,6 +1283,19 @@ describe('PullPage merge box', () => {
     const [first, second] = writes();
     expect(second!.body?.opKey).toBe(first!.body?.opKey);
     expect(second!.snapshot).toBe(first!.snapshot);
+    act(() => root.unmount());
+  });
+
+  // Found in review (2026-10-21): only the comment box was tested for a refused RETRY.
+  it('a merge retry refused by the rate limit keeps the key', async () => {
+    const { host, root } = await render('/acme/plant/pull/12', { writable: true, canMerge: true, merge: ready, writes: { '/merge': [{ status: 202, body: { outcome: 'unknown', message: 'This may or may not have been posted.' } }, { status: 429, body: { error: 'rate-limited', message: 'Too many requests: this one was not acted on.' } }, { status: 202, body: { outcome: 'unknown', message: 'This may or may not have been posted.' } }] } });
+    const box = () => host.querySelector('.merge-box')!;
+    for (let i = 0; i < 3; i++) {
+      await click(button(box(), 'Merge...')!, host);
+      await click(button(box(), 'Confirm')!, host);
+    }
+
+    expect(new Set(writes().map((w) => w.body?.opKey)).size).toBe(1);
     act(() => root.unmount());
   });
 
