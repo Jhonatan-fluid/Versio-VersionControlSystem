@@ -135,7 +135,9 @@ public static partial class PullWriteEndpoints
                     // and is not this update (found by review, 2026-10-20).
                     return parents.Ok
                         ? RepoResult<string>.Of(parents.Value!.Count == 2 && parents.Value[0] == s.HeadSha
-                            && (parents.Value[1] == s.BaseSha || parents.Value[1] == live.Value.BaseTipSha) ? "updated" : "")
+                            // The live tip only of the SAME base: after a retarget, a merge of the new
+                            // base is not the update that was confirmed (found in review, 2026-10-21).
+                            && (parents.Value[1] == s.BaseSha || (live.Value.BaseRef == s.BaseRef && parents.Value[1] == live.Value.BaseTipSha)) ? "updated" : "")
                         : parents.As<string>();
                 },
                 idempotent: true, ct).ConfigureAwait(false)).WithMetadata(new MergeEndpoint());

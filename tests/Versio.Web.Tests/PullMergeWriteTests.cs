@@ -314,6 +314,29 @@ public sealed class PullMergeWriteTests
     }
 
     /// <summary>
+    /// After a retarget, a merge of the NEW base's tip onto the head is not the update that was
+    /// confirmed for the old base (found in review, 2026-10-21).
+    /// </summary>
+    [Fact]
+    public async Task A_lost_update_then_a_retarget_and_a_merge_of_the_new_base_is_not_called_done()
+    {
+        var w = Build();
+        var (host, writer, alice, token, _) = await StartAsync(w);
+        await using var __ = host;
+        writer.Next.Enqueue(FakeWriter.Mode.LostBefore);
+        var key = Key();
+        (await Post(host, alice, token, "/update-branch", new { opKey = key })).AssertStatus(HttpStatusCode.Accepted);
+        var release = w.GitHub.Commit(w.Repo, "release", new Dictionary<string, byte[]>(w.Repo.Commits[w.Repo.Refs["main"]], StringComparer.Ordinal) { ["src/Rel.st"] = [1] });
+        var merged = new string('r', 40);
+        w.Repo.Parents[merged] = [w.Head, release];
+        w.Repo.Pulls[0] = (w.Repo.Pulls[0].Info with { BaseRef = "release", HeadSha = merged }, w.Repo.Pulls[0].Body);
+
+        var retry = await Post(host, alice, token, "/update-branch", new { opKey = key });
+
+        Assert.DoesNotContain("\"outcome\":\"done\"", await retry.Body(), StringComparison.Ordinal);
+    }
+
+    /// <summary>
     /// The update names a base; retargeted after the page opened, the confirmation is of a base the
     /// pull request no longer has, and nothing is brought in (found by review, 2026-10-20).
     /// </summary>
