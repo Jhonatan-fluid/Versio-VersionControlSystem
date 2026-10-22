@@ -329,6 +329,97 @@ public sealed class PythonLibraryRecordTests(ITestOutputHelper output)
             Assert.Single(doc.RootElement.GetProperty("errors").EnumerateArray()).GetString());
     }
 
+    /// <summary>
+    /// A placeholder whose merged <c>parameters</c> carries a library default the project
+    /// does not set: VisuElemXYChart's MAX_CLIENTS, as SP22 Patch 4 reported it on
+    /// 2026-10-16 (tools/codesys/Probe-LibraryParams.ps1).
+    /// </summary>
+    private const string XyChart = """
+        import versio_libraries as L
+
+        class Ref(object):
+            name = u"#System_VisuElemXYChart"
+            namespace = u"VisuElemXYChart"
+            placeholder_name = u"System_VisuElemXYChart"
+            default_resolution = u"VisuElemXYChart, 4.10.0.0 (System)"
+            is_placeholder = True
+            is_managed = False
+            is_redirected = False
+            system_library = True
+            optional = False
+            qualified_only = False
+            publish_symbols_in_container = False
+            parameters = {u"MAX_CLIENTS": u"20"}
+
+        def safe(fn, default=None):
+            try:
+                return fn()
+            except Exception:
+                return default
+        """;
+
+    [SkippableFact]
+    public void Only_the_parameters_the_project_stores_are_recorded_not_the_librarys_defaults()
+    {
+        Skip.IfNot(PythonIsAvailable(), "python is not on PATH");
+
+        // The stored table holds XYChart with nothing in it, exactly as the probe found it;
+        // the merged view says MAX_CLIENTS = 20. The record must follow the table.
+        var record = Run(XyChart + Environment.NewLine + """
+            errors = []
+            stored = {u"#System_VisuElemXYChart": {}, u"#Util": {u"IBLOCKSIZE": u"22800"}}
+            rec = L.extract_reference(Ref(), safe, lambda code, detail: errors.append(code), stored)
+            out = json.dumps({"rec": rec, "errors": errors}, sort_keys=True)
+            """);
+
+        output.WriteLine(record);
+        using var doc = JsonDocument.Parse(record);
+        Assert.False(doc.RootElement.GetProperty("rec").TryGetProperty("parameters", out _));
+        Assert.Empty(doc.RootElement.GetProperty("errors").EnumerateArray());
+    }
+
+    [SkippableFact]
+    public void A_stored_override_is_recorded_from_the_table()
+    {
+        Skip.IfNot(PythonIsAvailable(), "python is not on PATH");
+
+        // A reference missing from the table entirely (the top-level manager has no XYChart
+        // entry at all) sets nothing either; one that is in it gets exactly its values.
+        var record = Run(XyChart + Environment.NewLine + """
+            stored = {u"#System_VisuElemXYChart": {u"MAX_CLIENTS": u"8"}}
+            rec = L.extract_reference(Ref(), safe, None, stored)
+            absent = L.extract_reference(Ref(), safe, None, {})
+            out = json.dumps({"rec": rec, "absent": absent}, sort_keys=True)
+            """);
+
+        output.WriteLine(record);
+        using var doc = JsonDocument.Parse(record);
+        Assert.Equal("8", doc.RootElement.GetProperty("rec").GetProperty("parameters")
+            .GetProperty("MAX_CLIENTS").GetString());
+        Assert.False(doc.RootElement.GetProperty("absent").TryGetProperty("parameters", out _));
+    }
+
+    [SkippableFact]
+    public void Without_the_stored_table_the_merged_view_is_used_and_said_to_be()
+    {
+        Skip.IfNot(PythonIsAvailable(), "python is not on PATH");
+
+        // A CODESYS that renames the private field: the export still has an answer, and the
+        // warning is what tells a reviewer it may include library defaults.
+        var record = Run(XyChart + Environment.NewLine + """
+            errors = []
+            rec = L.extract_reference(Ref(), safe, lambda code, detail: errors.append(code), None)
+            out = json.dumps({"rec": rec, "errors": errors}, sort_keys=True)
+            """);
+
+        output.WriteLine(record);
+        using var doc = JsonDocument.Parse(record);
+        Assert.Equal("20", doc.RootElement.GetProperty("rec").GetProperty("parameters")
+            .GetProperty("MAX_CLIENTS").GetString());
+        Assert.Equal("LIBRARY_PARAMETERS_EFFECTIVE",
+            Assert.Single(doc.RootElement.GetProperty("errors").EnumerateArray()).GetString());
+    }
+
     private static string Run(string body, object? payload = null) =>
         CPythonHarness.RunJson(
             JsonSerializer.Serialize(payload ?? new { }), body, jsonOut: false);

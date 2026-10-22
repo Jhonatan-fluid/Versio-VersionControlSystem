@@ -77,7 +77,12 @@ public sealed partial class GitCliClient(
             ["status", "--porcelain=v2", "--branch", "--untracked-files=all", "-z"],
             null, ct).ConfigureAwait(false);
 
-        return PorcelainV2Parser.Parse(result.StdOut);
+        // Parsed either way, so callers that only draw a list behave as before; the failure
+        // is carried alongside, because an empty parse of a failed run reads as a clean tree.
+        var status = PorcelainV2Parser.Parse(result.StdOut);
+        return result.Success
+            ? status
+            : status with { Failure = result.FailureReason ?? "git status failed" };
     }
 
     /// <summary>

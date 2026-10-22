@@ -1,6 +1,7 @@
 using System.Globalization;
 using Versio.Core.Abstractions;
 using Versio.Core.Bindings;
+using Versio.Core.Git;
 using Versio.Core.Guarding;
 using Versio.Core.Plc;
 using Versio.Core.Locking;
@@ -98,6 +99,15 @@ public sealed class SyncOrchestrator
 
     private readonly Dictionary<string, ProjectBinding> _bindings;
     private readonly Dictionary<string, BindingLock> _locks = new(StringComparer.Ordinal);
+
+    /// <summary>Held for every replacement of a lock in <see cref="_locks"/> that must not
+    /// interleave with another: ApplyAsync's transition and adoption's compare-and-swap.</summary>
+    /// <remarks>
+    /// Added 2026-10-17 when review reproduced adoption overwriting a lock that a text edit
+    /// had taken while adoption was hashing. It makes the swap atomic. It does not make
+    /// ApplyAsync's own read-await-write safe, which predates it and is a separate question.
+    /// </remarks>
+    private readonly object _lockWrite = new();
     private readonly Dictionary<string, JobCoalescer> _coalescers = new(StringComparer.Ordinal);
 
     /// <summary>
@@ -707,6 +717,265 @@ public sealed class SyncOrchestrator
         }
 
         return adopted;
+    }
+
+    /// <summary>
+    /// Some enabled binding is Clean with no export recorded on this machine: the only state
+    /// <see cref="AdoptCommittedStateAsync"/> acts on.
+    /// </summary>
+    /// <remarks>
+    /// Public so the caller can skip asking git for a file listing on every refresh when there
+    /// is nothing to decide, which is almost always.
+    /// </remarks>
+    public bool HasUnrecordedBindings => _bindings.Values.Any(b =>
+        b.Enabled
+        && _locks.TryGetValue(b.Id, out var l)
+        && l.Direction == SyncDirection.Clean
+        && l.LastSynced.ProjectHash.Length == 0);
+
+    /// <summary>
+    /// Take a committed, untouched project as exported when this machine has no record of
+    /// exporting it.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>The fresh-clone half of the restart fix in <see cref="RecoverAsync"/>.</b> That fix
+    /// keeps <c>LastSynced</c> across a restart, because an empty one reads to the commit gate
+    /// as "the project has changed since it was last exported", and every launch then ran the
+    /// toolchain over a mirror that was already right. A fresh clone has no
+    /// <c>.versio/local/state.json</c> at all, so it started from exactly that empty record.
+    /// Seen 2026-10-16: the first open of this repository on a second machine exported all four
+    /// fixture projects, none of which differed from HEAD by a byte. Three of the exports
+    /// failed, and the user was left with a panel full of "not exported" and an empty Changes
+    /// list, and no reason for either.
+    /// </para>
+    /// <para>
+    /// <b>The same trust <see cref="AdoptExternalStateAsync"/> already extends to a checkout.</b>
+    /// A project and its mirror that both match HEAD came out of one commit, and the commit gate
+    /// refuses to record one without the other, so they agree. Nothing needs running. What
+    /// needs to happen is that the engine stops believing it has never seen them.
+    /// </para>
+    /// <para>
+    /// <b>Narrow on purpose.</b> Only a binding that is Clean and has no recorded export: a
+    /// lock, a failure, or a real record is left exactly as it is. Only when git reports
+    /// nothing changed or untracked under the project, its payload or its mirror. And only
+    /// when git lists both the project and at least one mirror file, so a gitignored project,
+    /// or a mirror that was never committed, is not taken as "unchanged" just because status
+    /// is silent about it. Anything else exports as before.
+    /// </para>
+    /// </remarks>
+    /// <para>
+    /// <b>Two holes review found in the first version (2026-10-17), both of which adopted a
+    /// changed project as exported.</b> It took a list of changed paths, and the caller built
+    /// it from a status that may never have been read: <c>git status</c> failing came back as
+    /// an empty status, so "git said nothing" was taken as "nothing changed". The status is
+    /// taken whole now, and one that was not read adopts nothing. And it looked only at each
+    /// change's destination, so moving <c>plc/A/Simulation.st</c> to <c>archive/</c> removed
+    /// a file from the mirror while every reported path sat outside the binding. A rename
+    /// counts on both ends.
+    /// </para>
+    /// <para>
+    /// <b>Three more from the second review (2026-10-17), all reproduced there.</b>
+    /// <list type="bullet">
+    ///   <item><b>A lock taken while hashing was overwritten.</b> The lock was read, the
+    ///     project hashed (asynchronously), and the stale copy written back: a text edit that
+    ///     made the binding TextAuthoritative in that window came out Clean. The write is now a
+    ///     compare-and-swap under <see cref="_lockWrite"/>, which ApplyAsync's write shares:
+    ///     the lock is replaced only if it is still the exact instance that was read.</item>
+    ///   <item><b>A save after the status was adopted.</b> A clean status proved the files
+    ///     matched HEAD when git looked, and the hash was taken later, so a save in between was
+    ///     recorded as exported. Now: status, hash, status again, hash again. Both statuses must
+    ///     be clean for the binding and both hashes must agree, so a change anywhere in the
+    ///     window is caught by one of them.</item>
+    ///   <item><b>A listed mirror that is not on disk.</b> A sparse checkout leaves
+    ///     skip-worktree files listed and absent, so "git lists a mirror file" did not mean
+    ///     there was a mirror. Every listed mirror file, and the project file, must exist.</item>
+    /// </list>
+    /// </para>
+    /// <param name="readStatus">Asks git for the status. Called twice, before and after
+    /// hashing; nothing is adopted from a status that was not read.</param>
+    /// <param name="listedPaths">Every path git lists, tracked or untracked, gitignored excluded.</param>
+    /// <returns>The bindings adopted.</returns>
+    public async Task<IReadOnlyList<string>> AdoptCommittedStateAsync(
+        Func<CancellationToken, Task<GitStatus>> readStatus, IReadOnlyList<string> listedPaths,
+        CancellationToken ct)
+    {
+        var adopted = new List<string>();
+
+        if (!HasUnrecordedBindings)
+        {
+            return adopted;
+        }
+
+        var before = await readStatus(ct).ConfigureAwait(false);
+        if (!before.WasRead)
+        {
+            // Said once, at Info: the safe outcome (the gate exports instead) is also the
+            // costly one, and a run of exports nobody asked for should have an explanation.
+            _log.Info(LogCategory.Lock,
+                $"not adopting anything from HEAD: git status could not be read ({before.Failure}); " +
+                "projects with no export recorded here will be exported instead");
+            return adopted;
+        }
+
+        var listed = listedPaths.Select(p => p.Replace('\\', '/')).ToList();
+
+        // First pass: which bindings qualify on the first status, the listing and the disk,
+        // and what they hash to now.
+        var candidates = new List<(ProjectBinding Binding, BindingLock Read, BindingFreshness Owner,
+                                   string ProjectHash, string MirrorHash)>();
+
+        foreach (var binding in _bindings.Values.Where(b => b.Enabled))
+        {
+            if (!_locks.TryGetValue(binding.Id, out var current)
+                || current.Direction != SyncDirection.Clean
+                || current.LastSynced.ProjectHash.Length > 0)
+            {
+                continue;
+            }
+
+            var owner = new BindingFreshness
+            {
+                BindingId = binding.Id,
+                ProjectPath = binding.ProjectPath,
+                ExportPath = binding.ExportPath,
+                PayloadPath = PayloadFolderRelative(binding),
+                CurrentProjectHash = string.Empty,
+                ExportedProjectHash = string.Empty,
+            };
+
+            var project = binding.ProjectPath.Replace('\\', '/');
+            var mirror = binding.ExportPath.Replace('\\', '/').TrimEnd('/') + "/";
+            var mirrorFiles = listed
+                .Where(p => p.StartsWith(mirror, StringComparison.OrdinalIgnoreCase))
+                .ToList();
+
+            var untouched = Untouched(before, owner);
+            var projectListed = listed.Any(p =>
+                string.Equals(p, project, StringComparison.OrdinalIgnoreCase));
+
+            // On disk, not just listed: skip-worktree files in a sparse checkout are listed and
+            // absent, and an absent mirror is the one thing this must never call exported.
+            //
+            // The PAYLOAD too, for a directory project. Its pointer and its mirror can both be
+            // present while the program files beside the pointer are not; the project hash is
+            // then taken over whatever is left, and was adopted as exported (third review,
+            // 2026-10-17, System/program.bin listed and absent, gate Proceed). Every listed
+            // payload file that counts toward the project hash must exist, judged by the same
+            // CountsTowardProjectHash the hash uses, so a missing log file does not refuse.
+            var payload = owner.PayloadPath.Replace('\\', '/').TrimEnd('/');
+            var format = _formats(binding.ProjectPath);
+            var payloadFiles = payload.Length == 0
+                ? []
+                : listed
+                    .Where(p => p.StartsWith(payload + "/", StringComparison.OrdinalIgnoreCase)
+                                && !string.Equals(p, project, StringComparison.OrdinalIgnoreCase)
+                                && (format is null
+                                    || format.CountsTowardProjectHash(p[(payload.Length + 1)..])))
+                    .ToList();
+
+            var onDisk = _fs.FileExists(Absolute(project))
+                         && mirrorFiles.Count > 0
+                         && mirrorFiles.All(p => _fs.FileExists(Absolute(p)))
+                         && payloadFiles.All(p => _fs.FileExists(Absolute(p)));
+
+            if (!untouched || !projectListed || !onDisk)
+            {
+                _log.Debug(LogCategory.Lock,
+                    $"{binding.Id}: no export recorded on this machine, and not adopted from " +
+                    $"HEAD (untouched={untouched}, project listed={projectListed}, " +
+                    $"project and mirror on disk={onDisk}); the next gate exports it");
+                continue;
+            }
+
+            candidates.Add((binding, current, owner,
+                await ProjectHashAsync(binding, ct).ConfigureAwait(false),
+                await ExportTreeHashAsync(binding, ct).ConfigureAwait(false)));
+        }
+
+        if (candidates.Count == 0)
+        {
+            return adopted;
+        }
+
+        // Second look, after hashing. A save between the first status and the hash shows up
+        // here as a change; one after this status shows up as a different second hash.
+        var after = await readStatus(ct).ConfigureAwait(false);
+
+        foreach (var c in candidates)
+        {
+            if (!after.WasRead || !Untouched(after, c.Owner))
+            {
+                _log.Info(LogCategory.Lock,
+                    $"{c.Binding.Id}: changed while it was being checked against HEAD " +
+                    (after.WasRead ? "" : $"(git status could not be read: {after.Failure}) ") +
+                    "- not adopted; the next gate exports it");
+                continue;
+            }
+
+            var projectHash = await ProjectHashAsync(c.Binding, ct).ConfigureAwait(false);
+            var mirrorHash = await ExportTreeHashAsync(c.Binding, ct).ConfigureAwait(false);
+            if (projectHash != c.ProjectHash || mirrorHash != c.MirrorHash)
+            {
+                _log.Info(LogCategory.Lock,
+                    $"{c.Binding.Id}: its files changed while it was being checked against HEAD - " +
+                    "not adopted; the next gate exports it");
+                continue;
+            }
+
+            var swapped = false;
+            lock (_lockWrite)
+            {
+                if (_locks.TryGetValue(c.Binding.Id, out var now) && ReferenceEquals(now, c.Read))
+                {
+                    _locks[c.Binding.Id] = now with
+                    {
+                        Baseline = now.Baseline with
+                        {
+                            ProjectHash = projectHash,
+                            MirrorHash = mirrorHash,
+                        },
+                        LastSynced = new SyncedState
+                        {
+                            ProjectHash = projectHash,
+                            MirrorHash = mirrorHash,
+                        },
+                    };
+                    swapped = true;
+                }
+            }
+
+            if (!swapped)
+            {
+                _log.Info(LogCategory.Lock,
+                    $"{c.Binding.Id}: its lock changed while it was being checked against HEAD " +
+                    $"(now {StateOf(c.Binding.Id)}) - left as it is");
+                continue;
+            }
+
+            adopted.Add(c.Binding.Id);
+
+            _log.Info(LogCategory.Lock,
+                $"{c.Binding.Id}: no export recorded on this machine; the project and its mirror " +
+                $"match HEAD, so that is taken as exported (project {Short(projectHash)}, " +
+                $"mirror {Short(mirrorHash)}) without running the toolchain");
+        }
+
+        if (adopted.Count > 0)
+        {
+            await PersistAsync(ct).ConfigureAwait(false);
+        }
+
+        return adopted;
+
+        // Both ends of a rename or copy. The destination alone misses a file moved OUT of a
+        // mirror, which is a change to that binding even though nothing new appears in it.
+        static bool Untouched(GitStatus status, BindingFreshness owner) =>
+            !status.Changes
+                .SelectMany(ch => ch.OriginalPath is { Length: > 0 } from
+                    ? new[] { ch.Path, from }
+                    : new[] { ch.Path })
+                .Any(path => CommitGate.Owns(owner, path));
     }
 
     /// <summary>A change was detected. Decide what, if anything, to do about it.</summary>
@@ -1394,7 +1663,14 @@ public sealed class SyncOrchestrator
             _log.Error(LogCategory.Sync,
                 $"{binding.Id}: export failed after {elapsed.TotalSeconds:F1}s — {reason}");
 
-            await ApplyAsync(binding.Id, SyncTrigger.ExportFailed, string.Empty, ct)
+            // The toolchain's words go on the lock, not just the state machine's "export
+            // failed". ReasonFor is what the failure card shows, and it shows the persisted
+            // record so a failure explains itself after a restart — but nothing ever wrote
+            // the reason into that record, so the card read "export failed" and stopped,
+            // while the sentence that said what to do ("not a member of the windows group
+            // 'Siemens TIA Openness'", "profile … is not installed") reached only the log.
+            await ApplyAsync(binding.Id, SyncTrigger.ExportFailed, string.Empty, ct,
+                    reason: FailedBecause("export", reason))
                 .ConfigureAwait(false);
             return new SyncOutcome
             {
@@ -1681,11 +1957,12 @@ public sealed class SyncOrchestrator
         var mirror = Absolute(binding.ExportPath);
         if (!_fs.DirectoryExists(mirror))
         {
-            await ApplyAsync(binding.Id, SyncTrigger.ImportFailed, string.Empty, ct)
-                .ConfigureAwait(false);
-
             var missing = $"the exported text at {binding.ExportPath} is not there, so there "
                           + "is nothing to import; the project is unchanged";
+
+            await ApplyAsync(binding.Id, SyncTrigger.ImportFailed, string.Empty, ct,
+                    reason: FailedBecause("import", missing))
+                .ConfigureAwait(false);
             _log.Error(LogCategory.Sync, $"{binding.Id}: {missing}");
 
             return new SyncOutcome
@@ -1706,10 +1983,12 @@ public sealed class SyncOrchestrator
         {
             // Refuse rather than proceed. Running the one operation that can destroy the
             // project having failed to make it recoverable is the worst of both.
-            await ApplyAsync(binding.Id, SyncTrigger.ImportFailed, string.Empty, ct)
+            var why = $"could not back up {binding.ProjectPath} before importing: {ex.Message}";
+
+            await ApplyAsync(binding.Id, SyncTrigger.ImportFailed, string.Empty, ct,
+                    reason: FailedBecause("import", why))
                 .ConfigureAwait(false);
 
-            var why = $"could not back up {binding.ProjectPath} before importing: {ex.Message}";
             _log.Error(LogCategory.Sync, why, ex);
 
             return new SyncOutcome
@@ -1784,7 +2063,9 @@ public sealed class SyncOrchestrator
             _log.Error(LogCategory.Sync,
                 $"{binding.Id}: import failed after {elapsed.TotalSeconds:F1}s — {reason}");
 
-            await ApplyAsync(binding.Id, SyncTrigger.ImportFailed, string.Empty, ct)
+            // As for the export: the reason the card shows is the one persisted here.
+            await ApplyAsync(binding.Id, SyncTrigger.ImportFailed, string.Empty, ct,
+                    reason: FailedBecause("import", reason))
                 .ConfigureAwait(false);
             return new SyncOutcome
             {
@@ -2254,6 +2535,14 @@ public sealed class SyncOrchestrator
         };
     }
 
+    /// <summary>The lock reason for a failed direction: which one, then the toolchain's words.</summary>
+    /// <remarks>
+    /// The direction stays in front because "export failed" is what every earlier lock
+    /// record said, and the card reads the state, the direction and then why — in that order.
+    /// </remarks>
+    private static string FailedBecause(string direction, string reason) =>
+        $"{direction} failed — {reason}";
+
     private async Task ApplyAsync(string bindingId, SyncTrigger trigger, string projectHash,
                                   CancellationToken ct, string? headCommit = null,
                                   string? reason = null)
@@ -2309,17 +2598,22 @@ public sealed class SyncOrchestrator
         // The other releases keep their behaviour on purpose: discard and acknowledge pass an
         // empty project hash, which forces the next event to export rather than trusting
         // anything; a forced release is the user overriding the lock by name.
-        _locks[bindingId] = current with
+        // Under _lockWrite so adoption's compare-and-swap cannot interleave with it: a
+        // transition replaces the instance, and adoption then sees a different one and backs off.
+        lock (_lockWrite)
         {
-            Direction = transition.State,
-            AcquiredUtc = transition.State == SyncDirection.Clean ? null : _clock.UtcNow,
-            Reason = reason ?? transition.Reason,
-            Baseline = baseline,
-            LastSynced = transition.State == SyncDirection.Clean
-                         && trigger is not SyncTrigger.PushSucceeded
-                ? new SyncedState { ProjectHash = projectHash, MirrorHash = mirrorHash }
-                : synced,
-        };
+            _locks[bindingId] = current with
+            {
+                Direction = transition.State,
+                AcquiredUtc = transition.State == SyncDirection.Clean ? null : _clock.UtcNow,
+                Reason = reason ?? transition.Reason,
+                Baseline = baseline,
+                LastSynced = transition.State == SyncDirection.Clean
+                             && trigger is not SyncTrigger.PushSucceeded
+                    ? new SyncedState { ProjectHash = projectHash, MirrorHash = mirrorHash }
+                    : synced,
+            };
+        }
 
         // Only when it actually moved. Re-stating "still ProjectAuthoritative" on every
         // further edit is the kind of line that makes a log unreadable.

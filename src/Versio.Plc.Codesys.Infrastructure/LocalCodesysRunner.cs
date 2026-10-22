@@ -160,6 +160,24 @@ public sealed class LocalCodesysRunner(
         // being parsed inside this scope rather than by carrying the id itself.
         using var scope = _log.BeginOperation(job.OperationId);
 
+        // The profile the binding pins, checked against the install before anything starts.
+        // CODESYS would refuse it anyway, but only after a cold start and with an exit code,
+        // and "CODESYS exited with code 1" told nobody that the repository was adopted on
+        // another patch level. ProfileResolver.PinnedButNotInstalled has the history.
+        var installed = CodesysLocator.ProfilesBeside(codesysExecutablePath);
+        if (ProfileResolver.PinnedButNotInstalled(job.Profile, installed) is { } refusal)
+        {
+            _log.Error(CodesysLog.Category, $"{job.Operation} refused before launch: {refusal}");
+            return new CodesysResult
+            {
+                ExitCode = -1,
+                TimedOut = false,
+                Duration = TimeSpan.Zero,
+                Output = ScriptProtocol.Parse(null),
+                ProfileNotInstalled = refusal,
+            };
+        }
+
         // An import runs from a plan, decided before CODESYS starts — the script executes
         // exactly what the plan says and derives nothing from file names (Phase 1 of
         // docs/phase1/IMPORT-PLAN.md). A caller that computed its own plan keeps it; one
@@ -392,6 +410,13 @@ public sealed class LocalCodesysRunner(
         var missingProfile = output.Chatter.Any(ProfileResolver.IsMissingProfileError);
         var exitCode = timedOut ? -1 : SafeExitCode(process);
 
+        // The backstop for the preflight in RunAsync: when no Profiles folder could be read
+        // beside the executable, the check could not decide, and CODESYS decided instead.
+        var profileNotInstalled = output.Chatter.Any(ProfileResolver.IsRejectedProfileError)
+            ? ProfileResolver.NotInstalledExplanation(
+                job.Profile, CodesysLocator.ProfilesBeside(codesysExecutablePath))
+            : null;
+
         _log.Log(exitCode == 0 && !timedOut ? LogLevel.Information : LogLevel.Error,
             CodesysLog.Category,
             $"exit={exitCode} in {stopwatch.Elapsed.TotalSeconds:F1}s " +
@@ -437,6 +462,7 @@ public sealed class LocalCodesysRunner(
             Duration = stopwatch.Elapsed,
             Output = output,
             MissingProfile = missingProfile,
+            ProfileNotInstalled = profileNotInstalled,
         };
     }
 

@@ -6,7 +6,7 @@
       "projectPath": "fixtures/projects/RefrigeratorControl.project",
       "templatePath": "fixtures/projects/RefrigeratorControl_template.project",
       "exportPath": "fixtures/projects/RefrigeratorControl",
-      "profile": "CODESYS V3.5 SP22 Patch 2",
+      "profile": "CODESYS V3.5 SP22 Patch 4",
       "vendor": "Codesys",
       "enabled": true
     },
@@ -24,7 +24,7 @@
       "projectPath": "fixtures/projects/MachineWithMembers.project",
       "templatePath": "fixtures/projects/MachineWithMembers_template.project",
       "exportPath": "fixtures/projects/MachineWithMembers",
-      "profile": "CODESYS V3.5 SP22 Patch 2",
+      "profile": "CODESYS V3.5 SP22 Patch 4",
       "vendor": "Codesys",
       "enabled": true
     },

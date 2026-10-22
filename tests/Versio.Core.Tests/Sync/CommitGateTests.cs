@@ -35,6 +35,21 @@ public class CommitGateTests
     }
 
     [Fact]
+    public void A_failure_does_not_hide_another_projects_pending_export()
+    {
+        // Review, 2026-10-17: with A failed and B changed, the gate stops at A and its
+        // StaleBindings names only A, which is right for a commit. The panel read the same list,
+        // so B's pending export vanished behind A's failure. UnexportedBindings names B whatever
+        // the decision.
+        var failed = Stale("a") with { InFailedState = true };
+        var result = CommitGate.Evaluate([failed, Stale("b"), Fresh("c")]);
+
+        Assert.Equal(GateDecision.Blocked, result.Decision);
+        Assert.Equal(["a"], result.StaleBindings);
+        Assert.Equal(["b"], result.UnexportedBindings);
+    }
+
+    [Fact]
     public void A_stale_export_requires_an_export_before_committing()
     {
         var result = CommitGate.Evaluate([Stale()]);

@@ -438,6 +438,21 @@ public sealed class SyncViewModel : ObservableObject
         private set => SetProperty(ref _stalenessSummary, value);
     }
 
+    /// <summary>Some project is behind and an export would fix it, as opposed to failed.</summary>
+    /// <remarks>
+    /// The Git panel's "a stale PLC export runs before this commit" line used to show whenever
+    /// <see cref="StalenessSummary"/> was non-empty. That includes a failed project, and a failed
+    /// project does not get exported before the commit; the commit is refused until the
+    /// failure is acknowledged.
+    /// </remarks>
+    public bool HasUnexportedChanges
+    {
+        get => _hasUnexportedChanges;
+        private set => SetProperty(ref _hasUnexportedChanges, value);
+    }
+
+    private bool _hasUnexportedChanges;
+
     /// <summary>Live heartbeat text while CODESYS is running, empty otherwise.</summary>
     /// <remarks>
     /// A CODESYS launch costs 17–31 s with nothing on screen to show for it, and silence is
@@ -808,6 +823,7 @@ public sealed class SyncViewModel : ObservableObject
         Summary = "No repository open";
         TreeSummary = string.Empty;
         StalenessSummary = string.Empty;
+        HasUnexportedChanges = false;
         UnexportedCount = 0;
         LockState = string.Empty;
         Activity = string.Empty;
@@ -986,6 +1002,57 @@ public sealed class SyncViewModel : ObservableObject
         foreach (var decision in decisions)
         {
             _logger.Info(LogCategory.Lock, $"{decision.BindingId}: {decision.Explanation}");
+        }
+
+        await AdoptCommittedStateAsync(ct).ConfigureAwait(true);
+    }
+
+    /// <summary>
+    /// Before the catch-up decides what is stale: a project this machine never exported, but
+    /// which matches HEAD, is taken as exported rather than run through the toolchain.
+    /// </summary>
+    /// <remarks>
+    /// Here, between recovery and the catch-up, because the catch-up is what turned a fresh
+    /// clone's empty record into an export of every project. Git is asked rather than the
+    /// engine, because <c>Versio.Core</c> never touches the outside world. If git cannot answer,
+    /// nothing is adopted and the catch-up exports as it always has, which is the safe side.
+    /// See <c>SyncOrchestrator.AdoptCommittedStateAsync</c> for why this is sound.
+    /// </remarks>
+    private async Task AdoptCommittedStateAsync(CancellationToken ct)
+    {
+        // Nothing to decide is the usual case, and it costs no git call. Held off while git
+        // rewrites the tree, for the reason AdoptExternalStateAsync runs only after it: a
+        // half-written checkout is not a state anybody committed.
+        if (_orchestrator is null || _git is null
+            || !_orchestrator.HasUnrecordedBindings
+            || _orchestrator.IsExternalWriteInProgress)
+        {
+            return;
+        }
+
+        try
+        {
+            // The status as a question, not an answer: the orchestrator asks it before and
+            // after hashing, so a save in between is not recorded as exported, and it refuses
+            // a status git could not read.
+            var git = _git;
+            var listed = await git.ListWorkingTreeAsync(ct).ConfigureAwait(true);
+
+            var adopted = await _orchestrator.AdoptCommittedStateAsync(git.StatusAsync, listed, ct)
+                .ConfigureAwait(true);
+
+            if (adopted.Count > 0)
+            {
+                _logger.Info(LogCategory.Sync,
+                    $"{adopted.Count} project(s) never exported on this machine match HEAD; " +
+                    "taken as exported, nothing run");
+            }
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _logger.Warn(LogCategory.Sync,
+                $"could not ask git whether the tracked projects match HEAD; they will be " +
+                $"exported instead: {ex.Message}");
         }
     }
 
@@ -1999,12 +2066,26 @@ public sealed class SyncViewModel : ObservableObject
             return;
         }
 
+        // Before the gate, on every refresh rather than only at open. A project that is
+        // untouched and matches HEAD is not stale, whenever it got there: a fresh clone, but
+        // also a discard (which clears the export record on purpose) that leaves the mirror
+        // back at HEAD. Seen 2026-10-17: two discarded CODESYS projects, clean and identical
+        // to HEAD, would have been re-exported by the next commit because the check ran only
+        // when the repository was opened. Every caller that asks "what is stale" comes
+        // through here, so this is the one place it has to be.
+        await AdoptCommittedStateAsync(CancellationToken.None).ConfigureAwait(true);
+
         try
         {
             var gate = await _orchestrator.EvaluateCommitGateAsync(CancellationToken.None)
                 .ConfigureAwait(true);
 
-            var stale = new HashSet<string>(gate.StaleBindings, StringComparer.Ordinal);
+            // The failed bindings the gate stops at, AND every other binding that is behind.
+            // StaleBindings alone lists only the failures once anything has failed, so a second
+            // project with a real pending export disappeared from the panel behind the first
+            // one's failure (review, 2026-10-17). UnexportedBindings is computed regardless.
+            var stale = new HashSet<string>(
+                gate.StaleBindings.Concat(gate.UnexportedBindings), StringComparer.Ordinal);
             UnexportedCount = stale.Count;
 
             // Kept, not just counted: the tree needs to know WHICH bindings are behind, so a
@@ -2017,9 +2098,22 @@ public sealed class SyncViewModel : ObservableObject
                 _staleBindings.Add(id);
             }
 
+            // A failed binding counts as stale, because the gate has to refuse it. But it is
+            // not "a change nobody has exported yet", and calling it one sent people looking
+            // for changes that were not there. Seen 2026-10-16: four exports failed for reasons
+            // that had nothing to do with the projects, which were byte-for-byte HEAD. The
+            // banner said "4 projects have changes that have not been exported", each row said
+            // "not exported", and the Changes panel was rightly empty. So a failure is named
+            // as one, and the reason is on the failure card, one click away.
+            var failed = new HashSet<string>(gate.FailedBindings, StringComparer.Ordinal);
+
             foreach (var row in Projects.Where(p => p.Tracked && !p.Busy))
             {
-                if (stale.Contains(row.BindingId!))
+                if (failed.Contains(row.BindingId!))
+                {
+                    row.State = SyncNarrative.Label(SyncDirection.Failed);
+                }
+                else if (stale.Contains(row.BindingId!))
                 {
                     row.State = "not exported";
                 }
@@ -2027,12 +2121,23 @@ public sealed class SyncViewModel : ObservableObject
 
             // Stated in the panel rather than only in a row, because the whole point is that
             // somebody who has not looked at this project all afternoon still finds out.
-            StalenessSummary = stale.Count switch
+            var behind = gate.UnexportedBindings.Count(id => !failed.Contains(id));
+            HasUnexportedChanges = behind > 0;
+            StalenessSummary = string.Join(" ", new[]
             {
-                0 => string.Empty,
-                1 => "1 project has changes that have not been exported.",
-                var n => $"{n} projects have changes that have not been exported.",
-            };
+                failed.Count switch
+                {
+                    0 => string.Empty,
+                    1 => "1 project failed to sync — select it to see why.",
+                    var n => $"{n} projects failed to sync — select one to see why.",
+                },
+                behind switch
+                {
+                    0 => string.Empty,
+                    1 => "1 project has changes that have not been exported.",
+                    var n => $"{n} projects have changes that have not been exported.",
+                },
+            }.Where(s => s.Length > 0));
 
             if (stale.Count > 0)
             {

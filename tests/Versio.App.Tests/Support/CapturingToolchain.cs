@@ -30,6 +30,9 @@ internal sealed class CapturingToolchain : IPlcToolchain, IPlcRunner
     /// <summary>Every job the application asked to be run, in order.</summary>
     public List<PlcJob> Jobs { get; } = [];
 
+    /// <summary>When set, every job fails with this reason instead of succeeding.</summary>
+    public string? FailWith { get; init; }
+
     public Task<PlcToolchainStatus> ProbeAsync(CancellationToken ct) =>
         Task.FromResult(new PlcToolchainStatus
         {
@@ -48,7 +51,8 @@ internal sealed class CapturingToolchain : IPlcToolchain, IPlcRunner
 
         return Task.FromResult(new PlcResult
         {
-            Succeeded = true,
+            Succeeded = FailWith is null,
+            FailureReason = FailWith,
             Duration = TimeSpan.FromSeconds(18),
         });
     }

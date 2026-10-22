@@ -988,8 +988,11 @@
                             <Style TargetType="TextBlock">
                                 <Setter Property="Visibility" Value="Visible" />
                                 <Style.Triggers>
-                                    <DataTrigger Binding="{Binding Sync.StalenessSummary}"
-                                                 Value="">
+                                    <!-- Not StalenessSummary: that also names a FAILED
+                                         project, and a failed one is refused at commit, not
+                                         exported before it. -->
+                                    <DataTrigger Binding="{Binding Sync.HasUnexportedChanges}"
+                                                 Value="False">
                                         <Setter Property="Visibility" Value="Collapsed" />
                                     </DataTrigger>
                                 </Style.Triggers>

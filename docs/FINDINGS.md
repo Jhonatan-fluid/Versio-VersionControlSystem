@@ -209,6 +209,230 @@ restored and touched).
 is right for "these two commits"; only a pull request's comparison is a question about a branch
 point. Rename detection is the next slice's (`pulls/{n}/files` reports `previous_filename`).
 
+---
+
+### Adoption raced the lock and the disk, and a failure hid another project's pending export
+
+**2026-10-17, `main`, second review of the unpushed commits through `9097409`.** Four more,
+all reproduced by the reviewer. Three are in the matches-HEAD adoption, and each recorded
+something as exported that was not.
+
+1. **A lock taken while adoption was hashing was overwritten.** Adoption read the lock,
+   awaited the hashes, and wrote the stale copy back. A text edit that made the binding
+   TextAuthoritative in that window came out Clean. The write is now a compare-and-swap: the
+   lock is replaced only if it is still the exact instance that was read. It runs under a new
+   `_lockWrite` monitor, which ApplyAsync's write now shares, so the check and the write cannot
+   interleave with a transition. **Not fixed, and noted:** ApplyAsync's own read, await, write
+   predates this and has the same shape. The monitor makes the swap atomic; it does not make
+   ApplyAsync's read current.
+2. **A save after the status was adopted.** A clean status proved the files matched HEAD when
+   git looked, and the hash came later. The orchestrator now takes the status as a function
+   and asks twice: status, hash, status, hash. Both statuses must be clean for the binding and
+   both hashes must agree. A save before the second status shows up in it, and a save after it
+   shows up in the second hash.
+3. **A mirror git lists but the disk does not have.** A sparse checkout leaves skip-worktree
+   files listed and absent, and the reviewer confirmed it both in Core and at app startup.
+   Every listed mirror file, and the project file, must exist on disk.
+4. **One failed project hid another's pending export.** Unscoped, the gate stops at a failure
+   and its `StaleBindings` names only the failures. That is right for a commit, but the panel
+   read the same list, so with A failed and B changed it cleared `HasUnexportedChanges` and
+   named only A. `CommitGateResult.UnexportedBindings` now lists every relevant non-failed
+   binding that is behind, for every decision, and the panel counts from it.
+
+5. **A directory project's payload was not checked (third review, same day).** The disk check
+   covered the pointer and the mirror, and not the program files beside the pointer. A sparse
+   checkout kept the first two and dropped `System/program.bin`: git still listed it, the
+   project hash was taken over what was left, adoption recorded it, and the gate said Proceed.
+   Every listed payload file that counts toward the project hash must now exist. It is judged
+   by the same `CountsTowardProjectHash` the hash uses, so a missing log does not cost an export.
+   Two tests in `TreePayloadTests`, one per side of that predicate, and each goes red when its
+   half is removed.
+
+**Evidence.** One regression test per finding: four in Core, and an App test that seeds the
+test repository's own `state.json` with A failed. Each was mutation-checked: compare-and-swap
+disabled, second status ignored, second hash ignored, disk check removed, `UnexportedBindings`
+emptied, and the panel reverted to `StaleBindings`. Each turned its test red. Core 1,786.
+
+**Lesson, again.** The first review's fixes were tested against the holes that review named,
+and the second review found four the first missed. The adoption check is a "decide nothing
+changed" function, and those deserve the same adversarial reading as an import: what changes
+between the reads, what is listed but absent, and who else writes the same record.
+
+---
+
+### The matches-HEAD check trusted a status git never produced, and missed renames
+
+**2026-10-17, `main`, from review of `373a3e9` and `0a4bb92`.** Three findings, all confirmed,
+two of which recorded a changed project as exported, which skips the export the commit gate
+exists to force.
+
+1. **A failed `git status` read as a clean tree.** `GitCliClient.StatusAsync` parsed stdout
+   without checking whether git succeeded, so a failure came back as an empty status. With
+   `ListWorkingTreeAsync` succeeding, `AdoptCommittedStateAsync` saw "nothing changed under the
+   binding, and both sides listed", and adopted a modified project. `GitStatus` now carries
+   `Failure` (`WasRead` is its negation): set by the client when git fails, and null by default
+   so every status built by hand still reads as read. Adoption refuses an unread status, and
+   says why at Info, because the safe outcome (exporting instead) is also the costly one. The
+   other four `StatusAsync` callers are unchanged. They draw lists that redraw on the next
+   refresh, but whether any of them **decides** on `IsClean` is worth a separate look.
+2. **Rename sources were ignored.** Only each change's destination was matched against the
+   binding, so `plc/A/Simulation.st` moved to `archive/` removed a file from the mirror while
+   every reported path sat outside it. `OriginalPath` counts too now.
+3. **`LIBRARY_PARAMETERS_EFFECTIVE` was not classified**, so
+   `Every_exporter_warning_is_classified_as_losing_an_object_or_not` failed every run.
+   `0a4bb92` was committed after the parity and arch suites, but **not the pure suite**. It is
+   recorded-anyway: the file is still written, and its content may say more than the project
+   holds.
+
+**And the owner's rule, carried through.** "A project with no changes and a valid mirror should
+not be detected, even if sync has never run on this computer" was implemented in `373a3e9` only
+at open. Discard clears the export record on purpose, so two CODESYS projects discarded back to
+HEAD on 2026-10-17 would have been exported by the next commit. The check now runs at the top of
+`RefreshStalenessAsync`, which every "what is stale" question goes through. It costs no git call
+unless some binding is Clean with no record (`HasUnrecordedBindings`), and it is held off while
+git rewrites the tree.
+
+**Two test lessons.** The first App test for the every-refresh wiring discarded the **project
+file**. Discard releases a binding only for files inside its **mirror**
+(`BindingConventions.OwnerOf`), so the record was never cleared, and the test stayed green
+with the wiring deleted. It discards a mirror file now, and goes red without the call. Second,
+after the mutation runs, a `--no-build` pass ran the mutants' binaries and showed two reds
+that a rebuild cleared: the 2026-10-10 timestamp trap from the other side.
+
+---
+
+### A library default was exported as though the project set it
+
+**2026-10-16, `main`.** Re-exporting RefrigeratorControl and MachineWithMembers under SP22 Patch 4
+added `MAX_CLIENTS: "20"` to `#System_VisuElemXYChart` in both library manager files of each
+project. Nothing in either project had changed. `CodesysCatalogTests` went red, because the
+File-Based Storage copy of RefrigeratorControl has no such parameter, and that copy was saved by
+the same Patch 4 (`.auxiliaries/savecontext_profile`), so this was not a newer toolchain adding
+something.
+
+**Measured, not inferred** (`tools/codesys/Probe-LibraryParams.ps1`, a read-only copy):
+
+| Manager | Stored (`LibManObject._parameterValues`) | `ref.parameters` reports |
+|---|---|---|
+| Application | `#Util` IBLOCKSIZE=22800, `#System_VisuElemCamDisplayer` GC_POINTS_PER_CAM=100, `#System_VisuElem3DPath` GC_POINTS_PER_POLYGON=100, `#System_VisuElemXYChart` **empty** | the three, **plus MAX_CLIENTS=20** |
+| Top-level | CamDisplayer and 3DPath as above; XYChart **absent** | the same, **plus MAX_CLIENTS=20** |
+
+`ScriptLibraryParameters` exposes only `GetEnumerator` to python. The reference's own LibMan
+item stores no values (`ParametersToSerialize` is empty until a save), and `GetParameterValues()`
+merges the manager's stored overrides with the resolved library's declared defaults. The mirror
+was therefore showing a fact about **the library installed on the exporting machine**. The
+Patch 2 export lacked the line for that reason too, not because the project differed. That is
+the same class as the effective-resolution and `managed_library.version` rows DRIVING §5.6
+already refuses to record.
+
+**Fix.** `versio_export.stored_library_parameters` reads the stored table by reflection: the
+wrapper's private `MyItem`, then `_rootLibManObject`, then `_parameterValues`. It hands the table
+to `versio_libraries`, which stays pure and records only what the table holds. Private names
+can change in a CODESYS update, so when the table cannot be read, the merged view is used and
+`LIBRARY_PARAMETERS_EFFECTIVE` is reported for every reference it gives parameters for. Never
+silently.
+
+**Evidence the fix is right.** The fixed script, run through real CODESYS on copies of both
+projects, produced mirrors **identical to HEAD's** (the Patch 2 exports) except for the
+manifest's `toolchainVersion` line. It reported no fallback warning, and all three real
+overrides were present. Three parity tests pin it: stored values win over defaults, a
+reference missing from the table sets nothing, and the fallback warns. Forcing the merged
+path turns two of them red.
+
+**Rejected:** keeping the effective values and labelling them. A library update would then read
+as a project edit on every machine whose installed library differs.
+
+---
+
+### Four projects "had changes that had not been exported", and none of them had changed
+
+**2026-10-16, `main`, a fresh clone on a second machine.** The owner opened Versio and saw
+four projects marked *not exported*, an orange banner reading *"4 projects have changes that
+have not been exported"*, an empty Changes panel, and a failure card that said *"export
+failed"* and nothing else. The question was why nothing showed under Changes. Nothing showed
+because nothing had changed. Every other part of the screen was wrong.
+
+**What actually happened, from the log.** The machine had never exported these projects, so
+local `state.json` had empty project hashes, and the commit gate read that as "changed since last
+export". It was not right to ask: see defect 0 below. All four exports failed, for three reasons
+that had nothing to do with the projects:
+
+- **CODESYS (two projects).** `.versio/repo.json` pins `CODESYS V3.5 SP22 Patch 2`, recorded
+  when the projects were adopted on the first machine. This machine has 3.5.22.40, which is
+  SP22 Patch 4. CODESYS printed *"The version profile 'CODESYS V3.5 SP22 Patch 2' is not
+  valid."* and exited 1 after 5–8 s. That line appeared at Debug only. Versio said *"CODESYS
+  exited with code 1"*, and the details pane said the toolchain was *installed*.
+- **TIA Portal.** The user is not in the `Siemens TIA Openness` Windows group. Portal's own
+  sentence said exactly that, and it reached the log only.
+- **TwinCAT.** XAE is not installed. The probe said so at startup, as a Warn line.
+
+**Four defects, the first underneath the rest.**
+
+0. **A fresh clone exported every project, changed or not.** The owner's question, and the
+   right one: *Versio is supposed to trigger only when something changed.* `RecoverAsync` was
+   fixed long ago to keep `LastSynced` across a restart, because an empty record reads to the
+   gate as "changed since last export", and every launch then re-ran CODESYS over a correct
+   mirror. A fresh clone has no `state.json` at all, so it started from exactly that empty
+   record, and the open-time catch-up exported all four fixtures. Now
+   `SyncOrchestrator.AdoptCommittedStateAsync` runs between recovery and the catch-up. It
+   applies the trust `AdoptExternalStateAsync` already gives a checkout: a project and a mirror
+   that both match HEAD came out of one commit, and the commit gate refuses to record one
+   without the other, so they agree. Narrow on purpose. It takes only Clean bindings with no
+   recorded export. Nothing may be changed or untracked under the project, payload or mirror.
+   And git must *list* both the project and a mirror file, so a gitignored project, or a mirror
+   never committed, is not taken as unchanged just because status is silent about it.
+   Mutation-checked on each guard and on the wiring. **Acknowledging a failure still clears the
+   record** (that is deliberate: a retry should export), so a binding already failed on a
+   machine is adopted at the next open, not at once.
+
+   **Seen working on the real case.** A fresh clone of this repository, opened with the dev
+   build, logged *"no export recorded on this machine; the project and its mirror match HEAD,
+   so that is taken as exported"* for all four bindings, the TIA directory project included.
+   The gate then answered *"every tracked project is exported and up to date"*, the catch-up
+   ran nothing, and there were zero `ERR` lines.
+
+   **Three App tests leaned on the defect.** `A_clean_file_shows_itself_and_says_nothing_changed`
+   and two ladder tests opened an untouched, committed project and looked for an object in the
+   Project tree. The project was there only because it read as "not exported". Each test now
+   changes the project file, so the project is listed for a real reason while the object under
+   test stays clean. The two ladder tests had passed some runs and failed others, and that is
+   unexplained: on the real clone, adoption ran for the TIA project every time.
+1. **The failure card never showed the toolchain's words.** `RefreshFailure` shows
+   `SyncNarrative.Describe(Failed)` and then `ReasonFor`, whose comment promises the
+   toolchain's own words. But every failure path called `ApplyAsync` without a reason, so the
+   persisted record held the state machine's "export failed". The sentence that said what to do
+   never left the log. Now the record holds `"<direction> failed — <reason>"` for export and
+   import failures, including the two early import refusals.
+2. **A pinned profile the install lacks was launched anyway.** `ProfileResolver.Resolve`
+   already refused a missing pin, and said so well. Nothing ever passed it one: the toolchain
+   is probed per vendor, and pins are per binding. `LocalCodesysRunner` now reads the Profiles
+   folder beside its executable and refuses the job by name before planning, taking the
+   mutex, or launching. The refusal names the pin, says what is installed instead, and gives
+   the two ways out. CODESYS's own "is not valid" line is recognised as a backstop. **Not
+   substituted:** falling back to the one installed profile is the silent project upgrade that
+   `Resolve` was written to refuse.
+3. **A failure was called "not exported".** The unscoped gate reports failed bindings as stale
+   too, which is right for the gate, since it has to refuse them. The panel turned every stale
+   binding into "has changes that have not been exported". Failed bindings are now named as
+   failures, in the rows (*failed*) and in the banner (*"… failed to sync — select one to see
+   why"*). The Git panel's *"A stale PLC export runs before this commit"* line now keys on a
+   new `HasUnexportedChanges`, because a failed project is refused at commit, not exported
+   before it.
+
+**Evidence.** `versio-2026-10-16.log`, 15:36–16:03, operations `c8629c6e` and `67906c63`.
+Each fix was mutation-checked: dropping the export reason, blinding the preflight, and emptying
+the failed set each turn its new test red. The preflight test uses a fake install whose
+`CODESYS.exe` is an empty file, so a missing preflight shows up as a failed process start.
+
+**Not fixed, on purpose.** The TIA and TwinCAT failures are this machine's, not Versio's:
+the fix is group membership, or installing XAE. The CODESYS pin is the repository's decision:
+install Patch 2, or change the two bindings' `"profile"` if the fixtures should move to
+Patch 4. The details pane's *"Toolchain: installed"* is still true of the vendor and silent
+about the pin; the failure card now carries that half. The CODESYS backstop has no test,
+because reaching it needs a real CODESYS in a non-standard layout.
+
+---
+
 ### The Mermaid frame never drew anywhere, because three defects stacked under one white box
 
 **2026-10-16, branch `ReviewFixes`.** The owner's look at `dev.md` in Chrome showed a white box

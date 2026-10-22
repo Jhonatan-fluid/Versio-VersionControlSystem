@@ -88,6 +88,23 @@ public sealed class CodesysLocator(
         return installs;
     }
 
+    /// <summary>
+    /// The profiles of the install that owns this executable, read the same way
+    /// <see cref="FindInstalls"/> reads them. Empty when the layout is not the usual one.
+    /// </summary>
+    /// <remarks>
+    /// The runner is handed an executable path and nothing else. The install it belongs to is
+    /// <c>…\CODESYS\Common\CODESYS.exe</c>, with <c>…\CODESYS\Profiles</c> beside
+    /// <c>Common</c>, which is the layout <see cref="FindInstalls"/> requires before it
+    /// accepts an install at all.
+    /// </remarks>
+    public static IReadOnlyList<string> ProfilesBeside(string executablePath)
+    {
+        var common = Path.GetDirectoryName(executablePath);
+        var codesys = common is null ? null : Path.GetDirectoryName(common);
+        return codesys is null ? [] : ProfilesIn(Path.Combine(codesys, "Profiles"));
+    }
+
     private static IReadOnlyList<string> ProfilesIn(string profilesDir)
     {
         if (!Directory.Exists(profilesDir))

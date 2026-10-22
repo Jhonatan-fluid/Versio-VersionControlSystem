@@ -173,6 +173,12 @@ public sealed class LadderPaneFlowTests
         GivenAPortalProjectWithLadder(repo);
         CommitEverything(repo);
 
+        // The project changed and the block did not, so the project is listed with something
+        // to review. Without a change it is in sync on open and the Project panel does not list
+        // it: since 2026-10-16 an untouched fresh clone is adopted from HEAD rather than
+        // reported as "not exported", and that defect is what used to keep this row on screen.
+        File.WriteAllText(Path.Combine(repo.Path, "plc", "Station.ap21"), "pointer, saved again");
+
         using var shell = Shell();
         await shell.OpenAsync(repo.Path);
         shell.Sync.SelectedNode = await Row(shell, "Main");
@@ -230,6 +236,12 @@ public sealed class LadderPaneFlowTests
         using var repo = new TempRepo();
         GivenAPortalProjectWithLadder(repo);
         CommitEverything(repo);
+
+        // The project changed and the block did not, so the project is listed with something
+        // to review. Without a change it is in sync on open and the Project panel does not list
+        // it: since 2026-10-16 an untouched fresh clone is adopted from HEAD rather than
+        // reported as "not exported", and that defect is what used to keep this row on screen.
+        File.WriteAllText(Path.Combine(repo.Path, "plc", "Station.ap21"), "pointer, saved again");
 
         using var shell = Shell();
         await shell.OpenAsync(repo.Path);

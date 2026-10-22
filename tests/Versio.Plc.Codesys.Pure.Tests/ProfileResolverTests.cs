@@ -152,4 +152,44 @@ public class ProfileResolverTests
         Assert.False(ProfileResolver.IsMissingProfileError("some other failure"));
         Assert.False(ProfileResolver.IsMissingProfileError(null));
     }
+
+    [Fact]
+    public void A_pin_from_another_machine_is_refused_by_name_with_what_is_installed_instead()
+    {
+        // The 2026-10-16 case: repo.json was committed on a machine with Patch 2, cloned onto
+        // one with Patch 4, and the export said only "CODESYS exited with code 1".
+        var refusal = ProfileResolver.PinnedButNotInstalled(
+            "CODESYS V3.5 SP22 Patch 2", ["CODESYS V3.5 SP22 Patch 4"]);
+
+        Assert.NotNull(refusal);
+        Assert.Contains("'CODESYS V3.5 SP22 Patch 2', which is not installed", refusal);
+        Assert.Contains("Installed: CODESYS V3.5 SP22 Patch 4", refusal);
+        Assert.Contains(".versio/repo.json", refusal);
+    }
+
+    [Theory]
+    [InlineData("CODESYS V3.5 SP22 Patch 4")]
+    [InlineData("codesys v3.5 sp22 patch 4")]
+    [InlineData("")]
+    [InlineData(null)]
+    public void An_installed_or_absent_pin_is_not_refused(string? pinned) =>
+        Assert.Null(ProfileResolver.PinnedButNotInstalled(pinned, ["CODESYS V3.5 SP22 Patch 4"]));
+
+    [Fact]
+    public void No_readable_profiles_means_cannot_tell_not_refuse()
+    {
+        // CODESYS still checks for itself, and IsRejectedProfileError catches its answer.
+        Assert.Null(ProfileResolver.PinnedButNotInstalled("CODESYS V3.5 SP22 Patch 2", []));
+    }
+
+    [Fact]
+    public void CODESYS_own_refusal_of_an_unknown_profile_is_recognised()
+    {
+        // Verbatim from CODESYS V3.5 SP22 Patch 4, 2026-10-16.
+        const string real = "The version profile 'CODESYS V3.5 SP22 Patch 2' is not valid.";
+
+        Assert.True(ProfileResolver.IsRejectedProfileError(real));
+        Assert.False(ProfileResolver.IsRejectedProfileError("The application will be terminated."));
+        Assert.False(ProfileResolver.IsRejectedProfileError(null));
+    }
 }

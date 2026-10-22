@@ -150,6 +150,169 @@ public sealed class ProjectPanelCalmStateTests
     }
 
     [Fact]
+    public async Task Opening_a_fresh_clone_that_matches_HEAD_exports_nothing()
+    {
+        // 2026-10-16: no .versio/local/state.json on a second machine, so the catch-up took
+        // every committed, untouched fixture as "changed since last export" and ran the
+        // toolchain over all four. Nothing had changed, so nothing should run.
+        using var repo = new TempRepo(identity: true);
+        GivenACommittedProject(repo);
+
+        var toolchain = new CapturingToolchain();
+        using var shell = TestShell.Build(out _, toolchain: toolchain);
+        await shell.OpenAsync(repo.Path);
+
+        Assert.Empty(toolchain.Jobs);
+        Assert.Equal(0, shell.Sync.UnexportedCount);
+        Assert.Equal(string.Empty, shell.Sync.StalenessSummary);
+    }
+
+    [Fact]
+    public async Task A_discard_that_leaves_the_project_at_HEAD_is_not_reported_as_unexported()
+    {
+        // 2026-10-17: Discard clears the export record on purpose, and the matches-HEAD check
+        // ran only when the repository was opened, so two discarded projects - untouched and
+        // identical to HEAD - would have been exported by the next commit. It runs on every
+        // staleness refresh now.
+        using var repo = new TempRepo(identity: true);
+        GivenACommittedProject(repo);
+
+        var toolchain = new CapturingToolchain();
+        using var shell = TestShell.Build(out _, toolchain: toolchain);
+
+        // Settled first, as a real repository is: opening writes the .gitattributes and
+        // .gitignore rules, and a project file restored under an uncommitted LFS rule is a
+        // different test.
+        await OpenAndSettleAsync(repo, shell);
+        Assert.Equal(0, shell.Sync.UnexportedCount);
+
+        // A MIRROR file, as on 2026-10-17: Discard releases a binding only for files inside
+        // its mirror (BindingConventions.OwnerOf), and that release is what clears the record.
+        // An earlier version of this test discarded the project file, never reached the
+        // release, and stayed green with the wiring deleted.
+        const string mirrorFile = "plc/Machine/Application/FB_Motor.st";
+        File.WriteAllText(Path.Combine(repo.Path, "plc", "Machine", "Application", "FB_Motor.st"),
+            "FUNCTION_BLOCK FB_Motor\nVAR x : INT; END_VAR\n");
+        await shell.RefreshAsync();
+        await Eventually.Until(() => shell.Pending.Any(r => r.Path == mirrorFile),
+            "the mirror edit is listed");
+
+        shell.Pending.Single(r => r.Path == mirrorFile).IsSelected = true;
+        shell.Asked().Destructive = _ => true;
+        var jobsBefore = toolchain.Jobs.Count;
+        await Eventually.Press(shell.DiscardCommand, "discard");
+        await Eventually.Until(() => shell.Pending.All(r => r.Path != mirrorFile),
+            "the mirror edit was discarded",
+            () => $"pending: {string.Join(", ", shell.Pending.Select(r => r.Path + (r.IsSelected ? "*" : "")))} | " +
+                  $"status: {shell.StatusSummary} | jobs: {toolchain.Jobs.Count}");
+        await shell.RefreshAsync();
+
+        Assert.Equal(0, shell.Sync.UnexportedCount);
+        Assert.Equal(string.Empty, shell.Sync.StalenessSummary);
+        Assert.Equal(jobsBefore, toolchain.Jobs.Count);
+    }
+
+    [Fact]
+    public async Task A_failed_project_does_not_hide_another_projects_pending_export()
+    {
+        // Review, 2026-10-17: with A failed and B changed, the panel read the gate's
+        // StaleBindings, which lists only the failures once anything has failed. B's pending
+        // export vanished: HasUnexportedChanges was false and the banner named only A.
+        using var repo = new TempRepo(identity: true);
+        var versio = Path.Combine(repo.Path, ".versio");
+        Directory.CreateDirectory(Path.Combine(versio, "local"));
+        File.WriteAllText(Path.Combine(versio, "repo.json"), """
+        {
+          "schema": 1,
+          "bindings": [
+            { "id": "a", "projectPath": "plc/A.project", "exportPath": "plc/A", "enabled": true },
+            { "id": "b", "projectPath": "plc/B.project", "exportPath": "plc/B", "enabled": true }
+          ]
+        }
+        """);
+        foreach (var name in new[] { "A", "B" })
+        {
+            Directory.CreateDirectory(Path.Combine(repo.Path, "plc", name));
+            File.WriteAllBytes(Path.Combine(repo.Path, "plc", name + ".project"), [0x01]);
+            File.WriteAllText(Path.Combine(repo.Path, "plc", name, "Main.st"), "PROGRAM Main\n");
+        }
+
+        repo.Git("add -A");
+        repo.Git("commit -q -m tracked");
+
+        // A failed in an earlier session, on another machine, so recovery re-adopts it.
+        File.WriteAllText(Path.Combine(versio, "local", "state.json"), """
+        {
+          "Schema": 3,
+          "RepoPath": "x",
+          "Owner": { "Machine": "ELSEWHERE", "User": "u", "SessionId": "s", "ProcessId": 1,
+                     "BootId": "2026-01-01T00:00:00+00:00", "RenewedUtc": "2026-01-01T00:00:00+00:00" },
+          "Bindings": {
+            "a": { "Direction": "Failed", "AcquiredUtc": "2026-01-01T00:00:00+00:00",
+                   "Reason": "export failed — the toolchain refused",
+                   "Baseline": { "HeadCommit": "", "ProjectHash": "", "MirrorHash": "" },
+                   "LastSynced": { "ProjectHash": "", "MirrorHash": "" } }
+          }
+        }
+        """);
+
+        // B has a real change, so it is not adopted from HEAD and has an export pending.
+        File.WriteAllBytes(Path.Combine(repo.Path, "plc", "B.project"), [0x02]);
+
+        using var shell = TestShell.Build(out _, toolchain: new CapturingToolchain());
+        await shell.OpenAsync(repo.Path);
+        await shell.RefreshAsync();
+
+        Assert.True(shell.Sync.HasUnexportedChanges,
+            $"summary: '{shell.Sync.StalenessSummary}' rows: " +
+            string.Join(", ", shell.Sync.Projects.Select(p => $"{p.BindingId}={p.State}")));
+        Assert.Contains("failed to sync", shell.Sync.StalenessSummary, StringComparison.Ordinal);
+        Assert.Contains("have not been exported", shell.Sync.StalenessSummary, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task A_failed_export_is_named_as_a_failure_not_as_unexported_changes()
+    {
+        // Seen 2026-10-16: four exports failed for reasons outside the projects, which were
+        // identical to HEAD. The banner said "4 projects have changes that have not been
+        // exported", every row said "not exported", and the Changes panel was correctly
+        // empty. So the user went looking for changes that did not exist.
+        using var repo = new TempRepo(identity: true);
+        GivenACommittedProject(repo);
+
+        // A real change, so the open has an export to attempt. An untouched clone is adopted
+        // from HEAD and runs nothing (the test above).
+        File.WriteAllBytes(Path.Combine(repo.Path, "plc", "Machine.project"), [0x09, 0x09]);
+
+        using var shell = TestShell.Build(out _, toolchain: new CapturingToolchain
+        {
+            FailWith = "profile 'CODESYS V3.5 SP22 Patch 2' is not installed",
+        });
+
+        // Not OpenAndSettleAsync: that asserts a calm tree, and a failed project rightly
+        // stays in it.
+        await shell.OpenAsync(repo.Path);
+        repo.Git("add -A");
+        repo.Git("commit -q --allow-empty -m settled");
+        await shell.RefreshAsync();
+
+        // The failure is the project's only story: git has nothing to say about it.
+        Assert.Contains(shell.Sync.Tree, r => r.Name == "Machine.project");
+
+        Assert.Contains("failed to sync", shell.Sync.StalenessSummary, StringComparison.Ordinal);
+        Assert.DoesNotContain("have not been exported", shell.Sync.StalenessSummary,
+            StringComparison.Ordinal);
+        Assert.False(shell.Sync.HasUnexportedChanges);
+
+        var row = Assert.Single(shell.Sync.Projects, p => p.BindingId == "b1");
+        Assert.Equal("failed", row.State);
+
+        // And the card says why, in the toolchain's words rather than "export failed" alone.
+        shell.Sync.RefreshFailure(row.Path);
+        Assert.Contains("is not installed", shell.Sync.FailureDetail, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void Leaving_the_repository_empties_the_calm_list()
     {
         // Detach clears the tree; a leftover calm list would name the old repository's

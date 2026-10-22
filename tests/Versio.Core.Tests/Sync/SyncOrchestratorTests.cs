@@ -1,5 +1,6 @@
 using Versio.Core.Abstractions;
 using Versio.Core.Bindings;
+using Versio.Core.Git;
 using Versio.Core.Locking;
 using Versio.Core.Logging;
 using Versio.Core.Plc;
@@ -144,6 +145,201 @@ public class SyncOrchestratorTests
             }, CancellationToken.None);
     }
 
+    // --- a fresh clone: no export recorded on this machine ---------------------
+
+    private static readonly string[] Listed = ["plc/A.project", "plc/A/_manifest.json", "plc/A/Simulation.st"];
+
+    /// <summary>A status reader that answers the same status every time it is asked.</summary>
+    private static Func<CancellationToken, Task<GitStatus>> Fixed(GitStatus status) =>
+        _ => Task.FromResult(status);
+
+    /// <summary>A status git actually read, reporting these working-tree changes.</summary>
+    private static GitStatus Status(params string[] modified) => new()
+    {
+        Branch = new BranchInfo { Name = "main", IsCurrent = true },
+        Changes = [.. modified.Select(p => new FileChange
+        {
+            Path = p, Staged = ChangeKind.Unmodified, Unstaged = ChangeKind.Modified,
+        })],
+    };
+
+    [Fact]
+    public async Task A_fresh_clone_that_matches_HEAD_is_taken_as_exported_without_running_anything()
+    {
+        // 2026-10-16: the first open of a clone exported every fixture, none of which had
+        // changed, because the empty record read to the gate as "changed since last export".
+        var h = new Harness();
+
+        var adopted = await h.Orchestrator.AdoptCommittedStateAsync(Fixed(Status()), Listed, CancellationToken.None);
+
+        Assert.Equal([BindingId], adopted);
+        Assert.Empty(h.Codesys.Jobs);
+        Assert.Equal(SyncDirection.Clean, h.Orchestrator.StateOf(BindingId));
+
+        var gate = await h.Orchestrator.EvaluateCommitGateAsync(CancellationToken.None);
+        Assert.Equal(GateDecision.Proceed, gate.Decision);
+        Assert.NotEmpty(h.Locks.State!.Bindings[BindingId].LastSynced.ProjectHash);
+    }
+
+    [Theory]
+    [InlineData("plc/A.project")]          // the project was edited
+    [InlineData("plc/A/Simulation.st")]    // the mirror was edited
+    public async Task A_fresh_clone_with_a_change_under_the_binding_still_exports(string changed)
+    {
+        var h = new Harness();
+
+        var adopted = await h.Orchestrator.AdoptCommittedStateAsync(Fixed(Status(changed)), Listed, CancellationToken.None);
+
+        Assert.Empty(adopted);
+        var gate = await h.Orchestrator.EvaluateCommitGateAsync(CancellationToken.None);
+        Assert.Equal(GateDecision.ExportRequired, gate.Decision);
+    }
+
+    [Fact]
+    public async Task A_change_elsewhere_in_the_repository_does_not_stop_adoption()
+    {
+        var h = new Harness();
+
+        var adopted = await h.Orchestrator.AdoptCommittedStateAsync(Fixed(Status("README.md", "plc/AB/x.st")), Listed, CancellationToken.None);
+
+        Assert.Equal([BindingId], adopted);
+    }
+
+    [Theory]
+    [InlineData("plc/A/_manifest.json")]   // project not listed: gitignored
+    [InlineData("plc/A.project")]          // mirror never committed
+    public async Task Silence_from_git_about_an_unlisted_side_is_not_taken_as_unchanged(string onlyListed)
+    {
+        var h = new Harness();
+
+        Assert.Empty(await h.Orchestrator.AdoptCommittedStateAsync(Fixed(Status()), [onlyListed], CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task A_status_git_could_not_read_adopts_nothing()
+    {
+        // Review, 2026-10-17: `git status` failing came back as an empty status, and with a
+        // file listing that succeeded that was "nothing changed" - so a modified project was
+        // recorded as exported and its export skipped. An unread status decides nothing.
+        var h = new Harness();
+        var unread = Status() with { Failure = "fatal: index file corrupt" };
+
+        Assert.Empty(await h.Orchestrator.AdoptCommittedStateAsync(Fixed(unread), Listed, CancellationToken.None));
+        var gate = await h.Orchestrator.EvaluateCommitGateAsync(CancellationToken.None);
+        Assert.Equal(GateDecision.ExportRequired, gate.Decision);
+    }
+
+    [Fact]
+    public async Task A_file_renamed_out_of_the_mirror_is_a_change_to_the_binding()
+    {
+        // Review, 2026-10-17: only each change's destination was checked, so moving
+        // plc/A/Simulation.st to archive/ looked unrelated to the binding although it removed
+        // a file from its mirror. The source of a rename counts too.
+        var h = new Harness();
+        var renamed = Status() with
+        {
+            Changes =
+            [
+                new FileChange
+                {
+                    Path = "archive/Simulation.st", OriginalPath = "plc/A/Simulation.st",
+                    Staged = ChangeKind.Renamed, Unstaged = ChangeKind.Unmodified,
+                },
+            ],
+        };
+
+        Assert.Empty(await h.Orchestrator.AdoptCommittedStateAsync(Fixed(renamed), Listed, CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task A_lock_taken_while_adoption_was_checking_is_not_overwritten()
+    {
+        // Review, 2026-10-17: the lock was read, the files hashed, and the stale copy written
+        // back, so a direction taken in that window came out Clean. The second status read is
+        // after the first hash, so taking the lock there lands exactly in that window.
+        var h = new Harness();
+        h.Codesys.EnqueueSuccess("plc/A/Main.st");
+        var asked = 0;
+
+        var adopted = await h.Orchestrator.AdoptCommittedStateAsync(async ct =>
+        {
+            if (++asked == 2)
+            {
+                await h.ProjectChanged();
+            }
+
+            return Status();
+        }, Listed, CancellationToken.None);
+
+        Assert.Equal(2, asked);
+        Assert.Empty(adopted);
+        Assert.Equal(SyncDirection.ProjectAuthoritative, h.Orchestrator.StateOf(BindingId));
+    }
+
+    [Fact]
+    public async Task A_save_after_the_first_status_is_not_recorded_as_exported()
+    {
+        // Review, 2026-10-17: the clean status was taken as proof for files hashed later. A
+        // save in between now shows up in the second status.
+        var h = new Harness();
+        var asked = 0;
+
+        var adopted = await h.Orchestrator.AdoptCommittedStateAsync(_ =>
+        {
+            if (++asked == 1)
+            {
+                h.SetProject("v2, saved just after git looked");
+                return Task.FromResult(Status());
+            }
+
+            return Task.FromResult(Status("plc/A.project"));
+        }, Listed, CancellationToken.None);
+
+        Assert.Empty(adopted);
+        var gate = await h.Orchestrator.EvaluateCommitGateAsync(CancellationToken.None);
+        Assert.Equal(GateDecision.ExportRequired, gate.Decision);
+    }
+
+    [Fact]
+    public async Task A_save_after_the_second_status_is_caught_by_the_second_hash()
+    {
+        var h = new Harness();
+        var asked = 0;
+
+        var adopted = await h.Orchestrator.AdoptCommittedStateAsync(_ =>
+        {
+            if (++asked == 2)
+            {
+                h.SetProject("v2, saved just after git looked again");
+            }
+
+            return Task.FromResult(Status());
+        }, Listed, CancellationToken.None);
+
+        Assert.Empty(adopted);
+    }
+
+    [Fact]
+    public async Task A_mirror_git_lists_but_the_disk_does_not_have_is_not_adopted()
+    {
+        // Review, 2026-10-17: a sparse checkout leaves skip-worktree files listed and absent.
+        var h = new Harness();
+        string[] listed = [.. Listed, "plc/A/Absent.st"];
+
+        Assert.Empty(await h.Orchestrator.AdoptCommittedStateAsync(Fixed(Status()), listed, CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task A_recorded_export_or_a_failure_is_never_overwritten_by_adoption()
+    {
+        var h = new Harness();
+        h.Codesys.EnqueueFailure("boom");
+        await h.ProjectChanged();
+
+        Assert.Empty(await h.Orchestrator.AdoptCommittedStateAsync(Fixed(Status()), Listed, CancellationToken.None));
+        Assert.Equal(SyncDirection.Failed, h.Orchestrator.StateOf(BindingId));
+    }
+
     // --- the happy path -------------------------------------------------------
 
     [Fact]
@@ -260,6 +456,7 @@ public class SyncOrchestratorTests
         Assert.Contains("back up", outcome.Explanation, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain(h.Codesys.Jobs, j => j.Operation == PlcOperation.Import);
         Assert.Equal(SyncDirection.Failed, h.Orchestrator.StateOf(BindingId));
+        Assert.StartsWith("import failed — could not back up", h.Orchestrator.ReasonFor(BindingId));
     }
 
     [Fact]
@@ -291,6 +488,41 @@ public class SyncOrchestratorTests
         Assert.True(h.Locks.Writes > writesBefore);
         Assert.Equal(SyncDirection.Failed, h.Locks.State!.Bindings[BindingId].Direction);
         Assert.Equal("cancelled on request", h.Locks.State.Bindings[BindingId].Reason);
+    }
+
+    [Fact]
+    public async Task A_failed_export_persists_the_toolchains_reason_not_just_export_failed()
+    {
+        // The failure card shows ReasonFor, read from the persisted lock. Until 2026-10-16 the
+        // lock only ever said "export failed": a TIA install refusing the user for not being in
+        // the Openness group, and a CODESYS profile missing from the machine, both reached the
+        // log and nowhere a person looks.
+        var h = new Harness();
+        h.Codesys.EnqueueFailure("profile 'X' is not installed on this machine");
+
+        var outcome = await h.ProjectChanged();
+
+        Assert.Equal(SyncVerdict.Failed, outcome.Verdict);
+        Assert.Equal(
+            "export failed — profile 'X' is not installed on this machine",
+            h.Orchestrator.ReasonFor(BindingId));
+        Assert.Equal(
+            "export failed — profile 'X' is not installed on this machine",
+            h.Locks.State!.Bindings[BindingId].Reason);
+    }
+
+    [Fact]
+    public async Task A_failed_import_persists_the_toolchains_reason_too()
+    {
+        var h = new Harness();
+        h.Codesys.EnqueueFailure("the script refused the plan");
+
+        var outcome = await h.TextChanged();
+
+        Assert.Equal(SyncVerdict.Failed, outcome.Verdict);
+        Assert.Equal(
+            "import failed — the script refused the plan",
+            h.Orchestrator.ReasonFor(BindingId));
     }
 
     [Fact]
