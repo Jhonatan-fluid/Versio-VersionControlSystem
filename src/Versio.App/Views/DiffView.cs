@@ -327,10 +327,16 @@ public class DiffView : ListBox
     /// The two columns are where old and new are read against each other.
     /// </para>
     /// <para>
-    /// <b>The place is still marked.</b> A change that only deleted lines would otherwise leave
-    /// nothing on this tab at all, and an object badged M with no visible change reads as a
+    /// <b>A pure deletion is still marked.</b> A change that only deleted lines would otherwise
+    /// leave nothing on this tab at all, and an object badged M with no visible change reads as a
     /// fault. The line that now stands where they were carries a red rule on its top edge (on
     /// its bottom edge when they were the last lines), and its tooltip says how many went.
+    /// </para>
+    /// <para>
+    /// <b>Only a pure deletion.</b> Removed lines with an added line beside them were replaced,
+    /// and the added line's green tint already says so. The rule drawn there too sat on every
+    /// edited line, a red stroke above a green one that said nothing the green did not (the
+    /// owner, 2026-10-22: "what is this red line?").
     /// </para>
     /// </remarks>
     private List<SourceRow> Unified(IReadOnlyList<SourceRow> marked)
@@ -338,6 +344,9 @@ public class DiffView : ListBox
         var rows = new List<SourceRow>(marked.Count);
         var near = new Dictionary<SourceRow, (int Count, bool After)>(ReferenceEqualityComparer.Instance);
         var pending = 0;
+        SourceCodeLine? previous = null;
+
+        static bool IsAdded(SourceCodeLine? line) => line?.Change == SourceChange.Added;
 
         foreach (var row in marked)
         {
@@ -347,18 +356,24 @@ public class DiffView : ListBox
                 continue;
             }
 
-            if (pending > 0 && row is SourceCodeLine)
+            if (row is SourceCodeLine line)
             {
-                near[row] = (pending, false);
+                // Either neighbour added means the run was replaced, not deleted.
+                if (pending > 0 && !IsAdded(line) && !IsAdded(previous))
+                {
+                    near[row] = (pending, false);
+                }
+
                 pending = 0;
+                previous = line;
             }
 
             rows.Add(row);
         }
 
-        if (pending > 0 && rows.LastOrDefault(r => r is SourceCodeLine) is { } last)
+        if (pending > 0 && previous is not null && !IsAdded(previous))
         {
-            near[last] = (pending, true);
+            near[previous] = (pending, true);
         }
 
         _removedNear = near;
@@ -511,6 +526,12 @@ public class DiffView : ListBox
         // a border, so the marked line is not two pixels taller than its neighbours.
         if (_removedNear is { } near && near.TryGetValue(line, out var removed))
         {
+            // Across the whole row, as the added tint is. Spanning only the gutter and the
+            // code's Auto column, it stopped wherever that line's text did, which read as a
+            // rendering fault rather than a mark (the owner, 2026-10-22). The fill column is
+            // added only here, so an ordinary row keeps its two.
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+
             var rule = new System.Windows.Shapes.Rectangle
             {
                 Height = 2,
@@ -518,7 +539,7 @@ public class DiffView : ListBox
                 VerticalAlignment = removed.After ? VerticalAlignment.Bottom : VerticalAlignment.Top,
                 IsHitTestVisible = false,
             };
-            Grid.SetColumnSpan(rule, 2);
+            Grid.SetColumnSpan(rule, 3);
             grid.Children.Add(rule);
 
             var count = removed.Count.ToString(CultureInfo.InvariantCulture);

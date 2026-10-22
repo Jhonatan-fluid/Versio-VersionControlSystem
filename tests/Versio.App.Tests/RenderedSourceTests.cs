@@ -243,11 +243,39 @@ public sealed class RenderedSourceTests
 
             var after = Assert.Single(rows.OfType<SourceCodeLine>(), l => l.Text == "END_IF");
             var row = Assert.IsType<Grid>(view.RowFor(after));
-            Assert.Contains(row.Children.OfType<System.Windows.Shapes.Rectangle>(), r => r.VerticalAlignment == VerticalAlignment.Top);
+            var rule = Assert.Single(row.Children.OfType<System.Windows.Shapes.Rectangle>());
+            Assert.Equal(VerticalAlignment.Top, rule.VerticalAlignment);
             Assert.Contains("1 line removed above", row.ToolTip as string, StringComparison.Ordinal);
+
+            // Across the whole row: the last column fills, and the rule spans every column.
+            Assert.True(row.ColumnDefinitions[^1].Width.IsStar);
+            Assert.Equal(row.ColumnDefinitions.Count, Grid.GetColumnSpan(rule));
 
             var untouched = Assert.IsType<Grid>(view.RowFor(Assert.Single(rows.OfType<SourceCodeLine>(), l => l.Text == "\tState := 0;")));
             Assert.Empty(untouched.Children.OfType<System.Windows.Shapes.Rectangle>());
+        });
+    }
+
+    [Fact]
+    public void An_edited_line_carries_its_green_tint_and_no_removal_rule()
+    {
+        // The owner, 2026-10-22: "what is this red line?" — drawn on every edited line, above
+        // a green tint that already said the line changed. Only a pure deletion gets the rule.
+        StaHarness.Run(() =>
+        {
+            var before = FbAlarm.Replace("State := 0;", "State := 1;", StringComparison.Ordinal);
+            var marked = StSourceLayout.Mark(StSourceLayout.Lay(FbAlarm), before, FbAlarm);
+            Assert.Single(marked.OfType<SourceRemovedLine>());
+
+            var view = new Openable { FilePath = "FB_Alarm.st", SourceRows = marked };
+            var rows = Assert.IsAssignableFrom<IReadOnlyList<SourceRow>>(view.ItemsSource);
+
+            foreach (var line in rows.OfType<SourceCodeLine>())
+            {
+                var row = Assert.IsType<Grid>(view.RowFor(line));
+                Assert.Empty(row.Children.OfType<System.Windows.Shapes.Rectangle>());
+                Assert.Null(row.ToolTip);
+            }
         });
     }
 
