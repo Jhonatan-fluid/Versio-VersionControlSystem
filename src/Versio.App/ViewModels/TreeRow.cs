@@ -170,6 +170,14 @@ public sealed class TreeRow : ObservableObject
     /// </remarks>
     public bool IsFile => Node.Kind == ProjectNodeKind.File;
 
+    /// <summary>True when this row's own object or file was deleted. Its name is drawn struck.</summary>
+    /// <remarks>
+    /// The red D alone was one letter in a column of M and ?, and a deleted property read as one
+    /// more property of the block (the owner, 2026-10-22). Own status, not the roll-up: a folder
+    /// holding one deleted method still exists.
+    /// </remarks>
+    public bool IsDeleted => Node.Status == ChangeKind.Deleted;
+
     /// <summary>
     /// The resource key of the glyph drawn before the name: what KIND of row this is.
     /// </summary>

@@ -323,13 +323,14 @@
                                     <TextBlock Text="{Binding Name}"
                                                VerticalAlignment="Center"
                                                FontSize="{DynamicResource Font.Size.Body}"
-                                               Foreground="{DynamicResource Brush.Text.Primary}"
                                                TextTrimming="CharacterEllipsis"
                                                ToolTip="{Binding Node.Path}">
                                         <TextBlock.Style>
                                             <Style TargetType="TextBlock">
                                                 <Setter Property="FontFamily"
                                                         Value="{DynamicResource Font.UI}" />
+                                                <Setter Property="Foreground"
+                                                        Value="{DynamicResource Brush.Text.Primary}" />
                                                 <Style.Triggers>
                                                     <DataTrigger Binding="{Binding IsFile}" Value="True">
                                                         <Setter Property="FontFamily"
@@ -338,6 +339,17 @@
                                                     <DataTrigger Binding="{Binding IsProject}" Value="True">
                                                         <Setter Property="FontWeight"
                                                                 Value="{DynamicResource Font.Weight.Semibold}" />
+                                                    </DataTrigger>
+                                                    <!-- Struck and dimmed: gone since the last
+                                                         commit. See TreeRow.IsDeleted. The
+                                                         Foreground is the TextBlock's local value,
+                                                         which a style cannot override, so it
+                                                         moved into this style. -->
+                                                    <DataTrigger Binding="{Binding IsDeleted}" Value="True">
+                                                        <Setter Property="TextDecorations"
+                                                                Value="Strikethrough" />
+                                                        <Setter Property="Foreground"
+                                                                Value="{DynamicResource Brush.Text.Secondary}" />
                                                     </DataTrigger>
                                                 </Style.Triggers>
                                             </Style>

@@ -103,6 +103,38 @@ public sealed class TreeRowChromeTests
     }
 
     [Fact]
+    public void A_deleted_row_draws_its_name_struck_and_a_changed_one_does_not()
+    {
+        // The owner, 2026-10-22: a red D alone did not say "this property is gone". Through
+        // the real template, because the flag is nothing without the trigger that reads it.
+        StaHarness.Run(() =>
+        {
+            using var shell = TestShell.Build();
+            var window = new Versio.App.Views.MainWindow(shell);
+            var content = Assert.IsAssignableFrom<FrameworkElement>(window.Content);
+
+            shell.Sync.Tree.Add(new TreeRow(new ProjectTreeNode
+            {
+                Name = "P_Busy", Path = "plc/P_Busy", Kind = ProjectNodeKind.Object,
+                Status = Versio.Core.Git.ChangeKind.Deleted,
+            }, depth: 0));
+            shell.Sync.Tree.Add(new TreeRow(new ProjectTreeNode
+            {
+                Name = "Register", Path = "plc/Register", Kind = ProjectNodeKind.Object,
+                Status = Versio.Core.Git.ChangeKind.Modified,
+            }, depth: 0));
+            Lay(content);
+
+            var names = Descendants((DependencyObject)window.FindName("ProjectPanel")).OfType<TextBlock>().ToList();
+            var deleted = Assert.Single(names, t => t.Text == "P_Busy");
+            var changed = Assert.Single(names, t => t.Text == "Register");
+
+            Assert.Equal(TextDecorations.Strikethrough, deleted.TextDecorations);
+            Assert.True(changed.TextDecorations is null || changed.TextDecorations.Count == 0);
+        });
+    }
+
+    [Fact]
     public void An_object_row_shows_the_vendor_word_for_its_type_not_the_raw_identifier()
     {
         Assert.Equal("Persistent GVL", Row(ProjectNodeKind.Object, "GVL_PERSISTENT", "Persistent GVL").TypeLabel);

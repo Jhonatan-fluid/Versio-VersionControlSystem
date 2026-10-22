@@ -19,6 +19,32 @@ produce a diff touching everything else.
 
 ---
 
+### A block's properties sat among its methods, and a deleted one looked like any other
+
+**2026-10-22, branch `PrReview`, the same `FB_Logger` once the fix below had put its deleted
+properties back under it.** Two asks from the owner's screenshot: methods first, then
+properties; and a deleted property drawn so it reads as deleted.
+
+- **Order.** `ProjectTreeBuilder.ChildrenOf` sorted an owner's members by name alone, so the
+  renamed properties (`Busy` new, `P_Busy` deleted) were scattered between methods. Properties
+  now sort after everything else, each group by name; folders still come first. Keyed on the
+  IEC word `PROPERTY` (`IecObjectTypeNames.Property`), so the neutral builder learns no vendor's
+  type list, and a vendor's other method spellings (`METHOD_NORET`) and actions sort with the
+  methods. No project-level row is a property, so nothing above the blocks moves. The web viewer
+  builds its tree with the same code and gets the same order.
+- **Struck name.** `TreeRow.IsDeleted` (the row's own status, never the roll-up: a folder holding
+  a deleted method still exists) drives a trigger in the project panel's row template that
+  strikes the name and dims it to secondary. The name's foreground had to move from a local value
+  into the style, because a local value beats any trigger. The explorer is left alone: it lists
+  files on disk, and a deleted one is not there.
+
+**Checked by breaking it:** the ordering line reverted turns the new
+`ProjectTreeMembersTests` case red; the trigger keyed to a value it never takes turns the new
+`TreeRowChromeTests` case red. That one goes through the real `MainWindow`, because the flag
+does nothing without the trigger that reads it.
+
+---
+
 ### Deleted properties fell out of their block, and the Rendered tab ignored two of the pane's boxes
 
 **2026-10-22, branch `PrReview`.** The owner, on a CODESYS File-Based Storage library
