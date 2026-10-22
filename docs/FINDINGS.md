@@ -136,6 +136,21 @@ branch has never been deployed, so the legacy paths guard data that exists only 
 and could be deleted rather than refined. More desk review now buys less than the real-GitHub gates
 and the penetration test would. Web 354 -> 358, vitest 124 -> 129.
 
+**Then the legacy paths were deleted rather than refined (2026-10-22, `63ca8e6`, `bb8c45c`).**
+Three of the last two reviews' findings were about data from before a fix: ledger entries recorded
+before revisions were bound, and page drafts saved before a key kept its snapshot. Each fix grew a
+rule (accept the bare hash; then settle but never run it; then an "operation-legacy" refusal; on the
+page, an "unrecoverable" notice and a disabled retry). None of that data existed outside test
+machines, because the branch was never deployed. So the server compares a recorded hash with the
+bound one and nothing else, and the page assumes what it always writes — a held key with its
+snapshot. New tests pin the simpler rule: an entry with an unbound hash is op-mismatch with nothing
+sent, and under an expired snapshot it is "reload", never "done". The settle-path test was written
+because re-accepting the bare hash there first survived the mutation check. On the page, the two
+reload-onto-a-newer-revision tests kill a key saved without its snapshot, in both the comment box
+and the review dialog. **Rule worth keeping:** before deployment, compatibility with your own
+unreleased data is a cost with no one to pay it back — delete it, and test the invariant that made
+it unnecessary. Web 358 -> 358 (three cases removed, three added), vitest 129 -> 127.
+
 ---
 
 ### A pull request's "What changed" compared against the base branch's tip, so later commits on the base read as reverted
