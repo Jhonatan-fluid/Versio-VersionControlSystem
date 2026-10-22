@@ -383,25 +383,53 @@ public sealed class PullWriteTests
     }
 
     /// <summary>
-    /// The ledger outlives a deploy. An entry recorded before revisions were bound carries the bare
-    /// payload hash; its retry must reconcile, not be refused as another operation — that refusal
-    /// would release the page's key and let the next click post twice (found in review, 2026-10-20).
+    /// Every entry is bound to its revision, so an entry carrying the bare payload hash is another
+    /// operation: refused as one, and nothing is sent — whether it is unknown (and its comment is on
+    /// GitHub) or failed. The bare hash was accepted for a while, for entries from before the binding;
+    /// the branch was never deployed with any, so that acceptance and its "operation-legacy" refusal
+    /// were removed (2026-10-22). This is what goes red if either comes back.
     /// </summary>
-    [Fact]
-    public async Task An_entry_recorded_before_revisions_were_bound_still_reconciles()
+    [Theory]
+    [InlineData(OperationState.Unknown)]
+    [InlineData(OperationState.Failed)]
+    public async Task An_entry_with_an_unbound_hash_is_another_operation(OperationState state)
     {
         var (host, writer, alice, token) = await StartAsync(Build());
         await using var _ = host;
         var key = Key(DateTimeOffset.UtcNow.AddMinutes(-3));
         var reserved = DateTimeOffset.UtcNow.AddMinutes(-2);
         await host.Services.GetRequiredService<IOperationLedger>().RecordAsync($"user:alice|comment|acme/plant|12|{key}",
-            new OperationEntry(ReviewTags.PayloadHash("Before."), OperationState.Unknown, null, reserved, reserved), CancellationToken.None);
+            new OperationEntry(ReviewTags.PayloadHash("Before."), state, null, reserved, reserved), CancellationToken.None);
         writer.Comments["C_beforeabcd"] = new FakeWriter.Comment("C_beforeabcd", "IssueComment", "acme/plant", 12, "alice", ReviewTags.WithOperation("Before.", key), reserved, null);
 
         var retry = await Post(host, "/comments", new { opKey = key, body = "Before." }, alice, Headers(token));
 
-        retry.AssertStatus(HttpStatusCode.OK);
-        Assert.Equal("C_beforeabcd", Json(await retry.Body()).GetProperty("id").GetString());
+        retry.AssertStatus(HttpStatusCode.UnprocessableEntity);
+        Assert.Contains("op-mismatch", await retry.Body(), StringComparison.Ordinal);
+        Assert.Empty(writer.Writes);
+    }
+
+    /// <summary>The same under an expired snapshot: settling finds no operation of its own, so "reload", never "done".</summary>
+    [Fact]
+    public async Task An_entry_with_an_unbound_hash_is_not_settled_under_an_expired_snapshot()
+    {
+        var clock = new Versio.Core.Abstractions.FakeClock(DateTimeOffset.UtcNow);
+        var (host, writer, _, _) = await StartAsync(Build(), more: s => s.AddSingleton<Versio.Core.Abstractions.IClock>(clock));
+        await using var __ = host;
+        var sessions = host.Services.GetRequiredService<SessionStore>();
+        var session = await sessions.CreateAsync(42, "alice", "alice", "", "alice-token", DateTimeOffset.UtcNow.AddDays(3), null, DateTimeOffset.UtcNow.AddMonths(6));
+        var alice = $"{AccessResolver.SessionCookie}={session.Id}";
+        var token = JsonDocument.Parse(await (await host.GetAsync("/api/repos/acme/plant/pulls/12/snapshot", alice)).Body()).RootElement.GetProperty("token").GetString()!;
+        var key = Key();
+        var reserved = DateTimeOffset.UtcNow;
+        await host.Services.GetRequiredService<IOperationLedger>().RecordAsync($"user:alice|comment|acme/plant|12|{key}",
+            new OperationEntry(ReviewTags.PayloadHash("Before."), OperationState.Succeeded, "C_beforeabcd", reserved, reserved), CancellationToken.None);
+
+        clock.Advance(ReviewSnapshots.Lifetime + TimeSpan.FromMinutes(1));
+        var settled = await Post(host, "/comments", new { opKey = key, body = "Before." }, alice, Headers(token));
+
+        settled.AssertStatus(HttpStatusCode.Conflict);
+        Assert.Contains("snapshot-expired", await settled.Body(), StringComparison.Ordinal);
         Assert.Empty(writer.Writes);
     }
 
@@ -472,30 +500,6 @@ public sealed class PullWriteTests
 
         other.AssertStatus(HttpStatusCode.UnprocessableEntity);
         Assert.False(other.Headers.Contains(PullWriteEndpoints.SettledHeader));
-    }
-
-    /// <summary>
-    /// A pre-binding entry may be settled, never run again: its revision is not known, so running a
-    /// failed one under the retry's snapshot could apply it to a commit nobody reviewed (found in
-    /// review, 2026-10-21). A failed legacy entry is refused, and an unknown idempotent one stays
-    /// unknown rather than being run.
-    /// </summary>
-    [Theory]
-    [InlineData(OperationState.Failed, "/threads/T_here1234/resolve", "resolve", true)]
-    [InlineData(OperationState.Unknown, "/threads/T_here1234/resolve", "resolve", true)]
-    public async Task An_entry_recorded_before_revisions_were_bound_is_never_run_again(OperationState state, string path, string action, bool resolved)
-    {
-        var (host, writer, alice, token) = await StartAsync(Build());
-        await using var _ = host;
-        var key = Key(DateTimeOffset.UtcNow.AddMinutes(-3));
-        var reserved = DateTimeOffset.UtcNow.AddMinutes(-2);
-        await host.Services.GetRequiredService<IOperationLedger>().RecordAsync($"user:alice|{action}|acme/plant|12|{key}",
-            new OperationEntry(ReviewTags.PayloadHash("T_here1234", resolved ? "1" : "0"), state, null, reserved, reserved), CancellationToken.None);
-
-        var retry = await Post(host, path, new { opKey = key, resolved }, alice, Headers(token));
-
-        Assert.NotEqual(HttpStatusCode.OK, retry.StatusCode);
-        Assert.Empty(writer.Writes);
     }
 
     /// <summary>The in-memory ledger, holding readers of a failed entry until as many as asked have read it.</summary>

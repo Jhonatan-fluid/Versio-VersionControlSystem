@@ -766,20 +766,15 @@ public static partial class PullWriteEndpoints
         /// an approval that never reached the server, after a push and a reload, carried the new
         /// snapshot and would have approved a commit the person never saw (found by review,
         /// 2026-10-20). The page sends a retry with the snapshot it was first sent under.
+        ///
+        /// Every entry is bound: there is no bare-hash entry to accept. One was accepted for a while,
+        /// for entries recorded before the binding, and then refused a takeover and given its own
+        /// "operation-legacy" refusal (reviews, 2026-10-20 and 2026-10-21) — all for data that existed
+        /// only on test machines, since this was never deployed with unbound entries. Removed
+        /// 2026-10-22; a bare-hash entry is now simply another payload.
         /// </summary>
         private static string Bound(string payloadHash, ReviewSnapshot? snapshot) =>
             snapshot is null ? payloadHash : ReviewTags.PayloadHash(payloadHash, snapshot.HeadSha, snapshot.BaseSha);
-
-        /// <summary>
-        /// Whether a recorded entry is this operation: its hash bound to this revision — or the bare
-        /// payload hash, which only an entry recorded before revisions were bound can carry (every
-        /// entry since is bound). The ledger outlives a deploy, so without the second a retry of a
-        /// write whose answer was lost just before one was refused as "op-mismatch", the page let go
-        /// of the key, and the next click could post it twice (found in review, 2026-10-20). Such
-        /// entries are at most a week old (the key lifetime), after which this is moot.
-        /// </summary>
-        private static bool SameOperation(string recorded, string payloadHash, ReviewSnapshot? snapshot) =>
-            recorded == Bound(payloadHash, snapshot) || (snapshot is not null && recorded == payloadHash);
 
         private string LedgerKey(RepoAccess who, string action, string owner, string repo, int number, string key) =>
             string.Join('|', PullEndpoints.Viewer(who), action, $"{owner}/{repo}".ToLowerInvariant(), number, key);
@@ -802,7 +797,7 @@ public static partial class PullWriteEndpoints
             var key = request.OpKey!;
             var ledgerKey = LedgerKey(who, action, owner, repo, number, key);
             var entry = await ledger.FindAsync(ledgerKey, ct).ConfigureAwait(false);
-            if (entry is null || !SameOperation(entry.PayloadHash, payloadHash, old))
+            if (entry is null || entry.PayloadHash != Bound(payloadHash, old))
             {
                 return expired;
             }
@@ -848,7 +843,6 @@ public static partial class PullWriteEndpoints
             Func<RepoAccess, ReviewSnapshot?, string, DateTimeOffset, Task<RepoResult<string>>> reconcile,
             bool idempotent, CancellationToken ct)
         {
-            var unbound = payloadHash;
             payloadHash = Bound(payloadHash, snapshot);
             var now = clock.UtcNow;
             switch (ReviewTags.CheckKey(request.OpKey, now))
@@ -865,18 +859,12 @@ public static partial class PullWriteEndpoints
             var reservation = await ledger.ReserveAsync(ledgerKey, payloadHash, now, ct).ConfigureAwait(false);
             if (!reservation.Fresh && reservation.Existing is { } existing)
             {
-                if (!SameOperation(existing.PayloadHash, unbound, snapshot))
+                if (existing.PayloadHash != payloadHash)
                 {
                     Audit(who, action, owner, repo, number, snapshot, key, "refused: same key, different payload");
                     return Results.Json(new { error = "op-mismatch", message = "This retry does not match what was first submitted." }, statusCode: 422);
                 }
 
-                // Recorded before revisions were bound (the bare hash): it may be SETTLED — found done,
-                // in flight, reconciled — but never run again. Its revision is not known, so running it
-                // under this request's snapshot could put an approval on a commit the person never saw;
-                // accepting the bare hash for a takeover reopened exactly what the binding closed
-                // (found in review, 2026-10-21).
-                var legacy = existing.PayloadHash != payloadHash;
                 switch (existing.State)
                 {
                     case OperationState.Succeeded:
@@ -886,15 +874,12 @@ public static partial class PullWriteEndpoints
                     case OperationState.Pending or OperationState.Unknown:
                         // Abandoned, or sent with no answer: find out before doing anything else.
                         var found = await ReconcileAsync(who, snapshot, key, existing, reconcile, ledgerKey, action, owner, repo, number).ConfigureAwait(false);
-                        if (found is not null || !idempotent || legacy)
+                        if (found is not null || !idempotent)
                         {
                             return found ?? UnknownResult();
                         }
 
                         break;
-                    case OperationState.Failed when legacy:
-                        Audit(who, action, owner, repo, number, snapshot, key, "refused: recorded before revisions were bound; not run again");
-                        return Results.Json(new { error = "operation-legacy", message = "This was submitted by an earlier version of Versio and cannot be retried. Nothing was posted; submit it again." }, statusCode: 422);
                 }
 
                 // Failed (nothing written), or an idempotent operation found undone: this request runs
