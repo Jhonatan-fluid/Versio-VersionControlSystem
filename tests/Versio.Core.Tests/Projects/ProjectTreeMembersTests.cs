@@ -346,4 +346,23 @@ public sealed class ProjectTreeMembersTests
         Assert.DoesNotContain(Flatten(tree), n => n.Kind == ProjectNodeKind.Folder
                                                   && n.Name == "clsLight");
     }
+
+    [Fact]
+    public void A_blocks_methods_come_before_its_properties_each_in_name_order()
+    {
+        // The owner, 2026-10-22: one alphabetical run put Busy and P_Busy among the methods.
+        // Anything that is not a property (an action, a vendor's other method spelling) stays
+        // with the methods.
+        var tree = Build(Manifest(
+            Obj("FB_Logger", "FB_Logger.st", "fb"),
+            Obj("Busy", "FB_Logger.Busy.st", "p1", "PROPERTY", parent: "fb"),
+            Obj("WriteLog", "FB_Logger.WriteLog.st", "m1", "METHOD", parent: "fb"),
+            Obj("Error", "FB_Logger.Error.st", "p2", "PROPERTY", parent: "fb"),
+            Obj("Register", "FB_Logger.Register.st", "m2", "METHOD", parent: "fb"),
+            Obj("Cycle", "FB_Logger.Cycle.st", "a1", "ACTION", parent: "fb")));
+
+        Assert.Equal(
+            ["Cycle", "Register", "WriteLog", "Busy", "Error"],
+            Find(tree, "FB_Logger").Children.Select(c => c.Name));
+    }
 }

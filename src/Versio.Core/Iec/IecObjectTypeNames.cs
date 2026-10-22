@@ -30,6 +30,9 @@ namespace Versio.Core.Iec;
 /// </remarks>
 public static class IecObjectTypeNames
 {
+    /// <summary>The standard's word for a property, as a manifest records it.</summary>
+    public const string Property = "PROPERTY";
+
     private static readonly Dictionary<string, ObjectTypeName> Table =
         new(StringComparer.OrdinalIgnoreCase)
         {
@@ -45,7 +48,7 @@ public static class IecObjectTypeNames
             // so it lives on the vendor side; METHOD itself is IEC 61131-3 third-edition OOP.
             ["METHOD"] = new("Method", "method", "methods"),
 
-            ["PROPERTY"] = new("Property", "property", "properties"),
+            [Property] = new("Property", "property", "properties"),
             ["ACTION"] = new("Action", "action", "actions"),
             ["TRANSITION"] = new("Transition", "transition", "transitions"),
         };

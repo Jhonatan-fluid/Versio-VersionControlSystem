@@ -1270,6 +1270,15 @@ public static class ProjectTreeBuilder
     /// same way as one at project level. Before that they were different code paths and only
     /// one of them existed.
     /// </para>
+    /// <para>
+    /// <b>Properties after the other objects.</b> A block's members were one alphabetical run,
+    /// so a renamed property's old and new rows (<c>Busy</c>, then <c>P_Busy</c> further down)
+    /// sat between methods, and the methods were split around them (the owner, 2026-10-22:
+    /// methods first, then properties). Keyed on the standard's own word, so no vendor's type
+    /// list is learned here; a vendor's other method spellings (<c>METHOD_NORET</c>) sort with
+    /// the methods by not being a property. A level with no properties — every project-level
+    /// one — orders exactly as before.
+    /// </para>
     /// </remarks>
     private static List<ProjectTreeNode> ChildrenOf(IReadOnlyList<Leaf> leaves, string path)
     {
@@ -1290,7 +1299,8 @@ public static class ProjectTreeBuilder
         children.AddRange(leaves
             .Where(l => l.Folders.Length == 0)
             .Select(l => l.Node)
-            .OrderBy(n => n.Name, StringComparer.OrdinalIgnoreCase));
+            .OrderBy(n => string.Equals(n.Type, Iec.IecObjectTypeNames.Property, StringComparison.OrdinalIgnoreCase))
+            .ThenBy(n => n.Name, StringComparer.OrdinalIgnoreCase));
 
         return children;
     }
