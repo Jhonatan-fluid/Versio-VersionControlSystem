@@ -2766,7 +2766,7 @@ public sealed class SyncViewModel : ObservableObject
                 }
 
                 var files = ListSourceFiles(folder, unlisted);
-                var manifest = format.DescribeSourceProject(folder, files);
+                var manifest = format.DescribeSourceProject(folder, WithDeletedFiles(files, folder, status.Changes));
                 views[folder] = new SourceProjectView(format, manifest, files.Count);
 
                 projects.Add(new WorkspaceProject
@@ -2959,6 +2959,41 @@ public sealed class SyncViewModel : ObservableObject
             problems.Add($"{folder}: could not list its files: {e.Message}");
             return [];
         }
+    }
+
+    /// <summary>
+    /// A source project's files on disk, plus the ones git says were deleted from it.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// A source project's manifest is read off its file list, and a deleted file is not on
+    /// disk — so a property deleted from a function block was in no manifest, and the tree's
+    /// catch-all for unmapped files drew it as a bare path at the bottom of the project, below
+    /// Project Settings, nowhere near the block it was deleted from (the owner, 2026-10-22:
+    /// seven <c>FB_Logger.fb.st^/P_*.prop.st</c> rows). Listed here, the format places it
+    /// under its owner like any other member, and the status git already reported marks it D.
+    /// </para>
+    /// <para>
+    /// Either side of the index counts: a deletion that is staged and one that is not are
+    /// equally gone from disk. Only the tree build passes git's changes; the explorer is a
+    /// listing of what is there, and a file that is not there is not in it.
+    /// </para>
+    /// </remarks>
+    private static List<string> WithDeletedFiles(
+        List<string> onDisk, string folder, IReadOnlyList<FileChange> changes)
+    {
+        var prefix = Normalize(folder).TrimEnd('/') + "/";
+        var present = onDisk.ToHashSet(StringComparer.Ordinal);
+
+        var deleted = changes
+            .Where(c => c.Staged == ChangeKind.Deleted || c.Unstaged == ChangeKind.Deleted)
+            .Select(c => Normalize(c.Path))
+            .Where(p => p.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+            .Select(p => p[prefix.Length..])
+            .Where(present.Add)
+            .ToList();
+
+        return deleted.Count == 0 ? onDisk : [.. onDisk, .. deleted];
     }
 
     /// <summary>What a project's export covers, or null when it is not a tracked project.</summary>

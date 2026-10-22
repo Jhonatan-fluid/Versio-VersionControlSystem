@@ -160,6 +160,28 @@ public sealed class SourceProjectTests
     }
 
     [Fact]
+    public async Task A_deleted_member_stays_under_its_owner_rather_than_falling_to_the_bottom_as_a_path()
+    {
+        // The owner, 2026-10-22: seven properties deleted from FB_Logger drawn as bare
+        // `FB_Logger.fb.st^/P_*.prop.st` rows below Project Settings. The manifest is read off
+        // the files on disk, and a deleted file is not on disk.
+        using var repo = new TempRepo(identity: true);
+        GivenACommittedSourceProject(repo);
+        using var shell = TestShell.Build();
+        await OpenAndSettleAsync(repo, shell);
+
+        File.Delete(Path.Combine(repo.Path, (Folder + "/Device.device.xml.v3^/Glob_Var.gvl").Replace('/', Path.DirectorySeparatorChar)));
+        await shell.RefreshAsync();
+
+        var project = Assert.Single(shell.Sync.Tree, r => r.Node.Kind == ProjectNodeKind.Project);
+        Assert.DoesNotContain(project.Node.Children, n => n.Kind == ProjectNodeKind.File);
+        var device = Assert.Single(project.Node.Children, n => n.Name == "Device");
+        var gone = Assert.Single(device.Children, n => n.Name == "Glob_Var");
+        Assert.Equal(ChangeKind.Deleted, gone.Status);
+        Assert.Contains(device.Children, n => n.Name == "PLC_PRG");
+    }
+
+    [Fact]
     public async Task Selecting_the_project_shows_its_own_card_not_a_binary_projects()
     {
         using var repo = new TempRepo(identity: true);
