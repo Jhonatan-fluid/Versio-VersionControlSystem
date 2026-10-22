@@ -1610,22 +1610,6 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
     }
 
     /// <summary>
-    /// Show the whole file around the changes, rather than a few lines either side.
-    /// </summary>
-    /// <remarks>
-    /// <para>
-    /// Three lines of context is plenty to review a typo and nowhere near enough to review a
-    /// change to a POU, where whether an edit is safe depends on declarations far above it
-    /// and on the rest of the routine below.
-    /// </para>
-    /// <para>
-    /// Implemented by asking git for an enormous <c>-U</c> rather than by loading the file
-    /// from disk. The result is still a diff, so added and removed lines stay marked and
-    /// coloured; reading the raw file would show every line and lose the only thing the
-    /// reviewer opened it for.
-    /// </para>
-    /// </remarks>
-    /// <summary>
     /// Where the file log is actually being written, once a sink is attached.
     /// </summary>
     /// <remarks>
@@ -1640,6 +1624,28 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         set => SetProperty(ref _fileLogDirectory, value);
     }
 
+    /// <summary>
+    /// Show the whole file around the changes, rather than a few lines either side.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Three lines of context is plenty to review a typo and nowhere near enough to review a
+    /// change to a POU, where whether an edit is safe depends on declarations far above it
+    /// and on the rest of the routine below.
+    /// </para>
+    /// <para>
+    /// Implemented by asking git for an enormous <c>-U</c> rather than by loading the file
+    /// from disk. The result is still a diff, so added and removed lines stay marked and
+    /// coloured; reading the raw file would show every line and lose the only thing the
+    /// reviewer opened it for.
+    /// </para>
+    /// <para>
+    /// That re-read only ever reached Raw. The Rendered tab, which opens first, drew the
+    /// whole file whatever the box said, so the box looked broken (the owner, 2026-10-22).
+    /// The Rendered view now binds it too and folds its own rows to the same three lines
+    /// (<c>StSourceLayout.Fold</c>); this setter's re-read is still Raw's half.
+    /// </para>
+    /// </remarks>
     public bool ShowFullFile
     {
         get => _showFullFile;

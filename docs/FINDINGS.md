@@ -19,6 +19,31 @@ produce a diff touching everything else.
 
 ---
 
+### Deleted properties fell out of their block, and the Rendered tab ignored two of the pane's boxes
+
+**2026-10-22, branch `PrReview`.** The owner, on a CODESYS File-Based Storage library
+(`FsLibrary.fbslib`, 69 changed files), reported three things from two screenshots:
+
+| Seen | Cause | Fix |
+|---|---|---|
+| Seven `01_Core/Utils/Logger/FB_Logger.fb.st^/P_*.prop.st` rows, badged D, as bare paths at the bottom of the project below Project Settings | A source project's manifest is built by `DescribeSourceProject` from the files **on disk**. A deleted file is not on disk, so it was in no manifest, and `WorkspaceTreeBuilder.UnmappedExportFiles` — the catch-all that keeps a changed file from vanishing — drew it as a path | `SyncViewModel.WithDeletedFiles` adds the paths git reports deleted (either side of the index) under the folder before the format describes it. The format is pure and places them under their `^` owner like any other member; the status already says D. The explorer is left alone: it lists what is there |
+| Removed lines drawn struck, in place, on the Rendered tab's unified view — every edited line twice | Deliberate since 2026-10-10 (`SourceRemovedLine`'s remark), and the owner now wants them only in side by side | `DiffView.Unified` drops them from the drawn rows; the rows themselves are unchanged, so side by side, the web viewer and coverage still have them. The line now standing in their place carries a red rule and a tooltip with the count, because a deletion-only change would otherwise leave an M object with nothing visible |
+| *Show full file* did nothing | It re-reads git with more context, which only **Raw** draws. The Rendered tab, which opens first, always drew the whole file | `StSourceLayout.Fold` folds runs of unchanged rows further than git's three lines from a change into a `SourceFold` row (unified and, after pairing, side by side). `DiffView.ShowFullFile` is bound to the box. Dividers never fold; a run of one is drawn, not folded; an unmarked file is returned whole |
+
+**What changed for a reader:** with the box clear — its default — a compared file's Rendered tab
+now opens folded to its changes, as Raw always did. Ticking it gives the whole file on both tabs.
+
+**Checked by breaking it:** with `WithDeletedFiles` taken out of the tree build, the new
+`SourceProjectTests` case goes red. `RenderedSourceTests` pins the template's `ShowFullFile`
+binding, the missing removed rows and the rule, and the fold counts in both modes.
+
+**Not touched:** the two `R …/.folder_meta.json` rows in the same screenshot are still drawn as
+paths. They are CODESYS's hidden folder state, deliberately not objects (`IsObjectFile`), and the
+unmapped-file rule shows them rather than hide a changed file; whether a folder row should claim
+its own meta file is a separate question.
+
+---
+
 ### An external review of the pull request review work found eight defects, three of them duplicate writes
 
 **2026-10-20, branch `PrReview`, commits after `73817f4`.** A reviewer read all twenty commits of

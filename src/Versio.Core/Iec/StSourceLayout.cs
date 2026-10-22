@@ -42,9 +42,10 @@ public enum SourceChange
 /// <param name="Text">The line as it was.</param>
 /// <param name="OldFileLine">Where it sat in the committed file, from 1.</param>
 /// <remarks>
-/// Drawn in place, struck, the way the merged ladder view keeps a deleted element where it stood.
-/// Leaving it out would make a deletion invisible on the Rendered tab, and a changed line would
-/// read as an addition with nothing replaced.
+/// Kept in the rows, where it stood, so side by side can face it with its replacement and the web
+/// viewer can draw it struck. The desktop's unified Rendered view no longer draws it (the owner,
+/// 2026-10-22: deleted lines belong in side by side); it marks the line now standing in its place
+/// instead, because a deletion that left nothing on the tab would read as an unchanged file.
 /// </remarks>
 public sealed record SourceRemovedLine(string Text, int OldFileLine) : SourceRow;
 
@@ -71,7 +72,17 @@ public sealed record SourceSplitCell(int Number, string Text, SourceSide Kind, i
 /// <param name="Left">The committed line, or null where the working file added one.</param>
 /// <param name="Right">The working line, or null where the commit had one the file no longer does.</param>
 /// <param name="Divider">A Declaration / Implementation divider spanning both sides, alone on its row.</param>
-public sealed record SourceSplitRow(SourceSplitCell? Left, SourceSplitCell? Right, SourceDivider? Divider = null);
+/// <param name="Fold">Unchanged lines folded away on both sides, alone on its row. See <see cref="StSourceLayout.Fold(IReadOnlyList{SourceSplitRow}, int)"/>.</param>
+public sealed record SourceSplitRow(SourceSplitCell? Left, SourceSplitCell? Right, SourceDivider? Divider = null, SourceFold? Fold = null);
+
+/// <summary>A run of unchanged lines left out of a comparison, drawn where they stood.</summary>
+/// <param name="Hidden">How many rows it stands for.</param>
+/// <param name="At">
+/// Where the run began among the unfolded rows. Not drawn; it keeps two folds of the same length
+/// apart, for the reason <see cref="SourceCodeLine.FileLine"/> gives — equal records in one WPF
+/// list select together.
+/// </param>
+public sealed record SourceFold(int Hidden, int At) : SourceRow;
 
 /// <summary>A drawn boundary between the declaration and the implementation.</summary>
 /// <param name="Label">What the reader is told the section below is.</param>
@@ -372,6 +383,107 @@ public static class StSourceLayout
         }
 
         Flush();
+        return result;
+    }
+
+    /// <summary>
+    /// Marked rows with every run of unchanged lines further than <paramref name="context"/>
+    /// from a change folded into one <see cref="SourceFold"/>.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// What the pane's <i>Show full file</i> box means on the Rendered tab when it is clear. The
+    /// box re-read git with more context, which only Raw draws; the Rendered tab always drew the
+    /// whole file, so on the tab that opens first the box did nothing at all (the owner,
+    /// 2026-10-22). Folded here, both tabs answer the box the same way: git's three lines either
+    /// side of a change, or everything.
+    /// </para>
+    /// <para>
+    /// Dividers are never folded, so a reader always sees which half a change is in. A run of
+    /// one line is drawn rather than folded: a fold row costs the same space and hides the line.
+    /// Rows with nothing marked come back as they are — a file nobody is comparing is not folded.
+    /// </para>
+    /// </remarks>
+    public static IReadOnlyList<SourceRow> Fold(IReadOnlyList<SourceRow> marked, int context = Git.GitDiff.DefaultContext)
+    {
+        ArgumentNullException.ThrowIfNull(marked);
+        return Fold(marked,
+            r => r is SourceRemovedLine or SourceCodeLine { Change: SourceChange.Added },
+            r => r is SourceDivider,
+            (hidden, at) => new SourceFold(hidden, at),
+            context);
+    }
+
+    /// <summary>Side-by-side rows (<see cref="SideBySide"/>) folded as the unified ones are.</summary>
+    /// <remarks>
+    /// Folded after pairing rather than before: each side numbers itself by counting its own
+    /// lines, and lines folded away before the count would renumber every one below them.
+    /// </remarks>
+    public static IReadOnlyList<SourceSplitRow> Fold(IReadOnlyList<SourceSplitRow> pairs, int context = Git.GitDiff.DefaultContext)
+    {
+        ArgumentNullException.ThrowIfNull(pairs);
+        return Fold(pairs,
+            p => p.Divider is null && p.Fold is null
+                 && (p.Left?.Kind is not SourceSide.Same || p.Right?.Kind is not SourceSide.Same),
+            p => p.Divider is not null,
+            (hidden, at) => new SourceSplitRow(null, null, Fold: new SourceFold(hidden, at)),
+            context);
+    }
+
+    private static IReadOnlyList<T> Fold<T>(
+        IReadOnlyList<T> rows, Func<T, bool> isChange, Func<T, bool> isKept, Func<int, int, T> fold, int context)
+    {
+        var shown = new bool[rows.Count];
+        var any = false;
+        for (var i = 0; i < rows.Count; i++)
+        {
+            if (isKept(rows[i]))
+            {
+                shown[i] = true;
+            }
+
+            if (!isChange(rows[i]))
+            {
+                continue;
+            }
+
+            any = true;
+            for (var j = Math.Max(0, i - context); j <= Math.Min(rows.Count - 1, i + context); j++)
+            {
+                shown[j] = true;
+            }
+        }
+
+        if (!any)
+        {
+            return rows;
+        }
+
+        var result = new List<T>(rows.Count);
+        for (var i = 0; i < rows.Count;)
+        {
+            if (shown[i])
+            {
+                result.Add(rows[i++]);
+                continue;
+            }
+
+            var start = i;
+            while (i < rows.Count && !shown[i])
+            {
+                i++;
+            }
+
+            if (i - start == 1)
+            {
+                result.Add(rows[start]);
+            }
+            else
+            {
+                result.Add(fold(i - start, start));
+            }
+        }
+
         return result;
     }
 

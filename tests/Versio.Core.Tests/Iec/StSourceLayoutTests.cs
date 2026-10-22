@@ -347,4 +347,43 @@ public class StSourceLayoutTests
         ],
             pairs.Select(p => p.Divider is { } d ? "| " + d.Label : $"{Cell(p.Left)} / {Cell(p.Right)}"));
     }
+
+    [Fact]
+    public void Folding_keeps_changes_their_context_and_the_dividers_and_hides_the_rest()
+    {
+        // Git's three lines either side, the box's other answer to "Show full file".
+        var body = string.Join("\n", Enumerable.Range(1, 12).Select(i => $"x{i};"));
+        var current = StTextCodec.Join("PROGRAM P", body);
+        var marked = StSourceLayout.Mark(StSourceLayout.Lay(current), current.Replace("x9;", "x0;", StringComparison.Ordinal), current);
+
+        var folded = StSourceLayout.Fold(marked);
+
+        Assert.Equal(
+        [
+            "| Declaration", "  PROGRAM P", "| Implementation", "... 5",
+            "  x6;", "  x7;", "  x8;", "- x0;", "+ x9;", "  x10;", "  x11;", "  x12;",
+        ],
+            folded.Select(r => r switch
+            {
+                SourceDivider d => "| " + d.Label,
+                SourceFold f => "... " + f.Hidden,
+                SourceRemovedLine x => "- " + x.Text,
+                SourceCodeLine { Change: SourceChange.Added } l => "+ " + l.Text,
+                SourceCodeLine l => "  " + l.Text,
+                _ => "?",
+            }));
+    }
+
+    [Fact]
+    public void A_run_of_one_is_drawn_not_folded_and_an_unmarked_file_is_returned_as_it_is()
+    {
+        // A fold row takes the line's space and hides it; and a file nobody compares is whole.
+        var current = "a;\nb;\nc;\nd;\ne;\n";
+        var marked = StSourceLayout.Mark(StSourceLayout.Lay(current), current.Replace("e;", "E;", StringComparison.Ordinal), current);
+
+        Assert.DoesNotContain(StSourceLayout.Fold(marked), r => r is SourceFold);
+
+        var clean = StSourceLayout.Lay(current);
+        Assert.Same(clean, StSourceLayout.Fold(clean));
+    }
 }

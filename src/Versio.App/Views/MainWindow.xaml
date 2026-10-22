@@ -1755,6 +1755,8 @@
                                 <views:DiffView SourceRows="{Binding Rows}"
                                                 FilePath="{Binding Path}"
                                                 SideBySide="{Binding DataContext.DiffSideBySide,
+                                                    RelativeSource={RelativeSource AncestorType=Window}}"
+                                                ShowFullFile="{Binding DataContext.ShowFullFile,
                                                     RelativeSource={RelativeSource AncestorType=Window}}" />
                             </DataTemplate>
                         </ContentControl.Resources>

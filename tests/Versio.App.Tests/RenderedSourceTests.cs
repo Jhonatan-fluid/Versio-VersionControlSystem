@@ -188,8 +188,11 @@ public sealed class RenderedSourceTests
             var row = Assert.IsType<Grid>(split.RowFor(changed));
             Assert.Equal(3, row.ColumnDefinitions.Count);
 
+            // Unified draws the working file: the removed line is the split view's alone.
             var unified = new Openable { FilePath = "FB_Alarm.st", SideBySide = false, SourceRows = marked };
-            Assert.Same(marked, unified.ItemsSource);
+            var rows = Assert.IsAssignableFrom<IReadOnlyList<SourceRow>>(unified.ItemsSource);
+            Assert.DoesNotContain(rows, r => r is SourceRemovedLine);
+            Assert.Equal(marked.Count(r => r is not SourceRemovedLine), rows.Count);
 
             // Nothing marked: the same text twice would be noise, so one column even when ticked.
             var clean = StSourceLayout.Lay(FbAlarm);
@@ -216,6 +219,67 @@ public sealed class RenderedSourceTests
             var view = Assert.IsAssignableFrom<DiffView>(template.LoadContent());
 
             Assert.Equal("DataContext.DiffSideBySide", BindingOperations.GetBinding(view, DiffView.SideBySideProperty)?.Path.Path);
+
+            // And its Show full file box: unbound, the view draws everything and the box does
+            // nothing on this tab, which is the report this binding answers.
+            Assert.Equal("DataContext.ShowFullFile", BindingOperations.GetBinding(view, DiffView.ShowFullFileProperty)?.Path.Path);
+        });
+    }
+
+    [Fact]
+    public void Unified_marks_where_removed_lines_stood_without_drawing_them()
+    {
+        // The owner, 2026-10-22: deleted lines belong in side by side only. A change that only
+        // deleted must still show somewhere on this tab, so the line after it carries the rule.
+        StaHarness.Run(() =>
+        {
+            var before = FbAlarm.Replace("\tState := 0;\n", "\tState := 0;\n\tLatch := FALSE;\n", StringComparison.Ordinal);
+            var marked = StSourceLayout.Mark(StSourceLayout.Lay(FbAlarm), before, FbAlarm);
+            Assert.Single(marked.OfType<SourceRemovedLine>());
+
+            var view = new Openable { FilePath = "FB_Alarm.st", SourceRows = marked };
+            var rows = Assert.IsAssignableFrom<IReadOnlyList<SourceRow>>(view.ItemsSource);
+            Assert.DoesNotContain(rows, r => r is SourceRemovedLine);
+
+            var after = Assert.Single(rows.OfType<SourceCodeLine>(), l => l.Text == "END_IF");
+            var row = Assert.IsType<Grid>(view.RowFor(after));
+            Assert.Contains(row.Children.OfType<System.Windows.Shapes.Rectangle>(), r => r.VerticalAlignment == VerticalAlignment.Top);
+            Assert.Contains("1 line removed above", row.ToolTip as string, StringComparison.Ordinal);
+
+            var untouched = Assert.IsType<Grid>(view.RowFor(Assert.Single(rows.OfType<SourceCodeLine>(), l => l.Text == "\tState := 0;")));
+            Assert.Empty(untouched.Children.OfType<System.Windows.Shapes.Rectangle>());
+        });
+    }
+
+    [Fact]
+    public void Show_full_file_cleared_folds_the_unchanged_runs_in_both_modes()
+    {
+        // The box re-read git for Raw and the Rendered tab drew the whole file whatever it said
+        // (the owner, 2026-10-22: "show full file does nothing").
+        StaHarness.Run(() =>
+        {
+            var body = string.Join("\n", Enumerable.Range(1, 20).Select(i => $"x{i} := {i};"));
+            var current = StTextCodec.Join("PROGRAM P\nVAR\nEND_VAR", body);
+            var before = current.Replace("x15 := 15;", "x15 := 0;", StringComparison.Ordinal);
+            var marked = StSourceLayout.Mark(StSourceLayout.Lay(current), before, current);
+
+            var whole = new Openable { FilePath = "P.st", SourceRows = marked, ShowFullFile = true };
+            Assert.DoesNotContain(Assert.IsAssignableFrom<IReadOnlyList<SourceRow>>(whole.ItemsSource), r => r is SourceFold);
+
+            var folded = new Openable { FilePath = "P.st", SourceRows = marked, ShowFullFile = false };
+            var rows = Assert.IsAssignableFrom<IReadOnlyList<SourceRow>>(folded.ItemsSource);
+            // The declaration's three, x1..x11 (x12..x14 are context), and x19..x20. Dividers stay.
+            Assert.Equal([3, 11, 2], rows.OfType<SourceFold>().Select(f => f.Hidden));
+            Assert.Equal(2, rows.Count(r => r is SourceDivider));
+            var fold = rows.OfType<SourceFold>().Single(f => f.Hidden == 11);
+            Assert.Contains("11 unchanged lines", string.Concat(Logical(folded.RowFor(fold)).OfType<TextBlock>().Select(Text)), StringComparison.Ordinal);
+
+            var split = new Openable { FilePath = "P.st", SourceRows = marked, SideBySide = true, ShowFullFile = false };
+            var pairs = Assert.IsAssignableFrom<IReadOnlyList<SourceSplitRow>>(split.ItemsSource);
+            Assert.Equal([3, 11, 2], pairs.Where(p => p.Fold is not null).Select(p => p.Fold!.Hidden));
+
+            folded.ShowFullFile = true;
+            Assert.DoesNotContain(Assert.IsAssignableFrom<IReadOnlyList<SourceRow>>(folded.ItemsSource), r => r is SourceFold);
         });
     }
 

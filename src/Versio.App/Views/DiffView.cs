@@ -80,6 +80,24 @@ public class DiffView : ListBox
         DependencyProperty.Register(nameof(SourceRows), typeof(IReadOnlyList<SourceRow>),
             typeof(DiffView), new PropertyMetadata(null, OnInputChanged));
 
+    /// <summary>
+    /// Whether a compared <see cref="SourceRows"/> file is drawn whole, or folded to its changes
+    /// and git's context either side. See <see cref="StSourceLayout.Fold(IReadOnlyList{SourceRow}, int)"/>.
+    /// </summary>
+    /// <remarks>
+    /// True by default so a view nobody binds keeps drawing everything; the pane binds it to its
+    /// <i>Show full file</i> box. Raw ignores it: its context comes from git, re-read by the shell.
+    /// </remarks>
+    public static readonly DependencyProperty ShowFullFileProperty =
+        DependencyProperty.Register(nameof(ShowFullFile), typeof(bool), typeof(DiffView),
+            new PropertyMetadata(true, OnInputChanged));
+
+    public bool ShowFullFile
+    {
+        get => (bool)GetValue(ShowFullFileProperty);
+        set => SetValue(ShowFullFileProperty, value);
+    }
+
     public IReadOnlyList<SourceRow>? SourceRows
     {
         get => (IReadOnlyList<SourceRow>?)GetValue(SourceRowsProperty);
@@ -298,6 +316,58 @@ public class DiffView : ListBox
     /// <summary>Guards against a slow parse landing after a newer selection.</summary>
     private int _generation;
 
+    /// <summary>
+    /// Unified source rows: the working file alone, removed lines left to side by side.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The owner, 2026-10-22: the removed lines belong only in the side-by-side view. Drawn in
+    /// place, struck, they doubled every edited line — the old text and the new one stacked, the
+    /// method reading as twice its length — on the tab whose job is to show the file as it is.
+    /// The two columns are where old and new are read against each other.
+    /// </para>
+    /// <para>
+    /// <b>The place is still marked.</b> A change that only deleted lines would otherwise leave
+    /// nothing on this tab at all, and an object badged M with no visible change reads as a
+    /// fault. The line that now stands where they were carries a red rule on its top edge (on
+    /// its bottom edge when they were the last lines), and its tooltip says how many went.
+    /// </para>
+    /// </remarks>
+    private List<SourceRow> Unified(IReadOnlyList<SourceRow> marked)
+    {
+        var rows = new List<SourceRow>(marked.Count);
+        var near = new Dictionary<SourceRow, (int Count, bool After)>(ReferenceEqualityComparer.Instance);
+        var pending = 0;
+
+        foreach (var row in marked)
+        {
+            if (row is SourceRemovedLine)
+            {
+                pending++;
+                continue;
+            }
+
+            if (pending > 0 && row is SourceCodeLine)
+            {
+                near[row] = (pending, false);
+                pending = 0;
+            }
+
+            rows.Add(row);
+        }
+
+        if (pending > 0 && rows.LastOrDefault(r => r is SourceCodeLine) is { } last)
+        {
+            near[last] = (pending, true);
+        }
+
+        _removedNear = near;
+        return rows;
+    }
+
+    /// <summary>Unified rows that stand where removed lines were, by reference. See <see cref="Unified"/>.</summary>
+    private Dictionary<SourceRow, (int Count, bool After)>? _removedNear;
+
     private async void Rebuild()
     {
         var text = DiffText;
@@ -319,10 +389,20 @@ public class DiffView : ListBox
             // and the ladder already draw it. Only worth it when something is marked; an
             // unchanged file would be the same text twice.
             var marked = source.Any(r => r is SourceRemovedLine or SourceCodeLine { Change: SourceChange.Added });
+            var full = ShowFullFile;
             ScrollViewer.SetHorizontalScrollBarVisibility(
                 this, split && marked ? ScrollBarVisibility.Disabled : ScrollBarVisibility.Auto);
             HorizontalContentAlignment = HorizontalAlignment.Stretch;
-            ItemsSource = split && marked ? StSourceLayout.SideBySide(source) : source;
+            _removedNear = null;
+
+            if (split && marked)
+            {
+                var pairs = StSourceLayout.SideBySide(source);
+                ItemsSource = full ? pairs : StSourceLayout.Fold(pairs);
+                return;
+            }
+
+            ItemsSource = marked ? Unified(full ? source : StSourceLayout.Fold(source)) : source;
             return;
         }
 
@@ -392,8 +472,11 @@ public class DiffView : ListBox
             SideBySideRow row => BuildSplitRow(row, LanguageFor(row.Left ?? row.Right ?? row.Spanning)),
             SourceCodeLine line => BuildSourceRow(line, _language),
             SourceRemovedLine removed => BuildRemovedSourceRow(removed, _language),
-            SourceSplitRow pair => pair.Divider is { } spanning ? BuildDivider(spanning) : BuildSourceSplitRow(pair, _language),
+            SourceSplitRow pair => pair.Divider is { } spanning ? BuildDivider(spanning)
+                : pair.Fold is { } folded ? BuildFold(folded)
+                : BuildSourceSplitRow(pair, _language),
             SourceDivider divider => BuildDivider(divider),
+            SourceFold fold => BuildFold(fold),
             _ => container.Content,
         };
     }
@@ -424,6 +507,53 @@ public class DiffView : ListBox
         Grid.SetColumn(content, 1);
         grid.Children.Add(content);
 
+        // Where removed lines stood, in a view that does not draw them. An overlay rather than
+        // a border, so the marked line is not two pixels taller than its neighbours.
+        if (_removedNear is { } near && near.TryGetValue(line, out var removed))
+        {
+            var rule = new System.Windows.Shapes.Rectangle
+            {
+                Height = 2,
+                Fill = Resolve("Brush.Status.Deleted"),
+                VerticalAlignment = removed.After ? VerticalAlignment.Bottom : VerticalAlignment.Top,
+                IsHitTestVisible = false,
+            };
+            Grid.SetColumnSpan(rule, 2);
+            grid.Children.Add(rule);
+
+            var count = removed.Count.ToString(CultureInfo.InvariantCulture);
+            grid.ToolTip = $"{count} {(removed.Count == 1 ? "line" : "lines")} removed "
+                           + $"{(removed.After ? "below" : "above")} since the last commit. Side by side shows them.";
+        }
+
+        return grid;
+    }
+
+    /// <summary>Unchanged lines folded away: a quiet row saying how many, and where.</summary>
+    private UIElement BuildFold(SourceFold fold)
+    {
+        var grid = new Grid { Background = Resolve("Brush.Surface.Sunken"), Margin = new Thickness(0, 2, 0, 2) };
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(46) });
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+
+        var marker = Mono("⋯", Resolve("Brush.Text.Secondary"));
+        marker.TextAlignment = TextAlignment.Right;
+        marker.Margin = new Thickness(0, 0, 8, 0);
+        grid.Children.Add(marker);
+
+        var label = new TextBlock
+        {
+            Text = $"{fold.Hidden.ToString(CultureInfo.InvariantCulture)} unchanged {(fold.Hidden == 1 ? "line" : "lines")}",
+            Foreground = Resolve("Brush.Text.Secondary"),
+            FontFamily = (FontFamily)FindResource("Font.UI"),
+            FontSize = (double)FindResource("Font.Size.Caption"),
+            VerticalAlignment = VerticalAlignment.Center,
+            Margin = new Thickness(6, 0, 12, 0),
+        };
+        Grid.SetColumn(label, 1);
+        grid.Children.Add(label);
+
+        grid.ToolTip = "Tick Show full file to see every line";
         return grid;
     }
 
