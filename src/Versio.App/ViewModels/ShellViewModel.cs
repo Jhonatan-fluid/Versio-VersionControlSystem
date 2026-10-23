@@ -7644,6 +7644,17 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
                     }
                 }
 
+                // An object with nothing in its own file (a CODESYS Communication Manager, Plc
+                // Logic): the note says so, where one line of archive XML read as a view that had
+                // failed (owner, 2026-10-23). The same wording the web viewer draws, from Core.
+                // Raw keeps the file. Deleting this arm turns EmptyObjectPaneFlowTests red.
+                if (row.PrimaryFile is { } emptyPath
+                    && ReadOrNull(emptyPath) is { } emptyText
+                    && PlcFormats.All.Any(f => f.HoldsNoSettings(emptyPath, emptyText)))
+                {
+                    return MarkdownRender.From(emptyPath, Versio.Core.Projects.EmptyObjectNote.For(hasChildren: node.Children.Count > 0));
+                }
+
                 // Markdown before the source layout, which would otherwise take it: an ST
                 // layout of a document is the raw text with line numbers, which is what Raw
                 // already shows. Deleting this arm turns MarkdownPaneFlowTests red.
