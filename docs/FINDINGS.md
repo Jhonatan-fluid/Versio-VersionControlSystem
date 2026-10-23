@@ -19,6 +19,58 @@ produce a diff touching everything else.
 
 ---
 
+### The web drew a compared source unlike the app: struck lines, no folding, a removed header
+
+**2026-10-23, branch `PrReview`, the owner's `CodesysStandardLibrary` pull request #3** in the
+new real-pull-request preview, beside the app. `MoveHome.meth.st` on the web's Rendered tab
+drew every edited line twice (old text struck above the new), a struck `METHOD MoveHome` above
+the body, and the whole file. The app drew each line once, nothing above the body, folded. The
+owner: the scripts were meant to be reused, which is why the web and the desktop share a repository.
+
+**One cause, three symptoms: the hosts shared the layout and not its last steps.** Both build
+rows with `StSourceLayout` (`Lay`, `Mark`, `Body`), and then each did the rest itself:
+
+| Step | Desktop | Web, until now |
+|---|---|---|
+| Unified leaves removed lines out and marks a pure deletion (2026-10-22) | `DiffView.Unified` | not done: `SourceHtml` drew `SourceRemovedLine` struck |
+| Fold to git's context unless *Show full file* (2026-10-22) | `DiffView.Rebuild`, the pane's box | no fold, no box |
+| Under a table, hide removals before the old body's start | `MarkSourceChangesAsync` | `AppendInterfaceCode` called `Mark` without it |
+
+The first two arrived on the desktop a day earlier, in the session building it, and
+`SourceRemovedLine`'s own remarks recorded that the web still drew it struck. Nothing failed:
+each host had its own tests.
+
+**Fixed by making the steps Core's** (`2e19229`, `52752f0`, `cf9eb70`). `StSourceLayout.Unified`
+is `DiffView`'s rule moved with its reasoning, its answer carried on the row
+(`SourceCodeLine.RemovedNear`) rather than a dictionary only one renderer could read. `DiffView`
+and `SourceHtml` call `Fold` and `Unified` in the same order. The web asks `format.CodeBody` for
+the old body's start, as the desktop does. *Show full file* is on the review and compare pages,
+clear by default as on the desktop, and carried as `full=1`.
+
+**Evidence.** `A_unified_comparison_draws_the_rows_the_desktop_draws` checks the page's file
+lines against `Unified(Fold(rows))`, which is what `DiffView` sets as its items.
+`A_method_whose_header_changed_draws_no_removed_header_above_its_body` (unified and side by
+side) uses the FBS fixture. Eleven mutations each failed a test. One first survived: removed
+lines kept in `Unified` drew nothing on the page, since the page can no longer draw one, so a
+rows test was added where the rule lives. The mutations ran in a separate worktree, because
+another session was building this checkout at the time.
+The combined tree then ran every suite: Core 1,837,
+Web 364, vitest 128, the inner loop green. Two loaded full runs of `Versio.App.Tests` each had
+one different failure (`GitPanelUxTests` Ctrl+Shift+P at 20 s, `CommitWhileIdeHoldsProjectTests`
+at 43 s), in areas this did not touch, with two suites running at once. Both classes then
+passed alone, 12/12.
+
+**Rule worth keeping:** when two hosts draw one thing, the decision of *what* is drawn belongs
+in Core and the host only draws. A rule that lives in one renderer is a rule the other one
+does not have, and neither host's tests will say so.
+
+**Not done here:** member tables and ladders were already shared (`MemberTableHtml` and the
+desktop's table share `MemberTableDiff`; the desktop's ladder pane hosts `LadderHtml`). The web
+viewer's coverage banner ("the drawing may not show every change") is review-only (C4) and has
+no desktop counterpart by design.
+
+---
+
 ### A POU with no variables drew as source while every other POU drew as a table
 
 **2026-10-23, branch `PrReview`, the owner on `FsLibrary.fbslib`'s `Main`** (`VAR END_VAR`

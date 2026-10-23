@@ -214,7 +214,7 @@ Versio.sln
 ├─ tests/
 │  ├─ Versio.TestSupport/       not a test project: the three helpers more than one suite
 │  │                            needs (TestPaths, TestLogger, VendorSeamScanner, LadderInvariants)
-│  ├─ Versio.Core.Tests/        1,833 unit tests — pure, no IO, under a second
+│  ├─ Versio.Core.Tests/        1,837 unit tests — pure, no IO, under a second
 │  ├─ Versio.Integration.Tests/ 176 tests against real git and the real filesystem, ~10 s.
 │  │                            NO CODESYS: that is a different project now, so this one
 │  │                            needs no filter and cannot accidentally cost half an hour
@@ -234,7 +234,7 @@ Versio.sln
 │  ├─ Versio.Plc.TwinCat.Pure.Tests/ 23 pure vendor tests — format, planner, protocol
 │  ├─ Versio.Plc.TwinCat.Tests/ 6 tests against real TwinCAT XAE; skip with a count when
 │  │                            TcXaeShell.DTE.17.0 or the fixture is missing
-│  └─ Versio.Web.Tests/         359 tests of the web viewer against a faked GitHub: the
+│  └─ Versio.Web.Tests/         364 tests of the web viewer against a faked GitHub: the
 │                               renderers' choices over the real fixtures, the security
 │                               rules against the real host, sign-in end to end
 ├─ tools/                       PowerShell and python harnesses. tools/tia/ is the second
