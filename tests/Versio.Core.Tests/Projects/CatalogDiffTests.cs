@@ -26,6 +26,27 @@ public sealed class CatalogDiffTests
         new() { Schema = 1, Manager = "Library Manager", References = references };
 
     [Fact]
+    public void Rows_sharing_a_name_are_paired_by_occurrence_so_an_unchanged_file_marks_nothing()
+    {
+        // FsLibrary.fbslib, 2026-10-23: four references whose names the reader had left empty.
+        // Paired by name alone, the second, third and fourth were each compared with the first,
+        // and a tree with no changes drew "3 changed".
+        var head = Libraries(Lib("", "A"), Lib("", "B"), Lib("", "C"), Lib("#Standard", "S"));
+        var same = Libraries(Lib("", "A"), Lib("", "B"), Lib("", "C"), Lib("#Standard", "S"));
+        var moved = Libraries(Lib("", "A"), Lib("", "B2"), Lib("", "C"), Lib("#Standard", "S"));
+
+        var unchanged = CatalogDiff.Compare(head, same);
+        Assert.Equal("", unchanged.ChangeSummary);
+        Assert.All(unchanged.References, r => Assert.Equal(MemberChange.None, r.Mark.Change));
+
+        // A real change to one of them is still that one row.
+        var marked = CatalogDiff.Compare(head, moved);
+        Assert.Equal(
+            [MemberChange.None, MemberChange.Modified, MemberChange.None, MemberChange.None],
+            marked.References.Select(r => r.Mark.Change));
+    }
+
+    [Fact]
     public void A_moved_resolution_is_marked_with_what_it_was()
     {
         var head = Libraries(

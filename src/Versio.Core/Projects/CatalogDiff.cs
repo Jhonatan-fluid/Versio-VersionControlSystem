@@ -223,6 +223,14 @@ public static class CatalogDiff
         Func<T, IEnumerable<(string Field, string Value)>> fields,
         Func<T, RowMark, T> withMark)
     {
+        // A key repeated within one side is paired by occurrence, the second with the second.
+        // Keyed by the key alone, every repeat after the first was compared with the FIRST
+        // baseline row, so an unchanged file whose four rows shared one key (a reader that had
+        // left their names empty, FINDINGS 2026-10-23) reported three of them as changed.
+        // The first occurrence keeps its own key, so nothing about an ordinary catalog changes.
+        baseline = baseline is null ? null : ByOccurrence(baseline);
+        current = ByOccurrence(current);
+
         var before = new Dictionary<string, T>(StringComparer.Ordinal);
         foreach (var (key, row) in baseline ?? [])
         {
@@ -283,6 +291,22 @@ public static class CatalogDiff
         }
 
         return (rows, MemberTableDiff.Summary(added, modified, removed));
+    }
+
+    /// <summary>Each key made unique by its occurrence: the first as it is, later ones suffixed.</summary>
+    /// <remarks>The suffix starts with a control character no catalog key contains.</remarks>
+    private static List<(string Key, T Row)> ByOccurrence<T>(IReadOnlyList<(string Key, T Row)> rows)
+    {
+        var seen = new Dictionary<string, int>(StringComparer.Ordinal);
+        var result = new List<(string Key, T Row)>(rows.Count);
+        foreach (var (key, row) in rows)
+        {
+            var n = seen.TryGetValue(key, out var count) ? count : 0;
+            seen[key] = n + 1;
+            result.Add((n == 0 ? key : key + "\u0001" + n.ToString(System.Globalization.CultureInfo.InvariantCulture), row));
+        }
+
+        return result;
     }
 
     /// <summary>A modified row's mark: the committed value of each field that moved.</summary>
