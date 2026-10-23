@@ -203,6 +203,32 @@ public sealed class SourceProjectTests
     }
 
     [Fact]
+    public async Task A_program_with_no_variables_is_still_an_empty_table_over_its_code()
+    {
+        // FsLibrary.fbslib's Main is VAR END_VAR and two calls. The pane dropped a table with no
+        // rows as a husk (FINDINGS 2026-10-14) and drew Main as source, unlike every other POU;
+        // the owner, 2026-10-23: show the empty table. The code still sits under it, which is
+        // what the husk rule was protecting.
+        using var repo = new TempRepo(identity: true);
+        GivenACommittedSourceProject(repo);
+        using var shell = TestShell.Build();
+        await OpenAndSettleAsync(repo, shell);
+
+        var file = Path.Combine(repo.Path, Program.Replace('/', Path.DirectorySeparatorChar));
+        File.WriteAllText(file, "(* METADATA\n{}\n*)\nPROGRAM PLC_PRG\nVAR\nEND_VAR\nTestAlarm();\nEND_PROGRAM\n");
+        await shell.RefreshAsync();
+
+        var project = Assert.Single(shell.Sync.Tree, r => r.Node.Kind == ProjectNodeKind.Project);
+        var device = Assert.Single(Assert.Single(project.Children, r => r.Node.Name == "Devices").Children, r => r.Node.Name == "Device");
+        shell.Sync.SelectedNode = Assert.Single(device.Children, r => r.Node.Name == "PLC_PRG");
+
+        var shown = Assert.IsType<InterfaceRender>(shell.RenderedContent);
+        Assert.Equal("PLC_PRG", shown.Table.Name);
+        Assert.DoesNotContain(shown.Table.Members, m => !m.IsSectionHeading);
+        Assert.Contains(shown.Source!.Rows.OfType<Versio.Core.Iec.SourceCodeLine>(), l => l.Text == "TestAlarm();");
+    }
+
+    [Fact]
     public async Task A_program_reads_as_tia_blocks_do_its_variables_as_a_table_over_its_code()
     {
         // The owner, 2026-10-10: render CODESYS the way a TIA block renders, variables as a table

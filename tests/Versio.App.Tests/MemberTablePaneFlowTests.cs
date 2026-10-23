@@ -335,13 +335,14 @@ public sealed class MemberTablePaneFlowTests
     }
 
     [Fact]
-    public async Task A_parameterless_method_renders_its_code_not_an_empty_table_husk()
+    public async Task A_parameterless_method_is_an_empty_table_with_its_code_under_it()
     {
         // A method with no variables and no return parses to a valid table with zero
-        // members, and the pane drew it: column headers over a blank where the code
-        // should be (seen on a real library's StateMachine.meth.st, 2026-10-14). A table
-        // with nothing in it is a husk, not an interface — the source, with its sections,
-        // is what answers the click.
+        // members. On 2026-10-14 the pane drew it as column headers over a blank where the
+        // code should be (a real library's StateMachine.meth.st), so an empty table fell
+        // through to the source. The owner, 2026-10-23, on a POU with VAR END_VAR: show the
+        // empty table, as every other POU is shown. The harm was the missing code, and the
+        // code is what this pins under the table.
         using var repo = new TempRepo();
         var versio = Path.Combine(repo.Path, ".versio");
         Directory.CreateDirectory(versio);
@@ -384,8 +385,9 @@ public sealed class MemberTablePaneFlowTests
 
         shell.Sync.SelectedNode = await Row(shell, "DoIt");
 
-        var source = Assert.IsType<SourceRender>(shell.RenderedContent);
-        Assert.Contains(source.Rows.OfType<Versio.Core.Iec.SourceCodeLine>(),
+        var shown = Assert.IsType<InterfaceRender>(shell.RenderedContent);
+        Assert.DoesNotContain(shown.Table.Members, m => !m.IsSectionHeading);
+        Assert.Contains(shown.Source!.Rows.OfType<Versio.Core.Iec.SourceCodeLine>(),
             l => l.Text == "x := 1;");
     }
 

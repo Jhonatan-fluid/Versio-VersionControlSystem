@@ -7595,7 +7595,14 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
                             // struck rows live in Raw rather than a rendered table.
                             // Section headings do not count — Members carries them as
                             // rows, and a heading over nothing is the same husk.
-                            && parsed.Members.Any(m => !m.IsSectionHeading))
+                            //
+                            // EXCEPT a code block's interface, since 2026-10-23: the owner
+                            // wants a POU with no variables (FsLibrary's Main, VAR END_VAR)
+                            // drawn as every other POU is, an empty table over its code. The
+                            // husk's harm was the table standing where the code should be,
+                            // and an interface now always carries its code underneath, so
+                            // that harm cannot recur. Types and variable lists keep the rule.
+                            && (parsed.IsInterface || parsed.Members.Any(m => !m.IsSectionHeading)))
                         {
                             var table = LinkTypes(parsed, file);
                             _tableSource = (format, file);
