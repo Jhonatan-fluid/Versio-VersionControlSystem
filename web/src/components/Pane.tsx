@@ -15,6 +15,9 @@ interface Props {
   onLine: (line: number) => void;
   /** A comparison shows the layout switch on both tabs; a single version only on Raw diffs. */
   comparing: boolean;
+  /** The desktop pane's Show full file, shown with a comparison: clear folds it to its changes. */
+  full?: boolean;
+  onFull?: (full: boolean) => void;
   signInUrl: string | null;
 }
 
@@ -36,7 +39,7 @@ function folderOf(path: string): string {
 }
 
 /** The object pane: what the desktop's Rendered and Raw tabs show, placed from the server's HTML. */
-export function Pane({ result, view, layout, onView, onLayout, onLayer, onOpenPath, line, onLine, comparing, signInUrl }: Props) {
+export function Pane({ result, view, layout, onView, onLayout, onLayer, onOpenPath, line, onLine, comparing, signInUrl, full = false, onFull }: Props) {
   if (result.state === 'loading') {
     return <section className="pane pane-empty" aria-busy="true">Loading...</section>;
   }
@@ -65,6 +68,11 @@ export function Pane({ result, view, layout, onView, onLayout, onLayer, onOpenPa
             <button type="button" role="tab" aria-selected={view === 'rendered'} onClick={() => onView('rendered')}>Rendered</button>
             <button type="button" role="tab" aria-selected={view === 'raw'} onClick={() => onView('raw')}>Raw</button>
           </div>
+          {comparing && onFull && (
+            <label className="full-file-label" title="Every line, on both tabs; clear, the drawing is folded to the lines around each change">
+              <input type="checkbox" checked={full} onChange={(e) => onFull(e.target.checked)} /> Show full file
+            </label>
+          )}
           {(comparing || view === 'raw') && (
             <div className="segmented" role="group" aria-label="Layout">
               <button type="button" aria-pressed={layout === 'unified'} onClick={() => onLayout('unified')}>Unified</button>

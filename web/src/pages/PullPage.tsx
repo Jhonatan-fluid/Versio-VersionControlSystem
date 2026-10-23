@@ -173,6 +173,8 @@ function PullReview({ me }: { me: Me | null }) {
   const path = search.get('path');
   const view: PaneView = search.get('view') === 'raw' ? 'raw' : 'rendered';
   const layout: Layout = search.get('layout') === 'split' ? 'split' : 'unified';
+  // The desktop pane's Show full file. Clear, its default there and here, a file opens folded.
+  const full = search.get('full') === '1';
   const [loads, setLoads] = useState(0);
   // Bumped by every successful write, so threads and the conversation are read again.
   const [changed, setChanged] = useState(0);
@@ -199,8 +201,8 @@ function PullReview({ me }: { me: Me | null }) {
   // A renamed file is drawn against its old path, which only the files list (from GitHub) knows.
   const from = files.state === 'ok' ? files.value.files.find((f) => f.path === path)?.previousPath ?? undefined : undefined;
   const fileView = useAsync(
-    (s) => (snap && tab === 'files' && path && files.state !== 'loading' ? api.review.fileView(owner, repo, snap, path, view, layout, from, s) : never()),
-    [token, tab, path, view, layout, from, files.state],
+    (s) => (snap && tab === 'files' && path && files.state !== 'loading' ? api.review.fileView(owner, repo, snap, path, view, layout, from, s, full) : never()),
+    [token, tab, path, view, layout, from, files.state, full],
   );
 
   // The viewer's own review state: only with writes on, since only then can anything be done with it.
@@ -407,6 +409,8 @@ function PullReview({ me }: { me: Me | null }) {
                 layout={layout}
                 onView={(v) => setParam('view', v, 'rendered')}
                 onLayout={(l) => setParam('layout', l, 'unified')}
+                full={full}
+                onFull={(on) => setParam('full', on ? '1' : '0', '0')}
                 onLayer={(layer) => go('files', layer)}
                 onOpenPath={(p) => navigate(blobUrl(owner, repo, snap!.headSha, p))}
                 signInUrl={signIn}
@@ -644,6 +648,8 @@ interface FileReviewProps {
   layout: Layout;
   onView: (v: PaneView) => void;
   onLayout: (l: Layout) => void;
+  full: boolean;
+  onFull: (full: boolean) => void;
   onLayer: (path: string) => void;
   onOpenPath: (path: string) => void;
   signInUrl: string | null;
@@ -668,7 +674,7 @@ export function gapWords(gap: CoverageGap): string {
  * threads. On Raw, a thread sits under its line; anything that cannot be placed — outdated, on the
  * file, or on a line this drawing does not show — is listed above, never dropped.
  */
-function FileReview({ writer, path, file, result, threads, threadsState, view, layout, onView, onLayout, onLayer, onOpenPath, signInUrl, viewed, onViewed }: FileReviewProps) {
+function FileReview({ writer, path, file, result, threads, threadsState, view, layout, onView, onLayout, full, onFull, onLayer, onOpenPath, signInUrl, viewed, onViewed }: FileReviewProps) {
   const [placed, setPlaced] = useState<string[]>([]);
   // A new comment being written. On Raw, on a diff line (the diff's own numbers are file lines).
   // On a drawing, on an element the server will resolve (a member row, a network), or on a drawn
@@ -751,6 +757,9 @@ function FileReview({ writer, path, file, result, threads, threadsState, view, l
             <button type="button" role="tab" aria-selected={view === 'rendered'} onClick={() => onView('rendered')}>Rendered</button>
             <button type="button" role="tab" aria-selected={view === 'raw'} onClick={() => onView('raw')}>Raw</button>
           </div>
+          <label className="full-file-label" title="Every line, on both tabs; clear, the drawing is folded to the lines around each change">
+            <input type="checkbox" checked={full} onChange={(e) => onFull(e.target.checked)} /> Show full file
+          </label>
           <div className="segmented" role="group" aria-label="Layout">
             <button type="button" aria-pressed={layout === 'unified'} onClick={() => onLayout('unified')}>Unified</button>
             <button type="button" aria-pressed={layout === 'split'} onClick={() => onLayout('split')}>Side by side</button>

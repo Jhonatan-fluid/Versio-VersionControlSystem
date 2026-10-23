@@ -124,13 +124,17 @@ public sealed class ViewService(
     }
 
     /// <summary>One object in two commits: the older one, then the newer.</summary>
+    /// <param name="fullFile">
+    /// The desktop pane's <i>Show full file</i>: false folds Rendered to git's context either side
+    /// of each change and gives Raw that context; true draws every line on both tabs.
+    /// </param>
     /// <param name="oldPath">
     /// Where the object was in the older commit, when it was renamed: its older layers are read from
     /// there and compared as the layers they became. Only a rename the caller was told about (GitHub
     /// reports them); null compares path with path.
     /// </param>
     public async Task<RepoResult<ViewResult>> CompareAsync(
-        RepoAccess access, RepoModel older, RepoModel newer, string path, PaneView view, bool sideBySide, CancellationToken ct, string? oldPath = null)
+        RepoAccess access, RepoModel older, RepoModel newer, string path, PaneView view, bool sideBySide, CancellationToken ct, string? oldPath = null, bool fullFile = false)
     {
         var node = newer.NodeFor(path) ?? older.NodeFor(path);
         if (node is null)
@@ -143,10 +147,10 @@ public sealed class ViewService(
         var before = ReferenceEquals(oldNode, node) ? reads[0] : Renamed(reads[0], node);
         var after = reads[1];
         var shown = Shown(node, path);
-        var key = Key("compare", newer, older.CommitSha + ".." + newer.CommitSha + ":" + shown + (oldPath is null ? "" : "<-" + oldPath), view, sideBySide, after, before);
+        var key = Key("compare", newer, older.CommitSha + ".." + newer.CommitSha + ":" + shown + (oldPath is null ? "" : "<-" + oldPath) + (fullFile ? ":full" : ""), view, sideBySide, after, before);
         return await CachedAsync(key, path, () => view == PaneView.Raw
-            ? RawCompare(shown, before, after, sideBySide)
-            : RenderedCompare(older, newer, node, shown, before, after, sideBySide), notice => Plain(shown, after.ContainsKey(shown) ? after : before, notice),
+            ? RawCompare(shown, before, after, sideBySide, fullFile)
+            : RenderedCompare(older, newer, node, shown, before, after, sideBySide, fullFile), notice => Plain(shown, after.ContainsKey(shown) ? after : before, notice),
             Lasting(before.Values.Concat(after.Values)) && !older.Partial && !newer.Partial).ConfigureAwait(false);
     }
 
@@ -338,7 +342,7 @@ public sealed class ViewService(
 
     private ViewResult RenderedCompare(
         RepoModel olderModel, RepoModel newerModel, ProjectTreeNode node, string shown,
-        IReadOnlyDictionary<string, Layer> before, IReadOnlyDictionary<string, Layer> after, bool sideBySide)
+        IReadOnlyDictionary<string, Layer> before, IReadOnlyDictionary<string, Layer> after, bool sideBySide, bool fullFile)
     {
         var notices = new List<string>();
         var newer = after.TryGetValue(shown, out var a) ? a : null;
@@ -354,7 +358,7 @@ public sealed class ViewService(
         // nothing (found in review). RawCompare says what could not be read.
         if (Undrawable(newer) || Undrawable(older))
         {
-            return RawCompare(shown, before, after, sideBySide);
+            return RawCompare(shown, before, after, sideBySide, fullFile);
         }
 
         bool Differs(string f) => (before.TryGetValue(f, out var x) ? x.BlobSha : null) != (after.TryGetValue(f, out var y) ? y.BlobSha : null);
@@ -447,7 +451,7 @@ public sealed class ViewService(
                 var codeChanged = false;
                 if (compared.IsInterface)
                 {
-                    codeChanged = AppendInterfaceCode(html, format, node, after, before, sideBySide, anchors, Vouch, p => drawn.Add(p));
+                    codeChanged = AppendInterfaceCode(html, format, node, after, before, sideBySide, anchors, Vouch, p => drawn.Add(p), fullFile);
                 }
 
                 if (changedFiles && !tableChanged && !codeChanged)
@@ -499,11 +503,11 @@ public sealed class ViewService(
         }
 
         Vouch(shown, Versio.Core.Review.Coverage.Source(rows));
-        return Result("source", node, shown, SourceHtml.Fragment(rows, LanguageFor(shown), sideBySide ? SourceView.SideBySide : SourceView.Unified, shown), notices)
+        return Result("source", node, shown, SourceHtml.Fragment(rows, LanguageFor(shown), sideBySide ? SourceView.SideBySide : SourceView.Unified, shown, fullFile), notices)
             with { Coverage = Covered() };
     }
 
-    private ViewResult RawCompare(string shown, IReadOnlyDictionary<string, Layer> before, IReadOnlyDictionary<string, Layer> after, bool sideBySide)
+    private ViewResult RawCompare(string shown, IReadOnlyDictionary<string, Layer> before, IReadOnlyDictionary<string, Layer> after, bool sideBySide, bool fullFile = false)
     {
         var node = new ProjectTreeNode { Name = Name(shown), Path = shown, Kind = ProjectNodeKind.File, Files = [shown] };
         var older = before.TryGetValue(shown, out var b) ? b : null;
@@ -525,7 +529,9 @@ public sealed class ViewService(
         }
 
         var large = older?.TooLargeToDraw == true || newer?.TooLargeToDraw == true;
-        var document = UnifiedDiffParser.Parse(UnifiedDiffWriter.Write(older?.Text, newer?.Text));
+        // Show full file on Raw is the desktop's re-read with the whole file as context.
+        var context = fullFile ? int.MaxValue / 2 : UnifiedDiffWriter.DefaultContext;
+        var document = UnifiedDiffParser.Parse(UnifiedDiffWriter.Write(older?.Text, newer?.Text, context));
         var language = large ? SyntaxLanguage.PlainText : LanguageFor(shown);
         return Result("diff", node, shown, TextDiffHtml.Fragment(document, language, sideBySide ? TextDiffView.SideBySide : TextDiffView.Unified),
             large ? [TooLargeToDrawNotice] : []);
@@ -543,7 +549,7 @@ public sealed class ViewService(
         IReadOnlyDictionary<string, Layer> newer, IReadOnlyDictionary<string, Layer>? older, bool sideBySide = false,
         List<Versio.Core.Review.RenderedAnchor>? anchors = null,
         Action<string, Versio.Core.Review.Coverage.Evidence>? vouch = null,
-        Action<string>? drawnWithoutEvidence = null)
+        Action<string>? drawnWithoutEvidence = null, bool fullFile = false)
     {
         if (node.PrimaryFile is not { } code)
         {
@@ -591,7 +597,7 @@ public sealed class ViewService(
             vouch?.Invoke(code, Versio.Core.Review.Coverage.Source(rows));
         }
 
-        html.Append(SourceHtml.Fragment(rows, LanguageFor(code), sideBySide ? SourceView.SideBySide : SourceView.Unified, code));
+        html.Append(SourceHtml.Fragment(rows, LanguageFor(code), sideBySide ? SourceView.SideBySide : SourceView.Unified, code, older is null || fullFile));
         return older is not null && rows.Any(r => r is SourceRemovedLine or SourceCodeLine { Change: SourceChange.Added });
     }
 

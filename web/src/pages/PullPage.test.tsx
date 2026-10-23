@@ -238,6 +238,24 @@ describe('PullPage', () => {
     act(() => root.unmount());
   });
 
+  // The desktop pane's box, with the desktop's default: a file opens folded, and ticking the box
+  // asks the server for every line (the owner, 2026-10-23: the two must render the same).
+  it('opens a file folded and asks for every line once Show full file is ticked', async () => {
+    const { host, root } = await render('/acme/plant/pull/12?tab=files&path=src%2FPump.st');
+    const fileViews = () => calls.filter((c) => c.url.includes('/files/view'));
+    expect(fileViews().every((c) => !c.url.includes('full='))).toBe(true);
+
+    const box = Array.from(host.querySelectorAll<HTMLInputElement>('.full-file-label input'))[0]!;
+    expect(box.checked).toBe(false);
+    await act(async () => {
+      box.click();
+    });
+    await settle(host, () => fileViews().some((c) => c.url.includes('full=1')));
+
+    expect(fileViews().at(-1)!.url).toContain('full=1');
+    act(() => root.unmount());
+  });
+
   it('places each thread under its own line and side on Raw, and lists the outdated one above', async () => {
     const { host, root } = await render('/acme/plant/pull/12?tab=files&path=src%2FPump.st&view=raw');
 

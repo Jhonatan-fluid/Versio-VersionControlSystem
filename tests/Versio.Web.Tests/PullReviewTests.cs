@@ -568,6 +568,30 @@ public sealed class PullReviewTests
     }
 
     /// <summary>
+    /// Show full file reaches the drawing: without it a review file opens folded to its changes, as
+    /// the desktop pane opens; with <c>full=1</c> every line is drawn.
+    /// </summary>
+    [Fact]
+    public async Task A_review_file_opens_folded_and_full_1_draws_every_line()
+    {
+        var w = Build();
+        var before = string.Concat(Enumerable.Range(1, 20).Select(i => $"x{i} := {i};\n"));
+        var after = before.Replace("x10 := 10;", "x10 := 0;", StringComparison.Ordinal);
+        // Through Commit, so the fake knows the blobs; then into the two commits the snapshot reads.
+        w.GitHub.Commit(w.Repo, "blobs", new Dictionary<string, byte[]> { ["a"] = B(before), ["b"] = B(after) });
+        w.Repo.Commits[w.Start]["src/Long.txt"] = B(before);
+        w.Repo.Commits[w.Head]["src/Long.txt"] = B(after);
+        await using var host = await TestHost.StartAsync(w.GitHub);
+        var (token, _) = await SnapshotAsync(host);
+
+        var folded = Json(await (await WithSnapshot(host, "/api/repos/acme/plant/pulls/12/files/view?path=src/Long.txt", token)).Body());
+        var whole = Json(await (await WithSnapshot(host, "/api/repos/acme/plant/pulls/12/files/view?path=src/Long.txt&full=1", token)).Body());
+
+        Assert.Contains("cd-fold", folded.GetProperty("view").GetProperty("html").GetString()!, StringComparison.Ordinal);
+        Assert.DoesNotContain("cd-fold", whole.GetProperty("view").GetProperty("html").GetString()!, StringComparison.Ordinal);
+    }
+
+    /// <summary>
     /// The drawing comes from the snapshot's commits, not the branch: a push after the review loaded
     /// changes nothing the page combines until it reloads.
     /// </summary>

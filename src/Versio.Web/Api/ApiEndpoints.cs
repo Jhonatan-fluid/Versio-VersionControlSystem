@@ -201,7 +201,7 @@ public static partial class ApiEndpoints
             });
         });
 
-        api.MapGet("/compare/view", async (string owner, string repo, string? @base, string? head, string? path, string? view, string? layout,
+        api.MapGet("/compare/view", async (string owner, string repo, string? @base, string? head, string? path, string? view, string? layout, string? full,
             HttpContext http, Loader load, ViewService views, IVersioLogger log, CancellationToken ct) =>
         {
             if (!ValidPath(path))
@@ -221,7 +221,7 @@ public static partial class ApiEndpoints
                 return Refused(newer.Failure, http);
             }
 
-            var result = await views.CompareAsync(newer.Value!.Access, older.Value!.Model, newer.Value.Model, path!, Pane(view), SideBySide(layout), ct).ConfigureAwait(false);
+            var result = await views.CompareAsync(newer.Value!.Access, older.Value!.Model, newer.Value.Model, path!, Pane(view), SideBySide(layout), ct, fullFile: FullFile(full)).ConfigureAwait(false);
             Audit(log, newer.Value.Access, newer.Value.Model, path!, $"compare {view}");
             return result.Ok ? Results.Ok(result.Value) : Refused(result.Failure, http);
         });
@@ -628,6 +628,9 @@ public static partial class ApiEndpoints
     internal static PaneView Pane(string? view) => string.Equals(view, "raw", StringComparison.OrdinalIgnoreCase) ? PaneView.Raw : PaneView.Rendered;
 
     internal static bool SideBySide(string? layout) => string.Equals(layout, "split", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>The desktop pane's <i>Show full file</i>, as <c>full=1</c>. Absent, a comparison is folded, as the desktop opens.</summary>
+    internal static bool FullFile(string? full) => full == "1";
 
     /// <summary>The audit trail of who viewed what (security rule 13). A person's login, never a token.</summary>
     internal static void Audit(IVersioLogger log, RepoAccess access, RepoModel model, string path, string? view) =>

@@ -506,8 +506,9 @@ export const api = {
     get<View>(`${repoBase(owner, repo)}/view${query({ ref, path, view, layout })}`, signal),
   compare: (owner: string, repo: string, base: string, head: string, signal?: AbortSignal) =>
     get<Comparison>(`${repoBase(owner, repo)}/compare${query({ base, head })}`, signal),
-  compareView: (owner: string, repo: string, base: string, head: string, path: string, view: PaneView, layout: Layout, signal?: AbortSignal) =>
-    get<View>(`${repoBase(owner, repo)}/compare/view${query({ base, head, path, view, layout })}`, signal),
+  /** `full`: the desktop pane's Show full file; without it a comparison is folded to its changes, as the desktop opens. */
+  compareView: (owner: string, repo: string, base: string, head: string, path: string, view: PaneView, layout: Layout, signal?: AbortSignal, full?: boolean) =>
+    get<View>(`${repoBase(owner, repo)}/compare/view${query({ base, head, path, view, layout, full: full ? '1' : undefined })}`, signal),
   history: (owner: string, repo: string, ref: string, path?: string, signal?: AbortSignal) =>
     get<Commit[]>(`${repoBase(owner, repo)}/history${query({ ref, path })}`, signal),
   pulls: (owner: string, repo: string, signal?: AbortSignal) => get<PullList>(`${repoBase(owner, repo)}/pulls`, signal),
@@ -518,8 +519,8 @@ export const api = {
       get<ReviewSnapshot>(`${reviewBase(owner, repo, number)}/snapshot`, signal),
     files: (owner: string, repo: string, s: ReviewSnapshot, signal?: AbortSignal) =>
       get<ReviewFiles>(`${reviewBase(owner, repo, s.number)}/files`, signal, sealed(s)),
-    fileView: (owner: string, repo: string, s: ReviewSnapshot, path: string, view: PaneView, layout: Layout, from?: string, signal?: AbortSignal) =>
-      get<ReviewFileView>(`${reviewBase(owner, repo, s.number)}/files/view${query({ path, from, view, layout })}`, signal, sealed(s)),
+    fileView: (owner: string, repo: string, s: ReviewSnapshot, path: string, view: PaneView, layout: Layout, from?: string, signal?: AbortSignal, full?: boolean) =>
+      get<ReviewFileView>(`${reviewBase(owner, repo, s.number)}/files/view${query({ path, from, view, layout, full: full ? '1' : undefined })}`, signal, sealed(s)),
     status: (owner: string, repo: string, s: ReviewSnapshot, signal?: AbortSignal) =>
       get<ReviewStatus>(`${reviewBase(owner, repo, s.number)}/status`, signal, sealed(s)),
     threads: (owner: string, repo: string, s: ReviewSnapshot, signal?: AbortSignal) =>

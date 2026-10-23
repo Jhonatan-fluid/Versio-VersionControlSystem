@@ -65,10 +65,10 @@ public sealed class ViewServiceTests
         return result.Value!;
     }
 
-    private async Task<ViewResult> Compare(string path, PaneView view = PaneView.Rendered, bool sideBySide = false, string older = "main", string newer = "next")
+    private async Task<ViewResult> Compare(string path, PaneView view = PaneView.Rendered, bool sideBySide = false, bool fullFile = true, string older = "main", string newer = "next")
     {
         var (views, models) = Services();
-        var result = await views.CompareAsync(RepoAccess.Anonymous, await Model(models, older), await Model(models, newer), path, view, sideBySide, CancellationToken.None);
+        var result = await views.CompareAsync(RepoAccess.Anonymous, await Model(models, older), await Model(models, newer), path, view, sideBySide, CancellationToken.None, fullFile: fullFile);
         Assert.True(result.Ok, $"{path}: {result.Failure}");
         return result.Value!;
     }
@@ -543,6 +543,20 @@ public sealed class ViewServiceTests
         Assert.DoesNotContain("cd-removed", view.Html, StringComparison.Ordinal);
         Assert.Contains("cd-cell cd-removed", split.Html, StringComparison.Ordinal);
         Assert.Empty(view.Notices);
+    }
+
+    [Fact]
+    public async Task A_comparison_opens_folded_as_the_desktop_does_and_shows_every_line_when_asked()
+    {
+        var folded = await Compare(Simulation, fullFile: false);
+        var whole = await Compare(Simulation, fullFile: true);
+        var rawFolded = await Compare(Simulation, PaneView.Raw, fullFile: false);
+        var rawWhole = await Compare(Simulation, PaneView.Raw, fullFile: true);
+
+        Assert.Contains("cd-fold", folded.Html, StringComparison.Ordinal);
+        Assert.DoesNotContain("cd-fold", whole.Html, StringComparison.Ordinal);
+        // Raw answers the same box with git's context, as the desktop re-reads it.
+        Assert.True(rawWhole.Html.Length > rawFolded.Html.Length, "Show full file gave Raw no more context");
     }
 
     /// <summary>

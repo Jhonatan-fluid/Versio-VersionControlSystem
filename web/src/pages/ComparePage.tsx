@@ -21,6 +21,7 @@ export function ComparePage({ me }: { me: Me | null }) {
   const path = search.get('path');
   const view: PaneView = search.get('view') === 'raw' ? 'raw' : 'rendered';
   const layout: Layout = search.get('layout') === 'split' ? 'split' : 'unified';
+  const full = search.get('full') === '1';
 
   // The repository's default branch, so the rail's other tiles land somewhere sensible even
   // when the range in the URL is malformed. The other pages ask the same cached answer.
@@ -29,8 +30,8 @@ export function ComparePage({ me }: { me: Me | null }) {
   const branches = useAsync((s) => api.branches(owner, repo, s), [owner, repo]);
   const comparison = useAsync((s) => (parsed ? api.compare(owner, repo, base, head, s) : Promise.reject(new Error('Pick two versions to compare.'))), [owner, repo, base, head]);
   const pane = useAsync(
-    (s) => (parsed && path ? api.compareView(owner, repo, base, head, path, view, layout, s) : new Promise<never>(() => {})),
-    [owner, repo, base, head, path, view, layout],
+    (s) => (parsed && path ? api.compareView(owner, repo, base, head, path, view, layout, s, full) : new Promise<never>(() => {})),
+    [owner, repo, base, head, path, view, layout, full],
   );
 
   const signIn = me?.signInAvailable && !me.signedIn ? api.signInUrl(location.pathname + location.search) : null;
@@ -114,6 +115,8 @@ export function ComparePage({ me }: { me: Me | null }) {
           layout={layout}
           onView={(v) => setParam('view', v, 'rendered')}
           onLayout={(l) => setParam('layout', l, 'unified')}
+          full={full}
+          onFull={(on) => setParam('full', on ? '1' : '0', '0')}
           onLayer={(layer) => go(base, head, layer)}
           onOpenPath={(p) => navigate(blobUrl(owner, repo, head, p))}
           line={lineFromHash(location.hash)}

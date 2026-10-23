@@ -150,7 +150,7 @@ public static class PullEndpoints
 
         // "from" is a renamed file's old path, as the files list reported it (from GitHub): the
         // drawing compares the object with itself across the rename rather than as a delete and an add.
-        pulls.MapGet("/files/view", async (string owner, string repo, int number, string? path, string? from, string? view, string? layout,
+        pulls.MapGet("/files/view", async (string owner, string repo, int number, string? path, string? from, string? view, string? layout, string? full,
             HttpContext http, AccessResolver access, ReviewSnapshots snapshots, ApiEndpoints.Loader load, ViewService views,
             PullReview review, IVersioLogger log, CancellationToken ct) =>
         {
@@ -172,7 +172,7 @@ public static class PullEndpoints
             }
 
             var pane = ApiEndpoints.Pane(view);
-            var result = await views.CompareAsync(models.Access!, models.MergeBase!, models.Head!, path!, pane, ApiEndpoints.SideBySide(layout), ct, from).ConfigureAwait(false);
+            var result = await views.CompareAsync(models.Access!, models.MergeBase!, models.Head!, path!, pane, ApiEndpoints.SideBySide(layout), ct, from, ApiEndpoints.FullFile(full)).ConfigureAwait(false);
             ApiEndpoints.Audit(log, models.Access!, models.Head!, path!, $"review #{number} {view}");
             if (!result.Ok)
             {
