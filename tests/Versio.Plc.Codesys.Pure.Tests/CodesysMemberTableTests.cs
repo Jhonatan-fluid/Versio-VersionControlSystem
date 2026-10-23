@@ -125,8 +125,80 @@ public sealed class CodesysMemberTableTests
     [Theory]
     [InlineData(Fbs + "Task Configuration.taskconfig.xml.v3^/MainTask.task.xml.v3")]
     [InlineData(Fbs + "Libraries.json")]
+    // A visualisation carries an Interface with no Implementation too; its few parameters are
+    // not what a reviewer opens a screen to see.
+    [InlineData(Fbs + "Visualization.visual.xml.v3")]
     public void Objects_with_no_declaration_are_not_tables(string relative)
     {
         Assert.Null(CodesysProjectFormat.Instance.TryParseMemberTable(relative, FbsFile(relative)));
+    }
+
+    [Fact]
+    public void A_persistent_variable_list_kept_as_archive_xml_is_a_global_variable_table()
+    {
+        // It drew as raw XML until 2026-10-23: only a ladder POU's XML declaration was tabled.
+        const string Relative = Fbs + "PersistentVars.varpersistent.xml.v3";
+        var text = FbsFile(Relative);
+
+        var table = Table(Relative, text);
+
+        Assert.Equal("PersistentVars", table.Name);
+        Assert.True(table.IsVariableList);
+        Assert.Contains(table.Members, m => m.Name.Contains("Settings", StringComparison.Ordinal) && m.Datatype == "ST_AlarmSettings");
+        Assert.Contains(table.Members, m => m.Datatype == "ST_AlarmHmiConfiguration");
+
+        // The rows name the file's own lines, header included, so a row finds its line in Raw.
+        var settings = Assert.Single(table.Members, m => m.Datatype == "ST_AlarmSettings");
+        Assert.Contains("ST_AlarmSettings", text.Replace("\r\n", "\n").Split('\n')[settings.Lines!.Value.Start - 1], StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void A_visualisation_with_parameters_is_still_not_a_table()
+    {
+        // The fixture's visualisation declares nothing, which would pass with no guard at all.
+        // Given a parameter, its Interface is exactly the shape the persistent list has.
+        const string Relative = Fbs + "Visualization.visual.xml.v3";
+        var text = FbsFile(Relative).Replace("VAR_IN_OUT\n\t\nEND_VAR", "VAR_IN_OUT\n\tSpeed : INT;\nEND_VAR").Replace("VAR_IN_OUT\r\n\t\r\nEND_VAR", "VAR_IN_OUT\r\n\tSpeed : INT;\r\nEND_VAR");
+        Assert.Contains("Speed : INT;", text, StringComparison.Ordinal);
+
+        Assert.Null(CodesysProjectFormat.Instance.TryParseMemberTable(Relative, text));
+    }
+
+    [Fact]
+    public void A_symbol_configuration_is_its_settings_with_its_lists_counted_and_its_guids_left_out()
+    {
+        // FsLibrary.fbslib's own Symbols.symbolconfig.xml.v3, 2026-10-23, trimmed of nothing
+        // but the header's GUIDs.
+        const string Relative = "Device.device.xml.v3^/Plc Logic.plclogic.xml.v3^/Application.application.xml.v3^/Symbols.symbolconfig.xml.v3";
+        const string Text = """
+            __V3_META__
+            {
+            	"objectGuid": "096b458f-2bf7-48d6-b6d4-02652938b260",
+            	"objectTypeGuid": "21d4fe94-4123-4e23-9091-ead220afbd1f",
+            	"embeddedObjectTypeGuids": []
+            }
+            __V3_CONTENT__
+            <?xml version="1.0" encoding="utf-8"?>
+            <Single xml:space="preserve" Type="{21d4fe94-4123-4e23-9091-ead220afbd1f}" Method="IArchivable">
+            	<Single Name="GVLGuid" Type="System.Guid">cc9b0bf5-2a50-4f81-abcd-ddc46bea470f</Single>
+            	<List2 Name="SelectionSigns" />
+            	<Single Name="LibraryIds" Type="{475e2d23-d370-486a-bf04-61cd7f272d63}" Method="IArchivable">
+            		<Dictionary2 Name="Table" />
+            	</Single>
+            	<Single Name="ExportSymbolComments" Type="bool">True</Single>
+            	<Single Name="SupportOPCUA" Type="bool">True</Single>
+            	<Single Name="SymbolAttributeFilterType" Type="{920738ca-88e7-4433-88f7-4a50c373436a}">None</Single>
+            	<Null Name="SymbolAttributeFilterData" />
+            	<Single Name="EnableDirectIoAccess" Type="bool">False</Single>
+            </Single>
+            """;
+
+        var table = Table(Relative, Text);
+
+        Assert.Equal("Symbols", table.Name);
+        Assert.Equal(
+            ["SelectionSigns = 0 entries", "LibraryIds = 0 entries", "ExportSymbolComments = True", "SupportOPCUA = True",
+             "SymbolAttributeFilterType = None", "SymbolAttributeFilterData = (none)", "EnableDirectIoAccess = False"],
+            table.Members.Select(m => $"{m.Name} = {m.StartValue}"));
     }
 }

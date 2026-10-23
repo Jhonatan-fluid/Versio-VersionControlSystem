@@ -43,6 +43,7 @@ public static class CodesysCatalogs
     private const string DeviceType = "{225bfe47-7336-4dbc-9419-4105a7c831fa}";
     private const string TextListType = "{63784cbb-9ba0-45e6-9d69-babf3f040511}";
     private const string ProjectSettingsType = "{8753fe6f-4a22-4320-8103-e553c4fc8e04}";
+    private const string SymbolConfigurationType = "{21d4fe94-4123-4e23-9091-ead220afbd1f}";
 
     /// <summary>The library manager's fixed File-Based Storage file name.</summary>
     private const string LibrariesFile = "Libraries.json";
@@ -319,6 +320,80 @@ public static class CodesysCatalogs
             ValueLabel = "VALUE",
             Note = "Read-only view of the project settings, by the key CODESYS files each under.",
         };
+    }
+
+    /// <summary>
+    /// The symbol configuration's settings, one row per option as CODESYS names it, and how
+    /// many entries each of its lists holds.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// It drew as raw archive XML (the owner, 2026-10-23), which buries the handful of switches
+    /// a reviewer checks — OPC UA support, comment export, direct I/O access — among GUIDs.
+    /// </para>
+    /// <para>
+    /// <b>GUID-typed values are left out.</b> They are CODESYS's references to its own
+    /// generated objects (the symbol GVL and POU), they change when it regenerates them, and a
+    /// row nobody can read is churn in every comparison. <b>The lists are counted, not
+    /// listed</b>: the only configuration in hand (<c>FsLibrary.fbslib</c>) selects nothing, so
+    /// there was no selected variable to read the shape of, and guessing one would draw a
+    /// table that looks complete and is not. The note says so.
+    /// </para>
+    /// </remarks>
+    public static MemberTable? SymbolConfiguration(string relativePath, string content)
+    {
+        if (Object(relativePath, content, SymbolConfigurationType) is not var (config, name))
+        {
+            return null;
+        }
+
+        var rows = new List<MemberRow>();
+        foreach (var option in config.Elements())
+        {
+            var key = option.Attribute("Name")?.Value ?? "";
+            var type = option.Attribute("Type")?.Value ?? "";
+            if (key.Length == 0 || type == "System.Guid")
+            {
+                continue;
+            }
+
+            string value;
+            if (option.Name.LocalName is "List" or "List2" or "Dictionary" or "Dictionary2")
+            {
+                value = Count(option.Elements().Count());
+            }
+            else if (option.Name.LocalName == "Null")
+            {
+                value = "(none)";
+            }
+            else if (!option.HasElements)
+            {
+                value = option.Value.Trim();
+            }
+            else if (option.Elements().SingleOrDefault() is { Name.LocalName: "List" or "List2" or "Dictionary" or "Dictionary2" } inner)
+            {
+                // An object wrapping one table (LibraryIds holds a Dictionary2 named Table): the
+                // wrapper says nothing, the count is the content.
+                value = Count(inner.Elements().Count());
+            }
+            else
+            {
+                continue;
+            }
+
+            rows.Add(new MemberRow { Path = key, Name = key, StartValue = value });
+        }
+
+        return new MemberTable
+        {
+            Name = name,
+            Members = rows,
+            NameLabel = "SETTING",
+            ValueLabel = "VALUE",
+            Note = "Read-only view of the symbol configuration's settings. Lists are counted, not listed; Raw has every entry.",
+        };
+
+        static string Count(int n) => n == 1 ? "1 entry" : $"{n} entries";
     }
 
     private static void Walk(XElement key, List<MemberRow> rows, string prefix)
