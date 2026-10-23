@@ -132,15 +132,29 @@ public static class CodesysCatalogs
         IReadOnlyDictionary<string, IReadOnlyDictionary<string, string>> parameters)
     {
         var placeholder = Text(reference, "placeholder");
-        var name = placeholder.Length > 0 ? "#" + placeholder : Text(reference, "library");
+
+        // A fixed-version reference ("$type": "ManagedLibrary") names itself in libraryId, and
+        // the reader once knew only placeholders: FsLibrary.fbslib's four OPC UA and
+        // IecVarAccess interface libraries came out with no name at all, all four shared the
+        // empty key, and the comparison paired them with each other into three "changed" rows
+        // on a tree with no changes (the owner, 2026-10-23).
+        var managed = Text(reference, "libraryId");
+        var name = placeholder.Length > 0 ? "#" + placeholder
+            : managed.Length > 0 ? managed
+            : Text(reference, "library");
         if (name.Length == 0)
         {
             name = Text(reference, "defaultResolution");
         }
 
+        var parsed = placeholder.Length == 0 ? ManagedName(name) : null;
+
         return new LibraryReference
         {
             Name = name,
+            Title = parsed?.Title ?? "",
+            Version = parsed?.Version ?? "",
+            Company = parsed?.Company ?? "",
             Namespace = namespaceName.Length > 0 ? namespaceName : placeholder,
             Placeholder = placeholder,
             DefaultResolution = Text(reference, "defaultResolution"),
@@ -153,6 +167,46 @@ public static class CodesysCatalogs
             PublishSymbols = Flag(reference, "publishSymbols"),
             Parameters = parameters.GetValueOrDefault(name) ?? new Dictionary<string, string>(StringComparer.Ordinal),
         };
+    }
+
+    /// <summary>
+    /// A managed reference's own name, <c>"Title, Version (Company)"</c>, split the way the
+    /// classic export's <c>parse_managed_name</c> splits it, or null when it is not that shape.
+    /// </summary>
+    /// <remarks>
+    /// <b>The same strict parse, on purpose.</b> A project moved to File-Based Storage must draw
+    /// the row it drew before (see the class remarks), and the python's reasoning carries over:
+    /// split on the last <c>" ("</c> and the last <c>", "</c>, and accept only a version of
+    /// ASCII digits and dots with at least one digit. So <c>"CmpOPCUAServer Interfaces, *
+    /// (System)"</c> gets no version rather than <c>"*"</c>: an absent version is a gap somebody
+    /// can see, and a wrong one is a diff somebody acts on. The name still says it whole.
+    /// </remarks>
+    private static (string Title, string Version, string Company)? ManagedName(string name)
+    {
+        if (!name.EndsWith(')'))
+        {
+            return null;
+        }
+
+        var head = name[..^1];
+        var bracket = head.LastIndexOf(" (", StringComparison.Ordinal);
+        if (bracket <= 0 || bracket + 2 >= head.Length)
+        {
+            return null;
+        }
+
+        var company = head[(bracket + 2)..];
+        head = head[..bracket];
+        var comma = head.LastIndexOf(", ", StringComparison.Ordinal);
+        if (comma <= 0 || comma + 2 >= head.Length)
+        {
+            return null;
+        }
+
+        var version = head[(comma + 2)..];
+        return version.All(c => c is (>= '0' and <= '9') or '.') && version.Any(char.IsAsciiDigit)
+            ? (head[..comma], version, company)
+            : null;
     }
 
     /// <summary>One task from its archive XML, in the classic YAML's fields.</summary>

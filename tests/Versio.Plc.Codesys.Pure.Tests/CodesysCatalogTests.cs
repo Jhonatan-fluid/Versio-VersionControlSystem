@@ -104,6 +104,37 @@ public sealed class CodesysCatalogTests
     }
 
     [Fact]
+    public void A_managed_library_is_named_by_its_library_id_and_split_as_the_classic_export_splits_it()
+    {
+        // FsLibrary.fbslib's application manager, 2026-10-23: its OPC UA interface libraries are
+        // "$type": "ManagedLibrary", and the reader, knowing only placeholders, named them "".
+        const string Json = """
+            {
+            	"references": {},
+            	"v3SystemLibraries": [
+            		{ "namespace": "CmpOPCUAServer_Interfaces",
+            		  "libraryReference": { "$type": "ManagedLibrary", "libraryId": "CmpOPCUAServer Interfaces, * (System)", "allowUnqualifiedAccess": true } },
+            		{ "namespace": "Pinned",
+            		  "libraryReference": { "$type": "ManagedLibrary", "libraryId": "Standard, 3.5.17.0 (System)" } }
+            	]
+            }
+            """;
+
+        var catalog = CodesysProjectFormat.Instance.TryParseLibraryCatalog("Libraries.json", Json)!;
+
+        var wildcard = catalog.References[0];
+        Assert.Equal("CmpOPCUAServer Interfaces, * (System)", wildcard.Name);
+        Assert.Equal("CmpOPCUAServer_Interfaces", wildcard.Namespace);
+        // "*" is not a version: left out, as parse_managed_name leaves it out.
+        Assert.Equal(("", "", ""), (wildcard.Title, wildcard.Version, wildcard.Company));
+
+        var pinned = catalog.References[1];
+        Assert.Equal(("Standard", "3.5.17.0", "System"), (pinned.Title, pinned.Version, pinned.Company));
+        Assert.Equal("3.5.17.0", pinned.DisplayVersion);
+        Assert.True(pinned.QualifiedOnly);
+    }
+
+    [Fact]
     public void The_global_text_list_is_a_table_of_ids_and_texts()
     {
         const string Relative = "GlobalTextList.globaltextlist.xml.v3";
