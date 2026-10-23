@@ -104,7 +104,8 @@ public sealed class CodesysFileBasedLayoutTests
         // unchanged, which in a list of paths with no git status is everything.
         var tree = ProjectTreeBuilder.Build(Describe(), Folder, [], new ProjectTreeOptions { ChangedOnly = false });
 
-        var device = Assert.Single(tree.Children, n => n.Name == "Device");
+        var devices = Assert.Single(tree.Children, n => n.Name == CodesysFileBasedLayout.DevicesView);
+        var device = Assert.Single(devices.Children, n => n.Name == "Device");
         var plcLogic = Assert.Single(device.Children, n => n.Name == "Plc Logic");
         var application = Assert.Single(plcLogic.Children, n => n.Name == "Application");
         var library = Assert.Single(application.Children, n => n.Name == "Library");
@@ -117,6 +118,63 @@ public sealed class CodesysFileBasedLayoutTests
 
         // The owner's own ^ directory is not a folder anybody made, and must not become a row.
         Assert.DoesNotContain(Flatten(tree), n => n.Name.EndsWith('^'));
+    }
+
+    /// <summary>
+    /// The owner's library, <c>FsLibrary.fbslib</c>, as its file list stood on 2026-10-23: the
+    /// library's folders, its manager and settings, and a device holding the test application,
+    /// all at the folder's root.
+    /// </summary>
+    private static readonly string[] LibraryFiles =
+    [
+        "00_Template/.folder_meta.json",
+        "00_Template/FB_Template.fb.st",
+        "00_Template/FB_Template.fb.st^/Reset.meth.st",
+        "01_Core/Alarm/FB_Alarm.fb.st",
+        "CODESYS_Control_Win_V3_x64.device.xml.v3",
+        "CODESYS_Control_Win_V3_x64.device.xml.v3^/Plc Logic.plclogic.xml.v3",
+        "CODESYS_Control_Win_V3_x64.device.xml.v3^/Plc Logic.plclogic.xml.v3^/Application.application.xml.v3",
+        "CODESYS_Control_Win_V3_x64.device.xml.v3^/Plc Logic.plclogic.xml.v3^/Application.application.xml.v3^/Libraries.json",
+        "CODESYS_Control_Win_V3_x64.device.xml.v3^/Plc Logic.plclogic.xml.v3^/Application.application.xml.v3^/Main.prg.st",
+        "CODESYS_Control_Win_V3_x64.device.xml.v3^/Plc Logic.plclogic.xml.v3^/Application.application.xml.v3^/PersistentVars.varpersistent.xml.v3",
+        "CODESYS_Control_Win_V3_x64.device.xml.v3^/Plc Logic.plclogic.xml.v3^/Application.application.xml.v3^/Symbols.symbolconfig.xml.v3",
+        "CODESYS_Control_Win_V3_x64.device.xml.v3^/Plc Logic.plclogic.xml.v3^/Application.application.xml.v3^/Task Configuration.taskconfig.xml.v3",
+        "CODESYS_Control_Win_V3_x64.device.xml.v3^/Plc Logic.plclogic.xml.v3^/Application.application.xml.v3^/TestAlarm.prg.st",
+        "CODESYS_Control_Win_V3_x64.device.xml.v3^/Plc Logic.plclogic.xml.v3^/Application.application.xml.v3^/TestLogger.prg.st",
+        "Libraries.json",
+        "Project Settings.workspace.xml.v3",
+        "ProjectInfo.json",
+        "Workspace.fbsws",
+    ];
+
+    [Fact]
+    public void A_library_is_drawn_as_codesys_draws_it_the_pou_pool_apart_from_the_device_tree()
+    {
+        // Before 2026-10-23 the root read 00_Template, 01_Core and a POUs folder holding the
+        // device: the neutral builder took the root-level files for the pool and the foldered
+        // objects for the device tree, which for a File-Based Storage library is backwards.
+        const string library = "FsLibrary.fbslib";
+        var manifest = CodesysFileBasedLayout.Describe(library, LibraryFiles);
+
+        var tree = ProjectTreeBuilder.Build(manifest, library, [], new ProjectTreeOptions { ChangedOnly = false });
+
+        Assert.Equal(
+            [CodesysFileBasedLayout.DevicesView, ProjectTreeBuilder.PoolGroupName],
+            tree.Children.Select(n => n.Name));
+
+        var pous = tree.Children[1];
+        Assert.Equal(
+            ["00_Template", "01_Core", "Libraries", "Project Settings", "ProjectInfo"],
+            pous.Children.Select(n => n.Name));
+
+        var devices = tree.Children[0];
+        var device = Assert.Single(devices.Children);
+        Assert.Equal("CODESYS_Control_Win_V3_x64", device.Name);
+        var application = Assert.Single(Assert.Single(device.Children, n => n.Name == "Plc Logic").Children);
+        Assert.Equal("Application", application.Name);
+        Assert.Equal(
+            ["Libraries", "Main", "PersistentVars", "Symbols", "Task Configuration", "TestAlarm", "TestLogger"],
+            application.Children.Select(n => n.Name));
     }
 
     [Fact]

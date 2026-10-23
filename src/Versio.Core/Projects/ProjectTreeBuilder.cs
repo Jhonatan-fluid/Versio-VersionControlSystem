@@ -381,7 +381,9 @@ public static class ProjectTreeBuilder
             }
         }
 
-        placed = GroupPoolObjects(placed);
+        // A manifest that names its panes is grouped by them, and the pool guess below is not
+        // made at all: the guess is what put a library's device tree under POUs.
+        placed = placed.Any(l => l.View.Length > 0) ? GroupByView(placed) : GroupPoolObjects(placed);
 
         var tree = Assemble(placed, name: RootName(manifest, exportPath), path: root);
         tree = MergeDeviceFolders(tree);
@@ -394,7 +396,7 @@ public static class ProjectTreeBuilder
             ? manifest.Project
             : exportPath.Replace('\\', '/').TrimEnd('/').Split('/').LastOrDefault() ?? "project";
 
-    private readonly record struct Leaf(ProjectTreeNode Node, string[] Folders, string Parent);
+    private readonly record struct Leaf(ProjectTreeNode Node, string[] Folders, string Parent, string View = "");
 
     /// <summary>
     /// Hang every member off the object that owns it, and hand back what is left.
@@ -669,7 +671,10 @@ public static class ProjectTreeBuilder
 
             // Taken from the first record because every layer of one object has the same
             // owner — a GVL's .st and .xml cannot belong to different function blocks.
-            first.Parent);
+            first.Parent,
+
+            // The same argument for the pane: one object is in one pane, whatever its layers.
+            first.View ?? string.Empty);
     }
 
     /// <summary>The group project-level objects sit under, when there are any.</summary>
@@ -718,6 +723,28 @@ public static class ProjectTreeBuilder
             .Select(l => l.Folders.Length == 0 ? l with { Folders = [PoolGroupName] } : l)
             .ToList();
     }
+
+    /// <summary>
+    /// Put each top-level object under the pane its manifest names, with its own folders
+    /// inside that pane.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The vendor's word, not this builder's: see <see cref="ProjectObject.View"/>. Run after
+    /// nesting, so only the objects still at the top are moved — a member is wherever its owner
+    /// is, and a member naming a different pane from its owner would otherwise be torn out of
+    /// the function block it belongs to.
+    /// </para>
+    /// <para>
+    /// A top-level object that names no pane in a manifest that names some stays where its
+    /// path puts it. Filing it under a pane the vendor did not name would be this builder
+    /// guessing again, which is the thing the field exists to stop.
+    /// </para>
+    /// </remarks>
+    private static List<Leaf> GroupByView(List<Leaf> placed) =>
+        placed
+            .Select(l => l.View.Length > 0 ? l with { Folders = [l.View, .. l.Folders] } : l)
+            .ToList();
 
     /// <summary>Hang each catalog's references under the manager that owns them.</summary>
     /// <remarks>

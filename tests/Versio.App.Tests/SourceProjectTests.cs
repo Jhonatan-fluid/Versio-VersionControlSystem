@@ -146,7 +146,7 @@ public sealed class SourceProjectTests
 
         var project = Assert.Single(shell.Sync.Tree, r => r.Node.Kind == ProjectNodeKind.Project);
         Assert.Equal(Folder, project.Node.Path);
-        var device = Assert.Single(project.Node.Children, n => n.Name == "Device");
+        var device = Assert.Single(Assert.Single(project.Node.Children, n => n.Name == "Devices").Children, n => n.Name == "Device");
         var program = Assert.Single(device.Children, n => n.Name == "PLC_PRG");
         Assert.Equal(ChangeKind.Modified, program.Status);
         Assert.Contains(device.Children, n => n.Name == "Glob_Var");
@@ -175,7 +175,7 @@ public sealed class SourceProjectTests
 
         var project = Assert.Single(shell.Sync.Tree, r => r.Node.Kind == ProjectNodeKind.Project);
         Assert.DoesNotContain(project.Node.Children, n => n.Kind == ProjectNodeKind.File);
-        var device = Assert.Single(project.Node.Children, n => n.Name == "Device");
+        var device = Assert.Single(Assert.Single(project.Node.Children, n => n.Name == "Devices").Children, n => n.Name == "Device");
         var gone = Assert.Single(device.Children, n => n.Name == "Glob_Var");
         Assert.Equal(ChangeKind.Deleted, gone.Status);
         Assert.Contains(device.Children, n => n.Name == "PLC_PRG");
@@ -217,7 +217,7 @@ public sealed class SourceProjectTests
         await shell.RefreshAsync();
 
         var project = Assert.Single(shell.Sync.Tree, r => r.Node.Kind == ProjectNodeKind.Project);
-        var device = Assert.Single(project.Children, r => r.Node.Name == "Device");
+        var device = Assert.Single(Assert.Single(project.Children, r => r.Node.Name == "Devices").Children, r => r.Node.Name == "Device");
         shell.Sync.SelectedNode = Assert.Single(device.Children, r => r.Node.Name == "PLC_PRG");
 
         var shown = Assert.IsType<InterfaceRender>(shell.RenderedContent);
@@ -248,7 +248,7 @@ public sealed class SourceProjectTests
         await shell.RefreshAsync();
 
         var project = Assert.Single(shell.Sync.Tree, r => r.Node.Kind == ProjectNodeKind.Project);
-        var device = Assert.Single(project.Children, r => r.Node.Name == "Device");
+        var device = Assert.Single(Assert.Single(project.Children, r => r.Node.Name == "Devices").Children, r => r.Node.Name == "Device");
         shell.Sync.SelectedNode = Assert.Single(device.Children, r => r.Node.Name == "Glob_Var");
 
         var table = Assert.IsType<MemberTable>(shell.RenderedContent);

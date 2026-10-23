@@ -46,6 +46,31 @@ public sealed record ProjectObject
     /// </remarks>
     [JsonPropertyName("parent")] public string Parent { get; init; } = string.Empty;
 
+    /// <summary>
+    /// The pane of the vendor's IDE this object is shown in, when the IDE splits one project
+    /// into several — CODESYS's POUs and Devices. Null for a vendor, or a container, that
+    /// draws one tree.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Named by the vendor, never inferred here.</b> A CODESYS File-Based Storage library
+    /// keeps its device tree and its library side by side at the folder's root, so nothing in
+    /// the layout says which root object belongs to which pane: the tree builder's own
+    /// guess — root-level files are the pool — filed the device, its application and the test
+    /// programs under POUs, beside folders that were the actual pool (FINDINGS 2026-10-23).
+    /// Knowing that a <c>.device.xml.v3</c> heads the Devices pane is the vendor's knowledge,
+    /// so the vendor states it and the builder only groups by what it is told.
+    /// </para>
+    /// <para>
+    /// Only a top-level object's view is read: a member hangs off its owner wherever the
+    /// owner is drawn. Null is left out of the JSON, so a manifest that never names a view
+    /// serialises exactly as it did before this existed.
+    /// </para>
+    /// </remarks>
+    [JsonPropertyName("view")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? View { get; init; }
+
     [JsonPropertyName("hash")] public string Hash { get; init; } = string.Empty;
 
     /// <summary>

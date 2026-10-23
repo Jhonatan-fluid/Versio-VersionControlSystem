@@ -89,4 +89,29 @@ public sealed class ProjectTreePoolTests
         Assert.Equal(1, pool.ChangedDescendants);
         Assert.Equal(ChangeKind.Modified, pool.RollUp);
     }
+
+    [Fact]
+    public void A_manifest_that_names_its_panes_is_grouped_by_them_and_not_by_the_pool_guess()
+    {
+        // The shape of a File-Based Storage library: the device at the root, the pool in
+        // folders. The guess alone files the device under POUs and leaves the folders loose.
+        var tree = Build(
+            Obj("Device", "Device.dev", "dev") with { View = "Devices" },
+            Obj("Main", "Device.dev^/Main.st", "main") with { Parent = "dev", View = "Devices" },
+            Obj("FB_Alarm", "Core/FB_Alarm.st", "fb") with { View = ProjectTreeBuilder.PoolGroupName },
+            Obj("Reset", "Core/FB_Alarm.st^/Reset.st", "reset") with { Parent = "fb", View = "Devices" },
+            Obj("Settings", "Settings.xml", "set") with { View = ProjectTreeBuilder.PoolGroupName });
+
+        Assert.Equal(["Devices", ProjectTreeBuilder.PoolGroupName], tree.Children.Select(c => c.Name));
+
+        var device = Assert.Single(tree.Children[0].Children);
+        Assert.Equal("Main", Assert.Single(device.Children).Name);
+
+        var pool = tree.Children[1];
+        Assert.Equal(["Core", "Settings"], pool.Children.Select(c => c.Name));
+
+        // A member's own view is not read: it stays with its owner, whatever it says.
+        var block = Assert.Single(pool.Children[0].Children);
+        Assert.Equal("Reset", Assert.Single(block.Children).Name);
+    }
 }

@@ -16,7 +16,8 @@ namespace Versio.App.Tests;
 /// </remarks>
 public sealed class SourceProjectCatalogTests
 {
-    private const string App = "Device/Plc Logic/Application";
+    // Under the pane CODESYS shows it in: the device tree is Devices, the rest is POUs.
+    private const string App = "Devices/Device/Plc Logic/Application";
 
     private static void CopyFixture(string to)
     {
@@ -99,13 +100,13 @@ public sealed class SourceProjectCatalogTests
         shell.Sync.SelectedNode = Row(project, App + "/Task Configuration/MainTask");
         Assert.Equal(["PLC_PRG", "Simulation"], Assert.IsType<TaskDetailRender>(shell.RenderedContent).Task.Pous);
 
-        shell.Sync.SelectedNode = Row(project, "Device/EtherCAT_Master");
+        shell.Sync.SelectedNode = Row(project, "Devices/Device/EtherCAT_Master");
         Assert.Contains(Assert.IsType<DeviceCatalog>(shell.RenderedContent).Connectors, c => c.Interface == "Common.Ethercat");
 
-        shell.Sync.SelectedNode = Row(project, "GlobalTextList");
+        shell.Sync.SelectedNode = Row(project, "POUs/GlobalTextList");
         Assert.Equal("TEXT ID", Assert.IsType<MemberTable>(shell.RenderedContent).NameHeader);
 
-        shell.Sync.SelectedNode = Row(project, "Project Settings");
+        shell.Sync.SelectedNode = Row(project, "POUs/Project Settings");
         Assert.Equal("SETTING", Assert.IsType<MemberTable>(shell.RenderedContent).NameHeader);
     }
 }

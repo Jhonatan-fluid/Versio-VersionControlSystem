@@ -81,6 +81,12 @@ public static class CodesysFileBasedLayout
     /// <summary>The library manager's fixed file name. JSON, one per manager.</summary>
     private const string LibraryManagerFile = "Libraries.json";
 
+    /// <summary>CODESYS's name for the pane that holds the device tree.</summary>
+    public const string DevicesView = "Devices";
+
+    /// <summary>The compound extension of a device's own file, which heads the Devices pane.</summary>
+    private const string DeviceFile = ".device" + CodesysV3File.Extension;
+
     public static ProjectManifest Describe(string projectPath, IReadOnlyList<string> relativeFiles)
     {
         ArgumentNullException.ThrowIfNull(projectPath);
@@ -100,6 +106,7 @@ public static class CodesysFileBasedLayout
                 Type = TypeOf(path),
                 Path = path,
                 Parent = OwnerOf(path, present) ?? string.Empty,
+                View = ViewOf(path),
             })
             .ToList();
 
@@ -135,6 +142,38 @@ public static class CodesysFileBasedLayout
         }
 
         return !(segments.Length > 1 && segments[0].Equals("Preferences", StringComparison.OrdinalIgnoreCase));
+    }
+
+    /// <summary>
+    /// The IDE pane a file's object is shown in: Devices for a device at the folder's root and
+    /// everything under its <c>^</c> folder, POUs for the rest.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>CODESYS draws a project in two panes, and the folder root mixes them.</b> A library
+    /// (<c>FsLibrary.fbslib</c>, 2026-10-23) keeps <c>CODESYS_Control_Win_V3_x64.device.xml.v3</c>
+    /// — its test application, with <c>Main</c>, <c>TestAlarm</c> and the tasks — at the root
+    /// beside the library's own folders, its manager <c>Libraries.json</c>, the project
+    /// settings and <c>ProjectInfo.json</c>. Left to the neutral builder, the root-level files
+    /// were filed as the pool and the device went under POUs with them, while the folders that
+    /// <i>are</i> the pool sat beside it ungrouped. The owner asked for CODESYS's own two views.
+    /// </para>
+    /// <para>
+    /// <b>Only a device heads the Devices pane.</b> The IDE has nothing else at the top of it:
+    /// Plc Logic, the application and its objects all hang off a device. Every other root
+    /// object — folders of POUs, the project-level library manager, the project settings,
+    /// project information, a global text list — is in the POU pool, which CODESYS's own tree
+    /// shows apart from the device on the same library. The first segment decides, so a file
+    /// deep in a device's <c>^</c> folder is in Devices without walking its owners.
+    /// </para>
+    /// </remarks>
+    private static string ViewOf(string path)
+    {
+        var top = path.Split('/', 2)[0];
+        var device = top.EndsWith(OwnerSuffix, StringComparison.Ordinal) ? top[..^OwnerSuffix.Length] : top;
+        return device.EndsWith(DeviceFile, StringComparison.OrdinalIgnoreCase)
+            ? DevicesView
+            : ProjectTreeBuilder.PoolGroupName;
     }
 
     /// <summary>The type word for a file, from the kind between its name and its storage suffix.</summary>
