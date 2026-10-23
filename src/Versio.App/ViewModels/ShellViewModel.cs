@@ -7404,8 +7404,19 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
             return;
         }
 
+        // Compared as lines, the only way the HEAD side can be read: ShowAtHeadAsync rebuilds git's
+        // output a line at a time and ends every line, the last included, with '\n'. So the disk
+        // side is given the same final newline. CODESYS writes Libraries.json without one, and
+        // a byte-wise comparison called every clean manager "changed, but not in its rows"
+        // (owner, 2026-10-23, FsLibrary.fbslib).
+        static string Lines(string text)
+        {
+            var lf = text.Replace("\r\n", "\n");
+            return lf.Length == 0 || lf.EndsWith('\n') ? lf : lf + "\n";
+        }
+
         if (!ReferenceEquals(RenderedContent, shown)
-            || heads.Zip(nows).All(p => string.Equals(p.First.Replace("\r\n", "\n"), p.Second.Replace("\r\n", "\n"), StringComparison.Ordinal)))
+            || heads.Zip(nows).All(p => string.Equals(Lines(p.First), Lines(p.Second), StringComparison.Ordinal)))
         {
             return;
         }

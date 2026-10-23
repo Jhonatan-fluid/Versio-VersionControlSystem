@@ -111,6 +111,36 @@ public sealed class SourceProjectCatalogTests
     }
 
     [Fact]
+    public async Task An_unchanged_catalog_with_no_final_newline_says_nothing_changed()
+    {
+        // CODESYS writes Libraries.json with no final newline, and the HEAD copy comes back
+        // from git with one (RunAsync rebuilds stdout a line at a time). Compared as text, every
+        // clean manager said "Changed since the last commit, but not in its rows" (owner,
+        // 2026-10-23, on FsLibrary.fbslib).
+        using var repo = new TempRepo(identity: true);
+        CopyFixture(repo.Path);
+        repo.Git("-c core.autocrlf=false -c core.longpaths=true add -A");
+        repo.Git("commit -q -m fbs");
+        using var shell = TestShell.Build();
+        await shell.OpenAsync(repo.Path);
+        await shell.RefreshAsync();
+
+        // The Explorer, where the owner saw it: the Project panel hides a clean project.
+        shell.ActivePanel = ShellPanel.Explorer;
+        await shell.Explorer.RefreshAsync();
+        var plc = Assert.Single(shell.Explorer.Tree, r => r.Node.Name == "plc");
+        var project = Assert.Single(plc.Children, r => r.Node.Kind == ProjectNodeKind.Project).Children;
+
+        shell.Explorer.SelectedNode = Row(project, App + "/Libraries");
+        Assert.IsType<LibraryCatalog>(shell.RenderedContent);
+
+        // The marking runs after git answers; wait for it to have had its chance, then check.
+        await Task.Delay(1500);
+        Assert.False(Assert.IsType<LibraryCatalog>(shell.RenderedContent).HasChangeSummary,
+            ((LibraryCatalog)shell.RenderedContent!).ChangeSummary);
+    }
+
+    [Fact]
     public async Task EmptyObjectPaneFlowTests_an_object_with_nothing_in_its_own_file_says_so()
     {
         // Plc Logic is one empty archive element. It drew as that line of XML until 2026-10-23;
