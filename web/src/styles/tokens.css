@@ -1,0 +1,206 @@
+/* The page's colour and type tokens, in GitHub's vocabulary (Primer's names, Primer's values),
+   because the owner's one ask for the look is "like github.com" (docs/web/FINISH.md). Every
+   component in app.css draws with these and nothing else, so the theme is one dictionary.
+
+   Two themes, three ways to pick one. The operating system's preference is the default; a
+   person's choice (data-color-mode on <html>, kept per browser in localStorage by theme.ts)
+   beats it. The dark block is written twice on purpose: once under the media query, guarded so
+   an explicit "light" choice is not overridden, and once under the explicit "dark" choice.
+
+   Core's own renderers (the code, the member tables, the ladder) read --cd-* and --ld-* from
+   :root, set by CodePageAssets and LadderPageAssets with their own prefers-color-scheme rule;
+   the bottom of this file re-points those at these tokens so the drawings follow the person's
+   choice too, the way the desktop maps its palette onto --ld-* at runtime (LadderPage.cs). */
+
+:root {
+  --color-canvas-default: #ffffff;
+  --color-canvas-subtle: #f6f8fa;
+  --color-canvas-inset: #f6f8fa;
+  --color-canvas-overlay: #ffffff;
+  --color-border-default: #d0d7de;
+  --color-border-muted: #d8dee4;
+  --color-fg-default: #1f2328;
+  --color-fg-muted: #59636e;
+  --color-fg-subtle: #6e7781;
+  --color-fg-on-emphasis: #ffffff;
+  --color-accent-fg: #0969da;
+  --color-accent-emphasis: #0969da;
+  --color-accent-subtle: #ddf4ff;
+  --color-success-fg: #1a7f37;
+  --color-success-emphasis: #1f883d;
+  --color-success-subtle: #dafbe1;
+  --color-attention-fg: #9a6700;
+  --color-attention-emphasis: #bf8700;
+  --color-attention-subtle: #fff8c5;
+  --color-severe-fg: #bc4c00;
+  --color-danger-fg: #d1242f;
+  --color-danger-emphasis: #cf222e;
+  --color-danger-subtle: #ffebe9;
+  --color-done-fg: #8250df;
+  --color-done-emphasis: #8250df;
+  --color-done-subtle: #fbefff;
+  --color-neutral-muted: rgba(175, 184, 193, 0.2);
+  --color-neutral-emphasis: #6e7781;
+  --color-diff-add-line: #e6ffec;
+  --color-diff-add-num: #ccffd8;
+  --color-diff-add-word: #abf2bc;
+  --color-diff-del-line: #ffebe9;
+  --color-diff-del-num: #ffd7d5;
+  --color-diff-del-word: rgba(255, 129, 130, 0.4);
+  --color-diff-hunk: #ddf4ff;
+  --color-btn-bg: #f6f8fa;
+  --color-btn-hover-bg: #f3f4f6;
+  --color-btn-border: rgba(31, 35, 40, 0.15);
+  --color-btn-primary-bg: #1f883d;
+  --color-btn-primary-hover-bg: #1a7f37;
+  --color-btn-danger-fg: #d1242f;
+  --color-header-bg: #f6f8fa;
+  --color-shadow-small: 0 1px 0 rgba(31, 35, 40, 0.04);
+  --color-shadow-medium: 0 3px 6px rgba(140, 149, 159, 0.15);
+  --color-shadow-large: 0 8px 24px rgba(140, 149, 159, 0.2);
+  --color-focus: #0969da;
+  --font-ui: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans", Helvetica, Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji";
+  --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+  --radius: 6px;
+  color-scheme: light;
+}
+
+/* Dark, by the system's preference, unless the person chose light. */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-color-mode="light"]) {
+    --color-canvas-default: #0d1117;
+    --color-canvas-subtle: #161b22;
+    --color-canvas-inset: #010409;
+    --color-canvas-overlay: #161b22;
+    --color-border-default: #30363d;
+    --color-border-muted: #21262d;
+    --color-fg-default: #e6edf3;
+    --color-fg-muted: #8b949e;
+    --color-fg-subtle: #6e7681;
+    --color-fg-on-emphasis: #ffffff;
+    --color-accent-fg: #58a6ff;
+    --color-accent-emphasis: #1f6feb;
+    --color-accent-subtle: rgba(56, 139, 253, 0.1);
+    --color-success-fg: #3fb950;
+    --color-success-emphasis: #238636;
+    --color-success-subtle: rgba(46, 160, 67, 0.15);
+    --color-attention-fg: #d29922;
+    --color-attention-emphasis: #9e6a03;
+    --color-attention-subtle: rgba(187, 128, 9, 0.15);
+    --color-severe-fg: #db6d28;
+    --color-danger-fg: #f85149;
+    --color-danger-emphasis: #da3633;
+    --color-danger-subtle: rgba(248, 81, 73, 0.1);
+    --color-done-fg: #a371f7;
+    --color-done-emphasis: #8957e5;
+    --color-done-subtle: rgba(163, 113, 247, 0.1);
+    --color-neutral-muted: rgba(110, 118, 129, 0.4);
+    --color-neutral-emphasis: #6e7681;
+    --color-diff-add-line: rgba(46, 160, 67, 0.15);
+    --color-diff-add-num: rgba(63, 185, 80, 0.3);
+    --color-diff-add-word: rgba(46, 160, 67, 0.4);
+    --color-diff-del-line: rgba(248, 81, 73, 0.1);
+    --color-diff-del-num: rgba(248, 81, 73, 0.3);
+    --color-diff-del-word: rgba(248, 81, 73, 0.4);
+    --color-diff-hunk: rgba(56, 139, 253, 0.1);
+    --color-btn-bg: #21262d;
+    --color-btn-hover-bg: #30363d;
+    --color-btn-border: rgba(240, 246, 252, 0.1);
+    --color-btn-primary-bg: #238636;
+    --color-btn-primary-hover-bg: #29903b;
+    --color-btn-danger-fg: #f85149;
+    --color-header-bg: #010409;
+    --color-shadow-small: 0 0 transparent;
+    --color-shadow-medium: 0 3px 6px #010409;
+    --color-shadow-large: 0 8px 24px #010409;
+    --color-focus: #1f6feb;
+    color-scheme: dark;
+  }
+}
+
+/* Dark, by the person's choice. The same values as above; a change goes in both blocks. */
+:root[data-color-mode="dark"] {
+  --color-canvas-default: #0d1117;
+  --color-canvas-subtle: #161b22;
+  --color-canvas-inset: #010409;
+  --color-canvas-overlay: #161b22;
+  --color-border-default: #30363d;
+  --color-border-muted: #21262d;
+  --color-fg-default: #e6edf3;
+  --color-fg-muted: #8b949e;
+  --color-fg-subtle: #6e7681;
+  --color-fg-on-emphasis: #ffffff;
+  --color-accent-fg: #58a6ff;
+  --color-accent-emphasis: #1f6feb;
+  --color-accent-subtle: rgba(56, 139, 253, 0.1);
+  --color-success-fg: #3fb950;
+  --color-success-emphasis: #238636;
+  --color-success-subtle: rgba(46, 160, 67, 0.15);
+  --color-attention-fg: #d29922;
+  --color-attention-emphasis: #9e6a03;
+  --color-attention-subtle: rgba(187, 128, 9, 0.15);
+  --color-severe-fg: #db6d28;
+  --color-danger-fg: #f85149;
+  --color-danger-emphasis: #da3633;
+  --color-danger-subtle: rgba(248, 81, 73, 0.1);
+  --color-done-fg: #a371f7;
+  --color-done-emphasis: #8957e5;
+  --color-done-subtle: rgba(163, 113, 247, 0.1);
+  --color-neutral-muted: rgba(110, 118, 129, 0.4);
+  --color-neutral-emphasis: #6e7681;
+  --color-diff-add-line: rgba(46, 160, 67, 0.15);
+  --color-diff-add-num: rgba(63, 185, 80, 0.3);
+  --color-diff-add-word: rgba(46, 160, 67, 0.4);
+  --color-diff-del-line: rgba(248, 81, 73, 0.1);
+  --color-diff-del-num: rgba(248, 81, 73, 0.3);
+  --color-diff-del-word: rgba(248, 81, 73, 0.4);
+  --color-diff-hunk: rgba(56, 139, 253, 0.1);
+  --color-btn-bg: #21262d;
+  --color-btn-hover-bg: #30363d;
+  --color-btn-border: rgba(240, 246, 252, 0.1);
+  --color-btn-primary-bg: #238636;
+  --color-btn-primary-hover-bg: #29903b;
+  --color-btn-danger-fg: #f85149;
+  --color-header-bg: #010409;
+  --color-shadow-small: 0 0 transparent;
+  --color-shadow-medium: 0 3px 6px #010409;
+  --color-shadow-large: 0 8px 24px #010409;
+  --color-focus: #1f6feb;
+  color-scheme: dark;
+}
+
+/* Core's renderers follow the page's theme. Their own stylesheets set these on :root with a
+   media query of their own; a selector with an attribute on :root is more specific than :root,
+   so the person's choice wins, and under the system default this restates the same values. */
+:root, :root[data-color-mode="light"], :root[data-color-mode="dark"] {
+  --cd-bg: var(--color-canvas-default);
+  --cd-sunken: var(--color-canvas-subtle);
+  --cd-fg: var(--color-fg-default);
+  --cd-muted: var(--color-fg-muted);
+  --cd-border: var(--color-border-default);
+  --cd-accent: var(--color-accent-fg);
+  --cd-added: var(--color-success-fg);
+  --cd-added-bg: var(--color-diff-add-line);
+  --cd-added-word: var(--color-diff-add-word);
+  --cd-removed: var(--color-danger-fg);
+  --cd-removed-bg: var(--color-diff-del-line);
+  --cd-removed-word: var(--color-diff-del-word);
+  --cd-gutter: var(--color-fg-subtle);
+  --cd-ui: var(--font-ui);
+  --cd-mono: var(--font-mono);
+  --ld-fg: var(--color-fg-default);
+  --ld-bg: var(--color-canvas-default);
+  --ld-muted: var(--color-fg-muted);
+  --ld-wire: var(--color-fg-default);
+  --ld-box: var(--color-canvas-subtle);
+  --ld-border: var(--color-border-default);
+  --ld-added: var(--color-success-fg);
+  --ld-added-bg: var(--color-diff-add-line);
+  --ld-removed: var(--color-danger-fg);
+  --ld-removed-bg: var(--color-diff-del-line);
+  --ld-changed: var(--color-attention-fg);
+  --ld-changed-bg: var(--color-attention-subtle);
+  --ld-moved: var(--color-done-fg);
+  --ld-moved-bg: var(--color-done-subtle);
+  --ld-ui: var(--font-ui);
+}
