@@ -19,6 +19,55 @@ produce a diff touching everything else.
 
 ---
 
+### A POU with no variables drew as source while every other POU drew as a table
+
+**2026-10-23, branch `PrReview`, the owner on `FsLibrary.fbslib`'s `Main`** (`VAR END_VAR`
+and two calls): *"I want a POU even if it doesn't have anything to render as the other POUs do
+… just show the empty table."*
+
+**Cause: a rule that had outlived its reason.** On 2026-10-14 a table with no rows was ruled a
+"husk" and sent to the source layout. The harm then was column headers standing where a
+parameterless method's code should have been. Since then a code block's interface has always
+drawn its code underneath it (`InterfaceRender`), so that harm cannot recur. The rule only
+made one POU look unlike the rest.
+
+**Fix.** The rule now exempts an interface. A type or a variable list with no members still
+falls through to its source: the owner asked about POUs, and an empty table over nothing is
+still the husk the old rule described. The web viewer never had the rule, so it already drew
+the empty table. The 2026-10-14 cost, a block whose members were all deleted shows its struck
+rows only in Raw, is gone for code blocks: they now draw the table with the struck rows.
+
+**Evidence.** `A_program_with_no_variables_is_still_an_empty_table_over_its_code` (App) drew
+`SourceRender` before the fix. The 2026-10-14 pin is now
+`A_parameterless_method_is_an_empty_table_with_its_code_under_it`, which asserts the code under
+the empty table, the part that was the point.
+
+---
+
+### An awaited Explorer refresh could return before the tree was built
+
+**2026-10-23, branch `PrReview`, found while testing the entry above.**
+`From_the_explorer_a_link_selects_in_the_explorer_and_stays_there` failed 2 times in 8 isolated
+runs on a commit without that change. In a full-suite run, the new catalog test found
+`Explorer.Tree` empty straight after `await Explorer.RefreshAsync()`.
+
+**Cause.** `ExplorerViewModel.RefreshAsync` bumps a generation, and a refresh that a newer one
+supersedes stops early by design. But its caller got control back at that point, with nothing
+built. Showing the panel, or a file-watcher event, starts the newer refresh. `OpenObjectAsync`
+awaits a refresh to find a type link's target, so a link clicked at the wrong moment found
+nothing in the Explorer and jumped the user to the Project panel. That is a real defect, not
+only a test's.
+
+**Fix.** Each call follows a chain to the latest refresh before it returns. The early stop is
+kept, so a superseded listing still never overwrites a newer one.
+
+**Evidence, a measured rate, not a proof:** 1 failure in 22 isolated runs of the two tests after
+the fix, against 2 in 8 before. A full App suite run on HEAD plus only this session's files is
+recorded in the commit. The residual failure was not reproduced in the next 12 runs, so it is
+noted here rather than explained.
+
+---
+
 ### One appended newline, two defects: a clean catalog "changed", and a nameless Explorer row
 
 **2026-10-23, branch `PrReview`, the owner's `FsLibrary.fbslib` in the dev window.** With the
@@ -796,6 +845,9 @@ so the pane drew column headers over a blank where the code should be. A table w
 it is a husk, not an interface: it falls through to the source layout now, which is what a type
 with no members always got. The cost, taken knowingly: a block whose members were ALL deleted
 shows its struck rows in Raw rather than a rendered table.
+~~That rule now spares code blocks~~ (2026-10-23): an interface carries its code underneath it,
+so an empty POU table is drawn as the owner asked. Types and variable lists keep the rule. See
+*A POU with no variables drew as source* above.
 
 **A removed line of tabs drew as a redaction bar.** Strikethrough over the whole line turned
 `\t\t;` into one long dash. The indent is kept and kept undecorated; the strike starts where the
