@@ -119,7 +119,21 @@ public static class TiaPortalLadderParser
 
         var units = Children(Child(block!, "ObjectList"), "SW.Blocks.CompileUnit").ToList();
         var networks = units.Select((unit, i) => Network(unit, i + 1, blockLanguage) with { Lines = Versio.Core.Text.SafeXml.LinesOf(unit) }).ToList();
-        return new LadderDocument(new LadderBody(Text(attributes!, "Name"), networks), Style);
+
+        // The framing review coverage may vouch for (docs/web/PLAN.md, C4): markup-only lines
+        // outside the networks and outside the Interface, which the member table drawn over the
+        // ladder vouches for itself. The block's own values (Name, Number, MemoryLayout) are text
+        // between tags and stay gaps when they change.
+        var drawn = networks.Select(n => n.Lines).OfType<Versio.Core.Text.LineSpan>().ToList();
+        if (Child(attributes!, "Interface") is { } declaration && Versio.Core.Text.SafeXml.LinesOf(declaration) is { } d)
+        {
+            drawn.Add(d);
+        }
+
+        return new LadderDocument(new LadderBody(Text(attributes!, "Name"), networks), Style)
+        {
+            Structural = Versio.Core.Text.MarkupLines.Structural(content, drawn),
+        };
     }
 
     /// <summary>

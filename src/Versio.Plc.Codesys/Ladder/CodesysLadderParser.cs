@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Xml;
 using System.Xml.Linq;
 using Versio.Core.Iec.Ladder;
+using Versio.Core.Text;
 using Versio.Plc.Codesys.FileBased;
 
 namespace Versio.Plc.Codesys.Ladder;
@@ -96,7 +97,41 @@ public static class CodesysLadderParser
         var networks = Items(implementation, "NetworkList")
             .Select((network, i) => Network(network, i + 1, language) with { Lines = Versio.Core.Text.SafeXml.LinesOf(network, offset) })
             .ToList();
-        return new LadderDocument(new LadderBody(name, networks), Style);
+
+        // The framing review coverage may vouch for (C4): the storage header and every
+        // markup-only line of the object outside the networks and outside the Interface, which
+        // is the member table's to vouch for. A setting with a value between them (SpecialFunc,
+        // DefaultViewMode) is text, not markup, and stays a gap when it changes.
+        var drawn = networks.Select(n => n.Lines).OfType<LineSpan>().ToList();
+        if (Named(owner, "Interface") is { } declaration && Versio.Core.Text.SafeXml.LinesOf(declaration, offset) is { } d)
+        {
+            drawn.Add(d);
+        }
+
+        return new LadderDocument(new LadderBody(name, networks), Style) { Structural = Framing(relativePath, content, owner, drawn, offset) };
+    }
+
+    /// <summary>
+    /// The markup-only lines of the object's XML outside <paramref name="drawn"/>, plus a File-Based
+    /// Storage header, as file lines: what the table and the ladder each declare as framing for review
+    /// coverage, each leaving the other's spans out.
+    /// </summary>
+    /// <remarks>
+    /// A classic export can list the object's children after it in the same file; only the owner
+    /// element's own lines are framing, because a method's XML below it is drawn by no view of
+    /// this object and a change there must stay a gap.
+    /// </remarks>
+    internal static IReadOnlyList<LineSpan> Framing(string relativePath, string content, XElement owner, IEnumerable<LineSpan> drawn, int offset)
+    {
+        var xml = XmlText(relativePath, content);
+        if (xml is null)
+        {
+            return [];
+        }
+
+        var fileBased = relativePath.EndsWith(CodesysV3File.Extension, StringComparison.OrdinalIgnoreCase);
+        var header = offset > 0 ? [new LineSpan(1, offset)] : Array.Empty<LineSpan>();
+        return [.. header, .. Versio.Core.Text.MarkupLines.Structural(xml, drawn, offset, fileBased ? null : Versio.Core.Text.SafeXml.LinesOf(owner))];
     }
 
     /// <summary>
@@ -122,28 +157,15 @@ public static class CodesysLadderParser
             return null;
         }
 
-        string? xml;
-        string? fileName = null;
-        if (relativePath.EndsWith(CodesysV3File.Extension, StringComparison.OrdinalIgnoreCase))
-        {
-            xml = CodesysV3File.Content(content);
-            fileName = CodesysV3File.ObjectName(relativePath);
-        }
-        else if (relativePath.EndsWith(".xml", StringComparison.OrdinalIgnoreCase))
-        {
-            // git show keeps a BOM the working-tree read does not; the parser must not care
-            // which side of the comparison it is reading.
-            xml = content.TrimStart('\uFEFF');
-        }
-        else
-        {
-            return null;
-        }
-
+        var xml = XmlText(relativePath, content);
         if (xml is null)
         {
             return null;
         }
+
+        var fileName = relativePath.EndsWith(CodesysV3File.Extension, StringComparison.OrdinalIgnoreCase)
+            ? CodesysV3File.ObjectName(relativePath)
+            : null;
 
         XDocument doc;
         try
@@ -158,6 +180,22 @@ public static class CodesysLadderParser
 
         var (owner, name) = fileName is null ? Classic(doc) : (doc.Root, fileName);
         return owner is null ? null : (owner, name);
+    }
+
+    /// <summary>
+    /// The XML text of either container: a File-Based Storage file's content after its header, or
+    /// a classic export as it is. Null for anything that is not CODESYS native XML.
+    /// </summary>
+    internal static string? XmlText(string relativePath, string content)
+    {
+        if (relativePath.EndsWith(CodesysV3File.Extension, StringComparison.OrdinalIgnoreCase))
+        {
+            return CodesysV3File.Content(content);
+        }
+
+        // git show keeps a BOM the working-tree read does not; the parser must not care
+        // which side of the comparison it is reading.
+        return relativePath.EndsWith(".xml", StringComparison.OrdinalIgnoreCase) ? content.TrimStart('﻿') : null;
     }
 
     /// <summary>

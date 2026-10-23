@@ -407,4 +407,41 @@ public sealed class CodesysLadderTests
         var row = table.Members.Single(m => m.Path == "TON_0");
         Assert.Contains("TON_0: TON;", lines[row.Lines!.Value.Start - 1], StringComparison.Ordinal);
     }
+
+    private static int LineOf(string[] lines, string text) => Array.FindIndex(lines, l => l.Contains(text, StringComparison.Ordinal)) + 1;
+
+    /// <summary>
+    /// The ladder's framing for review coverage (docs/web/PLAN.md, C4): the envelope and the markup
+    /// outside its networks, with the Interface left to the table drawn over it. In a classic export
+    /// only the object's own element counts, because the file can hold its children below it.
+    /// </summary>
+    [Fact]
+    public void A_ladders_framing_is_the_envelope_and_the_markup_outside_its_networks_and_its_interface()
+    {
+        var fbsLines = File.ReadAllText(FbsFile).Replace("\r\n", "\n").Split('\n');
+        var fbs = Fbs();
+        bool FramedFbs(int line) => fbs.Structural.Any(s => s.Contains(line));
+
+        Assert.True(FramedFbs(1));
+        Assert.True(FramedFbs(LineOf(fbsLines, "__V3_CONTENT__")));
+        Assert.True(FramedFbs(LineOf(fbsLines, "<List2 Name=\"NetworkList\">")));
+        Assert.True(FramedFbs(LineOf(fbsLines, "Name=\"Implementation\"")));
+        // Inside a network, markup or not: the network's own span vouches for it.
+        Assert.False(FramedFbs(LineOf(fbsLines, "<List2 Name=\"NetworkItems\">")));
+        // Inside the Interface: the table's.
+        Assert.False(FramedFbs(LineOf(fbsLines, "Name=\"TextDocument\"")));
+        Assert.False(FramedFbs(LineOf(fbsLines, "TON_0: TON;")));
+        // A value is not framing.
+        Assert.False(FramedFbs(LineOf(fbsLines, "Name=\"DefaultViewMode\"")));
+
+        var classicLines = File.ReadAllText(ClassicFile).Replace("\r\n", "\n").Split('\n');
+        var classic = Classic();
+        bool FramedClassic(int line) => classic.Structural.Any(s => s.Contains(line));
+
+        // The export's wrapper is outside the object and stays a gap when it changes; the object's own markup is framing.
+        Assert.False(FramedClassic(LineOf(classicLines, "<ExportFile>")));
+        Assert.False(FramedClassic(LineOf(classicLines, "<List2 Name=\"EntryList\">")));
+        Assert.True(FramedClassic(LineOf(classicLines, "<List2 Name=\"NetworkList\">")));
+        Assert.False(FramedClassic(LineOf(classicLines, "<List2 Name=\"NetworkItems\">")));
+    }
 }

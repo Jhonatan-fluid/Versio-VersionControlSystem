@@ -646,4 +646,60 @@ public sealed class TiaPortalMemberTableTests
         Assert.Contains("Name=\"High\"", lines[rows["High"].Lines!.Value.Start - 1], StringComparison.Ordinal);
         Assert.Equal(rows["High"].Lines!.Value.Start + 1, rows["High"].Lines!.Value.End);
     }
+
+    /// <summary>
+    /// The framing review coverage may vouch for through the table (docs/web/PLAN.md, C4): the markup
+    /// around and between the rows. Not a row's line, not a value between tags, and nothing inside the
+    /// block's ObjectList, whose compile units are the code and are no table's to vouch for.
+    /// </summary>
+    [Fact]
+    public void The_markup_around_the_rows_is_framing_and_values_and_the_code_are_not()
+    {
+        const string xml = """
+            <?xml version="1.0" encoding="utf-8"?>
+            <Document>
+              <SW.Blocks.FB ID="0">
+                <AttributeList>
+                  <Interface>
+                    <Sections>
+                      <Section Name="Input">
+                        <Member Name="Startbit" Datatype="Bool" Remanence="Retain" />
+                      </Section>
+                      <Section Name="Static" />
+                    </Sections>
+                  </Interface>
+                  <Name>Pump</Name>
+                  <Number>1</Number>
+                </AttributeList>
+                <ObjectList>
+                  <SW.Blocks.CompileUnit ID="5" CompositionName="CompileUnits">
+                    <AttributeList>
+                      <NetworkSource />
+                    </AttributeList>
+                  </SW.Blocks.CompileUnit>
+                </ObjectList>
+              </SW.Blocks.FB>
+            </Document>
+            """;
+        var lines = xml.Replace("\r\n", "\n").Split('\n');
+        int LineOf(string text) => Array.FindIndex(lines, l => l.Contains(text, StringComparison.Ordinal)) + 1;
+
+        var table = MustParse(xml);
+        bool Framed(int line) => table.Structural.Any(s => s.Contains(line));
+
+        Assert.True(Framed(LineOf("<?xml")));
+        Assert.True(Framed(LineOf("<Document>")));
+        Assert.True(Framed(LineOf("<Section Name=\"Input\">")));
+        Assert.True(Framed(LineOf("</Section>")));
+        Assert.True(Framed(LineOf("<Section Name=\"Static\" />")));
+        Assert.True(Framed(LineOf("</Document>")));
+        // The row's own line, attribute the table does not draw included: the row's to vouch for, or not.
+        Assert.False(Framed(LineOf("Name=\"Startbit\"")));
+        // Values between tags.
+        Assert.False(Framed(LineOf("<Name>Pump</Name>")));
+        Assert.False(Framed(LineOf("<Number>1</Number>")));
+        // The code, markup or not.
+        Assert.False(Framed(LineOf("<ObjectList>")));
+        Assert.False(Framed(LineOf("<NetworkSource />")));
+    }
 }
