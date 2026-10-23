@@ -19,6 +19,36 @@ produce a diff touching everything else.
 
 ---
 
+### One appended newline, two defects: a clean catalog "changed", and a nameless Explorer row
+
+**2026-10-23, branch `PrReview`, the owner's `FsLibrary.fbslib` in the dev window.** With the
+library rows fixed (the entry below), the clean application manager still read *Changed since
+the last commit, but not in its rows*, and Raw showed nothing changed. The owner also asked why
+the Explorer drew an empty row at the root, between the project and `.gitignore`.
+
+**One cause.** `GitCliClient.RunAsync` rebuilds stdout from `OutputDataReceived` line events and
+appends `'\n'` to each line. `ShowAtHeadAsync`'s own remarks already warned that a file without
+a final newline cannot be told from one with it. Two callers had not taken that in:
+
+- **The catalog marking compared text.** `MarkCatalogChangesAsync` normalised CRLF but compared
+  HEAD's `…}\n` with the disk's `…}`. CODESYS writes `Libraries.json` with no final newline, so
+  every clean File-Based Storage manager took the "changed outside its rows" note. Both sides
+  are now compared as lines, with the disk side given the final newline the HEAD side always
+  has. The classic mirror never showed it, because its YAML is committed with a final newline.
+- **The working-tree listing kept the newline as a path.** `ls-files -z` ends with a NUL, so
+  the appended `'\n'` came after it as a field of its own, and `WorkingTreeListParser` skipped
+  only empty fields. The Explorer drew `"\n"` as a file at the root of every repository. A
+  whitespace-only field is now skipped, and no Windows file has such a name.
+
+**Rejected:** making `RunAsync` byte-exact. It is the right long-term answer, but every git
+reader in the app goes through it, and the two fixes here are local and tested.
+
+**Evidence.** `An_unchanged_catalog_with_no_final_newline_says_nothing_changed` (App, through the
+Explorer as the owner saw it) failed with the owner's exact sentence before the fix.
+`The_newline_the_runner_appends_after_the_last_nul_is_not_a_path` (Core) failed before its fix.
+
+---
+
 ### An unchanged library manager said "3 changed", over four rows with no name
 
 **2026-10-23, branch `PrReview`, the owner's `FsLibrary.fbslib`, seen in the dev window.** The
