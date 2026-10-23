@@ -576,7 +576,14 @@ public sealed class ViewService(
         var rows = StSourceLayout.Body(text, body.Start, body.End);
         if (older is not null)
         {
-            rows = StSourceLayout.Mark(rows, oldText, newText);
+            // A body drawn under its table draws no declaration, so a removal from the OLD file's
+            // declaration must not surface as a struck line at the top of the code: the table
+            // already says what the declaration lost. The desktop's MarkSourceChangesAsync rule,
+            // through the same seam; without it a method whose header line went drew
+            // "METHOD MoveHome" struck above its body here and not in the app (the owner,
+            // comparing the two on a real pull request, 2026-10-23).
+            var hideRemovalsBefore = oldText is null ? 0 : format.CodeBody(code, oldText)?.Start ?? 0;
+            rows = StSourceLayout.Mark(rows, oldText, newText, hideRemovalsBefore);
         }
 
         if (older is not null)

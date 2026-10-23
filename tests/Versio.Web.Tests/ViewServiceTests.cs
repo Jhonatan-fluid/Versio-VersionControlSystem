@@ -1,3 +1,4 @@
+using System.Net;
 using System.Text;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Options;
@@ -64,10 +65,10 @@ public sealed class ViewServiceTests
         return result.Value!;
     }
 
-    private async Task<ViewResult> Compare(string path, PaneView view = PaneView.Rendered, bool sideBySide = false)
+    private async Task<ViewResult> Compare(string path, PaneView view = PaneView.Rendered, bool sideBySide = false, string older = "main", string newer = "next")
     {
         var (views, models) = Services();
-        var result = await views.CompareAsync(RepoAccess.Anonymous, await Model(models, "main"), await Model(models, "next"), path, view, sideBySide, CancellationToken.None);
+        var result = await views.CompareAsync(RepoAccess.Anonymous, await Model(models, older), await Model(models, newer), path, view, sideBySide, CancellationToken.None);
         Assert.True(result.Ok, $"{path}: {result.Failure}");
         return result.Value!;
     }
@@ -542,6 +543,31 @@ public sealed class ViewServiceTests
         Assert.DoesNotContain("cd-removed", view.Html, StringComparison.Ordinal);
         Assert.Contains("cd-cell cd-removed", split.Html, StringComparison.Ordinal);
         Assert.Empty(view.Notices);
+    }
+
+    /// <summary>
+    /// A method whose declaration line changed draws its body under the table with nothing struck
+    /// above it: the table says what the declaration lost, as on the desktop. The owner's pull
+    /// request showed "METHOD MoveHome" struck at the top of the web's drawing and not the app's
+    /// (2026-10-23) — the desktop hid removals before the old body's start, and the web did not.
+    /// </summary>
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task A_method_whose_header_changed_draws_no_removed_header_above_its_body(bool sideBySide)
+    {
+        const string reset = "fixtures/projects/RefrigeratorControl_FBS/RefrigeratorControl.fbsproj/Device.device.xml.v3^/Plc Logic.plclogic.xml.v3^/Application.application.xml.v3^/Library/Alarm/POUs/FB_Alarm.fb.st^/M_Reset.meth.st";
+        var fbs = FakeGitHub.FromDisk("fixtures/projects/RefrigeratorControl_FBS");
+        var before = new Dictionary<string, byte[]>(fbs, StringComparer.Ordinal);
+        Edit(before, reset, "METHOD PUBLIC M_Reset : BOOL", "METHOD M_Reset : BOOL");
+        _github.Commit(_repo, "fbs-before", before);
+        _github.Commit(_repo, "fbs", fbs);
+
+        var view = await Compare(reset, sideBySide: sideBySide, older: "fbs-before", newer: "fbs");
+
+        Assert.Equal("table", view.Kind);
+        Assert.DoesNotContain("METHOD M_Reset", WebUtility.HtmlDecode(view.Html), StringComparison.Ordinal);
+        Assert.DoesNotContain("cd-removed", view.Html, StringComparison.Ordinal);
     }
 
     [Fact]
