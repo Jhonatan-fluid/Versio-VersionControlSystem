@@ -78,9 +78,12 @@ and a member of a structured type finds its own members by the type's name. A ty
 itself is walked once per branch. An unticked member is drawn with "not published", because
 ticking is what a change to this file usually is. The Communication Manager, the OPC UA Server,
 Plc Logic and the Application have **no settings in their files at all**: each is an empty
-archive element. They still show their raw XML, as Plc Logic always has. A "no settings of its
-own" view belongs in the shell's render choice, `ShellViewModel.cs`, which another session had
-uncommitted edits in, so it was left as a follow-up.
+archive element. They still show their raw XML, as Plc Logic always has. **Then they said so
+(`06fedf4`):** `IPlcProjectFormat.HoldsNoSettings`, default false, is answered by the CODESYS
+pack for archive XML with no text anywhere, and `EmptyObjectNote` is the one wording. The web
+viewer draws it. The desktop pane does not yet: its branch goes in `ShellViewModel.cs`, which
+waits for another session's uncommitted edits. The Application was expected to be empty and is
+not: it holds boot-application, memory and signing settings, and still shows raw.
 
 **Evidence.** `A_library_is_drawn_as_codesys_draws_it_the_pou_pool_apart_from_the_device_tree`
 (CODESYS pure) uses the library's real file list. Setting `View = null` in `Describe` turns it
