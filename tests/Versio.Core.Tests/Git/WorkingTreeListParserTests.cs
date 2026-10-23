@@ -25,6 +25,17 @@ public sealed class WorkingTreeListParserTests
     }
 
     [Fact]
+    public void The_newline_the_runner_appends_after_the_last_nul_is_not_a_path()
+    {
+        // GitCliClient.RunAsync rebuilds stdout from line events and appends '\n' to each, so
+        // ls-files -z arrives as "...\0README.md\0\n". The "\n" was kept as a path, and the
+        // Explorer drew it as a file with no visible name at the root (owner, 2026-10-23).
+        var paths = WorkingTreeListParser.Parse(".gitignore\0README.md\0\n");
+
+        Assert.Equal([".gitignore", "README.md"], paths);
+    }
+
+    [Fact]
     public void Backslashes_become_forward_slashes_and_duplicates_collapse()
     {
         var paths = WorkingTreeListParser.Parse("src\\app.py\0src/app.py\0");

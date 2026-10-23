@@ -22,7 +22,10 @@ public static class WorkingTreeListParser
 
         foreach (var field in output.Split('\0'))
         {
-            if (string.IsNullOrEmpty(field))
+            // Whitespace, not only empty: the CLI runner appends '\n' after the last NUL, and
+            // a "\n" path drew as a nameless file at the Explorer's root (2026-10-23). No file
+            // on Windows is named only whitespace, so nothing real is skipped.
+            if (string.IsNullOrWhiteSpace(field))
             {
                 continue;
             }
