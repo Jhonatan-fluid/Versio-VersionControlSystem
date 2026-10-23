@@ -230,6 +230,38 @@ public sealed class CodesysMemberTableTests
         Assert.Equal("not published", table.Members[1].Comment);
     }
 
+    [Theory]
+    [InlineData("Device.device.xml.v3^/Plc Logic.plclogic.xml.v3", true)]
+    // The Application does have settings of its own (boot application, memory sizes, signing).
+    [InlineData("Device.device.xml.v3^/Plc Logic.plclogic.xml.v3^/Application.application.xml.v3", false)]
+    // An empty VAR_IN_OUT block is still text: the visualisation has something to read.
+    [InlineData(Fbs + "Visualization.visual.xml.v3", false)]
+    [InlineData(Fbs + "PersistentVars.varpersistent.xml.v3", false)]
+    [InlineData(Fbs + "Task Configuration.taskconfig.xml.v3^/MainTask.task.xml.v3", false)]
+    [InlineData("Device.device.xml.v3", false)]
+    [InlineData(Fbs + "PLC_PRG.prg.st", false)]
+    public void An_archive_object_with_no_text_anywhere_holds_no_settings(string relative, bool empty)
+    {
+        Assert.Equal(empty, CodesysProjectFormat.Instance.HoldsNoSettings(relative, FbsFile(relative)));
+    }
+
+    [Fact]
+    public void An_opc_ua_server_holding_only_an_empty_symbol_set_reference_holds_no_settings()
+    {
+        // FsLibrary.fbslib's OPC UA Server, 2026-10-23: one child element, and no text in it.
+        const string Text = """
+            __V3_META__
+            {}
+            __V3_CONTENT__
+            <?xml version="1.0" encoding="utf-8"?>
+            <Single xml:space="preserve" Type="{bb239915-1312-49e1-b304-fe9efd758779}" Method="IArchivable">
+            	<Single Name="SymbolSet" Type="{fffffff9-82a0-4545-aae4-53e71acc2d35}" Method="IArchivable" />
+            </Single>
+            """;
+
+        Assert.True(CodesysProjectFormat.Instance.HoldsNoSettings("OPC UA Server.opcuacommunication.xml.v3", Text));
+    }
+
     [Fact]
     public void A_symbol_configuration_is_its_settings_with_its_lists_counted_and_its_guids_left_out()
     {

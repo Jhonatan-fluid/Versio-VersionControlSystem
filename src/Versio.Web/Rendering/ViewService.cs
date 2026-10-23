@@ -303,6 +303,15 @@ public sealed class ViewService(
         }
 
         var text = files[shown].Text!;
+
+        // An object with nothing in its own file (a CODESYS Communication Manager): the note says
+        // so, where one line of archive XML read as a view that had failed. Raw keeps the file.
+        if (PlcFormats.All.Any(f => f.HoldsNoSettings(shown, text)))
+        {
+            var note = EmptyObjectNote.For(hasChildren: node.Children.Count > 0);
+            return Result("markdown", node, shown, "<div class=\"md-page\">" + MarkdownHtml.Fragment(Markdown.Parse(note)) + "</div>", notices);
+        }
+
         if (IsMarkdown(shown))
         {
             return Result("markdown", node, shown, "<div class=\"md-page\">" + MarkdownHtml.Fragment(Markdown.Parse(text)) + "</div>", notices);

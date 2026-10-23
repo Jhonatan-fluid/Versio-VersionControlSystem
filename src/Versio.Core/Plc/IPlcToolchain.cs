@@ -314,6 +314,26 @@ public interface IPlcProjectFormat
     Projects.MemberTable? TryParseMemberTable(string relativePath, string content) => null;
 
     /// <summary>
+    /// True when this file is an object whose own storage holds nothing a reviewer could read:
+    /// a container whose content is its children in the tree.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The pane asks after the table and the ladder, and on true draws
+    /// <see cref="Projects.EmptyObjectNote"/> instead of the file's text. Without it, a CODESYS
+    /// Communication Manager or Plc Logic showed one line of archive XML on the Rendered tab,
+    /// which reads as a view that failed rather than an object with nothing in it (the owner,
+    /// 2026-10-23). Raw still shows the file.
+    /// </para>
+    /// <para>
+    /// The format decides, because only the vendor knows what an empty object looks like in its
+    /// own storage. Default false: a vendor that never says so keeps the file's text, which is
+    /// never wrong, only less helpful.
+    /// </para>
+    /// </remarks>
+    bool HoldsNoSettings(string relativePath, string content) => false;
+
+    /// <summary>
     /// This file's graphical networks in the neutral model (ladder or function block diagram,
     /// per <see cref="Iec.Ladder.LadderNetwork.Language"/>), or null when the file is not a
     /// block this format can draw.

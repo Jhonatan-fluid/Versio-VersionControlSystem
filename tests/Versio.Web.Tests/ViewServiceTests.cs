@@ -380,6 +380,23 @@ public sealed class ViewServiceTests
     }
 
     [Fact]
+    public async Task An_object_with_nothing_in_its_own_file_says_so_and_raw_still_shows_the_file()
+    {
+        // Plc Logic is one empty archive element; it drew as that line of XML until 2026-10-23.
+        _github.Commit(_repo, "fbs", FakeGitHub.FromDisk("fixtures/projects/RefrigeratorControl_FBS"));
+        var (views, models) = Services();
+        var model = await Model(models, "fbs");
+        var plcLogic = Assert.Single(RepoModel.Flatten(model.Nodes), n => n.Name == "Plc Logic").Path;
+
+        var rendered = await views.ViewAsync(RepoAccess.Anonymous, model, plcLogic, PaneView.Rendered, false, CancellationToken.None);
+        var raw = await views.ViewAsync(RepoAccess.Anonymous, model, plcLogic, PaneView.Raw, false, CancellationToken.None);
+
+        Assert.Equal("markdown", rendered.Value!.Kind);
+        Assert.Contains(EmptyObjectNote.For(hasChildren: true), System.Net.WebUtility.HtmlDecode(rendered.Value.Html), StringComparison.Ordinal);
+        Assert.Equal("source", raw.Value!.Kind);
+    }
+
+    [Fact]
     public async Task A_data_type_is_its_member_table()
     {
         var view = await View(Settings);

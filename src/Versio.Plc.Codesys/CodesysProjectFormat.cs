@@ -224,6 +224,16 @@ public sealed class CodesysProjectFormat : IPlcProjectFormat
     public Versio.Core.Iec.SourceSections? SourceSections(string relativePath, string content) =>
         FileBased.CodesysFileBasedSource.Sections(relativePath, content);
 
+    /// <remarks>
+    /// An archive object whose XML carries no text anywhere: Plc Logic, an Application, a
+    /// Communication Manager, an OPC UA Server with an empty symbol-set reference. Text anywhere
+    /// in it (a setting, a name, even an empty <c>VAR_IN_OUT</c> block) means there is something
+    /// to read, and the file is shown as before.
+    /// </remarks>
+    public bool HoldsNoSettings(string relativePath, string content) =>
+        Ladder.CodesysLadderParser.ObjectOf(relativePath, content) is var (owner, _)
+        && string.IsNullOrWhiteSpace(owner.Value);
+
     public (int Start, int End)? CodeBody(string relativePath, string content) =>
         CodesysMemberTable.CodeBody(relativePath, content);
 
