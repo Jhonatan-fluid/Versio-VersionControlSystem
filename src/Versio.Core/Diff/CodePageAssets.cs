@@ -33,6 +33,7 @@ public static class CodePageAssets
           --cd-added-bg: #e6f6ec; --cd-removed-bg: #fceaea;
           --cd-added-word: #bbebcb; --cd-removed-word: #f9cfcf;
           --cd-hidden: #9a6700; --cd-hidden-bg: rgba(212, 167, 44, 0.22);
+          --cd-sunken: #f6f8fa;
           --cd-t-keyword: #8250df; --cd-t-type: #1a7f8e; --cd-t-comment: #6e7781;
           --cd-t-string: #0a6b34; --cd-t-number: #0550ae; --cd-t-directive: #953800;
           --cd-mono: "Cascadia Mono", Consolas, monospace;
@@ -46,6 +47,7 @@ public static class CodePageAssets
             --cd-added-bg: #12301f; --cd-removed-bg: #331617;
             --cd-added-word: #1b5334; --cd-removed-word: #5c2326;
             --cd-hidden: #d29922; --cd-hidden-bg: rgba(187, 128, 9, 0.25);
+            --cd-sunken: #161b22;
             --cd-t-keyword: #d2a8ff; --cd-t-type: #5fd3e0; --cd-t-comment: #8b949e;
             --cd-t-string: #7ee787; --cd-t-number: #79c0ff; --cd-t-directive: #ffa657;
           }
@@ -66,6 +68,11 @@ public static class CodePageAssets
         .cd-removed { background: var(--cd-removed-bg); }
         .cd-removed > .cd-num { color: var(--cd-removed); }
         .cd-removed .cd-code del { text-decoration: line-through; }
+        .cd-removed-above { box-shadow: inset 0 2px 0 var(--cd-removed); }
+        .cd-removed-below { box-shadow: inset 0 -2px 0 var(--cd-removed); }
+        .cd-fold { display: grid; grid-template-columns: 46px 1fr; min-height: 20px; margin: 2px 0;
+          align-items: center; background: var(--cd-sunken); color: var(--cd-muted); font: 11px var(--cd-ui); }
+        .cd-fold > span:last-child { padding-left: 6px; }
         .cd-added .cd-em { background: var(--cd-added-word); color: inherit; }
         .cd-removed .cd-em { background: var(--cd-removed-word); color: inherit; }
         .cd-em { background: transparent; color: inherit; }

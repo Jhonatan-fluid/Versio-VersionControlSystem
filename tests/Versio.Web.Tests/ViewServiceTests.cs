@@ -535,9 +535,12 @@ public sealed class ViewServiceTests
     public async Task A_code_change_under_an_interface_is_marked_and_needs_no_notice()
     {
         var view = await Compare(Simulation);
+        var split = await Compare(Simulation, sideBySide: true);
 
+        // Unified is the file as it is, as the desktop draws it; the old line is side by side's.
         Assert.Contains("cd-added", view.Html, StringComparison.Ordinal);
-        Assert.Contains("cd-removed", view.Html, StringComparison.Ordinal);
+        Assert.DoesNotContain("cd-removed", view.Html, StringComparison.Ordinal);
+        Assert.Contains("cd-cell cd-removed", split.Html, StringComparison.Ordinal);
         Assert.Empty(view.Notices);
     }
 

@@ -7,7 +7,10 @@ namespace Versio.Core.Iec;
 /// <summary>How a laid-out source file is drawn.</summary>
 public enum SourceView
 {
-    /// <summary>One column: added lines tinted, removed lines struck where they stood.</summary>
+    /// <summary>
+    /// One column: the file as it is, added lines tinted, a pure deletion marked on the line now
+    /// standing where it was (<see cref="StSourceLayout.Unified"/>). Removed lines are side by side's.
+    /// </summary>
     Unified,
 
     /// <summary>The older version on the left, the newer on the right, when anything is marked.</summary>
@@ -35,6 +38,14 @@ public enum SourceView
 /// <b>Side by side only when something is marked</b>, as the desktop decides: an unchanged file
 /// side by side is the same text twice at half the width.
 /// </para>
+/// <para>
+/// <b>The same rows as the desktop's <c>DiffView</c>, not a reading of them.</b> Unified draws
+/// <see cref="StSourceLayout.Unified"/>'s rows and a comparison folds with
+/// <see cref="StSourceLayout.Fold(IReadOnlyList{SourceRow}, int)"/> unless the whole file is asked
+/// for — the same calls in the same order. This drew removed lines struck in place and never folded
+/// for a week after the desktop stopped, and the owner saw the two side by side on a real pull
+/// request (2026-10-23): the viewer exists to show what the desktop shows.
+/// </para>
 /// </remarks>
 public static class SourceHtml
 {
@@ -43,7 +54,12 @@ public static class SourceHtml
 
     /// <summary>The fragment for laid-out (and optionally <see cref="StSourceLayout.Mark"/>ed) rows.</summary>
     /// <param name="sourcePath">The file the rows are lines of, carried as <c>data-src-path</c>: a review thread on a file line is placed only in the block of its own file.</param>
-    public static string Fragment(IReadOnlyList<SourceRow> rows, SyntaxLanguage language, SourceView view = SourceView.Unified, string sourcePath = "")
+    /// <param name="fullFile">
+    /// The desktop pane's <i>Show full file</i>: false folds a comparison to git's context either
+    /// side of each change. True by default, as the desktop control's is, so a caller that is not
+    /// comparing draws everything.
+    /// </param>
+    public static string Fragment(IReadOnlyList<SourceRow> rows, SyntaxLanguage language, SourceView view = SourceView.Unified, string sourcePath = "", bool fullFile = true)
     {
         ArgumentNullException.ThrowIfNull(rows);
         ArgumentNullException.ThrowIfNull(language);
@@ -52,9 +68,11 @@ public static class SourceHtml
         var split = view == SourceView.SideBySide && marked;
 
         var body = new StringBuilder(rows.Count * 64);
-        var hidden = split
-            ? SplitRows(body, StSourceLayout.SideBySide(rows), language)
-            : UnifiedRows(body, rows, language);
+        // DiffView.Rebuild's order exactly: pair, then fold; or fold, then leave removals out.
+        var pairs = split ? StSourceLayout.SideBySide(rows) : null;
+        var hidden = pairs is not null
+            ? SplitRows(body, fullFile ? pairs : StSourceLayout.Fold(pairs), language)
+            : UnifiedRows(body, marked ? StSourceLayout.Unified(fullFile ? rows : StSourceLayout.Fold(rows)) : rows, language);
 
         var html = new StringBuilder(body.Length + 512);
         html.Append("<div class=\"cd-page\" data-src-path=\"").Append(CodeHtml.A(sourcePath)).Append("\" data-view=\"").Append(split ? "side-by-side" : "unified")
@@ -80,21 +98,25 @@ public static class SourceHtml
                 case SourceDivider divider:
                     Divider(html, divider);
                     break;
-                case SourceRemovedLine gone:
-                    html.Append("<div class=\"cd-row cd-removed\" data-old-line=\"").Append(N(gone.OldFileLine))
-                        .Append("\" data-old-file-line=\"").Append(N(gone.OldFileLine))
-                        .Append("\" title=\"Removed (was line ").Append(N(gone.OldFileLine))
-                        .Append(")\"><span class=\"cd-num\">&#8722;</span><code class=\"cd-code\"><del>");
-                    hidden += CodeHtml.AppendLine(html, gone.Text, language);
-                    html.Append("</del></code></div>\n");
+                case SourceFold fold:
+                    Fold(html, fold);
                     break;
                 case SourceCodeLine line:
                     html.Append("<div class=\"cd-row").Append(line.Change == SourceChange.Added ? " cd-added" : "")
+                        .Append(line.RemovedNear is { } gap ? gap.After ? " cd-removed-below" : " cd-removed-above" : "")
                         .Append("\" data-line=\"").Append(N(line.Number))
                         .Append("\" data-file-line=\"").Append(N(line.FileLine)).Append('"');
                     if (line.OldFileLine is { } was)
                     {
                         html.Append(" data-old-file-line=\"").Append(N(was)).Append('"');
+                    }
+
+                    if (line.RemovedNear is { } removed)
+                    {
+                        // The desktop's tooltip, word for word.
+                        html.Append(" title=\"").Append(N(removed.Count)).Append(removed.Count == 1 ? " line" : " lines")
+                            .Append(" removed ").Append(removed.After ? "below" : "above")
+                            .Append(" since the last commit. Side by side shows them.\"");
                     }
 
                     html.Append("><span class=\"cd-num\">").Append(N(line.Number))
@@ -119,6 +141,12 @@ public static class SourceHtml
             if (row.Divider is { } divider)
             {
                 Divider(html, divider);
+                continue;
+            }
+
+            if (row.Fold is { } fold)
+            {
+                Fold(html, fold);
                 continue;
             }
 
@@ -167,6 +195,12 @@ public static class SourceHtml
     private static void Divider(StringBuilder html, SourceDivider divider) =>
         html.Append("<div class=\"cd-divider\" data-divider=\"").Append(CodeHtml.E(divider.Label))
             .Append("\"><span>").Append(CodeHtml.E(divider.Label)).Append("</span></div>\n");
+
+    /// <summary>Unchanged lines folded away: a quiet row saying how many, as the desktop's does.</summary>
+    private static void Fold(StringBuilder html, SourceFold fold) =>
+        html.Append("<div class=\"cd-fold\" data-folded=\"").Append(N(fold.Hidden))
+            .Append("\" title=\"Tick Show full file to see every line\"><span class=\"cd-num\">&#8943;</span><span>")
+            .Append(N(fold.Hidden)).Append(fold.Hidden == 1 ? " unchanged line" : " unchanged lines").Append("</span></div>\n");
 
     private static string N(int value) => value.ToString(CultureInfo.InvariantCulture);
 }

@@ -316,73 +316,6 @@ public class DiffView : ListBox
     /// <summary>Guards against a slow parse landing after a newer selection.</summary>
     private int _generation;
 
-    /// <summary>
-    /// Unified source rows: the working file alone, removed lines left to side by side.
-    /// </summary>
-    /// <remarks>
-    /// <para>
-    /// The owner, 2026-10-22: the removed lines belong only in the side-by-side view. Drawn in
-    /// place, struck, they doubled every edited line — the old text and the new one stacked, the
-    /// method reading as twice its length — on the tab whose job is to show the file as it is.
-    /// The two columns are where old and new are read against each other.
-    /// </para>
-    /// <para>
-    /// <b>A pure deletion is still marked.</b> A change that only deleted lines would otherwise
-    /// leave nothing on this tab at all, and an object badged M with no visible change reads as a
-    /// fault. The line that now stands where they were carries a red rule on its top edge (on
-    /// its bottom edge when they were the last lines), and its tooltip says how many went.
-    /// </para>
-    /// <para>
-    /// <b>Only a pure deletion.</b> Removed lines with an added line beside them were replaced,
-    /// and the added line's green tint already says so. The rule drawn there too sat on every
-    /// edited line, a red stroke above a green one that said nothing the green did not (the
-    /// owner, 2026-10-22: "what is this red line?").
-    /// </para>
-    /// </remarks>
-    private List<SourceRow> Unified(IReadOnlyList<SourceRow> marked)
-    {
-        var rows = new List<SourceRow>(marked.Count);
-        var near = new Dictionary<SourceRow, (int Count, bool After)>(ReferenceEqualityComparer.Instance);
-        var pending = 0;
-        SourceCodeLine? previous = null;
-
-        static bool IsAdded(SourceCodeLine? line) => line?.Change == SourceChange.Added;
-
-        foreach (var row in marked)
-        {
-            if (row is SourceRemovedLine)
-            {
-                pending++;
-                continue;
-            }
-
-            if (row is SourceCodeLine line)
-            {
-                // Either neighbour added means the run was replaced, not deleted.
-                if (pending > 0 && !IsAdded(line) && !IsAdded(previous))
-                {
-                    near[row] = (pending, false);
-                }
-
-                pending = 0;
-                previous = line;
-            }
-
-            rows.Add(row);
-        }
-
-        if (pending > 0 && previous is not null && !IsAdded(previous))
-        {
-            near[previous] = (pending, true);
-        }
-
-        _removedNear = near;
-        return rows;
-    }
-
-    /// <summary>Unified rows that stand where removed lines were, by reference. See <see cref="Unified"/>.</summary>
-    private Dictionary<SourceRow, (int Count, bool After)>? _removedNear;
-
     private async void Rebuild()
     {
         var text = DiffText;
@@ -408,7 +341,6 @@ public class DiffView : ListBox
             ScrollViewer.SetHorizontalScrollBarVisibility(
                 this, split && marked ? ScrollBarVisibility.Disabled : ScrollBarVisibility.Auto);
             HorizontalContentAlignment = HorizontalAlignment.Stretch;
-            _removedNear = null;
 
             if (split && marked)
             {
@@ -417,7 +349,9 @@ public class DiffView : ListBox
                 return;
             }
 
-            ItemsSource = marked ? Unified(full ? source : StSourceLayout.Fold(source)) : source;
+            // Which rows, and which carry a deletion's mark, are Core's answer (StSourceLayout.Unified
+            // says why removed lines are left out), so the web viewer draws exactly these rows too.
+            ItemsSource = marked ? StSourceLayout.Unified(full ? source : StSourceLayout.Fold(source)) : source;
             return;
         }
 
@@ -524,7 +458,7 @@ public class DiffView : ListBox
 
         // Where removed lines stood, in a view that does not draw them. An overlay rather than
         // a border, so the marked line is not two pixels taller than its neighbours.
-        if (_removedNear is { } near && near.TryGetValue(line, out var removed))
+        if (line.RemovedNear is { } removed)
         {
             // Across the whole row, as the added tint is. Spanning only the gutter and the
             // code's Auto column, it stopped wherever that line's text did, which read as a

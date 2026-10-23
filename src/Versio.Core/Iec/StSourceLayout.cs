@@ -27,7 +27,18 @@ public sealed record SourceCodeLine(int Number, string Text, int FileLine) : Sou
     /// unchanged line names this line, not <see cref="FileLine"/> (docs/web/PLAN.md, C3).
     /// </summary>
     public int? OldFileLine { get; init; }
+
+    /// <summary>
+    /// Lines the last commit had that were deleted next to this one, with nothing put in their
+    /// place; null otherwise. Set by <see cref="StSourceLayout.Unified"/>, which leaves the removed
+    /// lines themselves out.
+    /// </summary>
+    public SourceRemoval? RemovedNear { get; init; }
 }
+
+/// <summary>A pure deletion beside a drawn line: how many lines went, and on which side of it.</summary>
+/// <param name="After">True when they were below this line (they were the last lines), false when above.</param>
+public sealed record SourceRemoval(int Count, bool After);
 
 /// <summary>What happened to a drawn line since the last commit.</summary>
 public enum SourceChange
@@ -42,10 +53,12 @@ public enum SourceChange
 /// <param name="Text">The line as it was.</param>
 /// <param name="OldFileLine">Where it sat in the committed file, from 1.</param>
 /// <remarks>
-/// Kept in the rows, where it stood, so side by side can face it with its replacement and the web
-/// viewer can draw it struck. The desktop's unified Rendered view no longer draws it (the owner,
-/// 2026-10-22: deleted lines belong in side by side); it marks the line now standing in its place
-/// instead, because a deletion that left nothing on the tab would read as an unchanged file.
+/// Kept in the rows, where it stood, so side by side can face it with its replacement. A unified
+/// view draws <see cref="StSourceLayout.Unified"/>'s rows, which leave it out (the owner,
+/// 2026-10-22: deleted lines belong in side by side) and mark the line now standing in its place
+/// instead, because a deletion that left nothing on the tab would read as an unchanged file. The
+/// desktop and the web viewer both draw those rows; the web once drew this struck where it stood,
+/// and the owner, comparing the two on a real pull request, 2026-10-23: they must render the same.
 /// </remarks>
 public sealed record SourceRemovedLine(string Text, int OldFileLine) : SourceRow;
 
@@ -384,6 +397,74 @@ public static class StSourceLayout
 
         Flush();
         return result;
+    }
+
+    /// <summary>
+    /// Unified source rows: the working file alone, removed lines left to side by side.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The owner, 2026-10-22: the removed lines belong only in the side-by-side view. Drawn in
+    /// place, struck, they doubled every edited line — the old text and the new one stacked, the
+    /// method reading as twice its length — on the tab whose job is to show the file as it is.
+    /// The two columns are where old and new are read against each other.
+    /// </para>
+    /// <para>
+    /// <b>A pure deletion is still marked.</b> A change that only deleted lines would otherwise
+    /// leave nothing on this tab at all, and an object badged M with no visible change reads as a
+    /// fault. The line that now stands where they were carries <see cref="SourceCodeLine.RemovedNear"/>:
+    /// a renderer draws a red rule on its top edge (on its bottom edge when they were the last
+    /// lines) and says how many went.
+    /// </para>
+    /// <para>
+    /// <b>Only a pure deletion.</b> Removed lines with an added line beside them were replaced,
+    /// and the added line's green tint already says so. The rule drawn there too sat on every
+    /// edited line, a red stroke above a green one that said nothing the green did not (the
+    /// owner, 2026-10-22: "what is this red line?").
+    /// </para>
+    /// <para>
+    /// Here rather than in a renderer, so the desktop and the web viewer cannot disagree: this
+    /// lived in the desktop's <c>DiffView</c> until 2026-10-23, and the web went on drawing
+    /// struck lines in place. Apply it after <see cref="Fold(IReadOnlyList{SourceRow}, int)"/>,
+    /// which needs the removed lines to know where the changes are.
+    /// </para>
+    /// </remarks>
+    public static IReadOnlyList<SourceRow> Unified(IReadOnlyList<SourceRow> marked)
+    {
+        ArgumentNullException.ThrowIfNull(marked);
+        var rows = new List<SourceRow>(marked.Count);
+        var pending = 0;
+        var previous = -1;
+
+        static bool IsAdded(SourceRow? row) => row is SourceCodeLine { Change: SourceChange.Added };
+
+        foreach (var row in marked)
+        {
+            if (row is SourceRemovedLine)
+            {
+                pending++;
+                continue;
+            }
+
+            if (row is SourceCodeLine line)
+            {
+                // Either neighbour added means the run was replaced, not deleted.
+                var replaced = IsAdded(line) || (previous >= 0 && IsAdded(rows[previous]));
+                rows.Add(pending > 0 && !replaced ? line with { RemovedNear = new SourceRemoval(pending, false) } : line);
+                pending = 0;
+                previous = rows.Count - 1;
+                continue;
+            }
+
+            rows.Add(row);
+        }
+
+        if (pending > 0 && previous >= 0 && !IsAdded(rows[previous]))
+        {
+            rows[previous] = ((SourceCodeLine)rows[previous]) with { RemovedNear = new SourceRemoval(pending, true) };
+        }
+
+        return rows;
     }
 
     /// <summary>

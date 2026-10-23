@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Net;
 using System.Text;
 using System.Text.RegularExpressions;
@@ -96,16 +97,84 @@ public sealed partial class SourceHtmlTests
         Assert.All(rows, r => Assert.Matches("data-(old-)?line=\"\\d+\"", r.Groups[1].Value));
     }
 
+    /// <summary>
+    /// Unified is the file as it is, as the desktop draws it: an edited line is its new text alone,
+    /// tinted. The old text is side by side's. The web drew it struck above the new one until the
+    /// owner put the two hosts side by side on a real pull request (2026-10-23).
+    /// </summary>
     [Fact]
-    public void A_changed_line_is_drawn_removed_then_added()
+    public void A_changed_line_in_unified_is_the_new_line_alone()
     {
         var html = Marked("a := 1;\nb := 2;\n", "a := 1;\nb := 3;\n");
 
         Assert.Contains("data-marked=\"true\"", html, StringComparison.Ordinal);
-        Assert.Contains("<div class=\"cd-row cd-removed\" data-old-line=\"2\"", html, StringComparison.Ordinal);
         Assert.Contains("<div class=\"cd-row cd-added\" data-line=\"2\"", html, StringComparison.Ordinal);
-        Assert.True(html.IndexOf("cd-removed", StringComparison.Ordinal) < html.IndexOf("cd-added", StringComparison.Ordinal));
-        Assert.Contains("<del>", html, StringComparison.Ordinal);
+        Assert.DoesNotContain("cd-removed", html, StringComparison.Ordinal);
+        Assert.DoesNotContain("<del>", html, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void A_pure_deletion_is_marked_on_the_line_now_in_its_place_with_the_desktops_words()
+    {
+        var above = Marked("a := 1;\nb := 2;\nc := 3;\n", "a := 1;\nc := 3;\n");
+        var below = Marked("a := 1;\nb := 2;\n", "a := 1;\n");
+
+        Assert.Contains("<div class=\"cd-row cd-removed-above\" data-line=\"2\"", above, StringComparison.Ordinal);
+        Assert.Contains("title=\"1 line removed above since the last commit. Side by side shows them.\"", above, StringComparison.Ordinal);
+        Assert.Contains("<div class=\"cd-row cd-removed-below\" data-line=\"1\"", below, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void A_comparison_folds_unless_the_whole_file_is_asked_for()
+    {
+        var before = string.Concat(Enumerable.Range(1, 20).Select(i => $"x{i} := {i};\n"));
+        var after = before.Replace("x10 := 10;", "x10 := 11;", StringComparison.Ordinal);
+        var rows = StSourceLayout.Mark(StSourceLayout.Lay(after), before, after);
+
+        var folded = SourceHtml.Fragment(rows, SyntaxLanguage.PlainText, fullFile: false);
+        var whole = SourceHtml.Fragment(rows, SyntaxLanguage.PlainText, fullFile: true);
+        var split = SourceHtml.Fragment(rows, SyntaxLanguage.PlainText, SourceView.SideBySide, fullFile: false);
+
+        // Git's three lines either side of line 10: 1-6 and 14-20 fold.
+        Assert.Contains("<div class=\"cd-fold\" data-folded=\"6\"", folded, StringComparison.Ordinal);
+        Assert.Contains("<div class=\"cd-fold\" data-folded=\"7\"", folded, StringComparison.Ordinal);
+        Assert.DoesNotContain("cd-fold", whole, StringComparison.Ordinal);
+        Assert.Contains("cd-fold", split, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// The rows themselves, which both hosts draw: no removed line, and the pure deletion's mark on
+    /// the line after it. The page alone cannot show a removed line left in (it has no way to draw
+    /// one any more), so this is pinned where the rule lives.
+    /// </summary>
+    [Fact]
+    public void Unified_rows_hold_no_removed_line_and_mark_the_line_after_a_pure_deletion()
+    {
+        var rows = StSourceLayout.Unified(StSourceLayout.Mark(StSourceLayout.Lay("a := 1;\nc := 3;\n"), "a := 1;\nb := 2;\nc := 3;\n", "a := 1;\nc := 3;\n"));
+
+        Assert.DoesNotContain(rows, r => r is SourceRemovedLine);
+        var after = Assert.Single(rows.OfType<SourceCodeLine>(), l => l.RemovedNear is not null);
+        Assert.Equal(("c := 3;", new SourceRemoval(1, false)), (after.Text, after.RemovedNear));
+    }
+
+    /// <summary>
+    /// The page's rows are the desktop's rows: the file lines a unified, folded comparison draws are
+    /// exactly those of <see cref="StSourceLayout.Unified"/> over <see cref="StSourceLayout.Fold(IReadOnlyList{SourceRow}, int)"/>,
+    /// which is what <c>DiffView</c> sets as its items. A renderer that reads the rows its own way
+    /// fails here.
+    /// </summary>
+    [Fact]
+    public void A_unified_comparison_draws_the_rows_the_desktop_draws()
+    {
+        var before = string.Concat(Enumerable.Range(1, 30).Select(i => $"x{i} := {i};\n"));
+        var after = before.Replace("x5 := 5;\n", "", StringComparison.Ordinal).Replace("x20 := 20;", "x20 := 0;", StringComparison.Ordinal);
+        var rows = StSourceLayout.Mark(StSourceLayout.Lay(after), before, after);
+
+        var html = SourceHtml.Fragment(rows, SyntaxLanguage.PlainText, fullFile: false);
+        var drawn = Regex.Matches(html, "data-file-line=\"(\\d+)\"").Select(m => int.Parse(m.Groups[1].Value, CultureInfo.InvariantCulture));
+        var desktop = StSourceLayout.Unified(StSourceLayout.Fold(rows)).OfType<SourceCodeLine>().Select(l => l.FileLine);
+
+        Assert.Equal(desktop, drawn);
     }
 
     [Fact]
