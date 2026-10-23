@@ -423,6 +423,12 @@ dependencies as possible. Node is needed in the web build only, never in the des
 
 ## The workbench restructure (2026-10-14)
 
+> **Superseded 2026-10-23.** The owner looked at the page on a real pull request and reversed
+> this: the page is to look and feel like github.com, with the desktop's rendering inside it. The
+> shell below is what was built in between and why; the live queue for replacing it, and for
+> everything else the look found, is [`FINISH.md`](FINISH.md). Phases 2–5 of this section were
+> never built and are folded into that file.
+
 The first layout shipped as GitHub's: top tabs (`Code / History / Compare`), History and Compare
 as whole pages of their own. The owner looked at it on the fixtures and asked for the desktop
 app's shell instead — the product is the desktop, and the page should read as the same tool.

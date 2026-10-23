@@ -101,6 +101,7 @@ real toolchain.
 | [`outpost/PLAN.md`](outpost/PLAN.md) | Design record for Versio Outpost — plant backup and confirmed restore. Not the live queue |
 | [`web/ARCHITECTURE.md`](web/ARCHITECTURE.md) | Versio Web as built: the layers, where every file is, one request end to end, what it reuses from the desktop |
 | [`web/PLAN.md`](web/PLAN.md) | Design record for Versio Web — a read-only browser view of a repository on GitHub, drawn by the same Core renderers. Its Step 1 is Outpost's Step 2b. Not the live queue |
+| [`web/FINISH.md`](web/FINISH.md) | **The live queue for Versio Web** (2026-10-23): every gap between the page and a finished product — GitHub's look, the pull request page at parity, every desktop drawing — and the order they land in |
 | [`fbs/PLAN.md`](fbs/PLAN.md) | Design record for CODESYS File-Based Storage — an `.fbsproj` folder shown and drawn as a project, never synced. What the fixture measured. Not the live queue |
 
 ---
@@ -336,7 +337,12 @@ One list. Reorder it; do not copy it into another file.
    - CFC;
    - the owner's eyeball of the drawing (right rail?) and of the row.
 10. **Versio Web, a read-only browser view of a repository on GitHub — built 2026-10-11 on
-   `WebViewer`, since merged.** The design, the security rules and what each step measured are
+   `WebViewer`, since merged.** **Continue from [`web/FINISH.md`](web/FINISH.md) (2026-10-23):**
+   the owner looked at the page on a real pull request and the list of what a finished product
+   still needs — GitHub's look and feel in place of the desktop shell, the pull request page at
+   parity (comments everywhere, landing on the right GitHub line; checks; merge box; lists), every
+   desktop drawing for every vendor, links that reveal their target — lives there with its order.
+   The history below is how it got here. The design, the security rules and what each step measured are
    in [`web/PLAN.md`](web/PLAN.md). An ASP.NET Core server (`src/Versio.Web`) renders with
    Versio.Core and the three pure packs; a React page (`web/`) places that HTML and draws no
    code. Built: the HTML renderers for source, text diffs and member tables (Outpost's Step 2b,
