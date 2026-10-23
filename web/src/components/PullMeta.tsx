@@ -102,7 +102,7 @@ export function StateActions({ owner, repo, snap, summary, onChanged }: MetaProp
           label={summary.draft ? 'Ready for review' : 'Convert to draft'} onDone={onChanged} />
       )}
       <ActionButton owner={owner} repo={repo} snap={snap} path="/state" payload={{ open: !open }}
-        label={open ? 'Close' : 'Reopen'} confirm={open ? 'Close this merge request on GitHub?' : undefined} onDone={onChanged} />
+        label={open ? 'Close' : 'Reopen'} confirm={open ? 'Close this pull request on GitHub?' : undefined} onDone={onChanged} />
     </p>
   );
 }

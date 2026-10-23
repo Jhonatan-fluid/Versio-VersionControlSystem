@@ -1,0 +1,110 @@
+import { Link, useLocation, useNavigate, useParams } from 'react-router';
+import type { Commit, Me } from '../api';
+import { api } from '../api';
+import { ErrorPanel } from '../components/Pane';
+import { RepoLayout } from '../components/RepoLayout';
+import { Avatar, Blankslate, Icon, Loading, RelativeTime } from '../components/ui';
+import { blobUrl, commitsUrl, compareUrl, treeUrl } from '../routes';
+import { usePageTitle } from '../title';
+import { useAsync } from '../useAsync';
+import { BranchPicker } from './RepoPage';
+
+/**
+ * The commits shown. The server sends one more (ApiEndpoints): its presence is what says the list
+ * was cut, and it is the "older" the last shown commit compares with.
+ */
+const HistoryLimit = 50;
+
+/** Commits grouped by the day they were made, as GitHub's commits page groups them. */
+function byDay(commits: Commit[]): { day: string; commits: Commit[] }[] {
+  const groups: { day: string; commits: Commit[] }[] = [];
+  for (const c of commits) {
+    const date = new Date(c.when);
+    const day = Number.isNaN(date.getTime()) ? '' : date.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
+    const last = groups[groups.length - 1];
+    if (last && last.day === day) {
+      last.commits.push(c);
+    } else {
+      groups.push({ day, commits: [c] });
+    }
+  }
+  return groups;
+}
+
+/** /owner/repo/commits/ref[/path]: GitHub's commits page — by day, each openable and comparable. */
+export function CommitsPage({ me }: { me: Me | null }) {
+  const { owner = '', repo = '', ref = '', '*': path } = useParams();
+  const location = useLocation();
+  const navigate = useNavigate();
+  const info = useAsync((s) => api.repo(owner, repo, s), [owner, repo]);
+  const branches = useAsync((s) => api.branches(owner, repo, s), [owner, repo]);
+  const commits = useAsync((s) => api.history(owner, repo, ref, path || undefined, s), [owner, repo, ref, path]);
+  // Compare opens on the default branch against the ref shown, as from the repository page. It
+  // first compared the ref with itself, which always opened on "no differences" (found in review).
+  const defaultBranch = info.state === 'ok' ? info.value.defaultBranch : 'main';
+  const signIn = me?.signInAvailable && !me.signedIn ? api.signInUrl(location.pathname) : null;
+  usePageTitle(path ? `History for ${path}` : `Commits · ${ref}`, `${owner}/${repo}`);
+
+  return (
+    <RepoLayout me={me} owner={owner} repo={repo} nav="commits" refName={ref}>
+      <div className="code-toolbar" style={{ padding: '0 0 16px' }}>
+        <BranchPicker
+          value={ref}
+          branches={branches.state === 'ok' ? branches.value.branches : []}
+          truncated={branches.state === 'ok' && branches.value.truncated}
+          onPick={(r) => navigate(commitsUrl(owner, repo, r, path || undefined))}
+        />
+        {path && <span className="text-muted">History for <code>{path}</code></span>}
+        <Link to={compareUrl(owner, repo, defaultBranch, ref, path || undefined)} className="btn btn-small" style={{ marginLeft: 'auto' }}>
+          <Icon name="diff" className="btn-icon" />
+          <span className="btn-text">Compare</span>
+        </Link>
+      </div>
+      {commits.state === 'loading' && <Loading what="Reading the commits…" />}
+      {commits.state === 'error' && <ErrorPanel error={commits.error} signInUrl={signIn} />}
+      {commits.state === 'ok' && commits.value.length === 0 && <Blankslate icon="git-commit" heading="No commits here">Nothing has touched this path on this branch.</Blankslate>}
+      {commits.state === 'ok' && (
+        <ol className="commits">
+          {byDay(commits.value.slice(0, HistoryLimit)).map((group) => (
+            <li key={group.day + group.commits[0]!.sha}>
+              <div className="commit-day">
+                <Icon name="git-commit" />
+                Commits on {group.day}
+              </div>
+              <ul className="commit-group" style={{ listStyle: 'none', margin: 0, padding: 0 }}>
+                {group.commits.map((c) => {
+                  const all = commits.value;
+                  const older = all[all.indexOf(c) + 1];
+                  const [subject] = c.message.split('\n');
+                  return (
+                    <li key={c.sha} className="commit-row">
+                      <div className="commit-main">
+                        <Link className="commit-subject" to={older ? compareUrl(owner, repo, older.sha, c.sha, path || undefined) : treeUrl(owner, repo, c.sha)} title={older ? 'What this commit changed' : 'The repository at this commit'}>
+                          {subject}
+                        </Link>
+                        <div className="commit-byline">
+                          <Avatar login={c.author} size={16} />
+                          <span className="text-bold">{c.author}</span>
+                          <span>committed <RelativeTime when={c.when} /></span>
+                        </div>
+                      </div>
+                      <div className="commit-side">
+                        <code className="commit-sha" title={c.sha}>{c.sha.slice(0, 7)}</code>
+                        <Link className="btn btn-small" to={path ? blobUrl(owner, repo, c.sha, path) : treeUrl(owner, repo, c.sha)} title="The repository as it was at this commit">
+                          <Icon name="code" className="btn-icon" />
+                        </Link>
+                      </div>
+                    </li>
+                  );
+                })}
+              </ul>
+            </li>
+          ))}
+        </ol>
+      )}
+      {commits.state === 'ok' && commits.value.length > HistoryLimit && (
+        <p className="text-muted" style={{ marginTop: 16 }}>The latest {HistoryLimit} commits. Older ones are on GitHub.</p>
+      )}
+    </RepoLayout>
+  );
+}

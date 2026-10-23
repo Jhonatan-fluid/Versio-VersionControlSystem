@@ -9,12 +9,14 @@ import { ErrorPanel } from '../components/Pane';
 import { AssigneesEditor, BaseEditor, LabelsEditor, StateActions, TitleEditor } from '../components/PullMeta';
 import { ReviewBar, ReviewersEditor } from '../components/ReviewBar';
 import { ActionButton, CommentBox, newOpKey } from '../components/ReviewWrite';
-import { Workbench } from '../components/Workbench';
-import { blobUrl, compareUrl, pullUrl, pullsUrl, treeUrl } from '../routes';
+import { RepoLayout } from '../components/RepoLayout';
+import { Blankslate, IssueLabel, Layout as TwoColumn, Loading, SidebarSection, StateBadge, UnderlineNav, pullState, type NavItem } from '../components/ui';
+import { blobUrl, compareUrl, parsePullTab, pullUrl, type PullTab } from '../routes';
+import { usePageTitle } from '../title';
 import type { Async } from '../useAsync';
 import { useAsync } from '../useAsync';
 
-type Tab = 'conversation' | 'commits' | 'checks' | 'files';
+type Tab = PullTab;
 
 const tabs: { id: Tab; label: string }[] = [
   { id: 'conversation', label: 'Conversation' },
@@ -164,12 +166,13 @@ export function PullPage({ me }: { me: Me | null }) {
 }
 
 function PullReview({ me }: { me: Me | null }) {
-  const { owner = '', repo = '', number = '' } = useParams();
+  const { owner = '', repo = '', number = '', tab: tabParam } = useParams();
   const n = Number(number);
   const [search, setSearch] = useSearchParams();
   const location = useLocation();
   const navigate = useNavigate();
-  const tab: Tab = (tabs.find((t) => t.id === search.get('tab'))?.id ?? 'conversation');
+  // GitHub's /pull/N/files; ?tab=files is the shape this page wrote before and still reads.
+  const tab: Tab = parsePullTab(tabParam ?? search.get('tab') ?? undefined);
   const path = search.get('path');
   const view: PaneView = search.get('view') === 'raw' ? 'raw' : 'rendered';
   const layout: Layout = search.get('layout') === 'split' ? 'split' : 'unified';
@@ -280,216 +283,253 @@ function PullReview({ me }: { me: Me | null }) {
 
   const fileThreads = (p: string) => (threads.state === 'ok' ? threads.value.threads.filter((t) => t.path === p) : []);
 
-  return (
-    <Workbench
-      me={me}
-      owner={owner}
-      repo={repo}
-      refName={defaultBranch}
-      defaultBranch={defaultBranch}
-      branches={branches.state === 'ok' ? branches.value.branches : []}
-      branchesTruncated={branches.state === 'ok' && branches.value.truncated}
-      onRef={(r) => navigate(treeUrl(owner, repo, r))}
-      rail="pulls"
-      panelTitle={snap ? `Merge request #${snap.number}` : 'Merge request'}
-      panel={
-        <>
-          <nav className="review-tabs" aria-label="Review">
-            {tabs.map((t) => (
-              <button key={t.id} type="button" className={`tree-row${t.id === tab ? ' is-selected' : ''}`} aria-current={t.id === tab ? 'page' : undefined} onClick={() => go(t.id)}>
-                {t.label}
-                {t.id === 'files' && files.state === 'ok' && <span className="muted review-count">{files.value.total}</span>}
+  const pullTitle = live?.title ?? snap?.title ?? null;
+  usePageTitle(pullTitle && snap ? `${pullTitle} by ${snap.author} · Pull Request #${n}` : `Pull Request #${n}`, `${owner}/${repo}`);
+
+  const navItems: NavItem[] = tabs.map((t) => ({
+    id: t.id,
+    label: t.label,
+    to: pullUrl(owner, repo, n, t.id, undefined, search),
+    icon: t.id === 'conversation' ? 'comment-discussion' : t.id === 'commits' ? 'git-commit' : t.id === 'checks' ? 'check-circle' : 'diff',
+    count: t.id === 'files' && files.state === 'ok' ? files.value.total : t.id === 'checks' && status?.checks ? status.checks.length : null,
+  }));
+
+  const fileList = files.state === 'ok' && (
+    <>
+      {files.value.truncated && <p className="text-muted pad">The first {files.value.files.length} of {files.value.total} files are listed.</p>}
+      <ul className="changes">
+        {files.value.files.length === 0 && <li className="text-muted pad">This pull request changes no files.</li>}
+        {files.value.files.map((f) => {
+          const count = fileThreads(f.path).length;
+          return (
+            <li key={f.path}>
+              <button type="button" className={`tree-row${f.path === path ? ' is-selected' : ''}`} onClick={() => go('files', f.path)} title={f.label}>
+                <span className={`change change-${f.change}`}>{mark[f.change]}</span>
+                <span className="tree-name">{f.object ?? f.label.slice(f.label.lastIndexOf('/') + 1)}</span>
+                {!f.inline && <span className="text-muted review-flag" title={unavailable[f.inlineUnavailable ?? ''] ?? ''}>file only</span>}
+                {count > 0 && <span className="review-count" title={`${count} review thread${count === 1 ? '' : 's'}`}>{count}</span>}
               </button>
-            ))}
-          </nav>
-          {tab === 'files' && files.state === 'ok' && (
-            <>
-              {files.value.truncated && <p className="muted pad">The first {files.value.files.length} of {files.value.total} files are listed.</p>}
-              <ul className="changes">
-                {files.value.files.length === 0 && <li className="muted pad">This pull request changes no files.</li>}
-                {files.value.files.map((f) => {
-                  const count = fileThreads(f.path).length;
-                  return (
-                    <li key={f.path}>
-                      <button type="button" className={`tree-row${f.path === path ? ' is-selected' : ''}`} onClick={() => go('files', f.path)} title={f.label}>
-                        <span className={`change change-${f.change}`}>{mark[f.change]}</span>
-                        <span className="tree-name">{f.object ?? f.label.slice(f.label.lastIndexOf('/') + 1)}</span>
-                        {!f.inline && <span className="muted review-flag" title={unavailable[f.inlineUnavailable ?? ''] ?? ''}>file only</span>}
-                        {count > 0 && <span className="review-count" title={`${count} review thread${count === 1 ? '' : 's'}`}>{count}</span>}
-                      </button>
-                      {writer && (
-                        <input type="checkbox" className="review-viewed" checked={viewed.has(f.path)} onChange={(e) => markViewed(f.path, e.target.checked)}
-                          aria-label={`Viewed ${f.label}`} title="Viewed" />
-                      )}
-                    </li>
-                  );
-                })}
-              </ul>
-            </>
-          )}
-          {tab !== 'files' && <Summary status={status} writer={writer} />}
-        </>
-      }
-    >
+              {writer && (
+                <input type="checkbox" className="review-viewed" checked={viewed.has(f.path)} onChange={(e) => markViewed(f.path, e.target.checked)}
+                  aria-label={`Viewed ${f.label}`} title="Viewed" />
+              )}
+            </li>
+          );
+        })}
+      </ul>
+    </>
+  );
+
+  const notices = snap && (
+    <>
+      {(status?.stale || staleWrite || expired) && (
+        <p className="notice review-stale" role="status">
+          {expired
+            ? 'This review was loaded too long ago to go on with. '
+            : `This pull request changed after you opened it${status?.headMoved ? ' (new commits)' : ''}${status?.baseMoved ? ` (${snap.baseLabel} moved)` : ''}. What you see is still the version you opened; nothing is mixed, and your drafts are kept. `}
+          <button type="button" className="button" onClick={reload}>Load the latest</button>
+        </p>
+      )}
+      {status?.summaryError === 'sign-in' && signIn && (
+        <p className="notice" role="note">
+          Without signing in, this page cannot tell whether the pull request has changed since you opened it, and review threads are not shown. <a href={signIn}>Sign in</a>
+        </p>
+      )}
+    </>
+  );
+
+  const revision = snap && (
+    <p className="review-revision" title={`base ${snap.baseSha}\nmerge-base ${snap.mergeBaseSha}\nhead ${snap.headSha}`}>
+      Reviewing {snap.headSha.slice(0, 8)}, compared from where it branched ({snap.mergeBaseSha.slice(0, 8)}).
+      {/* Two-dot from the reviewed commit: after a force-push it also shows what the rewrite changed, which is the point. */}
+      {last && last !== snap.headSha && (
+        <> <Link to={compareUrl(owner, repo, last, snap.headSha)}>Changes since your last review ({last.slice(0, 8)})</Link></>
+      )}
+    </p>
+  );
+
+  const reviewBar = writer && snap && (
+    <ReviewBar owner={owner} repo={repo} snap={snap} slots={writer.slots} status={status} pending={pending}
+      files={files.state === 'ok' ? files.value.files : []} opened={opened} viewed={viewed}
+      onChanged={writer.onChanged} onStale={writer.onStale} onOpenPath={(p) => go('files', p)} />
+  );
+
+  return (
+    <RepoLayout me={me} owner={owner} repo={repo} nav="pulls" crumb={`Pull request #${n}`} refName={defaultBranch} wide={tab === 'files'}>
       {snapshot.state === 'loading' ? (
-        <section className="pane pane-empty" aria-busy="true">Loading...</section>
+        <Loading what="Reading the pull request…" />
       ) : snapshot.state === 'error' ? (
         <ErrorPanel error={snapshot.error} signInUrl={signIn} />
       ) : (
-        <section className="pane">
-          <header className="pane-head">
-            <div className="pane-title">
-              <span className="pane-label">Merge request</span>
+        <>
+          {/* GitHub's pull request header: the title with its number, the state badge and the
+              "wants to merge … into … from …" line under it, then the tabs across the page. */}
+          <div className="pr-head">
+            <div className="pr-title-row">
               {writer && live && editing === 'title' ? (
                 <TitleEditor owner={owner} repo={repo} snap={writer.snap} summary={live} onChanged={writer.onChanged} onStale={writer.onStale} onDone={() => setEditing(null)} />
               ) : (
-                <h1>
-                  {live?.title ?? snap!.title}
-                  {writer && live?.viewerCanUpdate && <button type="button" className="link-button title-edit" onClick={() => setEditing('title')}>Edit</button>}
+                <h1 className="pr-title">
+                  {live?.title ?? snap!.title} <span className="pr-number">#{snap!.number}</span>
                 </h1>
               )}
+              {writer && live?.viewerCanUpdate && editing !== 'title' && (
+                <div className="pr-title-actions">
+                  <button type="button" className="btn btn-small" onClick={() => setEditing('title')}>Edit</button>
+                </div>
+              )}
+            </div>
+            <div className="pr-meta">
+              <StateBadge state={pullState(live ?? snap!)} />
               {writer && live && editing === 'base' ? (
                 <BaseEditor owner={owner} repo={repo} snap={writer.snap} branches={branches.state === 'ok' ? branches.value.branches.map((b) => b.name) : []}
                   current={snap!.baseRef} head={snap!.headLabel} onChanged={writer.onChanged} onStale={writer.onStale} onDone={() => setEditing(null)} />
               ) : (
-                <>
-                  <span className="pane-folder">#{snap!.number} · {snap!.headLabel} {'→'} {snap!.baseLabel}</span>
-                  {/* Outside the folder line, which cuts long branch names with an ellipsis and took the link with them. */}
+                <span>
+                  <span className="text-bold">{snap!.author}</span> wants to merge into <span className="branch-name" title={snap!.baseLabel}>{snap!.baseLabel}</span> from{' '}
+                  <span className="branch-name" title={snap!.headLabel}>{snap!.headLabel}</span>
                   {writer && live?.viewerCanUpdate && live.state === 'OPEN' && (
-                    <button type="button" className="link-button base-edit" onClick={() => setEditing('base')}>change base</button>
+                    <> <button type="button" className="link-button base-edit" onClick={() => setEditing('base')}>change base</button></>
                   )}
-                </>
+                </span>
               )}
             </div>
-            <div className="pane-tools">
-              <Link className="button-quiet" to={pullsUrl(owner, repo, n)}>All merge requests</Link>
+            <div className="pr-tabs">
+              <UnderlineNav items={navItems} current={tab} label="Pull request" />
             </div>
-          </header>
-          {(status?.stale || staleWrite || expired) && (
-            <p className="notice review-stale" role="status">
-              {expired
-                ? 'This review was loaded too long ago to go on with. '
-                : `This pull request changed after you opened it${status?.headMoved ? ' (new commits)' : ''}${status?.baseMoved ? ` (${snap!.baseLabel} moved)` : ''}. What you see is still the version you opened; nothing is mixed, and your drafts are kept. `}
-              <button type="button" className="button" onClick={reload}>Load the latest</button>
-            </p>
+          </div>
+          {notices}
+          {tab === 'files' ? (
+            <div className="files-view">
+              <aside className="files-tree" aria-label="Changed files">
+                {fileList}
+                {files.state === 'loading' && <Loading what="Listing the files…" />}
+              </aside>
+              <div className="files-main">
+                {revision}
+                {reviewBar}
+                {path ? (
+                  <FileReview
+                    writer={writer}
+                    path={path}
+                    file={files.state === 'ok' ? files.value.files.find((f) => f.path === path) ?? null : null}
+                    result={fileView}
+                    threads={fileThreads(path)}
+                    threadsState={threads}
+                    view={view}
+                    layout={layout}
+                    onView={(v) => setParam('view', v, 'rendered')}
+                    onLayout={(l) => setParam('layout', l, 'unified')}
+                    full={full}
+                    onFull={(on) => setParam('full', on ? '1' : '0', '0')}
+                    onLayer={(layer) => go('files', layer)}
+                    onOpenPath={(p) => navigate(blobUrl(owner, repo, snap!.headSha, p))}
+                    signInUrl={signIn}
+                    viewed={viewed.has(path)}
+                    onViewed={(on) => markViewed(path, on)}
+                  />
+                ) : (
+                  <Blankslate icon="diff" heading="Pick a changed file">Each file is drawn as the desktop draws it, with the review's threads on its rows, networks and lines.</Blankslate>
+                )}
+              </div>
+            </div>
+          ) : (
+            <TwoColumn
+              main={
+                <>
+                  {revision}
+                  {reviewBar}
+                  {tab === 'conversation' && <Conversation snap={snap!} live={live} timeline={timeline} writer={writer} onOpenPath={(p) => navigate(blobUrl(owner, repo, snap!.headSha, p))} />}
+                  {tab === 'conversation' && writer && snap!.canMerge && (
+                    <MergeBox owner={owner} repo={repo} snap={writer.snap} state={mergeState} onChanged={writer.onChanged} onStale={writer.onStale} />
+                  )}
+                  {tab === 'commits' && <Commits commits={commits} />}
+                  {tab === 'checks' && <Checks status={status} />}
+                </>
+              }
+              sidebar={<Summary status={status} writer={writer} />}
+            />
           )}
-          {status?.summaryError === 'sign-in' && signIn && (
-            <p className="notice" role="note">
-              Without signing in, this page cannot tell whether the pull request has changed since you opened it, and review threads are not shown. <a href={signIn}>Sign in</a>
-            </p>
-          )}
-          <p className="muted review-revision" title={`base ${snap!.baseSha}\nmerge-base ${snap!.mergeBaseSha}\nhead ${snap!.headSha}`}>
-            Reviewing {snap!.headSha.slice(0, 8)}, compared from where it branched ({snap!.mergeBaseSha.slice(0, 8)}).
-            {/* Two-dot from the reviewed commit: after a force-push it also shows what the rewrite changed, which is the point. */}
-            {last && last !== snap!.headSha && (
-              <> <Link to={compareUrl(owner, repo, last, snap!.headSha)}>Changes since your last review ({last.slice(0, 8)})</Link></>
-            )}
-          </p>
-          {writer && (
-            <ReviewBar owner={owner} repo={repo} snap={snap!} slots={writer.slots} status={status} pending={pending}
-              files={files.state === 'ok' ? files.value.files : []} opened={opened} viewed={viewed}
-              onChanged={writer.onChanged} onStale={writer.onStale} onOpenPath={(p) => go('files', p)} />
-          )}
-          {tab === 'conversation' && <Conversation snap={snap!} live={live} timeline={timeline} writer={writer} onOpenPath={(p) => navigate(blobUrl(owner, repo, snap!.headSha, p))} />}
-          {tab === 'conversation' && writer && snap!.canMerge && (
-            <MergeBox owner={owner} repo={repo} snap={writer.snap} state={mergeState} onChanged={writer.onChanged} onStale={writer.onStale} />
-          )}
-          {tab === 'commits' && <Commits commits={commits} />}
-          {tab === 'checks' && <Checks status={status} />}
-          {tab === 'files' && (
-            path ? (
-              <FileReview
-                writer={writer}
-                path={path}
-                file={files.state === 'ok' ? files.value.files.find((f) => f.path === path) ?? null : null}
-                result={fileView}
-                threads={fileThreads(path)}
-                threadsState={threads}
-                view={view}
-                layout={layout}
-                onView={(v) => setParam('view', v, 'rendered')}
-                onLayout={(l) => setParam('layout', l, 'unified')}
-                full={full}
-                onFull={(on) => setParam('full', on ? '1' : '0', '0')}
-                onLayer={(layer) => go('files', layer)}
-                onOpenPath={(p) => navigate(blobUrl(owner, repo, snap!.headSha, p))}
-                signInUrl={signIn}
-                viewed={viewed.has(path)}
-                onViewed={(on) => markViewed(path, on)}
-              />
-            ) : (
-              <p className="muted">Pick a changed file.</p>
-            )
-          )}
-        </section>
+        </>
       )}
-    </Workbench>
+    </RepoLayout>
   );
 }
 
 /** The live state, beside every tab but the file list: what the pull request is, now. */
 function Summary({ status, writer }: { status: ReviewStatus | null; writer: Writer | null }) {
   if (!status) {
-    return <p className="muted pad">Reading the pull request's state...</p>;
+    return <Loading what="Reading the pull request's state…" />;
   }
   const s = status.summary;
   const checks = status.checks ?? [];
   const failed = checks.filter((c) => c.conclusion && !['success', 'neutral', 'skipped'].includes(c.conclusion)).length;
   const running = checks.filter((c) => c.status !== 'completed').length;
+  const decision: Record<string, string> = { APPROVED: 'Approved', CHANGES_REQUESTED: 'Changes requested', REVIEW_REQUIRED: 'Review required' };
+  // GitHub's right column: Reviewers, Labels, Assignees, each a small heading over its content.
+  // The state badge is in the header, so it is not repeated here (it was, until 2026-10-23).
   return (
-    <div className="pad review-summary">
+    <div className="review-summary">
       {s ? (
         <>
-          <p><span className={`state state-${s.merged ? 'merged' : s.state.toLowerCase()}`}>{s.merged ? 'Merged' : s.draft ? 'Draft' : s.state === 'OPEN' ? 'Open' : 'Closed'}</span></p>
-          {writer && s.viewerCanUpdate && <StateActions owner={writer.owner} repo={writer.repo} snap={writer.snap} summary={s} onChanged={writer.onChanged} onStale={writer.onStale} />}
-          {s.reviewDecision && <p>{({ APPROVED: 'Approved', CHANGES_REQUESTED: 'Changes requested', REVIEW_REQUIRED: 'Review required' } as Record<string, string>)[s.reviewDecision] ?? s.reviewDecision}</p>}
-          {s.mergeable === 'CONFLICTING' && <p className="error-text">Has conflicts with its base</p>}
-          {writer ? (
-            <>
-              <p className="panel-title">Reviewers</p>
+          {(writer && s.viewerCanUpdate) || s.reviewDecision || s.mergeable === 'CONFLICTING' ? (
+            <SidebarSection heading="State">
+              {s.reviewDecision && <p>{decision[s.reviewDecision] ?? s.reviewDecision}</p>}
+              {s.mergeable === 'CONFLICTING' && <p className="text-danger">Has conflicts with its base</p>}
+              {writer && s.viewerCanUpdate && <StateActions owner={writer.owner} repo={writer.repo} snap={writer.snap} summary={s} onChanged={writer.onChanged} onStale={writer.onStale} />}
+            </SidebarSection>
+          ) : null}
+          <SidebarSection heading="Reviewers">
+            {writer ? (
               <ReviewersEditor owner={writer.owner} repo={writer.repo} snap={writer.snap} reviewers={s.reviewers} onChanged={writer.onChanged} />
-            </>
-          ) : s.reviewers.length > 0 && (
-            <>
-              <p className="panel-title">Reviewers</p>
+            ) : s.reviewers.length > 0 ? (
               <ul className="row-list">
                 {s.reviewers.map((r) => (
-                  <li key={r.login}>{r.login} <span className="muted">{r.state.toLowerCase().replace('_', ' ')}</span></li>
+                  <li key={r.login}>{r.login} <span className="text-muted">{r.state.toLowerCase().replace('_', ' ')}</span></li>
                 ))}
               </ul>
-            </>
-          )}
-          {writer && s.viewerCanUpdate ? (
-            <>
-              <p className="panel-title">Labels</p>
+            ) : (
+              <p className="text-muted">No reviews</p>
+            )}
+          </SidebarSection>
+          <SidebarSection heading="Labels">
+            {writer && s.viewerCanUpdate ? (
               <LabelsEditor owner={writer.owner} repo={writer.repo} snap={writer.snap} summary={s} onChanged={writer.onChanged} onStale={writer.onStale} />
-              <p className="panel-title">Assignees</p>
+            ) : s.labels.length > 0 ? (
+              <p className="review-labels">
+                {s.labels.map((l) => (
+                  // The colour is six hex digits or empty: the server checked it, because it ends up here.
+                  <IssueLabel key={l.value} name={l.name} color={l.color} />
+                ))}
+              </p>
+            ) : (
+              <p className="text-muted">None yet</p>
+            )}
+          </SidebarSection>
+          <SidebarSection heading="Assignees">
+            {writer && s.viewerCanUpdate ? (
               <AssigneesEditor owner={writer.owner} repo={writer.repo} snap={writer.snap} summary={s} onChanged={writer.onChanged} onStale={writer.onStale} />
-            </>
-          ) : (
-            <>
-              {s.labels.length > 0 && (
-                <p className="review-labels">
-                  {s.labels.map((l) => (
-                    // The colour is six hex digits or empty: the server checked it, because it ends up here.
-                    <span key={l.value} className="label" style={l.color ? { borderColor: `#${l.color}` } : undefined}>{l.name}</span>
-                  ))}
-                </p>
-              )}
-              {s.assignees.length > 0 && <p className="muted">Assigned to {s.assignees.join(', ')}</p>}
-            </>
-          )}
+            ) : s.assignees.length > 0 ? (
+              <p>{s.assignees.join(', ')}</p>
+            ) : (
+              <p className="text-muted">No one</p>
+            )}
+          </SidebarSection>
         </>
       ) : (
-        <p className="muted">State unavailable{status.summaryError === 'sign-in' ? ' without signing in' : ''}.</p>
+        <SidebarSection heading="State">
+          <p className="text-muted">State unavailable{status.summaryError === 'sign-in' ? ' without signing in' : ''}.</p>
+        </SidebarSection>
       )}
       {status.checks && (
-        <p className="muted">
-          {checks.length === 0 ? 'No checks' : `${checks.length} check${checks.length === 1 ? '' : 's'}`}
-          {failed > 0 && <>, <span className="error-text">{failed} failed</span></>}
-          {running > 0 && `, ${running} running`}
-          {status.checksTruncated && <>, <span className="error-text">more on GitHub than shown</span></>}
-        </p>
+        <SidebarSection heading="Checks">
+          <p className="text-muted">
+            {checks.length === 0 ? 'No checks' : `${checks.length} check${checks.length === 1 ? '' : 's'}`}
+            {failed > 0 && <>, <span className="text-danger">{failed} failed</span></>}
+            {running > 0 && `, ${running} running`}
+            {status.checksTruncated && <>, <span className="text-danger">more on GitHub than shown</span></>}
+          </p>
+        </SidebarSection>
       )}
     </div>
   );

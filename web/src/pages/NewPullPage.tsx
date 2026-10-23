@@ -4,8 +4,10 @@ import type { Me } from '../api';
 import { api } from '../api';
 import { ErrorPanel } from '../components/Pane';
 import { describe, newOpKey, releasesKey } from '../components/ReviewWrite';
-import { Workbench } from '../components/Workbench';
-import { compareUrl, pullUrl, pullsUrl, treeUrl } from '../routes';
+import { RepoLayout } from '../components/RepoLayout';
+import { Blankslate, Button, LinkButton, Loading } from '../components/ui';
+import { compareUrl, pullUrl, pullsUrl } from '../routes';
+import { usePageTitle } from '../title';
 import { useAsync } from '../useAsync';
 
 interface Form {
@@ -42,7 +44,7 @@ function writeForm(slot: string, form: Form | null) {
 }
 
 /**
- * /owner/repo/pulls/new?base=&head=: open a merge request between two branches of this repository
+ * /owner/repo/pulls/new?base=&head=: open a pull request between two branches of this repository
  * (docs/web/PLAN.md, *Pull request review*, slice 5), in the person's own name, with the
  * repository's template, as a draft if they want. A fork's branch cannot be chosen here.
  *
@@ -118,40 +120,29 @@ function NewPullForm({ me }: { me: Me | null }) {
 
   const set = (change: Partial<Form>) => setForm((f) => ({ ...f, ...change }));
 
+  usePageTitle('New pull request', `${owner}/${repo}`);
+
   return (
-    <Workbench
-      me={me}
-      owner={owner}
-      repo={repo}
-      refName={defaultBranch || 'main'}
-      defaultBranch={defaultBranch || 'main'}
-      branches={branches.state === 'ok' ? branches.value.branches : []}
-      branchesTruncated={branches.state === 'ok' && branches.value.truncated}
-      onRef={(r) => navigate(treeUrl(owner, repo, r))}
-      rail="pulls"
-      panelTitle="New merge request"
-      panel={<p className="muted pad">Choose the branch with the changes and the branch it should merge into.</p>}
-    >
+    <RepoLayout me={me} owner={owner} repo={repo} nav="pulls" crumb="New pull request" refName={defaultBranch || undefined}>
       {pulls.state === 'error' ? (
         <ErrorPanel error={pulls.error} signInUrl={null} />
       ) : pulls.state === 'loading' ? (
-        <section className="pane pane-empty" aria-busy="true">Loading...</section>
+        <Loading />
       ) : !writable ? (
-        <section className="pane pane-empty">
-          <p className="muted">Merge requests cannot be opened here: sign in with GitHub, and writes must be switched on for this repository.</p>
-          <Link className="button-quiet" to={pullsUrl(owner, repo)}>All merge requests</Link>
-        </section>
+        <Blankslate icon="git-pull-request" heading="Pull requests cannot be opened here" action={<LinkButton to={pullsUrl(owner, repo)}>All pull requests</LinkButton>}>
+          Sign in with GitHub, and writes must be switched on for this repository.
+        </Blankslate>
       ) : (
-        <section className="pane new-pull">
-          <header className="pane-head">
-            <div className="pane-title">
-              <span className="pane-label">Merge request</span>
-              <h1>New merge request</h1>
+        <section className="new-pull">
+          <div className="pr-head">
+            <div className="pr-title-row">
+              <h1 className="pr-title" style={{ fontSize: 24 }}>Open a pull request</h1>
+              <div className="pr-title-actions">
+                <LinkButton to={pullsUrl(owner, repo)} size="small">All pull requests</LinkButton>
+              </div>
             </div>
-            <div className="pane-tools">
-              <Link className="button-quiet" to={pullsUrl(owner, repo)}>All merge requests</Link>
-            </div>
-          </header>
+            <p className="text-muted" style={{ margin: '4px 0 0' }}>Choose the branch with the changes and the branch it should merge into, then describe the change.</p>
+          </div>
           <fieldset className="new-pull-fields" disabled={locked}>
             <div className="new-pull-branches">
               <label>
@@ -168,7 +159,7 @@ function NewPullForm({ me }: { me: Me | null }) {
                 </select>
               </label>
               {form.head && !same && (
-                // A compare of the two branch tips; the merge request itself is measured from where
+                // A compare of the two branch tips; the pull request itself is measured from where
                 // the branch started, which the review page shows once it exists.
                 <Link to={compareUrl(owner, repo, base, form.head)}>Compare the branches</Link>
               )}
@@ -185,16 +176,16 @@ function NewPullForm({ me }: { me: Me | null }) {
           {note && <p className="notice comment-note" role="status">{note}</p>}
           <div className="comment-actions">
             {locked && !busy && (
-              <button type="button" className="button-quiet" onClick={() => { set({ opKey: null }); setNote(null); }} title="Change the form again; a new submission follows">
+              <Button onClick={() => { set({ opKey: null }); setNote(null); }} title="Change the form again; a new submission follows">
                 Edit
-              </button>
+              </Button>
             )}
-            <button type="button" className="button" onClick={submit} disabled={!ready}>
-              {busy ? 'Opening...' : locked ? 'Try again' : form.draft ? 'Open as draft' : 'Open merge request'}
-            </button>
+            <Button variant="primary" onClick={submit} disabled={!ready}>
+              {busy ? 'Opening...' : locked ? 'Try again' : form.draft ? 'Create draft pull request' : 'Create pull request'}
+            </Button>
           </div>
         </section>
       )}
-    </Workbench>
+    </RepoLayout>
   );
 }

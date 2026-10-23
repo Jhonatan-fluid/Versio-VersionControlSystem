@@ -77,8 +77,8 @@ File refs: `P` = `web/src/pages/PullPage.tsx`, `RB` = `components/ReviewBar.tsx`
 `src/Versio.Web/Sources/GitHubRepoSource.cs`, `PE/PW/PM/PMg` = `src/Versio.Web/Api/Pull*Endpoints.cs`.
 
 ### B1. Header and state
-- **missing** State badge (Open / Draft / Merged / Closed, with icon) beside the title; it is a pill in
-  the side panel (`P:443`).
+- ~~**missing** State badge (Open / Draft / Merged / Closed, with icon) beside the title; it is a pill in
+  the side panel (`P:443`).~~ `StateBadge` under the title (Step 1).
 - **missing** "`author` wants to merge N commits into `base` from `head`" line, with avatar, branch
   names as links to the tree and a copy-branch button (`P:356` is plain text).
 - **missing** `+N −M` additions/deletions, changed-files and commits counts (server never reads
@@ -86,19 +86,18 @@ File refs: `P` = `web/src/pages/PullPage.tsx`, `RB` = `components/ReviewBar.tsx`
 - **missing** Lock conversation / locked state; pin; subscribe / notification reason.
 - **missing** Linked issues ("Closes #12", Development sidebar); milestone; projects; participants.
 - **partial** Title edit exists (`PM:47-66`) but is a link + input, not GitHub's inline editor.
-- **missing** Per-page `document.title` ("Title by author · Pull Request #3 · owner/repo").
+- ~~**missing** Per-page `document.title` ("Title by author · Pull Request #3 · owner/repo").~~ `usePageTitle` on every page (Step 1).
 - **missing** Relative times ("2 days ago") with an absolute tooltip; everywhere `toLocaleString`.
 - **missing** Avatars anywhere except the signed-in user.
-- **wrong** The top bar's branch `<select>` on a PR page (`P:288-292`).
-- **wrong** "Merge request" wording throughout (`Workbench.tsx:102`, `P:294,342,365`,
-  `PullsPage.tsx:50,54`, `NewPullPage.tsx:132,149,193`, `PM:105`).
+- ~~**wrong** The top bar's branch `<select>` on a PR page (`P:288-292`).~~ Gone with the shell (Step 1, 2026-10-23); the picker lives in the code and commits views.
+- ~~**wrong** "Merge request" wording throughout (`Workbench.tsx:102`, `P:294,342,365`,
+  `PullsPage.tsx:50,54`, `NewPullPage.tsx:132,149,193`, `PM:105`).~~ "Pull request" everywhere (Step 1).
 
 ### B2. Tabs
-- **partial** Four tabs exist but as vertical side-panel buttons (`P:297-304`, `.review-tabs`), not
-  GitHub's horizontal tab bar under the title with counters (Conversation N, Commits N, Checks N,
-  Files changed N). Only Files has a count.
-- **missing** URLs `/pull/N/commits`, `/pull/N/checks`, `/pull/N/files` (today `?tab=`; a pasted
-  GitHub-shaped URL lands on Home — `main.tsx:33` falls to Home, there is no 404 page).
+- ~~**partial** Four tabs exist but as vertical side-panel buttons (`P:297-304`, `.review-tabs`), not
+  GitHub's horizontal tab bar under the title with counters.~~ `UnderlineNav` under the title with the Checks and Files counts (Step 1); Conversation and Commits counts wait on the server's `comments` / `commits` fields (B12).
+- ~~**missing** URLs `/pull/N/commits`, `/pull/N/checks`, `/pull/N/files` (today `?tab=`; a pasted
+  GitHub-shaped URL lands on Home — `main.tsx:33` falls to Home, there is no 404 page).~~ Step 1: the three routes, `?tab=` redirects, a 404 page.
 
 ### B3. Conversation
 - **missing** Review-comment threads inside the timeline under their review, with the diff hunk
@@ -480,10 +479,10 @@ Also from the map:
 
 ## E. Look and feel versus github.com (shell, components, states)
 
-- **Shell**: replace the desktop workbench (rail + panel card + pane card on a sunken background,
+- ~~**Shell**: replace the desktop workbench (rail + panel card + pane card on a sunken background,
   `Workbench.tsx`, `app.css:76-92`) with GitHub's: dark global header (logo, repo breadcrumb, search,
   user menu), repository header + horizontal nav with counters, page content on a plain canvas,
-  footer.
+  footer.~~ Step 1, 2026-10-23: `AppHeader`, `RepoLayout`, `tokens.css`, the `ui/` components, Octicons; no search box and no footer yet.
 - **Typography**: GitHub's stacks and sizes (`-apple-system, "Segoe UI", "Noto Sans"…`, 14px/1.5;
   PR title ~32px; `ui-monospace` 12px in diffs). Today `app.css:23-24,47,117`.
 - **Tokens**: adopt Primer's full token set (canvas, canvas-subtle, border-muted, fg-muted,

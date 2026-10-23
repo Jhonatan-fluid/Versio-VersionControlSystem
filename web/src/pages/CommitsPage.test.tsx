@@ -3,7 +3,7 @@ import { createRoot } from 'react-dom/client';
 import { MemoryRouter, Route, Routes } from 'react-router';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { compareUrl } from '../routes';
-import { HistoryPage } from './HistoryPage';
+import { CommitsPage } from './CommitsPage';
 
 // Found in review: History's Compare link compared the ref with itself, so it always opened on
 // "no differences". Nothing rendered a page in a test, so nothing could see a link it built.
@@ -32,12 +32,12 @@ async function render(path: string) {
     root.render(
       <MemoryRouter initialEntries={[path]}>
         <Routes>
-          <Route path="/:owner/:repo/history/:ref/*" element={<HistoryPage me={null} />} />
+          <Route path="/:owner/:repo/commits/:ref/*" element={<CommitsPage me={null} />} />
         </Routes>
       </MemoryRouter>,
     );
   });
-  for (let i = 0; i < 20 && !host.querySelector('.commits'); i++) {
+  for (let i = 0; i < 40 && !host.querySelector('.commit-row'); i++) {
     await act(async () => {
       await new Promise((r) => setTimeout(r, 5));
     });
@@ -54,7 +54,7 @@ describe('History', () => {
   });
 
   it('links Compare to the default branch against the ref shown, never the ref against itself', async () => {
-    const { host, root } = await render('/acme/plant/history/feature');
+    const { host, root } = await render('/acme/plant/commits/feature');
 
     const compare = Array.from(host.querySelectorAll('a')).find((a) => a.textContent === 'Compare');
     expect(compare?.getAttribute('href')).toBe(compareUrl('acme', 'plant', 'develop', 'feature'));
@@ -62,19 +62,20 @@ describe('History', () => {
   });
 
   it('says the list is only the latest commits when the server sent one more, and shows 50', async () => {
-    const { host, root } = await render('/acme/plant/history/feature');
+    const { host, root } = await render('/acme/plant/commits/feature');
 
     expect(host.textContent).toContain('The latest 50 commits');
-    expect(host.querySelectorAll('.commits > li')).toHaveLength(50);
-    // The 51st is the older side of the 50th's comparison.
-    expect(host.querySelectorAll('.commits > li')[49]?.textContent).toContain('What changed');
+    const rows = host.querySelectorAll('.commit-row');
+    expect(rows).toHaveLength(50);
+    // The 51st is the older side of the 50th's comparison: the subject opens what that commit changed.
+    expect(rows[49]?.querySelector('a.commit-subject')?.getAttribute('href')).toBe(compareUrl('acme', 'plant', '50'.padStart(40, '0'), '49'.padStart(40, '0')));
     act(() => root.unmount());
   });
 
   it('says nothing about a cut list for a repository of exactly 50 commits', async () => {
     // Found in review: a full page was the only signal, so exactly 50 said "the latest 50".
     commitCount = 50;
-    const { host, root } = await render('/acme/plant/history/feature');
+    const { host, root } = await render('/acme/plant/commits/feature');
 
     expect(host.textContent).not.toContain('The latest 50 commits');
     act(() => root.unmount());
@@ -83,7 +84,7 @@ describe('History', () => {
   it('says when the branch picker lists only the first branches', async () => {
     // Found in review: the server stopped at its cap in silence.
     truncatedBranches = true;
-    const { host, root } = await render('/acme/plant/history/feature');
+    const { host, root } = await render('/acme/plant/commits/feature');
 
     expect(host.querySelector('select option[disabled]')?.textContent).toBe('Only the first 2 branches are listed');
     act(() => root.unmount());

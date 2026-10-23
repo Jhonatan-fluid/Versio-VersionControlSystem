@@ -196,6 +196,7 @@ async function render(path: string, o: Options = {}) {
         <Jumper />
         <Routes>
           <Route path="/:owner/:repo/pull/:number" element={<PullPage me={null} />} />
+          <Route path="/:owner/:repo/pull/:number/:tab" element={<PullPage me={null} />} />
         </Routes>
       </MemoryRouter>,
     );
@@ -305,7 +306,7 @@ describe('PullPage', () => {
 
   it('says a checks list cut short is cut, on the tab and beside the counts', async () => {
     const cut = await render('/acme/plant/pull/12?tab=checks', { checksCut: true });
-    expect(cut.host.querySelector('.pane .notice')?.textContent).toContain('more checks than were read');
+    expect(cut.host.querySelector('.notice')?.textContent).toContain('more checks than were read');
     act(() => cut.root.unmount());
     document.body.innerHTML = '';
 
@@ -797,7 +798,7 @@ describe('PullPage review', () => {
 
   it("going to another pull request starts its page afresh: one's open title edit never carries over", async () => {
     const { host, root } = await render('/acme/plant/pull/12', { writable: true });
-    await click(button(host.querySelector('h1')!, 'Edit')!, host);
+    await click(button(host.querySelector('.pr-title-row')!, 'Edit')!, host);
     expect(host.querySelector('.title-editor')).not.toBeNull();
 
     await act(async () => {
@@ -1085,7 +1086,7 @@ describe('PullPage metadata', () => {
   it('edits the title naming the one it replaces, as it was when editing began, and reads the state again after', async () => {
     const o = { writable: true, live: { title: 'Fix interlock', markdown: 'The delay was wrong.' } };
     const { host, root } = await render('/acme/plant/pull/12', o);
-    await click(button(host.querySelector('h1')!, 'Edit')!, host);
+    await click(button(host.querySelector('.pr-title-row')!, 'Edit')!, host);
     // Someone else renames it while this person types: the poll brings their title in.
     o.live = { title: 'Fix interlock (jo)', markdown: 'The delay was wrong.' };
     await poll(host);

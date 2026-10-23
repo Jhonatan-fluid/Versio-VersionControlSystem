@@ -2,30 +2,26 @@ import { act } from 'react';
 import { createRoot } from 'react-dom/client';
 import { MemoryRouter, Route, Routes } from 'react-router';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { compareUrl } from '../routes';
 import { PullsPage } from './PullsPage';
 
-// The merge-requests view: the list in the panel, the picked one in the pane, and its diff one
-// click away in the compare view — by the head COMMIT, so a fork's pull request still compares.
+// GitHub's pull request list: a box with the open count at its head and one row per pull request,
+// each a link straight to its page — no side pane to pick into (docs/web/FINISH.md, B10). What a
+// pull request changed is the review page's business, from the merge-base (FINDINGS 2026-10-17).
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
 const headSha = 'd'.repeat(40);
-const mergeBase = 'b'.repeat(40);
-let answeredMergeBase: string | null = mergeBase;
+let writable = false;
 
 function answer(url: string): unknown {
-  if (url.includes('/pulls/view')) {
-    return {
-      number: 12, title: 'Fix interlock', author: 'jo', when: '2026-10-15T10:00:00Z',
-      base: 'main', baseLabel: 'main', headLabel: 'fix', headSha, mergeBase: answeredMergeBase, draft: false,
-      html: '<div class="md-page"><h2>Why</h2><p>The delay was wrong.</p></div>',
-    };
-  }
   if (url.includes('/pulls')) {
     return {
       truncated: false,
-      pulls: [{ number: 12, title: 'Fix interlock', author: 'jo', when: '2026-10-15T10:00:00Z', base: 'main', baseLabel: 'main', head: 'fix', headLabel: 'fix', headSha, draft: false }],
+      writable,
+      pulls: [
+        { number: 12, title: 'Fix interlock', author: 'jo', when: '2026-10-15T10:00:00Z', base: 'main', baseLabel: 'main', head: 'fix', headLabel: 'fix', headSha, draft: false },
+        { number: 13, title: 'Rework cooling', author: 'sam', when: '2026-10-16T10:00:00Z', base: 'main', baseLabel: 'main', head: 'cool', headLabel: 'cool', headSha, draft: true },
+      ],
     };
   }
   if (url.endsWith('/branches')) {
@@ -48,7 +44,7 @@ async function render(path: string) {
       </MemoryRouter>,
     );
   });
-  for (let i = 0; i < 20 && !host.querySelector('.row-pick'); i++) {
+  for (let i = 0; i < 20 && !host.querySelector('.list-row'); i++) {
     await act(async () => {
       await new Promise((r) => setTimeout(r, 5));
     });
@@ -58,48 +54,44 @@ async function render(path: string) {
 
 describe('Pulls', () => {
   afterEach(() => {
-    answeredMergeBase = mergeBase;
+    writable = false;
     vi.unstubAllGlobals();
     document.body.innerHTML = '';
   });
 
-  it('lists the open pull requests and hints until one is picked', async () => {
+  it('lists the open pull requests, each linking to its own page, with the count at the head', async () => {
     const { host, root } = await render('/acme/plant/pulls');
 
-    expect(host.querySelector('.row-pick')?.textContent).toContain('Fix interlock');
-    expect(host.querySelector('.pane-empty')?.textContent).toContain('Pick a merge request');
+    const rows = Array.from(host.querySelectorAll('.list-row'));
+    expect(rows).toHaveLength(2);
+    expect(rows[0]?.querySelector('a.list-row-title')?.textContent).toBe('Fix interlock');
+    expect(rows[0]?.querySelector('a.list-row-title')?.getAttribute('href')).toBe('/acme/plant/pull/12');
+    expect(rows[0]?.textContent).toContain('#12 opened');
+    expect(rows[0]?.textContent).toContain('by jo');
+    expect(host.querySelector('.list-head')?.textContent).toContain('2 Open');
+    // No pane to pick into: the row IS the way in.
+    expect(host.querySelector('.pane-empty')).toBeNull();
     act(() => root.unmount());
   });
 
-  async function picked() {
-    const rendered = await render('/acme/plant/pulls?n=12');
-    for (let i = 0; i < 20 && !rendered.host.querySelector('.pane-head'); i++) {
-      await act(async () => {
-        await new Promise((r) => setTimeout(r, 5));
-      });
-    }
-    return rendered;
-  }
+  it('marks a draft with its own icon, so a reviewer sees it before opening it', async () => {
+    const { host, root } = await render('/acme/plant/pulls');
 
-  // From the merge-base, not the base branch: comparing with the branch's tip showed every commit
-  // merged to main since the branch was cut as reverted by this pull request (FINDINGS 2026-10-17).
-  it('shows the picked pull with its description and its compare link from the merge-base to the head commit', async () => {
-    const { host, root } = await picked();
-
-    expect(host.querySelector('.pane-title h1')?.textContent).toBe('Fix interlock');
-    expect(host.querySelector('.fragment')?.textContent).toContain('The delay was wrong.');
-    const compare = Array.from(host.querySelectorAll('a')).find((a) => a.textContent === 'What changed');
-    expect(compare?.getAttribute('href')).toBe(compareUrl('acme', 'plant', mergeBase, headSha));
+    const rows = Array.from(host.querySelectorAll('.list-row'));
+    expect(rows[1]?.querySelector('.list-row-icon')?.getAttribute('aria-label')).toBe('Draft');
+    expect(rows[0]?.querySelector('.list-row-icon')?.getAttribute('aria-label')).toBe('Open');
     act(() => root.unmount());
   });
 
-  it('offers no comparison at all when there is no merge-base, rather than the wrong one', async () => {
-    answeredMergeBase = null;
-    const { host, root } = await picked();
+  it('offers to open one only where one can be opened', async () => {
+    const off = await render('/acme/plant/pulls');
+    expect(Array.from(off.host.querySelectorAll('a')).some((a) => a.textContent === 'New pull request')).toBe(false);
+    act(() => off.root.unmount());
+    document.body.innerHTML = '';
 
-    expect(Array.from(host.querySelectorAll('a')).some((a) => a.textContent === 'What changed')).toBe(false);
-    expect(host.querySelector('.pane-tools')?.textContent).toContain('unavailable');
-    expect(host.querySelector('.fragment')?.textContent).toContain('The delay was wrong.');
-    act(() => root.unmount());
+    writable = true;
+    const on = await render('/acme/plant/pulls');
+    expect(Array.from(on.host.querySelectorAll('a')).find((a) => a.textContent === 'New pull request')?.getAttribute('href')).toBe('/acme/plant/pulls/new');
+    act(() => on.root.unmount());
   });
 });

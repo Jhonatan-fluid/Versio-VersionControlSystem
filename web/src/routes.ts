@@ -32,8 +32,14 @@ export function compareUrl(owner: string, repo: string, base: string, head: stri
   return `${repoUrl(owner, repo)}/compare/${seg(base)}...${seg(head)}${q}`;
 }
 
-export function historyUrl(owner: string, repo: string, ref: string, path?: string): string {
-  return `${repoUrl(owner, repo)}/history/${seg(ref)}${path ? `/${pathSegments(path)}` : ''}`;
+/** The commits of a ref, or of one path at that ref: GitHub's /commits/ref/path (it was /history). */
+export function commitsUrl(owner: string, repo: string, ref: string, path?: string): string {
+  return `${repoUrl(owner, repo)}/commits/${seg(ref)}${path ? `/${pathSegments(path)}` : ''}`;
+}
+
+/** One commit, as GitHub's /commit/sha. */
+export function commitUrl(owner: string, repo: string, sha: string): string {
+  return `${repoUrl(owner, repo)}/commit/${seg(sha)}`;
 }
 
 /** The Documentation tab, at one version of the repository; ?path= selects a document. */
@@ -48,9 +54,9 @@ export function docsUrl(owner: string, repo: string, ref: string, path?: string,
   return `${repoUrl(owner, repo)}/docs/${seg(ref)}${q}`;
 }
 
-/** Pull requests are repository-level, so no ref; ?n= selects one. */
-export function pullsUrl(owner: string, repo: string, number?: number): string {
-  return `${repoUrl(owner, repo)}/pulls${number ? `?n=${number}` : ''}`;
+/** The pull request list; ?q= carries GitHub's search grammar ("is:open author:me"). */
+export function pullsUrl(owner: string, repo: string, query?: string): string {
+  return `${repoUrl(owner, repo)}/pulls${query ? `?q=${encodeURIComponent(query)}` : ''}`;
 }
 
 /** Opening a merge request; either branch may be chosen in advance. */
@@ -66,27 +72,35 @@ export function newPullUrl(owner: string, repo: string, base?: string, head?: st
   return `${repoUrl(owner, repo)}/pulls/new${q}`;
 }
 
+export type PullTab = 'conversation' | 'commits' | 'checks' | 'files';
+
 /**
- * One pull request's review. ?tab= picks Conversation, Commits, Checks or Files changed; on
- * Files changed, ?path= picks the file. The revision is not in the URL on purpose: a pasted link
- * opens the pull request as it is NOW, and says so if that is not what the sender saw.
+ * One pull request's review, in GitHub's shapes: /pull/N for the conversation, /pull/N/commits,
+ * /pull/N/checks and /pull/N/files (it was ?tab=). On Files changed, ?path= picks the file. The
+ * revision is not in the URL on purpose: a pasted link opens the pull request as it is NOW, and
+ * says so if that is not what the sender saw.
  */
-export function pullUrl(owner: string, repo: string, number: number, tab?: string, path?: string, params?: URLSearchParams): string {
+export function pullUrl(owner: string, repo: string, number: number, tab?: PullTab | string, path?: string, params?: URLSearchParams): string {
   const p = new URLSearchParams(params);
-  for (const [key, value] of [['tab', tab], ['path', path]] as const) {
-    if (value) {
-      p.set(key, value);
-    } else {
-      p.delete(key);
-    }
+  p.delete('tab');
+  if (path) {
+    p.set('path', path);
+  } else {
+    p.delete('path');
   }
   const q = p.toString() ? `?${p.toString()}` : '';
-  return `${repoUrl(owner, repo)}/pull/${number}${q}`;
+  const segment = tab && tab !== 'conversation' ? `/${tab}` : '';
+  return `${repoUrl(owner, repo)}/pull/${number}${segment}${q}`;
 }
 
-/** Releases are repository-level, so no ref; ?tag= selects one. */
+/** The tab a /pull/N[/tab] URL names; anything unknown is the conversation. */
+export function parsePullTab(segment: string | undefined): PullTab {
+  return segment === 'commits' || segment === 'checks' || segment === 'files' ? segment : 'conversation';
+}
+
+/** Releases are repository-level, so no ref; one release is GitHub's /releases/tag/v1.2. */
 export function releasesUrl(owner: string, repo: string, tag?: string): string {
-  return `${repoUrl(owner, repo)}/releases${tag ? `?tag=${seg(tag)}` : ''}`;
+  return `${repoUrl(owner, repo)}/releases${tag ? `/tag/${seg(tag)}` : ''}`;
 }
 
 /** "base...head" back into its two refs. */

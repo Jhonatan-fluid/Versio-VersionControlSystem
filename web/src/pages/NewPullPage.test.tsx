@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { NewPullPage } from './NewPullPage';
 import { PullsPage } from './PullsPage';
 
-// Opening a merge request (docs/web/PLAN.md, *Pull request review*, slice 5): in the person's own
+// Opening a pull request (docs/web/PLAN.md, *Pull request review*, slice 5): in the person's own
 // name, between two branches of this repository, from the repository's template, and never twice
 // for one click — the form's words are the operation's until its outcome is known.
 
@@ -125,7 +125,7 @@ describe('NewPullPage', () => {
 
     await fill(host.querySelector<HTMLInputElement>('.new-pull-title')!, 'Add the valve');
     await click(host.querySelector('.new-pull-draft input')!);
-    await click(button(host, 'Open as draft')!);
+    await click(button(host, 'Create draft pull request')!);
 
     const posted = creates()[0]!;
     expect(posted.url).toBe('/api/repos/acme/plant/pulls');
@@ -142,7 +142,7 @@ describe('NewPullPage', () => {
     const unknown = { status: 202, body: { outcome: 'unknown', message: 'This may or may not have been posted.' } };
     const { host, root } = await render('/acme/plant/pulls/new?head=feature', { create: unknown });
     await fill(host.querySelector<HTMLInputElement>('.new-pull-title')!, 'Add the valve');
-    await click(button(host, 'Open merge request')!);
+    await click(button(host, 'Create pull request')!);
 
     expect(host.querySelector<HTMLFieldSetElement>('.new-pull-fields')!.disabled).toBe(true);
     await click(button(host, 'Try again')!);
@@ -156,7 +156,7 @@ describe('NewPullPage', () => {
   it('a retry refused by the rate limit keeps the key: the first attempt may have opened one', async () => {
     const { host, root } = await render('/acme/plant/pulls/new?head=feature', { create: [{ status: 202, body: { outcome: 'unknown', message: 'This may or may not have been posted.' } }, { status: 429, body: { error: 'rate-limited', message: 'Too many requests: this one was not acted on.' } }, { status: 202, body: { outcome: 'unknown', message: 'This may or may not have been posted.' } }] });
     await fill(host.querySelector<HTMLInputElement>('.new-pull-title')!, 'Add the valve');
-    await click(button(host, 'Open merge request')!);
+    await click(button(host, 'Create pull request')!);
     await click(button(host, 'Try again')!);
     await click(button(host, 'Try again')!);
 
@@ -169,11 +169,11 @@ describe('NewPullPage', () => {
     const refused = { status: 422, body: { error: 'github-refused', message: 'GitHub refused this: No commits between main and feature' } };
     const { host, root } = await render('/acme/plant/pulls/new?head=feature', { create: refused });
     await fill(host.querySelector<HTMLInputElement>('.new-pull-title')!, 'Add the valve');
-    await click(button(host, 'Open merge request')!);
+    await click(button(host, 'Create pull request')!);
 
     expect(host.querySelector('.comment-note')?.textContent).toContain('No commits between');
     expect(host.querySelector<HTMLFieldSetElement>('.new-pull-fields')!.disabled).toBe(false);
-    await click(button(host, 'Open merge request')!);
+    await click(button(host, 'Create pull request')!);
     const [first, second] = creates();
     expect(second!.body?.opKey).not.toBe(first!.body?.opKey);
     act(() => root.unmount());
@@ -185,10 +185,10 @@ describe('NewPullPage', () => {
     expect(host.textContent).toContain('Choose two different branches');
     // A title, so the only reason left to refuse is the branch into itself.
     await fill(host.querySelector<HTMLInputElement>('.new-pull-title')!, 'Into itself');
-    expect(button(host, 'Open merge request')!.disabled).toBe(true);
+    expect(button(host, 'Create pull request')!.disabled).toBe(true);
     await fill(host.querySelector<HTMLSelectElement>('[aria-label="Branch with the changes"]')!, 'feature');
     await fill(host.querySelector<HTMLInputElement>('.new-pull-title')!, '');
-    expect(button(host, 'Open merge request')!.disabled).toBe(true);
+    expect(button(host, 'Create pull request')!.disabled).toBe(true);
     act(() => root.unmount());
   });
 
@@ -216,14 +216,14 @@ describe('NewPullPage', () => {
     act(() => root.unmount());
   });
 
-  it('the list offers "New merge request" only where one can be opened', async () => {
+  it('the list offers "New pull request" only where one can be opened', async () => {
     const on = await render('/acme/plant/pulls');
-    expect(Array.from(on.host.querySelectorAll('a')).find((a) => a.textContent === 'New merge request')?.getAttribute('href')).toBe('/acme/plant/pulls/new');
+    expect(Array.from(on.host.querySelectorAll('a')).find((a) => a.textContent === 'New pull request')?.getAttribute('href')).toBe('/acme/plant/pulls/new');
     act(() => on.root.unmount());
     document.body.innerHTML = '';
 
     const off = await render('/acme/plant/pulls', { writable: false });
-    expect(Array.from(off.host.querySelectorAll('a')).some((a) => a.textContent === 'New merge request')).toBe(false);
+    expect(Array.from(off.host.querySelectorAll('a')).some((a) => a.textContent === 'New pull request')).toBe(false);
     act(() => off.root.unmount());
   });
 });

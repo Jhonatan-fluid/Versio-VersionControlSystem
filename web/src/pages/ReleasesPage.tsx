@@ -1,22 +1,25 @@
-import { useLocation, useNavigate, useParams, useSearchParams } from 'react-router';
+import { Link, useLocation, useNavigate, useParams } from 'react-router';
 import type { Me } from '../api';
 import { api } from '../api';
 import { FragmentHost } from '../components/FragmentHost';
 import { ErrorPanel } from '../components/Pane';
-import { Workbench } from '../components/Workbench';
-import { blobUrl, treeUrl } from '../routes';
+import { RepoLayout } from '../components/RepoLayout';
+import { Avatar, Blankslate, Icon, Loading, RelativeTime } from '../components/ui';
+import { blobUrl, releasesUrl } from '../routes';
+import { usePageTitle } from '../title';
 import { useAsync } from '../useAsync';
 
-/** /owner/repo/releases[?tag=v1.2]: the published releases, each with its notes rendered. */
+/**
+ * /owner/repo/releases and /releases/tag/v1.2: GitHub's releases page — each release a box with
+ * its tag, its author and its notes. The list carries meta only; one release's notes are
+ * fetched when it is opened, because fifty rendered bodies would be paid for rows nobody reads.
+ */
 export function ReleasesPage({ me }: { me: Me | null }) {
-  const { owner = '', repo = '' } = useParams();
-  const [search, setSearch] = useSearchParams();
+  const { owner = '', repo = '', tag: picked } = useParams();
   const location = useLocation();
   const navigate = useNavigate();
-  const picked = search.get('tag');
 
   const info = useAsync((s) => api.repo(owner, repo, s), [owner, repo]);
-  const branches = useAsync((s) => api.branches(owner, repo, s), [owner, repo]);
   const releases = useAsync((s) => api.releases(owner, repo, s), [owner, repo]);
   const release = useAsync(
     (s) => (picked ? api.releaseView(owner, repo, picked, s) : new Promise<never>(() => {})),
@@ -25,81 +28,53 @@ export function ReleasesPage({ me }: { me: Me | null }) {
 
   const defaultBranch = info.state === 'ok' ? info.value.defaultBranch : 'main';
   const signIn = me?.signInAvailable && !me.signedIn ? api.signInUrl(location.pathname + location.search) : null;
-
-  function pick(tag: string) {
-    const next = new URLSearchParams(search);
-    next.set('tag', tag);
-    setSearch(next);
-  }
+  usePageTitle(picked ? `Release ${picked}` : 'Releases', `${owner}/${repo}`);
 
   return (
-    <Workbench
-      me={me}
-      owner={owner}
-      repo={repo}
-      refName={defaultBranch}
-      defaultBranch={defaultBranch}
-      branches={branches.state === 'ok' ? branches.value.branches : []}
-      branchesTruncated={branches.state === 'ok' && branches.value.truncated}
-      onRef={(r) => navigate(treeUrl(owner, repo, r))}
-      rail="releases"
-      panelTitle="Releases"
-      panel={
-        <>
-          {releases.state === 'loading' && <p className="muted pad">Loading...</p>}
-          {releases.state === 'ok' && releases.value.releases.length === 0 && <p className="muted pad">No releases yet.</p>}
-          {releases.state === 'ok' && (
-            <ul className="row-list">
-              {releases.value.releases.map((r) => (
-                <li key={r.tag}>
-                  <button type="button" className={`row-pick${r.tag === picked ? ' is-selected' : ''}`} onClick={() => pick(r.tag)}>
-                    <span className="row-title">
-                      {r.prerelease && <span className="row-badge">pre-release</span>}
-                      {r.name}
-                    </span>
-                    <span className="muted row-meta">
-                      <code>{r.tagLabel}</code> &middot; {new Date(r.when).toLocaleDateString()}
-                    </span>
-                  </button>
-                </li>
-              ))}
-            </ul>
-          )}
-          {releases.state === 'ok' && releases.value.truncated && (
-            <p className="muted pad">The latest {releases.value.releases.length}. Older ones are on GitHub.</p>
-          )}
-        </>
-      }
-    >
-      {releases.state === 'error' ? (
-        <ErrorPanel error={releases.error} signInUrl={signIn} />
-      ) : !picked ? (
-        <section className="pane pane-empty">
-          <p className="muted">Pick a release to read its notes.</p>
-        </section>
-      ) : release.state === 'loading' ? (
-        <section className="pane pane-empty" aria-busy="true">Loading...</section>
-      ) : release.state === 'error' ? (
-        <ErrorPanel error={release.error} signInUrl={signIn} />
-      ) : (
-        <section className="pane">
-          <header className="pane-head">
-            <div className="pane-title">
-              <span className="pane-label">Release</span>
-              <h1>{release.value.name}</h1>
-              <span className="pane-folder">{release.value.tagLabel}</span>
-            </div>
-          </header>
-          <p className="muted">
-            {release.value.prerelease ? 'Pre-release, ' : ''}published by {release.value.author}, {new Date(release.value.when).toLocaleString()}
-          </p>
-          {release.value.html ? (
-            <FragmentHost html={release.value.html} path="" onOpenPath={(p) => navigate(blobUrl(owner, repo, defaultBranch, p))} line={null} onLine={() => {}} />
-          ) : (
-            <p className="muted">No notes.</p>
-          )}
-        </section>
+    <RepoLayout me={me} owner={owner} repo={repo} nav="releases" crumb="Releases">
+      {releases.state === 'loading' && <Loading />}
+      {releases.state === 'error' && <ErrorPanel error={releases.error} signInUrl={signIn} />}
+      {releases.state === 'ok' && releases.value.releases.length === 0 && (
+        <Blankslate icon="tag" heading="No releases yet" spacious>Releases published on GitHub show here with their notes.</Blankslate>
       )}
-    </Workbench>
+      {releases.state === 'ok' && releases.value.releases.map((r) => {
+        const open = r.tag === picked;
+        return (
+          <article key={r.tag} className="box" style={{ marginBottom: 16 }} aria-current={open ? 'true' : undefined}>
+            <div className="box-header">
+              <Icon name="tag" className="text-muted" />
+              <Link to={releasesUrl(owner, repo, r.tag)} className="list-row-title">{r.name}</Link>
+              {r.prerelease && <span className="label" style={{ color: 'var(--color-attention-fg)', borderColor: 'var(--color-attention-fg)' }}>Pre-release</span>}
+              <span className="text-muted text-small" style={{ marginLeft: 'auto', display: 'inline-flex', gap: 6, alignItems: 'center' }}>
+                <code>{r.tagLabel}</code>
+                <RelativeTime when={r.when} />
+              </span>
+            </div>
+            {open && (
+              <div className="box-body">
+                {release.state === 'loading' && <Loading what="Reading the notes…" />}
+                {release.state === 'error' && <p className="text-danger">{release.error.message}</p>}
+                {release.state === 'ok' && (
+                  <>
+                    <p className="text-muted text-small" style={{ display: 'flex', gap: 6, alignItems: 'center', marginTop: 0 }}>
+                      <Avatar login={release.value.author} size={16} />
+                      <span className="text-bold">{release.value.author}</span> released this <RelativeTime when={release.value.when} />
+                    </p>
+                    {release.value.html ? (
+                      <FragmentHost html={release.value.html} path="" onOpenPath={(p) => navigate(blobUrl(owner, repo, defaultBranch, p))} line={null} onLine={() => {}} />
+                    ) : (
+                      <p className="text-muted">No notes.</p>
+                    )}
+                  </>
+                )}
+              </div>
+            )}
+          </article>
+        );
+      })}
+      {releases.state === 'ok' && releases.value.truncated && (
+        <p className="text-muted">The latest {releases.value.releases.length}. Older ones are on GitHub.</p>
+      )}
+    </RepoLayout>
   );
 }

@@ -2,8 +2,10 @@ import { useLocation, useNavigate, useParams, useSearchParams } from 'react-rout
 import type { Layout, Me, PaneView, TreeNode } from '../api';
 import { api, rawUrl } from '../api';
 import { ErrorPanel, Pane } from '../components/Pane';
-import { Workbench } from '../components/Workbench';
+import { RepoLayout } from '../components/RepoLayout';
+import { Blankslate, Icon, LinkButton, Loading } from '../components/ui';
 import { blobUrl, docsUrl } from '../routes';
+import { usePageTitle } from '../title';
 import { useAsync } from '../useAsync';
 import { lineFromHash } from './RepoPage';
 
@@ -60,7 +62,6 @@ export function DocsPage({ me }: { me: Me | null }) {
 
   const info = useAsync((s) => api.repo(owner, repo, s), [owner, repo]);
   const ref = refParam ?? (info.state === 'ok' ? info.value.defaultBranch : null);
-  const branches = useAsync((s) => api.branches(owner, repo, s), [owner, repo]);
   const tree = useAsync((s) => (ref ? api.tree(owner, repo, ref, s) : new Promise<never>(() => {})), [owner, repo, ref]);
 
   const docs = tree.state === 'ok' ? collect(tree.value.nodes, []) : [];
@@ -72,6 +73,7 @@ export function DocsPage({ me }: { me: Me | null }) {
 
   const defaultBranch = info.state === 'ok' ? info.value.defaultBranch : 'main';
   const signIn = me?.signInAvailable && !me.signedIn ? api.signInUrl(location.pathname + location.search) : null;
+  usePageTitle(picked ? nameOf(picked) : 'Docs', `${owner}/${repo}`);
 
   function setParam(key: string, value: string, fallback: string) {
     const next = new URLSearchParams(search);
@@ -93,91 +95,86 @@ export function DocsPage({ me }: { me: Me | null }) {
   const folders = [...groups.keys()].sort((a, b) => (a === '' ? -1 : b === '' ? 1 : a.localeCompare(b)));
 
   return (
-    <Workbench
-      me={me}
-      owner={owner}
-      repo={repo}
-      refName={ref ?? defaultBranch}
-      defaultBranch={defaultBranch}
-      branches={branches.state === 'ok' ? branches.value.branches : []}
-      branchesTruncated={branches.state === 'ok' && branches.value.truncated}
-      onRef={(r) => navigate(docsUrl(owner, repo, r, picked ?? undefined, search))}
-      rail="docs"
-      panelTitle="Documentation"
-      panel={
-        <>
-          {tree.state === 'loading' && <p className="muted pad">Loading...</p>}
-          {tree.state === 'ok' && docs.length === 0 && <p className="muted pad">No documents in this repository.</p>}
-          {folders.map((folder) => (
-            <div key={folder || '(root)'}>
-              <div className="doc-folder" title={folder}>{folder === '' ? 'Repository root' : folder}</div>
-              <ul className="tree-list">
-                {groups.get(folder)!.map(({ node, kind }) => (
-                  <li key={node.path}>
-                    <button
-                      type="button"
-                      className={`tree-row${node.path === picked ? ' is-selected' : ''}`}
-                      onClick={() => navigate(docsUrl(owner, repo, ref ?? defaultBranch, node.path))}
-                      title={node.label}
-                    >
-                      <span className={`doc-ext doc-ext-${kind}`}>{node.path.slice(node.path.lastIndexOf('.') + 1).toLowerCase()}</span>
-                      <span className="tree-name">{node.name}</span>
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          ))}
-        </>
-      }
-    >
-      {tree.state === 'error' ? (
-        <ErrorPanel error={tree.error} signInUrl={signIn} />
-      ) : !picked || !pickedKind || !ref ? (
-        <section className="pane pane-empty">
-          <p className="muted">Pick a document.</p>
-        </section>
-      ) : pickedKind === 'text' ? (
-        <Pane
-          result={pane}
-          view={view}
-          layout={layout}
-          onView={(v) => setParam('view', v, 'rendered')}
-          onLayout={(l) => setParam('layout', l, 'unified')}
-          onLayer={(layer) => navigate(docsUrl(owner, repo, ref, layer))}
-          onOpenPath={(p) => (docKind(p) ? navigate(docsUrl(owner, repo, ref, p)) : navigate(blobUrl(owner, repo, ref, p)))}
-          line={lineFromHash(location.hash)}
-          onLine={(n) => navigate({ hash: `L${n}`, search: search.toString() }, { replace: true })}
-          comparing={false}
-          signInUrl={signIn}
-        />
-      ) : pickedKind === 'pdf' ? (
-        <section className="pane pane-doc">
-          <header className="pane-head">
-            <div className="pane-title" title={picked}>
-              <span className="pane-label">Document</span>
-              <h1>{nameOf(picked)}</h1>
-              {folderOf(picked) && <span className="pane-folder">{folderOf(picked)}</span>}
-            </div>
-          </header>
-          {/* The browser's own PDF viewer, same origin. The response says application/pdf and
-              the site says nosniff, so a file lying about being a PDF fails to draw rather
-              than becoming markup (Documents.cs). */}
-          <iframe className="doc-frame" src={rawUrl(owner, repo, ref, picked)} title={nameOf(picked)} />
-        </section>
-      ) : (
-        <section className="pane">
-          <header className="pane-head">
-            <div className="pane-title" title={picked}>
-              <span className="pane-label">Document</span>
-              <h1>{nameOf(picked)}</h1>
-              {folderOf(picked) && <span className="pane-folder">{folderOf(picked)}</span>}
-            </div>
-          </header>
-          <p className="muted">A browser cannot draw this format; download it and open it in its own application.</p>
-          <p><a className="button" href={rawUrl(owner, repo, ref, picked)}>Download {nameOf(picked)}</a></p>
-        </section>
-      )}
-    </Workbench>
+    <RepoLayout me={me} owner={owner} repo={repo} nav="docs" refName={ref ?? defaultBranch} wide>
+      <div className="code-view">
+        <aside className="code-sidebar">
+          <div className="code-sidebar-head">
+            <Icon name="book" className="text-muted" />
+            <span>Documentation</span>
+          </div>
+          <div className="code-sidebar-body">
+            {tree.state === 'loading' && <Loading />}
+            {tree.state === 'ok' && docs.length === 0 && <p className="text-muted pad">No documents in this repository.</p>}
+            {folders.map((folder) => (
+              <div key={folder || '(root)'}>
+                <div className="doc-folder" title={folder}>{folder === '' ? 'Repository root' : folder}</div>
+                <ul className="tree-list">
+                  {groups.get(folder)!.map(({ node, kind }) => (
+                    <li key={node.path}>
+                      <button
+                        type="button"
+                        className={`tree-row${node.path === picked ? ' is-selected' : ''}`}
+                        onClick={() => navigate(docsUrl(owner, repo, ref ?? defaultBranch, node.path))}
+                        title={node.label}
+                      >
+                        <span className={`doc-ext doc-ext-${kind}`}>{node.path.slice(node.path.lastIndexOf('.') + 1).toLowerCase()}</span>
+                        <span className="tree-name">{node.name}</span>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ))}
+          </div>
+        </aside>
+        <div className="code-main">
+          {tree.state === 'error' ? (
+            <ErrorPanel error={tree.error} signInUrl={signIn} />
+          ) : !picked || !pickedKind || !ref ? (
+            <Blankslate icon="book" heading="Pick a document">Text documents are drawn here; a PDF is embedded; the Office formats download.</Blankslate>
+          ) : pickedKind === 'text' ? (
+            <Pane
+              result={pane}
+              view={view}
+              layout={layout}
+              onView={(v) => setParam('view', v, 'rendered')}
+              onLayout={(l) => setParam('layout', l, 'unified')}
+              onLayer={(layer) => navigate(docsUrl(owner, repo, ref, layer))}
+              onOpenPath={(p) => (docKind(p) ? navigate(docsUrl(owner, repo, ref, p)) : navigate(blobUrl(owner, repo, ref, p)))}
+              line={lineFromHash(location.hash)}
+              onLine={(n) => navigate({ hash: `L${n}`, search: search.toString() }, { replace: true })}
+              comparing={false}
+              signInUrl={signIn}
+            />
+          ) : pickedKind === 'pdf' ? (
+            <section className="pane pane-doc">
+              <header className="pane-head">
+                <div className="pane-title" title={picked}>
+                  <span className="pane-label">Document</span>
+                  <h1>{nameOf(picked)}</h1>
+                  {folderOf(picked) && <span className="pane-folder">{folderOf(picked)}</span>}
+                </div>
+              </header>
+              {/* The browser's own PDF viewer, same origin. The response says application/pdf and
+                  the site says nosniff, so a file lying about being a PDF fails to draw rather
+                  than becoming markup (Documents.cs). */}
+              <iframe className="doc-frame" src={rawUrl(owner, repo, ref, picked)} title={nameOf(picked)} />
+            </section>
+          ) : (
+            <section className="pane">
+              <header className="pane-head">
+                <div className="pane-title" title={picked}>
+                  <span className="pane-label">Document</span>
+                  <h1>{nameOf(picked)}</h1>
+                  {folderOf(picked) && <span className="pane-folder">{folderOf(picked)}</span>}
+                </div>
+              </header>
+              <p className="text-muted">A browser cannot draw this format; download it and open it in its own application.</p>
+              <p><LinkButton href={rawUrl(owner, repo, ref, picked)} variant="primary">Download {nameOf(picked)}</LinkButton></p>
+            </section>
+          )}
+        </div>
+      </div>
+    </RepoLayout>
   );
 }

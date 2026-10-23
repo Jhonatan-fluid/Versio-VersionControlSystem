@@ -38,11 +38,12 @@ async function render(path: string) {
       <MemoryRouter initialEntries={[path]}>
         <Routes>
           <Route path="/:owner/:repo/releases" element={<ReleasesPage me={null} />} />
+          <Route path="/:owner/:repo/releases/tag/:tag" element={<ReleasesPage me={null} />} />
         </Routes>
       </MemoryRouter>,
     );
   });
-  for (let i = 0; i < 20 && !host.querySelector('.row-pick'); i++) {
+  for (let i = 0; i < 20 && !host.querySelector('article.box'); i++) {
     await act(async () => {
       await new Promise((r) => setTimeout(r, 5));
     });
@@ -57,19 +58,22 @@ describe('Releases', () => {
   });
 
   it('lists the releases with their badges and shows the picked notes', async () => {
-    const { host, root } = await render('/acme/plant/releases?tag=v2.0');
-    for (let i = 0; i < 20 && !host.querySelector('.pane-head'); i++) {
+    const { host, root } = await render('/acme/plant/releases/tag/v2.0');
+    for (let i = 0; i < 20 && !host.querySelector('.fragment'); i++) {
       await act(async () => {
         await new Promise((r) => setTimeout(r, 5));
       });
     }
 
-    const rows = Array.from(host.querySelectorAll('.row-pick'));
+    const rows = Array.from(host.querySelectorAll('article.box'));
     expect(rows).toHaveLength(2);
-    expect(rows[0]?.textContent).toContain('pre-release');
-    expect(rows[1]?.textContent).not.toContain('pre-release');
-    expect(host.querySelector('.pane-title h1')?.textContent).toBe('Line 3');
-    expect(host.querySelector('.fragment')?.textContent).toContain('First.');
+    expect(rows[0]?.textContent).toContain('Pre-release');
+    expect(rows[1]?.textContent).not.toContain('Pre-release');
+    // The picked one is open with its notes; its title links to its own page.
+    expect(rows[0]?.getAttribute('aria-current')).toBe('true');
+    expect(rows[0]?.querySelector('a.list-row-title')?.getAttribute('href')).toBe('/acme/plant/releases/tag/v2.0');
+    expect(rows[0]?.querySelector('.fragment')?.textContent).toContain('First.');
+    expect(rows[1]?.querySelector('.fragment')).toBeNull();
     act(() => root.unmount());
   });
 });
