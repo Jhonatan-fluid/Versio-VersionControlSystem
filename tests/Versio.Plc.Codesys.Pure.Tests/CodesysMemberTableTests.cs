@@ -147,9 +147,14 @@ public sealed class CodesysMemberTableTests
         Assert.Contains(table.Members, m => m.Name.Contains("Settings", StringComparison.Ordinal) && m.Datatype == "ST_AlarmSettings");
         Assert.Contains(table.Members, m => m.Datatype == "ST_AlarmHmiConfiguration");
 
-        // The rows name the file's own lines, header included, so a row finds its line in Raw.
+        // The rows name the file's own lines, header included, so a row finds its line in Raw. The
+        // span starts at the comment CODESYS writes above each persistent variable, which is the
+        // row's comment cell, and ends on the declaration.
         var settings = Assert.Single(table.Members, m => m.Datatype == "ST_AlarmSettings");
-        Assert.Contains("ST_AlarmSettings", text.Replace("\r\n", "\n").Split('\n')[settings.Lines!.Value.Start - 1], StringComparison.Ordinal);
+        var span = settings.Lines!.Value;
+        var lines = text.Replace("\r\n", "\n").Split('\n');
+        Assert.Contains("ST_AlarmSettings", lines[span.End - 1], StringComparison.Ordinal);
+        Assert.StartsWith("// ", lines[span.Start - 1].TrimStart(), StringComparison.Ordinal);
     }
 
     [Fact]

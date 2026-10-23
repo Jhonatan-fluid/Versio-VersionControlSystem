@@ -85,4 +85,19 @@ public sealed class SafeXmlTests
         Assert.Throws<XmlException>(() => SafeXml.Parse("<a><b><c /></b></a>", maxDepth: 1));
         Assert.NotNull(SafeXml.Parse("<a><b><c /></b></a>", maxDepth: 2).Root);
     }
+
+    /// <summary>
+    /// An element's lines run to the last line a descendant starts on or its text reaches: a
+    /// CODESYS declaration is one text node of many lines, and a span ending on its first line
+    /// left the rest outside the element (2026-10-23).
+    /// </summary>
+    [Fact]
+    public void An_elements_lines_reach_the_end_of_a_descendants_multi_line_text()
+    {
+        var doc = SafeXml.Parse("<a>\n  <b>line one\nline two\nline three</b>\n  <c />\n</a>", LoadOptions.SetLineInfo);
+
+        Assert.Equal(new LineSpan(2, 4), SafeXml.LinesOf(doc.Root!.Element("b")!));
+        Assert.Equal(new LineSpan(1, 5), SafeXml.LinesOf(doc.Root));
+        Assert.Equal(new LineSpan(12, 14), SafeXml.LinesOf(doc.Root.Element("b")!, offset: 10));
+    }
 }

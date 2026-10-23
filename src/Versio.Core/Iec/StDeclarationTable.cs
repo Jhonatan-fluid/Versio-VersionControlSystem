@@ -78,6 +78,7 @@ public static partial class StDeclarationTable
             }).ToList(),
             Attributes = Shifted(table.Attributes, firstLine),
             Unshown = table.Unshown.Select(u => u with { Line = u.Line + firstLine }).ToList(),
+            Structural = table.Structural.Select(s => s.Shift(firstLine)).ToList(),
         };
     }
 
@@ -152,21 +153,69 @@ public static partial class StDeclarationTable
         }
 
         // The header is shown in part (the name in the title, a function's type as its Return
-        // row) and in part not (a modifier, EXTENDS, IMPLEMENTS). The part that is not stands in
-        // for the line, so a changed EXTENDS warns and a changed return type does not warn twice.
-        if (HeaderResidue(lines, header, words, first) is { } residue)
+        // row, its kind as the table's kind) and in part not (EXTENDS, IMPLEMENTS, a comment).
+        // The part that is not stands in for the line, so a changed EXTENDS warns and a changed
+        // return type does not warn twice. A header with no such part is framing (below).
+        var residue = HeaderResidue(lines, header, words, first);
+        if (residue is not null)
         {
             unshown.Add(new UnshownLine(header, residue));
             unshown.Sort((a, b) => a.Line.CompareTo(b.Line));
         }
 
-        return table with { Attributes = attributes, Unshown = unshown };
+        // The framing: every line claimed by the declaration's own syntax rather than by a row or
+        // an attribute (the header when it says nothing the table does not draw, VAR … END_VAR,
+        // STRUCT, END_TYPE), and every blank line. Review coverage vouches for a change there —
+        // the owner's real pull request (2026-10-23) listed a VAR_IN_OUT block opened, a blank
+        // line removed and a method header that gained PUBLIC as "changed, but not shown", and
+        // Raw had nothing more to say about any of them than the table did.
+        var drawn = new HashSet<int>();
+        foreach (var span in table.Members.Select(r => r.Lines).Concat(table.Members.SelectMany(r => r.Attributes).Select(a => a.Lines))
+                     .Concat(attributes.Select(a => a.Lines)).OfType<LineSpan>())
+        {
+            drawn.UnionWith(Enumerable.Range(span.Start, span.Length));
+        }
+
+        var structural = Enumerable.Range(0, lines.Count)
+            .Where(i => (lines[i].Text.Length == 0 || (claimed.Contains(i) && !drawn.Contains(i))) && !(i == header && residue is not null))
+            .ToList();
+
+        return table with { Attributes = attributes, Unshown = unshown, Structural = Spans(structural) };
+    }
+
+    /// <summary>Line indexes folded into spans, so a table carries a few ranges rather than a line list.</summary>
+    private static IReadOnlyList<LineSpan> Spans(IReadOnlyList<int> lines)
+    {
+        var spans = new List<LineSpan>();
+        foreach (var line in lines.Order())
+        {
+            if (spans.Count > 0 && spans[^1].End == line - 1)
+            {
+                spans[^1] = spans[^1] with { End = line };
+            }
+            else
+            {
+                spans.Add(new LineSpan(line, line));
+            }
+        }
+
+        return spans;
     }
 
     /// <summary>
     /// What a block's header line says that the table does not draw, or null when it is all
     /// drawn (or the header is not a block's, whose lines the kinds claim themselves).
     /// </summary>
+    /// <remarks>
+    /// The keyword and the modifiers are not part of it, since 2026-10-23. The keyword is the
+    /// table's kind, which is drawn; a modifier (<c>PUBLIC</c>, <c>ABSTRACT</c>) is not drawn,
+    /// and is not reported either: on the owner's real pull request a method header that gained
+    /// <c>PUBLIC</c> made its empty table say "1 declaration change is not shown" beside a code
+    /// block that showed every change, and the owner's rule is that the header line is framing.
+    /// The cost, stated: an access modifier changed from one value to another is not drawn and
+    /// not warned about. What remains is what says something the table has no cell for — an
+    /// <c>EXTENDS</c>, an <c>IMPLEMENTS</c>, the line's comment.
+    /// </remarks>
     private static string? HeaderResidue(List<Line> lines, int header, List<string> words, string first)
     {
         if (first is "TYPE" or "VAR_GLOBAL" or "NAMESPACE")
@@ -177,16 +226,16 @@ public static partial class StDeclarationTable
         var function = first is "FUNCTION" or "METHOD" || first.StartsWith("PROPERTY", StringComparison.Ordinal);
         // By word, not by IndexOf: "B" is inside "FUNCTION_BLOCK".
         var at = words.FindIndex(1, w => !Modifiers.Contains(w, StringComparer.OrdinalIgnoreCase));
-        var prefix = string.Join(' ', at < 0 ? words : words.Take(at));
         if (function || at < 0)
         {
-            // The type and the line's comment are the Return row; only the keywords are not.
-            return prefix;
+            // The type and the line's comment are the Return row; the keywords are the kind.
+            return null;
         }
 
         var after = string.Join(' ', words.Skip(at + 1));
         var comment = lines[header].Comment;
-        return Collapse($"{prefix} {after}{(comment.Length > 0 ? " // " + comment : "")}");
+        var residue = Collapse($"{after}{(comment.Length > 0 ? " // " + comment : "")}");
+        return residue.Length == 0 ? null : residue;
     }
 
     /// <summary>
@@ -538,8 +587,13 @@ public static partial class StDeclarationTable
             var comment = bufferComment.Length > 0 ? bufferComment : string.Join(' ', pending);
             var first = attributeLines.Count > 0 ? Math.Min(attributeLines.Min(), bufferFirst) : bufferFirst;
             var used = Enumerable.Range(first, bufferLast - first + 1)
-                .Concat(bufferComment.Length > 0 ? [] : pendingLines);
-            var result = new Declaration(declaration, comment, null, first, bufferLast, [.. attributes], [.. used]);
+                .Concat(bufferComment.Length > 0 ? [] : pendingLines)
+                .ToList();
+            // The span starts at the first line the row accounts for, its comment lines above
+            // included (2026-10-23): a comment the table draws in the row's cell is the row's,
+            // so an edit to it is marked on the row and vouched for by it, and a review comment
+            // on that line lands on the row rather than on nothing.
+            var result = new Declaration(declaration, comment, null, used.Min(), bufferLast, [.. attributes], used);
             buffer.Clear();
             bufferComment = "";
             attributes.Clear();
