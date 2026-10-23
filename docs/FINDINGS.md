@@ -19,6 +19,36 @@ produce a diff touching everything else.
 
 ---
 
+### An unchanged library manager said "3 changed", over four rows with no name
+
+**2026-10-23, branch `PrReview`, the owner's `FsLibrary.fbslib`, seen in the dev window.** The
+application's Libraries table read *Since the last commit: 3 changed* while the tree and status
+bar said no changes. Three rows were blank except for a struck-out namespace with an arrow to
+another, `CmpOPCUAServer_Interfaces → CmpOPCUAStack_Interfaces`, and the fourth was blank too.
+
+**Two defects, one hiding behind the other.**
+
+- **The reader knew only placeholders.** The library's move to OPC UA added four
+  `"$type": "ManagedLibrary"` references, which CODESYS adds as hidden system libraries. They
+  name themselves in `libraryId`, a field `CodesysCatalogs.Reference` never read, so all four
+  came out with an empty name and no resolution. Now `libraryId` is the name, and it is split
+  into title, version and company by a port of the classic export's strict
+  `parse_managed_name`. So `"CmpOPCUAServer Interfaces, * (System)"` gets no version rather
+  than `*`, the same row the classic YAML gives.
+- **The comparison paired by key and kept the first.** `CatalogDiff.Mark` put the baseline in a
+  dictionary with `TryAdd`, so every repeat of a key was compared with the first baseline row of
+  that key. With four rows sharing the empty name, an identical file reported the second, third
+  and fourth as namespace changes. Keys are now paired by occurrence, the second with the
+  second. The first occurrence keeps its own key, so an ordinary catalog is compared exactly as
+  before. Names can repeat for real, too: nothing stops two references sharing a display name.
+
+**Evidence.** `Rows_sharing_a_name_are_paired_by_occurrence_so_an_unchanged_file_marks_nothing`
+(Core) goes red with the current side left unpaired.
+`A_managed_library_is_named_by_its_library_id_and_split_as_the_classic_export_splits_it`
+(CODESYS pure) goes red with `libraryId` unread. The FBS-to-classic parity test still agrees.
+
+---
+
 ### A File-Based Storage library's device tree was filed under POUs
 
 **2026-10-23, branch `PrReview`, the owner's `CodesysStandardLibrary` (`FsLibrary.fbslib`).**
