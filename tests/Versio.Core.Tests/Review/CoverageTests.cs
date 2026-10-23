@@ -81,4 +81,22 @@ public sealed class CoverageTests
         Assert.Equal(2, report.Gaps.Count);
         Assert.All(report.Gaps, g => Assert.Equal(("no-evidence", 2, 3), (g.Reason, g.Start, g.End)));
     }
+
+    [Fact]
+    public void A_changed_attribute_drawn_on_its_row_or_over_the_table_is_covered()
+    {
+        const string before = "{attribute 'symbol' := 'none'}\nTYPE S :\nSTRUCT\n\t{attribute 'symbol' := 'read'}\n\tScada : INT;\nEND_STRUCT\nEND_TYPE\n";
+
+        Assert.True(Table(before, before.Replace("'read'", "'readwrite'", StringComparison.Ordinal)).Complete);
+        Assert.True(Table(before, before.Replace("'none'", "'readwrite'", StringComparison.Ordinal)).Complete);
+        Assert.True(Table(before, "{attribute 'linkalways'}\n" + before).Complete);
+    }
+
+    [Fact]
+    public void An_attribute_spelled_another_way_is_not_vouched_for()
+    {
+        const string before = "TYPE S :\nSTRUCT\n\t{attribute 'symbol' := 'read'}\n\tScada : INT;\nEND_STRUCT\nEND_TYPE\n";
+
+        Assert.False(Table(before, before.Replace("{attribute 'symbol' := 'read'}", "{ attribute 'symbol' := 'write' }", StringComparison.Ordinal)).Complete);
+    }
 }

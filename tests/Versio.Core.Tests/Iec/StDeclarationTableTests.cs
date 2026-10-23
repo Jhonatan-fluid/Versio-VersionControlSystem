@@ -1,5 +1,6 @@
 using Versio.Core.Iec;
 using Versio.Core.Projects;
+using Versio.Core.Text;
 using Xunit;
 
 namespace Versio.Core.Tests.Iec;
@@ -275,5 +276,126 @@ public class StDeclarationTableTests
         var table = StDeclarationTable.Parse(source, "x")!;
 
         Assert.Equal(["[Input]", "nReal : INT", "nAfter : INT"], Shape(table));
+    }
+
+    // The owner's own library (CodesysStandardLibrary, 2026-10-23): F_UpdateMeta gained one
+    // {attribute 'linkalways'} that the Rendered tab did not show at all.
+    private const string UpdateMeta = """
+        {attribute 'linkalways'}
+        /// Refreshes a block's SCADA Meta identity.
+        FUNCTION F_UpdateMeta
+        VAR_INPUT
+        	// Programs can use the implicit path.
+        	{attribute 'implicit-parameter' := 'instance-path'}
+        	InstancePath		: STRING(255) := '';
+        END_VAR
+        VAR
+        	// SCADA
+        	{attribute 'symbol' := 'readwrite'}
+        	Scada		: ST_AlarmScada;
+
+        	{attribute 'instance-path'}
+
+        	{attribute 'noinit'}
+        	FullPath	: STRING(255);
+        END_VAR
+        """;
+
+    private static IReadOnlyList<string> Chips(IEnumerable<MemberAttribute> attributes) =>
+        attributes.Select(a => a.Text).ToList();
+
+    [Fact]
+    public void The_attributes_above_the_header_are_the_objects_own()
+    {
+        var table = StDeclarationTable.Parse(UpdateMeta, "x")!;
+
+        Assert.Equal(["linkalways"], Chips(table.Attributes));
+        Assert.Equal(new LineSpan(1, 1), table.Attributes[0].Lines);
+        Assert.Equal(["symbol = readwrite"], Chips(StDeclarationTable.Parse(FbAlarmScada, "x")!.Attributes));
+    }
+
+    private const string FbAlarmScada = "{attribute 'symbol' := 'readwrite'}\nFUNCTION_BLOCK FB_X\nVAR\n\tx : INT;\nEND_VAR";
+
+    [Fact]
+    public void A_variables_attributes_are_its_own_with_its_comment_kept_and_its_lines_starting_at_them()
+    {
+        var table = StDeclarationTable.Parse(UpdateMeta, "x")!;
+
+        var scada = Row(table, "Scada");
+        Assert.Equal(["symbol = readwrite"], Chips(scada.Attributes));
+        Assert.Equal("readwrite", scada.Attributes[0].Value);
+        // The comment above the pragma is still the variable's, and the row starts at the
+        // pragma, so a changed attribute marks the row and a review comment on it lands here.
+        Assert.Equal("SCADA", scada.Comment);
+        Assert.Equal(new LineSpan(11, 12), scada.Lines);
+
+        Assert.Equal(["implicit-parameter = instance-path"], Chips(Row(table, "InstancePath").Attributes));
+        Assert.Empty(table.Members.Where(m => m.IsSectionHeading).SelectMany(m => m.Attributes));
+    }
+
+    [Fact]
+    public void A_blank_line_does_not_take_an_attribute_from_the_declaration_it_precedes()
+    {
+        var full = Row(StDeclarationTable.Parse(UpdateMeta, "x")!, "FullPath");
+
+        Assert.Equal(["instance-path", "noinit"], Chips(full.Attributes));
+        Assert.Equal(new LineSpan(14, 17), full.Lines);
+    }
+
+    [Fact]
+    public void A_pragma_after_a_declarations_code_belongs_to_the_next_one()
+    {
+        var table = StDeclarationTable.Parse("FUNCTION_BLOCK B\nVAR\n\ta : INT; {attribute 'hide'}\n\tb : INT;\nEND_VAR", "x")!;
+
+        Assert.Empty(Row(table, "a").Attributes);
+        Assert.Equal(["hide"], Chips(Row(table, "b").Attributes));
+    }
+
+    [Fact]
+    public void A_structures_members_carry_their_attributes_too()
+    {
+        var table = StDeclarationTable.Parse("{attribute 'pack_mode' := '1'}\nTYPE S :\nSTRUCT\n\t{attribute 'hide'}\n\tx : INT;\nEND_STRUCT\nEND_TYPE", "x")!;
+
+        Assert.Equal(["pack_mode = 1"], Chips(table.Attributes));
+        Assert.Equal(["hide"], Chips(Row(table, "x").Attributes));
+        Assert.Empty(table.Unshown);
+    }
+
+    [Fact]
+    public void Every_line_the_table_draws_is_claimed_and_the_rest_is_unshown()
+    {
+        var table = StDeclarationTable.Parse(UpdateMeta, "x")!;
+
+        // The doc comment is drawn nowhere; "FUNCTION" stands for the header, whose name is the
+        // title. Everything else is a row, a heading, an attribute or a comment given to a row.
+        Assert.Equal([new UnshownLine(2, "/// Refreshes a block's SCADA Meta identity."), new UnshownLine(3, "FUNCTION")], table.Unshown);
+    }
+
+    [Fact]
+    public void A_pragma_that_is_not_an_attribute_and_a_comment_between_sections_are_unshown()
+    {
+        var table = StDeclarationTable.Parse(
+            "FUNCTION_BLOCK B EXTENDS A\nVAR_INPUT\n\tx : INT;\nEND_VAR\n// between\n{warning 'check'}\nVAR\n\ty : INT;\nEND_VAR", "x")!;
+
+        Assert.Equal(["FUNCTION_BLOCK EXTENDS A", "// between", "{warning 'check'}"], table.Unshown.Select(u => u.Text).ToList());
+        Assert.Empty(table.Attributes);
+    }
+
+    [Fact]
+    public void A_functions_return_type_is_drawn_so_only_its_keywords_stand_for_the_header()
+    {
+        var table = StDeclarationTable.Parse("METHOD PRIVATE M : BOOL // ok\nVAR_INPUT\n\tx : INT;\nEND_VAR", "x")!;
+
+        Assert.Equal([new UnshownLine(1, "METHOD PRIVATE")], table.Unshown);
+    }
+
+    [Fact]
+    public void Unshown_lines_are_numbered_as_file_lines()
+    {
+        var table = StDeclarationTable.Parse(UpdateMeta, "x", firstLine: 10)!;
+
+        Assert.Equal([11, 12], table.Unshown.Select(u => u.Line).ToList());
+        Assert.Equal(new LineSpan(10, 10), table.Attributes[0].Lines);
+        Assert.Equal(new LineSpan(20, 20), Row(table, "Scada").Attributes[0].Lines);
     }
 }

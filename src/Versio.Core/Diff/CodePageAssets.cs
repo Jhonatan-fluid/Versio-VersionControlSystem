@@ -97,6 +97,14 @@ public static class CodePageAssets
         .mt-caption { color: var(--cd-muted); }
         .mt-note { color: var(--cd-muted); margin: 2px 0 8px; font-size: 12px; }
         .mt-summary { margin: 0 0 8px; }
+        .mt-unshown { margin: 0 0 8px; padding: 4px 8px; background: var(--cd-hidden-bg); }
+        .mt-attrs { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; margin: 0 0 8px; }
+        .mt-attrs-label { color: var(--cd-muted); font: 600 11px var(--cd-ui); margin-right: 4px; }
+        .mt-chips { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 2px; }
+        .mt-chip { font: 11px/16px var(--cd-mono); padding: 0 6px; border: 1px solid var(--cd-border); border-radius: 3px; color: var(--cd-muted); }
+        .mt-chip-added { background: var(--cd-added-bg); color: var(--cd-added); }
+        .mt-chip-modified { background: var(--cd-hidden-bg); }
+        .mt-chip-removed { background: var(--cd-removed-bg); color: var(--cd-removed); text-decoration: line-through; }
         .mt-table { border-collapse: collapse; width: 100%; font: 13px/20px var(--cd-mono); }
         .mt-table th { text-align: left; font: 600 11px var(--cd-ui); color: var(--cd-muted);
           padding: 4px 8px; border-bottom: 1px solid var(--cd-border); }

@@ -23,6 +23,11 @@ namespace Versio.Core.Projects;
 /// change to this block's meaning its own diff does not show.
 /// </para>
 /// <para>
+/// <b>Attributes are chips, as on the desktop</b>: the object's in a strip under the title, a
+/// member's under its name, each marked added, changed or removed. A declaration change the
+/// table cannot draw at all is said in one line over it (<see cref="MemberTable.UnshownChange"/>).
+/// </para>
+/// <para>
 /// <b>Every cell goes through <see cref="CodeHtml"/></b>: escaped, and a hidden character in a
 /// name or a comment shown as a marker. A right-to-left override in a variable name misleads a
 /// reviewer as much as one in code does.
@@ -70,6 +75,20 @@ public static class MemberTableHtml
             head.Append("<p class=\"mt-summary\">");
             hidden += CodeHtml.AppendLine(head, table.ChangeSummary, SyntaxLanguage.PlainText);
             head.Append("</p>\n");
+        }
+
+        if (table.HasUnshownChange)
+        {
+            head.Append("<p class=\"mt-unshown\" role=\"note\">");
+            hidden += CodeHtml.AppendLine(head, table.UnshownChange, SyntaxLanguage.PlainText);
+            head.Append("</p>\n");
+        }
+
+        if (table.HasAttributes)
+        {
+            head.Append("<div class=\"mt-attrs\"><span class=\"mt-attrs-label\">Attributes</span>");
+            hidden += Chips(head, table.Attributes);
+            head.Append("</div>\n");
         }
 
         var columns = 4 + (table.HasDatatype ? 1 : 0) + (table.HasExternalAccess ? 1 : 0);
@@ -186,6 +205,13 @@ public static class MemberTableHtml
         }
 
         var hidden = CodeHtml.AppendLine(html, row.Name, SyntaxLanguage.PlainText);
+        if (row.HasAttributes)
+        {
+            html.Append("<span class=\"mt-chips\">");
+            hidden += Chips(html, row.Attributes);
+            html.Append("</span>");
+        }
+
         html.Append("</td>");
 
         if (table.HasDatatype)
@@ -229,6 +255,35 @@ public static class MemberTableHtml
         }
 
         return CodeHtml.AppendLine(html, value, SyntaxLanguage.PlainText);
+    }
+
+    /// <summary>Attributes as chips: <c>name = value</c>, the change as a class and in words on hover.</summary>
+    private static int Chips(StringBuilder html, IReadOnlyList<MemberAttribute> attributes)
+    {
+        var hidden = 0;
+        foreach (var a in attributes)
+        {
+            var change = a.Change switch
+            {
+                MemberChange.Added => " mt-chip-added",
+                MemberChange.Modified => " mt-chip-modified",
+                MemberChange.Removed => " mt-chip-removed",
+                _ => "",
+            };
+            html.Append("<span class=\"mt-chip").Append(change).Append("\" title=\"").Append(CodeHtml.A(a.ChangeLabel)).Append("\">");
+            hidden += CodeHtml.AppendLine(html, a.Text, SyntaxLanguage.PlainText);
+            if (a.IsModified)
+            {
+                // Old value after the new, struck, as the desktop chip draws it.
+                html.Append(" <del class=\"mt-was\">");
+                hidden += CodeHtml.AppendLine(html, a.OlderValue, SyntaxLanguage.PlainText);
+                html.Append("</del>");
+            }
+
+            html.Append("</span>");
+        }
+
+        return hidden;
     }
 
     private static int Linked(StringBuilder html, string value, string? before, string link)

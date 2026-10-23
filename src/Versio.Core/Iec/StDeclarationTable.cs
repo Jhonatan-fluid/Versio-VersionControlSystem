@@ -38,7 +38,7 @@ namespace Versio.Core.Iec;
 /// source view.
 /// </para>
 /// </remarks>
-public static class StDeclarationTable
+public static partial class StDeclarationTable
 {
     private static readonly HashSet<string> Elementary = new(StringComparer.OrdinalIgnoreCase)
     {
@@ -71,9 +71,18 @@ public static class StDeclarationTable
         var table = ParseLines(declaration, fallbackName);
         return table is null ? null : table with
         {
-            Members = table.Members.Select(r => r with { Lines = r.Lines?.Shift(firstLine) }).ToList(),
+            Members = table.Members.Select(r => r with
+            {
+                Lines = r.Lines?.Shift(firstLine),
+                Attributes = Shifted(r.Attributes, firstLine),
+            }).ToList(),
+            Attributes = Shifted(table.Attributes, firstLine),
+            Unshown = table.Unshown.Select(u => u with { Line = u.Line + firstLine }).ToList(),
         };
     }
+
+    private static IReadOnlyList<MemberAttribute> Shifted(IReadOnlyList<MemberAttribute> attributes, int lines) =>
+        attributes.Count == 0 ? attributes : attributes.Select(a => a with { Lines = a.Lines?.Shift(lines) }).ToList();
 
     /// <summary><see cref="Parse"/>, with each row's lines as zero-based indexes into the declaration.</summary>
     private static MemberTable? ParseLines(string? declaration, string fallbackName)
@@ -90,17 +99,94 @@ public static class StDeclarationTable
             return null;
         }
 
+        // Every line a row, a heading or an attribute accounts for. Whatever is left is what
+        // the table does not draw, and a comparison warns when that changes (UnshownChange).
+        var claimed = new HashSet<int>();
         var words = Words(lines[header].Code);
         var first = words[0].ToUpperInvariant();
-        return first switch
+        var table = first switch
         {
-            "PROGRAM" or "FUNCTION_BLOCK" => Block(lines, header, words, Kind.Block),
-            "FUNCTION" or "METHOD" => Block(lines, header, words, Kind.Function),
-            _ when first.StartsWith("PROPERTY", StringComparison.Ordinal) => Block(lines, header, words, Kind.Function),
-            "TYPE" => Type(lines, header, words),
-            "VAR_GLOBAL" or "NAMESPACE" => Variables(lines, header, words, fallbackName),
+            "PROGRAM" or "FUNCTION_BLOCK" => Block(lines, header, words, Kind.Block, claimed),
+            "FUNCTION" or "METHOD" => Block(lines, header, words, Kind.Function, claimed),
+            _ when first.StartsWith("PROPERTY", StringComparison.Ordinal) => Block(lines, header, words, Kind.Function, claimed),
+            "TYPE" => Type(lines, header, words, claimed),
+            "VAR_GLOBAL" or "NAMESPACE" => Variables(lines, header, words, fallbackName, claimed),
             _ => null,
         };
+
+        if (table is null)
+        {
+            return null;
+        }
+
+        // The object's own attributes are the ones written above its header, or on the header
+        // line itself. CODESYS writes them there for every kind of object; TwinCAT the same.
+        var attributes = new List<MemberAttribute>();
+        for (var i = 0; i <= header; i++)
+        {
+            if (lines[i].Attributes.Count > 0)
+            {
+                attributes.AddRange(lines[i].Attributes.Select(a => a with { Lines = new LineSpan(i, i) }));
+                claimed.Add(i);
+            }
+        }
+
+        // A block comment's text is given to the line that closes it, so the lines it opened on
+        // are drawn wherever that line is: claimed with it, or an edit to the middle of a row's
+        // multi-line comment would warn that it is not shown when it is.
+        foreach (var i in claimed.ToList())
+        {
+            for (var k = i - 1; k >= 0 && lines[k].Open; k--)
+            {
+                claimed.Add(k);
+            }
+        }
+
+        var unshown = new List<UnshownLine>();
+        for (var i = 0; i < lines.Count; i++)
+        {
+            if (lines[i].Text.Length > 0 && !claimed.Contains(i))
+            {
+                unshown.Add(new UnshownLine(i, lines[i].Text));
+            }
+        }
+
+        // The header is shown in part (the name in the title, a function's type as its Return
+        // row) and in part not (a modifier, EXTENDS, IMPLEMENTS). The part that is not stands in
+        // for the line, so a changed EXTENDS warns and a changed return type does not warn twice.
+        if (HeaderResidue(lines, header, words, first) is { } residue)
+        {
+            unshown.Add(new UnshownLine(header, residue));
+            unshown.Sort((a, b) => a.Line.CompareTo(b.Line));
+        }
+
+        return table with { Attributes = attributes, Unshown = unshown };
+    }
+
+    /// <summary>
+    /// What a block's header line says that the table does not draw, or null when it is all
+    /// drawn (or the header is not a block's, whose lines the kinds claim themselves).
+    /// </summary>
+    private static string? HeaderResidue(List<Line> lines, int header, List<string> words, string first)
+    {
+        if (first is "TYPE" or "VAR_GLOBAL" or "NAMESPACE")
+        {
+            return null;
+        }
+
+        var function = first is "FUNCTION" or "METHOD" || first.StartsWith("PROPERTY", StringComparison.Ordinal);
+        // By word, not by IndexOf: "B" is inside "FUNCTION_BLOCK".
+        var at = words.FindIndex(1, w => !Modifiers.Contains(w, StringComparer.OrdinalIgnoreCase));
+        var prefix = string.Join(' ', at < 0 ? words : words.Take(at));
+        if (function || at < 0)
+        {
+            // The type and the line's comment are the Return row; only the keywords are not.
+            return prefix;
+        }
+
+        var after = string.Join(' ', words.Skip(at + 1));
+        var comment = lines[header].Comment;
+        return Collapse($"{prefix} {after}{(comment.Length > 0 ? " // " + comment : "")}");
     }
 
     /// <summary>
@@ -156,7 +242,7 @@ public static class StDeclarationTable
     }
 
     /// <summary>A program, function block, function, method or property: sections with headings.</summary>
-    private static MemberTable? Block(List<Line> lines, int header, List<string> words, Kind kind)
+    private static MemberTable? Block(List<Line> lines, int header, List<string> words, Kind kind, HashSet<int> claimed)
     {
         var rest = words.Skip(1).Where(w => !Modifiers.Contains(w, StringComparer.OrdinalIgnoreCase)).ToList();
         if (rest.Count == 0)
@@ -164,6 +250,8 @@ public static class StDeclarationTable
             return null;
         }
 
+        // The header line stands as its residue (HeaderResidue), not as itself.
+        claimed.Add(header);
         var name = rest[0].TrimEnd(':');
         var rows = new List<MemberRow>();
 
@@ -181,18 +269,20 @@ public static class StDeclarationTable
         }
 
         string? section = null;
-        foreach (var (decl, comment, structural, from, to) in Declarations(
+        foreach (var d in Declarations(
                      lines, header + 1, line => SectionOf(line, kind) is not null || IsEnd(line, "END_VAR")))
         {
-            if (structural is not null)
+            if (d.Structural is not null)
             {
                 // Closed by END_VAR: anything before the next VAR is not a variable.
-                section = SectionOf(structural, kind);
+                section = SectionOf(d.Structural, kind);
+                claimed.Add(d.First);
                 continue;
             }
 
             if (section is null)
             {
+                // Not drawn, so not claimed: a declaration outside any section is unshown.
                 continue;
             }
 
@@ -201,14 +291,20 @@ public static class StDeclarationTable
                 AddHeading(rows, section);
             }
 
-            rows.AddRange(Rows(decl!, comment, section, new LineSpan(from, to)));
+            var made = Rows(d, section).ToList();
+            if (made.Count > 0)
+            {
+                // A declaration with no type draws no row, so its lines stay unshown.
+                claimed.UnionWith(d.Claimed);
+                rows.AddRange(made);
+            }
         }
 
         return new MemberTable { Name = name, Members = rows, IsInterface = true };
     }
 
     /// <summary>A structure, union or enumeration: one row per member, no headings.</summary>
-    private static MemberTable? Type(List<Line> lines, int header, List<string> words)
+    private static MemberTable? Type(List<Line> lines, int header, List<string> words, HashSet<int> claimed)
     {
         if (words.Count < 2)
         {
@@ -221,7 +317,7 @@ public static class StDeclarationTable
 
         if (afterColon.StartsWith('('))
         {
-            return Enumeration(lines, header, name, afterColon);
+            return Enumeration(lines, header, name, afterColon, claimed);
         }
 
         var opener = afterColon.StartsWith("STRUCT", StringComparison.OrdinalIgnoreCase) ? "STRUCT"
@@ -235,10 +331,46 @@ public static class StDeclarationTable
         }
 
         var start = lines.FindIndex(header, l => Words(l.Code).Any(w => w.Equals(opener, StringComparison.OrdinalIgnoreCase)));
-        var rows = Declarations(lines, start + 1, line => IsEnd(line, "END_" + opener))
-            .TakeWhile(d => d.Structural is null)
-            .SelectMany(d => Rows(d.Declaration!, d.Comment, "", new LineSpan(d.First, d.Last)))
-            .ToList();
+        var rows = new List<MemberRow>();
+        var end = lines.Count;
+        foreach (var d in Declarations(lines, start + 1, line => IsEnd(line, "END_" + opener)))
+        {
+            if (d.Structural is not null)
+            {
+                end = d.First;
+                break;
+            }
+
+            var made = Rows(d, "").ToList();
+            if (made.Count > 0)
+            {
+                claimed.UnionWith(d.Claimed);
+                rows.AddRange(made);
+            }
+        }
+
+        // "TYPE X :" and "STRUCT" are the title and the kind; END_STRUCT and END_TYPE close
+        // them. Anything else in those lines (a STRUCT EXTENDS) is not drawn, so the header
+        // lines are claimed only when they say nothing more than that.
+        for (var i = header; i <= start; i++)
+        {
+            var said = Words(lines[i].Code).Where(w => !w.Equals("TYPE", StringComparison.OrdinalIgnoreCase)
+                && !w.Equals(opener, StringComparison.OrdinalIgnoreCase)
+                && !string.Equals(w.TrimEnd(':'), name, StringComparison.Ordinal) && w != ":");
+            if (!said.Any() && lines[i].Comment.Length == 0)
+            {
+                claimed.Add(i);
+            }
+        }
+
+        for (var i = end; i < lines.Count; i++)
+        {
+            if (IsEnd(lines[i].Code, "END_" + opener) || IsEnd(lines[i].Code, "END_TYPE"))
+            {
+                claimed.Add(i);
+            }
+        }
+
         return new MemberTable { Name = name, Members = rows, IsDataType = true };
     }
 
@@ -246,8 +378,16 @@ public static class StDeclarationTable
     /// An enumeration's values: the name, the value it is given (as the default-value column), and
     /// the base type after the closing parenthesis as each row's type, as the IDE shows them.
     /// </summary>
-    private static MemberTable Enumeration(List<Line> lines, int header, string name, string afterColon)
+    private static MemberTable Enumeration(List<Line> lines, int header, string name, string afterColon, HashSet<int> claimed)
     {
+        // Every line from the header to END_TYPE is a value, its comment or the base type, all
+        // drawn. The one thing claimed here that is not drawn is a pragma on a single value,
+        // rare enough in an enumeration to leave unreported rather than to split this loop.
+        for (var i = header; i < lines.Count; i++)
+        {
+            claimed.Add(i);
+        }
+
         var close = afterColon.LastIndexOf(')');
         var baseType = close >= 0
             ? afterColon[(close + 1)..].Replace("END_TYPE", "", StringComparison.OrdinalIgnoreCase).Trim().Trim(';').Trim()
@@ -316,41 +456,43 @@ public static class StDeclarationTable
     /// <c>VAR_GLOBAL CONSTANT</c> beside a <c>VAR_GLOBAL</c>): a single heading over every row says
     /// nothing the title does not.
     /// </summary>
-    private static MemberTable? Variables(List<Line> lines, int header, List<string> words, string fallbackName)
+    private static MemberTable? Variables(List<Line> lines, int header, List<string> words, string fallbackName, HashSet<int> claimed)
     {
         var name = words[0].Equals("NAMESPACE", StringComparison.OrdinalIgnoreCase) && words.Count > 1
             ? words[1]
             : fallbackName;
 
-        var found = new List<(string Section, string Declaration, string Comment, LineSpan Lines)>();
+        var found = new List<(string Section, Declaration Declaration)>();
         static string First(string line) => Words(line).FirstOrDefault()?.TrimEnd(';').ToUpperInvariant() ?? "";
 
         string? section = null;
-        foreach (var (decl, comment, structural, from, to) in Declarations(
+        foreach (var d in Declarations(
                      lines, header, line => First(line) is "VAR_GLOBAL" or "END_VAR" or "NAMESPACE" or "END_NAMESPACE"))
         {
-            if (structural is not null)
+            if (d.Structural is not null)
             {
-                section = First(structural) == "VAR_GLOBAL" ? Qualified("Global", Words(structural).Skip(1)) : null;
+                section = First(d.Structural) == "VAR_GLOBAL" ? Qualified("Global", Words(d.Structural).Skip(1)) : null;
+                claimed.Add(d.First);
                 continue;
             }
 
-            if (section is not null)
+            if (section is not null && Rows(d, section).Any())
             {
-                found.Add((section, decl!, comment, new LineSpan(from, to)));
+                claimed.UnionWith(d.Claimed);
+                found.Add((section, d));
             }
         }
 
         var headed = found.Select(f => f.Section).Distinct().Count() > 1;
         var rows = new List<MemberRow>();
-        foreach (var (s, decl, comment, span) in found)
+        foreach (var (s, d) in found)
         {
             if (headed && !rows.Any(r => r.IsSectionHeading && r.Section == s))
             {
                 AddHeading(rows, s);
             }
 
-            rows.AddRange(Rows(decl, comment, s, span));
+            rows.AddRange(Rows(d, s));
         }
 
         return name.Length == 0 ? null : new MemberTable { Name = name, Members = rows, IsVariableList = true };
@@ -371,27 +513,60 @@ public static class StDeclarationTable
     /// Each comes with the zero-based indexes of its first and last line, so a row can say where
     /// it was declared (<see cref="MemberRow.Lines"/>).
     /// </para>
+    /// <para>
+    /// <b>Attributes wait for the next declaration</b>, as pending comments do, but a blank line
+    /// does not drop them: the compiler gives a pragma to the declaration after it however far
+    /// down that is. A section line does drop them, because no declaration of this section
+    /// follows; those lines stay unclaimed, so a change to them warns rather than vanishing.
+    /// A declaration's span starts at its first attribute, so a changed attribute marks its row
+    /// and a review comment on that line lands on it (2026-10-23).
+    /// </para>
     /// </remarks>
-    private static IEnumerable<(string? Declaration, string Comment, string? Structural, int First, int Last)> Declarations(
-        List<Line> lines, int from, Func<string, bool> isStructural)
+    private static IEnumerable<Declaration> Declarations(List<Line> lines, int from, Func<string, bool> isStructural)
     {
         var pending = new List<string>();
+        var pendingLines = new List<int>();
+        var attributes = new List<MemberAttribute>();
+        var attributeLines = new List<int>();
         var buffer = new StringBuilder();
         var bufferComment = "";
         var bufferFirst = 0;
         var bufferLast = 0;
+
+        Declaration Flush(string declaration)
+        {
+            var comment = bufferComment.Length > 0 ? bufferComment : string.Join(' ', pending);
+            var first = attributeLines.Count > 0 ? Math.Min(attributeLines.Min(), bufferFirst) : bufferFirst;
+            var used = Enumerable.Range(first, bufferLast - first + 1)
+                .Concat(bufferComment.Length > 0 ? [] : pendingLines);
+            var result = new Declaration(declaration, comment, null, first, bufferLast, [.. attributes], [.. used]);
+            buffer.Clear();
+            bufferComment = "";
+            attributes.Clear();
+            attributeLines.Clear();
+            return result;
+        }
+
         for (var i = Math.Max(0, from); i < lines.Count; i++)
         {
             var line = lines[i];
+            if (buffer.Length == 0 && line.Attributes.Count > 0)
+            {
+                attributes.AddRange(line.Attributes.Select(a => a with { Lines = new LineSpan(i, i) }));
+                attributeLines.Add(i);
+            }
+
             if (buffer.Length == 0 && line.Code.Length == 0)
             {
                 if (line.Comment.Length > 0)
                 {
                     pending.Add(line.Comment);
+                    pendingLines.Add(i);
                 }
                 else if (!line.Pragma)
                 {
                     pending.Clear();
+                    pendingLines.Clear();
                 }
 
                 continue;
@@ -403,20 +578,25 @@ public static class StDeclarationTable
             {
                 if (buffer.Length > 0)
                 {
-                    yield return (buffer.ToString().Trim().TrimEnd(';').Trim(),
-                        bufferComment.Length > 0 ? bufferComment : string.Join(' ', pending), null, bufferFirst, bufferLast);
-                    buffer.Clear();
-                    bufferComment = "";
+                    yield return Flush(buffer.ToString().Trim().TrimEnd(';').Trim());
                 }
 
                 pending.Clear();
-                yield return (null, "", line.Code, i, i);
+                pendingLines.Clear();
+                attributes.Clear();
+                attributeLines.Clear();
+                yield return new Declaration(null, "", line.Code, i, i, [], [i]);
                 continue;
             }
 
             if (buffer.Length == 0)
             {
                 bufferFirst = i;
+            }
+            else if (line.Attributes.Count > 0)
+            {
+                // Written inside a declaration that spans lines: still this one's.
+                attributes.AddRange(line.Attributes.Select(a => a with { Lines = new LineSpan(i, i) }));
             }
 
             bufferLast = i;
@@ -431,15 +611,35 @@ public static class StDeclarationTable
                 continue;
             }
 
-            yield return (buffer.ToString().TrimEnd().TrimEnd(';').Trim(),
-                bufferComment.Length > 0 ? bufferComment : string.Join(' ', pending), null, bufferFirst, bufferLast);
-            buffer.Clear();
-            bufferComment = "";
+            yield return Flush(buffer.ToString().TrimEnd().TrimEnd(';').Trim());
             pending.Clear();
+            pendingLines.Clear();
+            Trail(i);
+        }
+
+        // Written after this line's code, so they wait for the declaration that follows.
+        void Trail(int i)
+        {
+            if (lines[i].Trailing.Count > 0)
+            {
+                attributes.AddRange(lines[i].Trailing.Select(a => a with { Lines = new LineSpan(i, i) }));
+                attributeLines.Add(i);
+            }
         }
     }
 
-    /// <summary>One declaration's rows: <c>a, b : INT := 0</c> is two rows.</summary>
+    /// <summary>One declaration, or one section line in its place, as <see cref="Declarations"/> hands them back.</summary>
+    /// <param name="First">Its first line, from its first attribute when it has one; zero-based.</param>
+    /// <param name="Claimed">Every line it accounts for: its own, its attributes', and the comment lines above it that became its comment.</param>
+    private sealed record Declaration(
+        string? Text, string Comment, string? Structural, int First, int Last,
+        IReadOnlyList<MemberAttribute> Attributes, IReadOnlyList<int> Claimed);
+
+    /// <summary>One declaration's rows: <c>a, b : INT := 0</c> is two rows, with the same attributes.</summary>
+    private static IEnumerable<MemberRow> Rows(Declaration d, string section) =>
+        Rows(d.Text!, d.Comment, section, new LineSpan(d.First, d.Last))
+            .Select(r => d.Attributes.Count == 0 ? r : r with { Attributes = d.Attributes });
+
     private static IEnumerable<MemberRow> Rows(string declaration, string comment, string section, LineSpan lines)
     {
         var colon = TopLevel(declaration, ':', skipAssign: true);
@@ -649,7 +849,25 @@ public static class StDeclarationTable
 
     /// <summary>One source line with its comment taken out of its code.</summary>
     /// <param name="Pragma">The line held only a pragma (<c>{attribute …}</c>), which keeps a comment above it attached.</param>
-    private sealed record Line(string Code, string Comment, bool Pragma);
+    /// <param name="Attributes">The <c>{attribute 'name' := 'value'}</c> pragmas on the line. Any other pragma is not one, and is left to <paramref name="Text"/>.</param>
+    /// <param name="Text">The whole line as written, spacing collapsed: what an unclaimed line is compared by.</param>
+    /// <param name="Open">The line ends inside a block comment, whose text lands on the line that closes it.</param>
+    /// <param name="Trailing">Attributes written after code on the line (<c>x : INT; {attribute 'hide'}</c>): a pragma goes to the declaration after it, so these are the next one's.</param>
+    private sealed record Line(
+        string Code, string Comment, bool Pragma, IReadOnlyList<MemberAttribute> Attributes, string Text, bool Open,
+        IReadOnlyList<MemberAttribute> Trailing);
+
+    /// <summary>
+    /// <c>attribute 'name'</c> or <c>attribute 'name' := 'value'</c>, the inside of an attribute
+    /// pragma as IEC 61131-3 vendors write it. Anything else between braces (a conditional
+    /// <c>{IF defined(...)}</c>, a <c>{warning}</c>, a TwinCAT <c>{region}</c>) is not an
+    /// attribute and is not read as one.
+    /// </summary>
+    [System.Text.RegularExpressions.GeneratedRegex(@"^\s*attribute\s+'([^']*)'\s*(?::=\s*'([^']*)'\s*)?$", System.Text.RegularExpressions.RegexOptions.IgnoreCase)]
+    private static partial System.Text.RegularExpressions.Regex AttributePragma();
+
+    private static string Collapse(string text) =>
+        string.Join(' ', text.Split([' ', '\t'], StringSplitOptions.RemoveEmptyEntries));
 
     /// <summary>
     /// Every line split into code and comment, with block comments (which may span lines) and
@@ -672,6 +890,8 @@ public static class StDeclarationTable
             var code = new StringBuilder();
             var comment = new StringBuilder();
             var pragma = false;
+            var attributes = new List<MemberAttribute>();
+            var trailing = new List<MemberAttribute>();
             var quote = '\0';
             for (var i = 0; i < raw.Length; i++)
             {
@@ -733,6 +953,12 @@ public static class StDeclarationTable
                 {
                     var close = raw.IndexOf('}', i);
                     pragma = true;
+                    if (close > i && AttributePragma().Match(raw[(i + 1)..close]) is { Success: true } m)
+                    {
+                        (code.ToString().Trim().Length > 0 ? trailing : attributes)
+                            .Add(new MemberAttribute { Name = m.Groups[1].Value, Value = m.Groups[2].Value });
+                    }
+
                     i = close < 0 ? raw.Length : close;
                 }
                 else
@@ -747,7 +973,7 @@ public static class StDeclarationTable
             }
 
             var codeText = code.ToString().Trim();
-            result.Add(new Line(codeText, comment.ToString().Trim(), pragma && codeText.Length == 0));
+            result.Add(new Line(codeText, comment.ToString().Trim(), pragma && codeText.Length == 0, attributes, Collapse(raw), block > 0, trailing));
         }
 
         return result;

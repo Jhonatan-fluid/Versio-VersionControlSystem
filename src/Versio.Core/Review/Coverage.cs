@@ -120,6 +120,18 @@ public static partial class Coverage
         var rows = compared.Members.Where(r => !r.IsSectionHeading).ToList();
         return (side, line) =>
         {
+            var text = side == ReviewSide.New ? At(newLines, line) : At(oldLines, line);
+
+            // The object's own attributes, drawn as chips over the table: a changed one vouches
+            // for its line on the same leftover test, so the line holds nothing but attributes.
+            var chips = compared.Attributes.Where(a => (side == ReviewSide.New ? a.Lines : a.WasLines) is { } at && at.Contains(line)
+                                                       && (side == ReviewSide.New ? !a.IsRemoved : !a.IsAdded)).ToList();
+            if (chips.Count > 0)
+            {
+                return text is not null && chips.Any(a => a.Change != MemberChange.None)
+                    && Tokens(text).All(chips.SelectMany(a => Tokens(Pragma(a, side))).ToHashSet(StringComparer.Ordinal).Contains);
+            }
+
             var holders = rows.Where(r => (side == ReviewSide.New ? r.Lines : r.WasLines) is { } span && span.Contains(line)).ToList();
             if (holders.Count != 1 || holders[0].Change == MemberChange.None)
             {
@@ -127,7 +139,6 @@ public static partial class Coverage
             }
 
             var row = holders[0];
-            var text = side == ReviewSide.New ? At(newLines, line) : At(oldLines, line);
             if (text is null)
             {
                 return false;
@@ -136,11 +147,25 @@ public static partial class Coverage
             var shown = side == ReviewSide.New
                 ? new[] { row.Name, row.Datatype, row.StartValue, row.ExternalAccess, row.Comment }
                 : [row.Name, row.DatatypeBefore ?? row.Datatype, row.StartValueBefore ?? row.StartValue, row.ExternalAccessBefore ?? row.ExternalAccess, row.CommentBefore ?? row.Comment];
+            // The row's attribute lines are in its span, and its chips draw them on the side
+            // they exist on.
+            var pragmas = row.Attributes.Where(a => side == ReviewSide.New ? !a.IsRemoved : !a.IsAdded).Select(a => Pragma(a, side));
             // Whole tokens, never substrings: taking "INT" out of "INTERNAL" would leave a line
             // with a hidden change looking accounted for.
-            var displayed = shown.SelectMany(Tokens).ToHashSet(StringComparer.Ordinal);
+            var displayed = shown.Concat(pragmas).SelectMany(Tokens).ToHashSet(StringComparer.Ordinal);
             return Tokens(text).All(displayed.Contains);
         };
+    }
+
+    /// <summary>
+    /// An attribute as the pragma that writes it, on one side, so its tokens are the ones a line
+    /// spelled the usual way splits into. A pragma spelled any other way leaves tokens over and
+    /// is not vouched for, which is the safe way round.
+    /// </summary>
+    private static string Pragma(MemberAttribute a, ReviewSide side)
+    {
+        var value = side == ReviewSide.New ? a.Value : a.OlderValue;
+        return value.Length == 0 ? $"{{attribute '{a.Name}'}}" : $"{{attribute '{a.Name}' := '{value}'}}";
     }
 
     /// <summary>A line's words, split at spacing and at the declaration syntax around fields: punctuation and comment marks.</summary>

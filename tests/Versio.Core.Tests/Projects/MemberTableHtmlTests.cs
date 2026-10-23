@@ -121,4 +121,18 @@ public sealed class MemberTableHtmlTests
         Assert.Contains("mt-ref-changed", used);
         Assert.All(used, c => Assert.Matches("\\." + Regex.Escape(c) + "[\\s,{:>.\\[)]", CodePageAssets.Css));
     }
+
+    [Fact]
+    public void Attributes_are_chips_over_the_table_and_under_a_name_and_an_unshown_change_is_said()
+    {
+        var before = Table(Row("Scada", "ST_AlarmScada") with { Attributes = [new() { Name = "symbol", Value = "read" }] });
+        var after = Table(Row("Scada", "ST_AlarmScada") with { Attributes = [new() { Name = "symbol", Value = "readwrite" }] })
+            with { Attributes = [new() { Name = "linkalways" }], Unshown = [new UnshownLine(1, "/// new doc")] };
+
+        var html = MemberTableHtml.Fragment(MemberTableDiff.Compare(before, after), compared: true);
+
+        Assert.Contains("<div class=\"mt-attrs\"><span class=\"mt-attrs-label\">Attributes</span><span class=\"mt-chip mt-chip-added\" title=\"Added since the last commit\">linkalways</span></div>", html, StringComparison.Ordinal);
+        Assert.Contains("<span class=\"mt-chips\"><span class=\"mt-chip mt-chip-modified\" title=\"Changed since the last commit: was read\">symbol = readwrite <del class=\"mt-was\">read</del></span></span>", html, StringComparison.Ordinal);
+        Assert.Contains("<p class=\"mt-unshown\" role=\"note\">1 declaration change is not shown in this table (line 1)", html, StringComparison.Ordinal);
+    }
 }

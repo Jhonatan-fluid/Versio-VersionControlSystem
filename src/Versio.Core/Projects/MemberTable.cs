@@ -152,7 +152,79 @@ public sealed record MemberRow
 
     /// <summary>What the NAME column draws: the leaf, padded by depth.</summary>
     public string DisplayName => new string('\u00A0', Math.Max(0, Depth) * 2) + Name;
+
+    /// <summary>
+    /// The attributes written on this member alone (<c>{attribute 'symbol' := 'readwrite'}</c>
+    /// above <c>Scada</c>), in the order the file has them; after a comparison, removed ones too.
+    /// </summary>
+    /// <remarks>
+    /// Drawn as chips under the name rather than as a column: most members have none, and a
+    /// column empty on nearly every row takes its width from the comment (owner, 2026-10-23).
+    /// Shown as written. Which attribute wins over the block's own is the vendor's rule, and
+    /// Core does not apply it.
+    /// </remarks>
+    public IReadOnlyList<MemberAttribute> Attributes { get; init; } = [];
+
+    public bool HasAttributes => Attributes.Count > 0;
 }
+
+/// <summary>
+/// One attribute: a name and, when it has one, a value, as the file spelled them. Applies to
+/// a whole object (<see cref="MemberTable.Attributes"/>) or to one member
+/// (<see cref="MemberRow.Attributes"/>).
+/// </summary>
+/// <remarks>
+/// Opaque on purpose, like <see cref="MemberRow.Section"/>: the format fills it from whatever
+/// its language calls an attribute, and Core never interprets a name.
+/// </remarks>
+public sealed record MemberAttribute
+{
+    public string Name { get; init; } = string.Empty;
+
+    /// <summary>The value, unquoted; empty for an attribute that is only a name (<c>'hide'</c>).</summary>
+    public string Value { get; init; } = string.Empty;
+
+    /// <summary>The file lines it is written on, when the format knows them; null for a removed one.</summary>
+    public LineSpan? Lines { get; init; }
+
+    /// <summary>The lines it was written on in the OLDER version of a comparison, as <see cref="MemberRow.WasLines"/>.</summary>
+    public LineSpan? WasLines { get; init; }
+
+    /// <summary>The value it had on the older side of a comparison: <see cref="Value"/> unless it was changed.</summary>
+    public string OlderValue => ValueBefore is null ? Value : ValueBefore == "(empty)" ? "" : ValueBefore;
+
+    /// <summary>How it differs from the last commit; <see cref="MemberChange.None"/> when unknown.</summary>
+    public MemberChange Change { get; init; }
+
+    /// <summary>The committed value of a modified attribute ("(empty)" for none); null otherwise.</summary>
+    public string? ValueBefore { get; init; }
+
+    /// <summary>What the chip says: <c>symbol = readwrite</c>, or the bare name.</summary>
+    public string Text => Value.Length == 0 ? Name : $"{Name} = {Value}";
+
+    /// <summary>The chip's tooltip, so the change never rests on colour alone.</summary>
+    public string ChangeLabel => Change switch
+    {
+        MemberChange.Added => "Added since the last commit",
+        MemberChange.Modified => $"Changed since the last commit: was {ValueBefore}",
+        MemberChange.Removed => "Deleted since the last commit",
+        _ => "Attribute",
+    };
+
+    public bool IsAdded => Change == MemberChange.Added;
+
+    public bool IsModified => Change == MemberChange.Modified;
+
+    public bool IsRemoved => Change == MemberChange.Removed;
+}
+
+/// <summary>
+/// A line of a declaration the table does not draw: a doc comment above the header, an
+/// <c>EXTENDS</c>, a comment between two sections, a pragma that is not an attribute.
+/// </summary>
+/// <param name="Line">The file line, from 1.</param>
+/// <param name="Text">Its code and comment, with spacing collapsed: re-indenting is not a change worth a warning.</param>
+public sealed record UnshownLine(int Line, string Text);
 
 /// <summary>How a member row differs from the same object at the last commit.</summary>
 public enum MemberChange
@@ -219,6 +291,47 @@ public sealed record MemberTable
     public string ChangeSummary { get; init; } = string.Empty;
 
     public bool HasChangeSummary => ChangeSummary.Length > 0;
+
+    /// <summary>
+    /// The attributes written on the object itself (<c>{attribute 'linkalways'}</c> above the
+    /// header); after a comparison, removed ones too.
+    /// </summary>
+    /// <remarks>
+    /// The owner, 2026-10-23, on F_UpdateMeta: the tree said M, Raw showed one new
+    /// <c>{attribute 'linkalways'}</c>, and the Rendered tab showed nothing at all, because the
+    /// declaration reader dropped every pragma. A strip of chips under the title now.
+    /// </remarks>
+    public IReadOnlyList<MemberAttribute> Attributes { get; init; } = [];
+
+    public bool HasAttributes => Attributes.Count > 0;
+
+    /// <summary>
+    /// Every declaration line the table does not draw, so a comparison can tell when one of
+    /// them changed. Empty for a format that does not report them.
+    /// </summary>
+    public IReadOnlyList<UnshownLine> Unshown { get; init; } = [];
+
+    /// <summary>
+    /// One sentence when the declaration changed in a line this table does not draw, or empty.
+    /// Set by <see cref="MemberTableDiff.Compare"/>.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Narrower than the note the owner had removed on 2026-10-11 ("changed, but not in its
+    /// members"): that one fired for any change outside the rows, including the code under the
+    /// table, which marks itself. This fires only for the declaration's own lines, which
+    /// nothing else on the pane draws, so it is said only when the pane would otherwise hide a
+    /// change.
+    /// </para>
+    /// <para>
+    /// The bug it is the net for: F_UpdateMeta's attribute was missing from the Rendered tab
+    /// and nothing said so. Teaching the table attributes fixed that case; this catches the
+    /// next thing the table does not draw, whatever it is.
+    /// </para>
+    /// </remarks>
+    public string UnshownChange { get; init; } = string.Empty;
+
+    public bool HasUnshownChange => UnshownChange.Length > 0;
 
     /// <summary>The layout with its name: a bare "Optimized" under a title read as a status.</summary>
     public string MemoryLayoutCaption =>
