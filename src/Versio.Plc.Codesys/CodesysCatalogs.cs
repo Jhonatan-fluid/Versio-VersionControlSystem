@@ -44,6 +44,7 @@ public static class CodesysCatalogs
     private const string TextListType = "{63784cbb-9ba0-45e6-9d69-babf3f040511}";
     private const string ProjectSettingsType = "{8753fe6f-4a22-4320-8103-e553c4fc8e04}";
     private const string SymbolConfigurationType = "{21d4fe94-4123-4e23-9091-ead220afbd1f}";
+    private const string SymbolSetType = "{3cda6efc-db0e-4ab2-9926-6ef9cbceea87}";
 
     /// <summary>The library manager's fixed File-Based Storage file name.</summary>
     private const string LibrariesFile = "Libraries.json";
@@ -394,6 +395,111 @@ public static class CodesysCatalogs
         };
 
         static string Count(int n) => n == 1 ? "1 entry" : $"{n} entries";
+    }
+
+    /// <summary>
+    /// An OPC UA server's symbol set: each published variable, its members under it as the
+    /// symbol editor nests them, with the access each one is published at.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// It drew as 779 lines of archive XML (the owner, 2026-10-23, on
+    /// <c>Communication Manager/OPC UA Server/Symbol Set</c>), and what a reviewer asks of it is
+    /// two questions: what is published, and can a client write it.
+    /// </para>
+    /// <para>
+    /// <b>Three lists, joined by id and by type name.</b> <c>SymbolItems</c> are the roots, with
+    /// their full path. <c>TypeSet/TypeEntries</c> give each type its members' ids, and
+    /// <c>TypeSet/AllEntries</c> holds each member: name, type, access, and whether it is
+    /// ticked. A member of a structured type finds its own members through the type entry of
+    /// the same name. The walk keeps a visited set of type names on the current branch, so a
+    /// type that contains itself through a pointer cannot recurse forever in a background
+    /// render.
+    /// </para>
+    /// <para>
+    /// An unticked member is still drawn, with "not published" in its comment, because the
+    /// difference between ticked and unticked is exactly what a change to this file is.
+    /// </para>
+    /// </remarks>
+    public static MemberTable? SymbolSet(string relativePath, string content)
+    {
+        if (Object(relativePath, content, SymbolSetType) is not var (set, name))
+        {
+            return null;
+        }
+
+        var typeSet = Named(set, "TypeSet");
+        var childrenOfType = new Dictionary<string, List<string>>(StringComparer.Ordinal);
+        foreach (var entry in Named(typeSet, "TypeEntries")?.Elements() ?? [])
+        {
+            childrenOfType[Value(entry, "SymbolType")] =
+                Named(entry, "ChildIds")?.Elements().Select(e => e.Value.Trim()).ToList() ?? [];
+        }
+
+        var members = new Dictionary<string, XElement>(StringComparer.Ordinal);
+        foreach (var entry in Named(typeSet, "AllEntries")?.Elements() ?? [])
+        {
+            var key = entry.Elements().FirstOrDefault(e => e.Name.LocalName == "Key")?.Value.Trim();
+            var value = entry.Elements().FirstOrDefault(e => e.Name.LocalName == "Value")?.Elements().FirstOrDefault();
+            if (key is { Length: > 0 } && value is not null)
+            {
+                members[key] = value;
+            }
+        }
+
+        var rows = new List<MemberRow>();
+        foreach (var item in Named(Named(set, "SymbolSet"), "SymbolItems")?.Elements() ?? [])
+        {
+            var path = Value(item, "FullPath") is { Length: > 0 } full ? full : Value(item, "Name");
+            var type = Value(item, "SymbolType");
+            rows.Add(new MemberRow
+            {
+                Path = path,
+                Name = path,
+                Datatype = type,
+                ExternalAccess = Value(item, "AccessRights"),
+                Comment = Value(item, "Comment"),
+            });
+            AddMembers(type, path, depth: 1, [type]);
+        }
+
+        return new MemberTable
+        {
+            Name = name,
+            Members = rows,
+            NameLabel = "SYMBOL",
+            Note = "Read-only view of what this OPC UA server publishes, and the access each symbol has.",
+        };
+
+        void AddMembers(string type, string parentPath, int depth, HashSet<string> onBranch)
+        {
+            foreach (var id in childrenOfType.GetValueOrDefault(type) ?? [])
+            {
+                if (!members.TryGetValue(id, out var member))
+                {
+                    continue;
+                }
+
+                var memberName = Value(member, "Name");
+                var memberType = Value(member, "SymbolType");
+                var path = parentPath + "." + memberName;
+                rows.Add(new MemberRow
+                {
+                    Path = path,
+                    Name = memberName,
+                    Depth = depth,
+                    Datatype = memberType,
+                    ExternalAccess = Value(member, "AccessRights"),
+                    Comment = Value(member, "Checked") == "False" ? "not published" : "",
+                });
+
+                if (onBranch.Add(memberType))
+                {
+                    AddMembers(memberType, path, depth + 1, onBranch);
+                    onBranch.Remove(memberType);
+                }
+            }
+        }
     }
 
     private static void Walk(XElement key, List<MemberRow> rows, string prefix)

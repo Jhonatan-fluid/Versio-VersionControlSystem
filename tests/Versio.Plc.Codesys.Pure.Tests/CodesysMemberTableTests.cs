@@ -165,6 +165,72 @@ public sealed class CodesysMemberTableTests
     }
 
     [Fact]
+    public void An_opc_ua_symbol_set_is_each_published_variable_with_its_members_nested_and_their_access()
+    {
+        // FsLibrary.fbslib's own Symbol Set, copied 2026-10-23 from commit 77e424f: one variable,
+        // GVL_Scada.TesAlarm, published read-write with every member of its four structures.
+        const string Relative = "Device.device.xml.v3^/Plc Logic.plclogic.xml.v3^/Application.application.xml.v3^/"
+            + "Communication Manager.communicationmanager.xml.v3^/OPC UA Server.opcuacommunication.xml.v3^/Symbol Set.iecsymbolpublishing.xml.v3";
+        var text = File.ReadAllText(Path.Combine(TestPaths.Fixtures, "files", "codesys", "Symbol Set.iecsymbolpublishing.xml.v3"));
+
+        var table = Table(Relative, text);
+
+        Assert.Equal("Symbol Set", table.Name);
+        Assert.Equal(
+            ["0 GVL_Scada.TesAlarm : ST_AlarmScada", "1 Meta : ST_AlarmScadaMeta", "2 InstanceName : STRING(255)",
+             "2 InstancePath : STRING(255)", "2 Description : STRING(GVL_Alarm.DEFAULT_DESCRIPTION_LENGTH)",
+             "1 Status : ST_AlarmScadaStatus"],
+            table.Members.Take(6).Select(m => $"{m.Depth} {m.Name} : {m.Datatype}"));
+        Assert.Equal(
+            ["GVL_Scada.TesAlarm.Meta", "GVL_Scada.TesAlarm.Settings", "GVL_Scada.TesAlarm.Control.Reset"],
+            table.Members.Select(m => m.Path).Where(p => p is "GVL_Scada.TesAlarm.Meta" or "GVL_Scada.TesAlarm.Settings" or "GVL_Scada.TesAlarm.Control.Reset"));
+        Assert.All(table.Members, m => Assert.Equal("ReadWrite", m.ExternalAccess));
+        // The root and thirteen members: AllEntries' fourteenth, TesAlarm as a member of the
+        // GVL's own type entry, is the root itself and is not drawn twice.
+        Assert.Equal(14, table.Members.Count);
+    }
+
+    [Fact]
+    public void A_symbol_type_that_contains_itself_is_drawn_once_rather_than_forever()
+    {
+        // A linked-list node publishes a member of its own type. Without the branch guard the
+        // walk recurses until the stack overflows, which in a background render is a crash.
+        const string Text = """
+            __V3_META__
+            {}
+            __V3_CONTENT__
+            <?xml version="1.0" encoding="utf-8"?>
+            <Single Type="{3cda6efc-db0e-4ab2-9926-6ef9cbceea87}">
+            	<Single Name="SymbolSet"><List2 Name="SymbolItems"><Single>
+            		<Single Name="FullPath" Type="string">GVL.Head</Single>
+            		<Single Name="SymbolType" Type="string">ST_Node</Single>
+            		<Single Name="AccessRights" Type="x">Read</Single>
+            	</Single></List2></Single>
+            	<Single Name="TypeSet">
+            		<List2 Name="TypeEntries"><Single>
+            			<Single Name="SymbolType" Type="string">ST_Node</Single>
+            			<List2 Name="ChildIds"><Single Type="int">1</Single></List2>
+            		</Single></List2>
+            		<Dictionary2 Name="AllEntries"><Entry>
+            			<Key><Single Type="int">1</Single></Key>
+            			<Value><Single>
+            				<Single Name="Checked" Type="bool">False</Single>
+            				<Single Name="Name" Type="string">Next</Single>
+            				<Single Name="AccessRights" Type="x">Read</Single>
+            				<Single Name="SymbolType" Type="string">ST_Node</Single>
+            			</Single></Value>
+            		</Entry></Dictionary2>
+            	</Single>
+            </Single>
+            """;
+
+        var table = Table("Symbol Set.iecsymbolpublishing.xml.v3", Text);
+
+        Assert.Equal(["GVL.Head", "GVL.Head.Next"], table.Members.Select(m => m.Path));
+        Assert.Equal("not published", table.Members[1].Comment);
+    }
+
+    [Fact]
     public void A_symbol_configuration_is_its_settings_with_its_lists_counted_and_its_guids_left_out()
     {
         // FsLibrary.fbslib's own Symbols.symbolconfig.xml.v3, 2026-10-23, trimmed of nothing

@@ -53,7 +53,8 @@ public static class CodesysMemberTable
             // Not declarations, but lists a reviewer reads as a table all the same.
             if ((CodesysCatalogs.TextList(relativePath, content)
                  ?? CodesysCatalogs.ProjectSettings(relativePath, content)
-                 ?? CodesysCatalogs.SymbolConfiguration(relativePath, content)) is { } list)
+                 ?? CodesysCatalogs.SymbolConfiguration(relativePath, content)
+                 ?? CodesysCatalogs.SymbolSet(relativePath, content)) is { } list)
             {
                 return list;
             }

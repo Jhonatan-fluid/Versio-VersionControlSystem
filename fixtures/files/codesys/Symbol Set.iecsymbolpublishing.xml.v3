@@ -1,0 +1,780 @@
+__V3_META__
+{
+	"objectGuid": "f5fc6084-b513-4e6f-bd56-13661af28fab",
+	"objectTypeGuid": "3cda6efc-db0e-4ab2-9926-6ef9cbceea87",
+	"embeddedObjectTypeGuids": []
+}
+__V3_CONTENT__
+<?xml version="1.0" encoding="utf-8"?>
+<Single xml:space="preserve" Type="{3cda6efc-db0e-4ab2-9926-6ef9cbceea87}" Method="IArchivable">
+	<Single Name="SymbolSet" Type="{a2c901ba-9f8f-43b4-89c9-b5bece5cb6a3}" Method="IArchivable">
+		<List2 Name="SymbolItems">
+			<Single Type="{31dc8496-9150-41a8-b293-46a850261ad4}" Method="IArchivable">
+				<Single Name="VariableId" Type="{3f6f4c0a-5d84-47a8-8c43-bd06500ea50d}" Method="IArchivable">
+					<Single Name="Name" Type="string">TesAlarm</Single>
+					<Single Name="DeclarationLocation" Type="{052ef3d8-7e1a-41a7-9f17-00e2a3b02d56}" Method="IArchivable">
+						<Single Name="POUName" Type="string">GVL_Scada</Single>
+						<Single Name="LibraryId" Type="string"></Single>
+						<Single Name="ApplicationGuid" Type="System.Guid">94df8f26-b57d-4128-a10a-f8305c9fd7bc</Single>
+						<Single Name="ChecksumNoInit" Type="uint">489301842</Single>
+					</Single>
+				</Single>
+				<Single Name="Id" Type="int">1</Single>
+				<Single Name="Name" Type="string">TesAlarm</Single>
+				<Single Name="SymbolType" Type="string">ST_AlarmScada</Single>
+				<Single Name="FullPath" Type="string">GVL_Scada.TesAlarm</Single>
+				<Single Name="Comment" Type="string"></Single>
+				<Single Name="IecType" Type="{49024f35-79fd-4141-9400-33ce135a766a}" Method="IArchivable">
+					<Single Name="IsArray" Type="bool">False</Single>
+					<Single Name="IsEnum" Type="bool">False</Single>
+					<Single Name="IsUserdefType" Type="bool">True</Single>
+					<Single Name="OriginalIecType" Type="{636e1f80-e297-4d71-b65d-3ba1b13e7f92}" Method="IArchivable">
+						<Single Name="Data" Type="{052ef3d8-7e1a-41a7-9f17-00e2a3b02d56}" Method="IArchivable">
+							<Single Name="POUName" Type="string">ST_AlarmScada</Single>
+							<Single Name="LibraryId" Type="string"></Single>
+							<Single Name="ApplicationGuid" Type="System.Guid">00000000-0000-0000-0000-000000000000</Single>
+							<Single Name="ChecksumNoInit" Type="uint">1308077833</Single>
+						</Single>
+					</Single>
+					<Single Name="IsDummyOriginalIecType" Type="bool">False</Single>
+					<Single Name="BaseIecType" Type="{636e1f80-e297-4d71-b65d-3ba1b13e7f92}" Method="IArchivable">
+						<Single Name="Data" Type="{052ef3d8-7e1a-41a7-9f17-00e2a3b02d56}" Method="IArchivable">
+							<Single Name="POUName" Type="string">ST_AlarmScada</Single>
+							<Single Name="LibraryId" Type="string"></Single>
+							<Single Name="ApplicationGuid" Type="System.Guid">00000000-0000-0000-0000-000000000000</Single>
+							<Single Name="ChecksumNoInit" Type="uint">1308077833</Single>
+						</Single>
+					</Single>
+				</Single>
+				<Single Name="AccessRights" Type="{888f0c75-f718-4773-bcab-aa93730a29f0}">ReadWrite</Single>
+			</Single>
+		</List2>
+		<Single Name="NextId" Type="int">2</Single>
+	</Single>
+	<Single Name="TypeSet" Type="{fa5b6354-258c-44a5-931f-1fd9342d2b41}" Method="IArchivable">
+		<List2 Name="TypeEntries">
+			<Single Type="{55066ad6-511e-48eb-b8f4-7abe369973eb}" Method="IArchivable">
+				<Single Name="Checksum" Type="uint">1466425173</Single>
+				<Single Name="Id" Type="int">19</Single>
+				<Single Name="IecType" Type="{49024f35-79fd-4141-9400-33ce135a766a}" Method="IArchivable">
+					<Single Name="IsArray" Type="bool">False</Single>
+					<Single Name="IsEnum" Type="bool">False</Single>
+					<Single Name="IsUserdefType" Type="bool">True</Single>
+					<Single Name="OriginalIecType" Type="{636e1f80-e297-4d71-b65d-3ba1b13e7f92}" Method="IArchivable">
+						<Single Name="Data" Type="{052ef3d8-7e1a-41a7-9f17-00e2a3b02d56}" Method="IArchivable">
+							<Single Name="POUName" Type="string">GVL_Scada</Single>
+							<Single Name="LibraryId" Type="string"></Single>
+							<Single Name="ApplicationGuid" Type="System.Guid">94df8f26-b57d-4128-a10a-f8305c9fd7bc</Single>
+							<Single Name="ChecksumNoInit" Type="uint">489301842</Single>
+						</Single>
+					</Single>
+					<Single Name="IsDummyOriginalIecType" Type="bool">False</Single>
+					<Single Name="BaseIecType" Type="{636e1f80-e297-4d71-b65d-3ba1b13e7f92}" Method="IArchivable">
+						<Single Name="Data" Type="{052ef3d8-7e1a-41a7-9f17-00e2a3b02d56}" Method="IArchivable">
+							<Single Name="POUName" Type="string">GVL_Scada</Single>
+							<Single Name="LibraryId" Type="string"></Single>
+							<Single Name="ApplicationGuid" Type="System.Guid">94df8f26-b57d-4128-a10a-f8305c9fd7bc</Single>
+							<Single Name="ChecksumNoInit" Type="uint">489301842</Single>
+						</Single>
+					</Single>
+				</Single>
+				<Single Name="SymbolType" Type="string">GVL_Scada</Single>
+				<List2 Name="ChildIds">
+					<Single Type="int">20</Single>
+				</List2>
+			</Single>
+			<Single Type="{55066ad6-511e-48eb-b8f4-7abe369973eb}" Method="IArchivable">
+				<Single Name="Checksum" Type="uint">2883475241</Single>
+				<Single Name="Id" Type="int">21</Single>
+				<Single Name="IecType" Type="{49024f35-79fd-4141-9400-33ce135a766a}" Method="IArchivable">
+					<Single Name="IsArray" Type="bool">False</Single>
+					<Single Name="IsEnum" Type="bool">False</Single>
+					<Single Name="IsUserdefType" Type="bool">True</Single>
+					<Single Name="OriginalIecType" Type="{636e1f80-e297-4d71-b65d-3ba1b13e7f92}" Method="IArchivable">
+						<Single Name="Data" Type="{052ef3d8-7e1a-41a7-9f17-00e2a3b02d56}" Method="IArchivable">
+							<Single Name="POUName" Type="string">ST_AlarmScada</Single>
+							<Single Name="LibraryId" Type="string"></Single>
+							<Single Name="ApplicationGuid" Type="System.Guid">00000000-0000-0000-0000-000000000000</Single>
+							<Single Name="ChecksumNoInit" Type="uint">1308077833</Single>
+						</Single>
+					</Single>
+					<Single Name="IsDummyOriginalIecType" Type="bool">False</Single>
+					<Single Name="BaseIecType" Type="{636e1f80-e297-4d71-b65d-3ba1b13e7f92}" Method="IArchivable">
+						<Single Name="Data" Type="{052ef3d8-7e1a-41a7-9f17-00e2a3b02d56}" Method="IArchivable">
+							<Single Name="POUName" Type="string">ST_AlarmScada</Single>
+							<Single Name="LibraryId" Type="string"></Single>
+							<Single Name="ApplicationGuid" Type="System.Guid">00000000-0000-0000-0000-000000000000</Single>
+							<Single Name="ChecksumNoInit" Type="uint">1308077833</Single>
+						</Single>
+					</Single>
+				</Single>
+				<Single Name="SymbolType" Type="string">ST_AlarmScada</Single>
+				<List2 Name="ChildIds">
+					<Single Type="int">22</Single>
+					<Single Type="int">23</Single>
+					<Single Type="int">24</Single>
+					<Single Type="int">25</Single>
+				</List2>
+			</Single>
+			<Single Type="{55066ad6-511e-48eb-b8f4-7abe369973eb}" Method="IArchivable">
+				<Single Name="Checksum" Type="uint">2366072709</Single>
+				<Single Name="Id" Type="int">26</Single>
+				<Single Name="IecType" Type="{49024f35-79fd-4141-9400-33ce135a766a}" Method="IArchivable">
+					<Single Name="IsArray" Type="bool">False</Single>
+					<Single Name="IsEnum" Type="bool">False</Single>
+					<Single Name="IsUserdefType" Type="bool">True</Single>
+					<Single Name="OriginalIecType" Type="{636e1f80-e297-4d71-b65d-3ba1b13e7f92}" Method="IArchivable">
+						<Single Name="Data" Type="{052ef3d8-7e1a-41a7-9f17-00e2a3b02d56}" Method="IArchivable">
+							<Single Name="POUName" Type="string">ST_AlarmScadaMeta</Single>
+							<Single Name="LibraryId" Type="string"></Single>
+							<Single Name="ApplicationGuid" Type="System.Guid">00000000-0000-0000-0000-000000000000</Single>
+							<Single Name="ChecksumNoInit" Type="uint">1261357881</Single>
+						</Single>
+					</Single>
+					<Single Name="IsDummyOriginalIecType" Type="bool">False</Single>
+					<Single Name="BaseIecType" Type="{636e1f80-e297-4d71-b65d-3ba1b13e7f92}" Method="IArchivable">
+						<Single Name="Data" Type="{052ef3d8-7e1a-41a7-9f17-00e2a3b02d56}" Method="IArchivable">
+							<Single Name="POUName" Type="string">ST_AlarmScadaMeta</Single>
+							<Single Name="LibraryId" Type="string"></Single>
+							<Single Name="ApplicationGuid" Type="System.Guid">00000000-0000-0000-0000-000000000000</Single>
+							<Single Name="ChecksumNoInit" Type="uint">1261357881</Single>
+						</Single>
+					</Single>
+				</Single>
+				<Single Name="SymbolType" Type="string">ST_AlarmScadaMeta</Single>
+				<List2 Name="ChildIds">
+					<Single Type="int">27</Single>
+					<Single Type="int">28</Single>
+					<Single Type="int">29</Single>
+				</List2>
+			</Single>
+			<Single Type="{55066ad6-511e-48eb-b8f4-7abe369973eb}" Method="IArchivable">
+				<Single Name="Checksum" Type="uint">3664761504</Single>
+				<Single Name="Id" Type="int">30</Single>
+				<Single Name="IecType" Type="{49024f35-79fd-4141-9400-33ce135a766a}" Method="IArchivable">
+					<Single Name="IsArray" Type="bool">False</Single>
+					<Single Name="IsEnum" Type="bool">False</Single>
+					<Single Name="IsUserdefType" Type="bool">True</Single>
+					<Single Name="OriginalIecType" Type="{636e1f80-e297-4d71-b65d-3ba1b13e7f92}" Method="IArchivable">
+						<Single Name="Data" Type="{052ef3d8-7e1a-41a7-9f17-00e2a3b02d56}" Method="IArchivable">
+							<Single Name="POUName" Type="string">ST_AlarmScadaStatus</Single>
+							<Single Name="LibraryId" Type="string"></Single>
+							<Single Name="ApplicationGuid" Type="System.Guid">00000000-0000-0000-0000-000000000000</Single>
+							<Single Name="ChecksumNoInit" Type="uint">1274940749</Single>
+						</Single>
+					</Single>
+					<Single Name="IsDummyOriginalIecType" Type="bool">False</Single>
+					<Single Name="BaseIecType" Type="{636e1f80-e297-4d71-b65d-3ba1b13e7f92}" Method="IArchivable">
+						<Single Name="Data" Type="{052ef3d8-7e1a-41a7-9f17-00e2a3b02d56}" Method="IArchivable">
+							<Single Name="POUName" Type="string">ST_AlarmScadaStatus</Single>
+							<Single Name="LibraryId" Type="string"></Single>
+							<Single Name="ApplicationGuid" Type="System.Guid">00000000-0000-0000-0000-000000000000</Single>
+							<Single Name="ChecksumNoInit" Type="uint">1274940749</Single>
+						</Single>
+					</Single>
+				</Single>
+				<Single Name="SymbolType" Type="string">ST_AlarmScadaStatus</Single>
+				<List2 Name="ChildIds">
+					<Single Type="int">31</Single>
+					<Single Type="int">32</Single>
+					<Single Type="int">33</Single>
+					<Single Type="int">34</Single>
+				</List2>
+			</Single>
+			<Single Type="{55066ad6-511e-48eb-b8f4-7abe369973eb}" Method="IArchivable">
+				<Single Name="Checksum" Type="uint">2796764439</Single>
+				<Single Name="Id" Type="int">35</Single>
+				<Single Name="IecType" Type="{49024f35-79fd-4141-9400-33ce135a766a}" Method="IArchivable">
+					<Single Name="IsArray" Type="bool">False</Single>
+					<Single Name="IsEnum" Type="bool">False</Single>
+					<Single Name="IsUserdefType" Type="bool">True</Single>
+					<Single Name="OriginalIecType" Type="{636e1f80-e297-4d71-b65d-3ba1b13e7f92}" Method="IArchivable">
+						<Single Name="Data" Type="{052ef3d8-7e1a-41a7-9f17-00e2a3b02d56}" Method="IArchivable">
+							<Single Name="POUName" Type="string">ST_AlarmSettings</Single>
+							<Single Name="LibraryId" Type="string"></Single>
+							<Single Name="ApplicationGuid" Type="System.Guid">00000000-0000-0000-0000-000000000000</Single>
+							<Single Name="ChecksumNoInit" Type="uint">926335875</Single>
+						</Single>
+					</Single>
+					<Single Name="IsDummyOriginalIecType" Type="bool">False</Single>
+					<Single Name="BaseIecType" Type="{636e1f80-e297-4d71-b65d-3ba1b13e7f92}" Method="IArchivable">
+						<Single Name="Data" Type="{052ef3d8-7e1a-41a7-9f17-00e2a3b02d56}" Method="IArchivable">
+							<Single Name="POUName" Type="string">ST_AlarmSettings</Single>
+							<Single Name="LibraryId" Type="string"></Single>
+							<Single Name="ApplicationGuid" Type="System.Guid">00000000-0000-0000-0000-000000000000</Single>
+							<Single Name="ChecksumNoInit" Type="uint">926335875</Single>
+						</Single>
+					</Single>
+				</Single>
+				<Single Name="SymbolType" Type="string">ST_AlarmSettings</Single>
+				<List2 Name="ChildIds">
+					<Single Type="int">36</Single>
+				</List2>
+			</Single>
+			<Single Type="{55066ad6-511e-48eb-b8f4-7abe369973eb}" Method="IArchivable">
+				<Single Name="Checksum" Type="uint">2595281350</Single>
+				<Single Name="Id" Type="int">37</Single>
+				<Single Name="IecType" Type="{49024f35-79fd-4141-9400-33ce135a766a}" Method="IArchivable">
+					<Single Name="IsArray" Type="bool">False</Single>
+					<Single Name="IsEnum" Type="bool">False</Single>
+					<Single Name="IsUserdefType" Type="bool">True</Single>
+					<Single Name="OriginalIecType" Type="{636e1f80-e297-4d71-b65d-3ba1b13e7f92}" Method="IArchivable">
+						<Single Name="Data" Type="{052ef3d8-7e1a-41a7-9f17-00e2a3b02d56}" Method="IArchivable">
+							<Single Name="POUName" Type="string">ST_AlarmScadaControl</Single>
+							<Single Name="LibraryId" Type="string"></Single>
+							<Single Name="ApplicationGuid" Type="System.Guid">00000000-0000-0000-0000-000000000000</Single>
+							<Single Name="ChecksumNoInit" Type="uint">2546760615</Single>
+						</Single>
+					</Single>
+					<Single Name="IsDummyOriginalIecType" Type="bool">False</Single>
+					<Single Name="BaseIecType" Type="{636e1f80-e297-4d71-b65d-3ba1b13e7f92}" Method="IArchivable">
+						<Single Name="Data" Type="{052ef3d8-7e1a-41a7-9f17-00e2a3b02d56}" Method="IArchivable">
+							<Single Name="POUName" Type="string">ST_AlarmScadaControl</Single>
+							<Single Name="LibraryId" Type="string"></Single>
+							<Single Name="ApplicationGuid" Type="System.Guid">00000000-0000-0000-0000-000000000000</Single>
+							<Single Name="ChecksumNoInit" Type="uint">2546760615</Single>
+						</Single>
+					</Single>
+				</Single>
+				<Single Name="SymbolType" Type="string">ST_AlarmScadaControl</Single>
+				<List2 Name="ChildIds">
+					<Single Type="int">38</Single>
+				</List2>
+			</Single>
+		</List2>
+		<Dictionary2 Name="AllEntries">
+			<Entry>
+				<Key>
+					<Single Type="int">20</Single>
+				</Key>
+				<Value>
+					<Single Type="{ddf889a7-4541-421b-90c3-0e717eca243d}" Method="IArchivable">
+						<Single Name="DeclaringPrecompileId" Type="{052ef3d8-7e1a-41a7-9f17-00e2a3b02d56}" Method="IArchivable">
+							<Single Name="POUName" Type="string">GVL_Scada</Single>
+							<Single Name="LibraryId" Type="string"></Single>
+							<Single Name="ApplicationGuid" Type="System.Guid">94df8f26-b57d-4128-a10a-f8305c9fd7bc</Single>
+							<Single Name="ChecksumNoInit" Type="uint">489301842</Single>
+						</Single>
+						<Single Name="ParentId" Type="int">19</Single>
+						<Single Name="Checked" Type="bool">True</Single>
+						<Single Name="NameExported" Type="string">TesAlarm</Single>
+						<Single Name="Name" Type="string">TesAlarm</Single>
+						<Single Name="AccessRights" Type="{888f0c75-f718-4773-bcab-aa93730a29f0}">ReadWrite</Single>
+						<Single Name="Id" Type="int">20</Single>
+						<Single Name="IecType" Type="{49024f35-79fd-4141-9400-33ce135a766a}" Method="IArchivable">
+							<Single Name="IsArray" Type="bool">False</Single>
+							<Single Name="IsEnum" Type="bool">False</Single>
+							<Single Name="IsUserdefType" Type="bool">True</Single>
+							<Single Name="OriginalIecType" Type="{636e1f80-e297-4d71-b65d-3ba1b13e7f92}" Method="IArchivable">
+								<Single Name="Data" Type="{052ef3d8-7e1a-41a7-9f17-00e2a3b02d56}" Method="IArchivable">
+									<Single Name="POUName" Type="string">ST_AlarmScada</Single>
+									<Single Name="LibraryId" Type="string"></Single>
+									<Single Name="ApplicationGuid" Type="System.Guid">00000000-0000-0000-0000-000000000000</Single>
+									<Single Name="ChecksumNoInit" Type="uint">1308077833</Single>
+								</Single>
+							</Single>
+							<Single Name="IsDummyOriginalIecType" Type="bool">False</Single>
+							<Single Name="BaseIecType" Type="{636e1f80-e297-4d71-b65d-3ba1b13e7f92}" Method="IArchivable">
+								<Single Name="Data" Type="{052ef3d8-7e1a-41a7-9f17-00e2a3b02d56}" Method="IArchivable">
+									<Single Name="POUName" Type="string">ST_AlarmScada</Single>
+									<Single Name="LibraryId" Type="string"></Single>
+									<Single Name="ApplicationGuid" Type="System.Guid">00000000-0000-0000-0000-000000000000</Single>
+									<Single Name="ChecksumNoInit" Type="uint">1308077833</Single>
+								</Single>
+							</Single>
+						</Single>
+						<Single Name="SymbolType" Type="string">ST_AlarmScada</Single>
+					</Single>
+				</Value>
+			</Entry>
+			<Entry>
+				<Key>
+					<Single Type="int">22</Single>
+				</Key>
+				<Value>
+					<Single Type="{ddf889a7-4541-421b-90c3-0e717eca243d}" Method="IArchivable">
+						<Single Name="DeclaringPrecompileId" Type="{052ef3d8-7e1a-41a7-9f17-00e2a3b02d56}" Method="IArchivable">
+							<Single Name="POUName" Type="string">ST_AlarmScada</Single>
+							<Single Name="LibraryId" Type="string"></Single>
+							<Single Name="ApplicationGuid" Type="System.Guid">00000000-0000-0000-0000-000000000000</Single>
+							<Single Name="ChecksumNoInit" Type="uint">1308077833</Single>
+						</Single>
+						<Single Name="ParentId" Type="int">21</Single>
+						<Single Name="Checked" Type="bool">True</Single>
+						<Single Name="NameExported" Type="string">Meta</Single>
+						<Single Name="Name" Type="string">Meta</Single>
+						<Single Name="AccessRights" Type="{888f0c75-f718-4773-bcab-aa93730a29f0}">ReadWrite</Single>
+						<Single Name="Id" Type="int">22</Single>
+						<Single Name="IecType" Type="{49024f35-79fd-4141-9400-33ce135a766a}" Method="IArchivable">
+							<Single Name="IsArray" Type="bool">False</Single>
+							<Single Name="IsEnum" Type="bool">False</Single>
+							<Single Name="IsUserdefType" Type="bool">True</Single>
+							<Single Name="OriginalIecType" Type="{636e1f80-e297-4d71-b65d-3ba1b13e7f92}" Method="IArchivable">
+								<Single Name="Data" Type="{052ef3d8-7e1a-41a7-9f17-00e2a3b02d56}" Method="IArchivable">
+									<Single Name="POUName" Type="string">ST_AlarmScadaMeta</Single>
+									<Single Name="LibraryId" Type="string"></Single>
+									<Single Name="ApplicationGuid" Type="System.Guid">00000000-0000-0000-0000-000000000000</Single>
+									<Single Name="ChecksumNoInit" Type="uint">1261357881</Single>
+								</Single>
+							</Single>
+							<Single Name="IsDummyOriginalIecType" Type="bool">False</Single>
+							<Single Name="BaseIecType" Type="{636e1f80-e297-4d71-b65d-3ba1b13e7f92}" Method="IArchivable">
+								<Single Name="Data" Type="{052ef3d8-7e1a-41a7-9f17-00e2a3b02d56}" Method="IArchivable">
+									<Single Name="POUName" Type="string">ST_AlarmScadaMeta</Single>
+									<Single Name="LibraryId" Type="string"></Single>
+									<Single Name="ApplicationGuid" Type="System.Guid">00000000-0000-0000-0000-000000000000</Single>
+									<Single Name="ChecksumNoInit" Type="uint">1261357881</Single>
+								</Single>
+							</Single>
+						</Single>
+						<Single Name="SymbolType" Type="string">ST_AlarmScadaMeta</Single>
+					</Single>
+				</Value>
+			</Entry>
+			<Entry>
+				<Key>
+					<Single Type="int">23</Single>
+				</Key>
+				<Value>
+					<Single Type="{ddf889a7-4541-421b-90c3-0e717eca243d}" Method="IArchivable">
+						<Single Name="DeclaringPrecompileId" Type="{052ef3d8-7e1a-41a7-9f17-00e2a3b02d56}" Method="IArchivable">
+							<Single Name="POUName" Type="string">ST_AlarmScada</Single>
+							<Single Name="LibraryId" Type="string"></Single>
+							<Single Name="ApplicationGuid" Type="System.Guid">00000000-0000-0000-0000-000000000000</Single>
+							<Single Name="ChecksumNoInit" Type="uint">1308077833</Single>
+						</Single>
+						<Single Name="ParentId" Type="int">21</Single>
+						<Single Name="Checked" Type="bool">True</Single>
+						<Single Name="NameExported" Type="string">Status</Single>
+						<Single Name="Name" Type="string">Status</Single>
+						<Single Name="AccessRights" Type="{888f0c75-f718-4773-bcab-aa93730a29f0}">ReadWrite</Single>
+						<Single Name="Id" Type="int">23</Single>
+						<Single Name="IecType" Type="{49024f35-79fd-4141-9400-33ce135a766a}" Method="IArchivable">
+							<Single Name="IsArray" Type="bool">False</Single>
+							<Single Name="IsEnum" Type="bool">False</Single>
+							<Single Name="IsUserdefType" Type="bool">True</Single>
+							<Single Name="OriginalIecType" Type="{636e1f80-e297-4d71-b65d-3ba1b13e7f92}" Method="IArchivable">
+								<Single Name="Data" Type="{052ef3d8-7e1a-41a7-9f17-00e2a3b02d56}" Method="IArchivable">
+									<Single Name="POUName" Type="string">ST_AlarmScadaStatus</Single>
+									<Single Name="LibraryId" Type="string"></Single>
+									<Single Name="ApplicationGuid" Type="System.Guid">00000000-0000-0000-0000-000000000000</Single>
+									<Single Name="ChecksumNoInit" Type="uint">1274940749</Single>
+								</Single>
+							</Single>
+							<Single Name="IsDummyOriginalIecType" Type="bool">False</Single>
+							<Single Name="BaseIecType" Type="{636e1f80-e297-4d71-b65d-3ba1b13e7f92}" Method="IArchivable">
+								<Single Name="Data" Type="{052ef3d8-7e1a-41a7-9f17-00e2a3b02d56}" Method="IArchivable">
+									<Single Name="POUName" Type="string">ST_AlarmScadaStatus</Single>
+									<Single Name="LibraryId" Type="string"></Single>
+									<Single Name="ApplicationGuid" Type="System.Guid">00000000-0000-0000-0000-000000000000</Single>
+									<Single Name="ChecksumNoInit" Type="uint">1274940749</Single>
+								</Single>
+							</Single>
+						</Single>
+						<Single Name="SymbolType" Type="string">ST_AlarmScadaStatus</Single>
+					</Single>
+				</Value>
+			</Entry>
+			<Entry>
+				<Key>
+					<Single Type="int">24</Single>
+				</Key>
+				<Value>
+					<Single Type="{ddf889a7-4541-421b-90c3-0e717eca243d}" Method="IArchivable">
+						<Single Name="DeclaringPrecompileId" Type="{052ef3d8-7e1a-41a7-9f17-00e2a3b02d56}" Method="IArchivable">
+							<Single Name="POUName" Type="string">ST_AlarmScada</Single>
+							<Single Name="LibraryId" Type="string"></Single>
+							<Single Name="ApplicationGuid" Type="System.Guid">00000000-0000-0000-0000-000000000000</Single>
+							<Single Name="ChecksumNoInit" Type="uint">1308077833</Single>
+						</Single>
+						<Single Name="ParentId" Type="int">21</Single>
+						<Single Name="Checked" Type="bool">True</Single>
+						<Single Name="NameExported" Type="string">Settings</Single>
+						<Single Name="Name" Type="string">Settings</Single>
+						<Single Name="AccessRights" Type="{888f0c75-f718-4773-bcab-aa93730a29f0}">ReadWrite</Single>
+						<Single Name="Id" Type="int">24</Single>
+						<Single Name="IecType" Type="{49024f35-79fd-4141-9400-33ce135a766a}" Method="IArchivable">
+							<Single Name="IsArray" Type="bool">False</Single>
+							<Single Name="IsEnum" Type="bool">False</Single>
+							<Single Name="IsUserdefType" Type="bool">True</Single>
+							<Single Name="OriginalIecType" Type="{636e1f80-e297-4d71-b65d-3ba1b13e7f92}" Method="IArchivable">
+								<Single Name="Data" Type="{052ef3d8-7e1a-41a7-9f17-00e2a3b02d56}" Method="IArchivable">
+									<Single Name="POUName" Type="string">ST_AlarmSettings</Single>
+									<Single Name="LibraryId" Type="string"></Single>
+									<Single Name="ApplicationGuid" Type="System.Guid">00000000-0000-0000-0000-000000000000</Single>
+									<Single Name="ChecksumNoInit" Type="uint">926335875</Single>
+								</Single>
+							</Single>
+							<Single Name="IsDummyOriginalIecType" Type="bool">False</Single>
+							<Single Name="BaseIecType" Type="{636e1f80-e297-4d71-b65d-3ba1b13e7f92}" Method="IArchivable">
+								<Single Name="Data" Type="{052ef3d8-7e1a-41a7-9f17-00e2a3b02d56}" Method="IArchivable">
+									<Single Name="POUName" Type="string">ST_AlarmSettings</Single>
+									<Single Name="LibraryId" Type="string"></Single>
+									<Single Name="ApplicationGuid" Type="System.Guid">00000000-0000-0000-0000-000000000000</Single>
+									<Single Name="ChecksumNoInit" Type="uint">926335875</Single>
+								</Single>
+							</Single>
+						</Single>
+						<Single Name="SymbolType" Type="string">ST_AlarmSettings</Single>
+					</Single>
+				</Value>
+			</Entry>
+			<Entry>
+				<Key>
+					<Single Type="int">25</Single>
+				</Key>
+				<Value>
+					<Single Type="{ddf889a7-4541-421b-90c3-0e717eca243d}" Method="IArchivable">
+						<Single Name="DeclaringPrecompileId" Type="{052ef3d8-7e1a-41a7-9f17-00e2a3b02d56}" Method="IArchivable">
+							<Single Name="POUName" Type="string">ST_AlarmScada</Single>
+							<Single Name="LibraryId" Type="string"></Single>
+							<Single Name="ApplicationGuid" Type="System.Guid">00000000-0000-0000-0000-000000000000</Single>
+							<Single Name="ChecksumNoInit" Type="uint">1308077833</Single>
+						</Single>
+						<Single Name="ParentId" Type="int">21</Single>
+						<Single Name="Checked" Type="bool">True</Single>
+						<Single Name="NameExported" Type="string">Control</Single>
+						<Single Name="Name" Type="string">Control</Single>
+						<Single Name="AccessRights" Type="{888f0c75-f718-4773-bcab-aa93730a29f0}">ReadWrite</Single>
+						<Single Name="Id" Type="int">25</Single>
+						<Single Name="IecType" Type="{49024f35-79fd-4141-9400-33ce135a766a}" Method="IArchivable">
+							<Single Name="IsArray" Type="bool">False</Single>
+							<Single Name="IsEnum" Type="bool">False</Single>
+							<Single Name="IsUserdefType" Type="bool">True</Single>
+							<Single Name="OriginalIecType" Type="{636e1f80-e297-4d71-b65d-3ba1b13e7f92}" Method="IArchivable">
+								<Single Name="Data" Type="{052ef3d8-7e1a-41a7-9f17-00e2a3b02d56}" Method="IArchivable">
+									<Single Name="POUName" Type="string">ST_AlarmScadaControl</Single>
+									<Single Name="LibraryId" Type="string"></Single>
+									<Single Name="ApplicationGuid" Type="System.Guid">00000000-0000-0000-0000-000000000000</Single>
+									<Single Name="ChecksumNoInit" Type="uint">2546760615</Single>
+								</Single>
+							</Single>
+							<Single Name="IsDummyOriginalIecType" Type="bool">False</Single>
+							<Single Name="BaseIecType" Type="{636e1f80-e297-4d71-b65d-3ba1b13e7f92}" Method="IArchivable">
+								<Single Name="Data" Type="{052ef3d8-7e1a-41a7-9f17-00e2a3b02d56}" Method="IArchivable">
+									<Single Name="POUName" Type="string">ST_AlarmScadaControl</Single>
+									<Single Name="LibraryId" Type="string"></Single>
+									<Single Name="ApplicationGuid" Type="System.Guid">00000000-0000-0000-0000-000000000000</Single>
+									<Single Name="ChecksumNoInit" Type="uint">2546760615</Single>
+								</Single>
+							</Single>
+						</Single>
+						<Single Name="SymbolType" Type="string">ST_AlarmScadaControl</Single>
+					</Single>
+				</Value>
+			</Entry>
+			<Entry>
+				<Key>
+					<Single Type="int">27</Single>
+				</Key>
+				<Value>
+					<Single Type="{ddf889a7-4541-421b-90c3-0e717eca243d}" Method="IArchivable">
+						<Single Name="DeclaringPrecompileId" Type="{052ef3d8-7e1a-41a7-9f17-00e2a3b02d56}" Method="IArchivable">
+							<Single Name="POUName" Type="string">ST_AlarmScadaMeta</Single>
+							<Single Name="LibraryId" Type="string"></Single>
+							<Single Name="ApplicationGuid" Type="System.Guid">00000000-0000-0000-0000-000000000000</Single>
+							<Single Name="ChecksumNoInit" Type="uint">1261357881</Single>
+						</Single>
+						<Single Name="ParentId" Type="int">26</Single>
+						<Single Name="Checked" Type="bool">True</Single>
+						<Single Name="NameExported" Type="string">InstanceName</Single>
+						<Single Name="Name" Type="string">InstanceName</Single>
+						<Single Name="AccessRights" Type="{888f0c75-f718-4773-bcab-aa93730a29f0}">ReadWrite</Single>
+						<Single Name="Id" Type="int">27</Single>
+						<Single Name="IecType" Type="{49024f35-79fd-4141-9400-33ce135a766a}" Method="IArchivable">
+							<Single Name="IsArray" Type="bool">False</Single>
+							<Single Name="IsEnum" Type="bool">False</Single>
+							<Single Name="IsUserdefType" Type="bool">False</Single>
+							<Single Name="OriginalIecType" Type="{636e1f80-e297-4d71-b65d-3ba1b13e7f92}" Method="IArchivable">
+								<Single Name="Data" Type="string">STRING(255)</Single>
+							</Single>
+							<Single Name="IsDummyOriginalIecType" Type="bool">False</Single>
+							<Single Name="BaseIecType" Type="{636e1f80-e297-4d71-b65d-3ba1b13e7f92}" Method="IArchivable">
+								<Single Name="Data" Type="string">STRING(255)</Single>
+							</Single>
+						</Single>
+						<Single Name="SymbolType" Type="string">STRING(255)</Single>
+					</Single>
+				</Value>
+			</Entry>
+			<Entry>
+				<Key>
+					<Single Type="int">28</Single>
+				</Key>
+				<Value>
+					<Single Type="{ddf889a7-4541-421b-90c3-0e717eca243d}" Method="IArchivable">
+						<Single Name="DeclaringPrecompileId" Type="{052ef3d8-7e1a-41a7-9f17-00e2a3b02d56}" Method="IArchivable">
+							<Single Name="POUName" Type="string">ST_AlarmScadaMeta</Single>
+							<Single Name="LibraryId" Type="string"></Single>
+							<Single Name="ApplicationGuid" Type="System.Guid">00000000-0000-0000-0000-000000000000</Single>
+							<Single Name="ChecksumNoInit" Type="uint">1261357881</Single>
+						</Single>
+						<Single Name="ParentId" Type="int">26</Single>
+						<Single Name="Checked" Type="bool">True</Single>
+						<Single Name="NameExported" Type="string">InstancePath</Single>
+						<Single Name="Name" Type="string">InstancePath</Single>
+						<Single Name="AccessRights" Type="{888f0c75-f718-4773-bcab-aa93730a29f0}">ReadWrite</Single>
+						<Single Name="Id" Type="int">28</Single>
+						<Single Name="IecType" Type="{49024f35-79fd-4141-9400-33ce135a766a}" Method="IArchivable">
+							<Single Name="IsArray" Type="bool">False</Single>
+							<Single Name="IsEnum" Type="bool">False</Single>
+							<Single Name="IsUserdefType" Type="bool">False</Single>
+							<Single Name="OriginalIecType" Type="{636e1f80-e297-4d71-b65d-3ba1b13e7f92}" Method="IArchivable">
+								<Single Name="Data" Type="string">STRING(255)</Single>
+							</Single>
+							<Single Name="IsDummyOriginalIecType" Type="bool">False</Single>
+							<Single Name="BaseIecType" Type="{636e1f80-e297-4d71-b65d-3ba1b13e7f92}" Method="IArchivable">
+								<Single Name="Data" Type="string">STRING(255)</Single>
+							</Single>
+						</Single>
+						<Single Name="SymbolType" Type="string">STRING(255)</Single>
+					</Single>
+				</Value>
+			</Entry>
+			<Entry>
+				<Key>
+					<Single Type="int">29</Single>
+				</Key>
+				<Value>
+					<Single Type="{ddf889a7-4541-421b-90c3-0e717eca243d}" Method="IArchivable">
+						<Single Name="DeclaringPrecompileId" Type="{052ef3d8-7e1a-41a7-9f17-00e2a3b02d56}" Method="IArchivable">
+							<Single Name="POUName" Type="string">ST_AlarmScadaMeta</Single>
+							<Single Name="LibraryId" Type="string"></Single>
+							<Single Name="ApplicationGuid" Type="System.Guid">00000000-0000-0000-0000-000000000000</Single>
+							<Single Name="ChecksumNoInit" Type="uint">1261357881</Single>
+						</Single>
+						<Single Name="ParentId" Type="int">26</Single>
+						<Single Name="Checked" Type="bool">True</Single>
+						<Single Name="NameExported" Type="string">Description</Single>
+						<Single Name="Name" Type="string">Description</Single>
+						<Single Name="AccessRights" Type="{888f0c75-f718-4773-bcab-aa93730a29f0}">ReadWrite</Single>
+						<Single Name="Id" Type="int">29</Single>
+						<Single Name="IecType" Type="{49024f35-79fd-4141-9400-33ce135a766a}" Method="IArchivable">
+							<Single Name="IsArray" Type="bool">False</Single>
+							<Single Name="IsEnum" Type="bool">False</Single>
+							<Single Name="IsUserdefType" Type="bool">False</Single>
+							<Single Name="OriginalIecType" Type="{636e1f80-e297-4d71-b65d-3ba1b13e7f92}" Method="IArchivable">
+								<Single Name="Data" Type="string">STRING(GVL_Alarm.DEFAULT_DESCRIPTION_LENGTH)</Single>
+							</Single>
+							<Single Name="IsDummyOriginalIecType" Type="bool">False</Single>
+							<Single Name="BaseIecType" Type="{636e1f80-e297-4d71-b65d-3ba1b13e7f92}" Method="IArchivable">
+								<Single Name="Data" Type="string">STRING(GVL_Alarm.DEFAULT_DESCRIPTION_LENGTH)</Single>
+							</Single>
+						</Single>
+						<Single Name="SymbolType" Type="string">STRING(GVL_Alarm.DEFAULT_DESCRIPTION_LENGTH)</Single>
+					</Single>
+				</Value>
+			</Entry>
+			<Entry>
+				<Key>
+					<Single Type="int">31</Single>
+				</Key>
+				<Value>
+					<Single Type="{ddf889a7-4541-421b-90c3-0e717eca243d}" Method="IArchivable">
+						<Single Name="DeclaringPrecompileId" Type="{052ef3d8-7e1a-41a7-9f17-00e2a3b02d56}" Method="IArchivable">
+							<Single Name="POUName" Type="string">ST_AlarmScadaStatus</Single>
+							<Single Name="LibraryId" Type="string"></Single>
+							<Single Name="ApplicationGuid" Type="System.Guid">00000000-0000-0000-0000-000000000000</Single>
+							<Single Name="ChecksumNoInit" Type="uint">1274940749</Single>
+						</Single>
+						<Single Name="ParentId" Type="int">30</Single>
+						<Single Name="Checked" Type="bool">True</Single>
+						<Single Name="NameExported" Type="string">Active</Single>
+						<Single Name="Name" Type="string">Active</Single>
+						<Single Name="AccessRights" Type="{888f0c75-f718-4773-bcab-aa93730a29f0}">ReadWrite</Single>
+						<Single Name="Id" Type="int">31</Single>
+						<Single Name="IecType" Type="{49024f35-79fd-4141-9400-33ce135a766a}" Method="IArchivable">
+							<Single Name="IsArray" Type="bool">False</Single>
+							<Single Name="IsEnum" Type="bool">False</Single>
+							<Single Name="IsUserdefType" Type="bool">False</Single>
+							<Single Name="OriginalIecType" Type="{636e1f80-e297-4d71-b65d-3ba1b13e7f92}" Method="IArchivable">
+								<Single Name="Data" Type="string">BOOL</Single>
+							</Single>
+							<Single Name="IsDummyOriginalIecType" Type="bool">False</Single>
+							<Single Name="BaseIecType" Type="{636e1f80-e297-4d71-b65d-3ba1b13e7f92}" Method="IArchivable">
+								<Single Name="Data" Type="string">BOOL</Single>
+							</Single>
+						</Single>
+						<Single Name="SymbolType" Type="string">BOOL</Single>
+					</Single>
+				</Value>
+			</Entry>
+			<Entry>
+				<Key>
+					<Single Type="int">32</Single>
+				</Key>
+				<Value>
+					<Single Type="{ddf889a7-4541-421b-90c3-0e717eca243d}" Method="IArchivable">
+						<Single Name="DeclaringPrecompileId" Type="{052ef3d8-7e1a-41a7-9f17-00e2a3b02d56}" Method="IArchivable">
+							<Single Name="POUName" Type="string">ST_AlarmScadaStatus</Single>
+							<Single Name="LibraryId" Type="string"></Single>
+							<Single Name="ApplicationGuid" Type="System.Guid">00000000-0000-0000-0000-000000000000</Single>
+							<Single Name="ChecksumNoInit" Type="uint">1274940749</Single>
+						</Single>
+						<Single Name="ParentId" Type="int">30</Single>
+						<Single Name="Checked" Type="bool">True</Single>
+						<Single Name="NameExported" Type="string">Enabled</Single>
+						<Single Name="Name" Type="string">Enabled</Single>
+						<Single Name="AccessRights" Type="{888f0c75-f718-4773-bcab-aa93730a29f0}">ReadWrite</Single>
+						<Single Name="Id" Type="int">32</Single>
+						<Single Name="IecType" Type="{49024f35-79fd-4141-9400-33ce135a766a}" Method="IArchivable">
+							<Single Name="IsArray" Type="bool">False</Single>
+							<Single Name="IsEnum" Type="bool">False</Single>
+							<Single Name="IsUserdefType" Type="bool">False</Single>
+							<Single Name="OriginalIecType" Type="{636e1f80-e297-4d71-b65d-3ba1b13e7f92}" Method="IArchivable">
+								<Single Name="Data" Type="string">BOOL</Single>
+							</Single>
+							<Single Name="IsDummyOriginalIecType" Type="bool">False</Single>
+							<Single Name="BaseIecType" Type="{636e1f80-e297-4d71-b65d-3ba1b13e7f92}" Method="IArchivable">
+								<Single Name="Data" Type="string">BOOL</Single>
+							</Single>
+						</Single>
+						<Single Name="SymbolType" Type="string">BOOL</Single>
+					</Single>
+				</Value>
+			</Entry>
+			<Entry>
+				<Key>
+					<Single Type="int">33</Single>
+				</Key>
+				<Value>
+					<Single Type="{ddf889a7-4541-421b-90c3-0e717eca243d}" Method="IArchivable">
+						<Single Name="DeclaringPrecompileId" Type="{052ef3d8-7e1a-41a7-9f17-00e2a3b02d56}" Method="IArchivable">
+							<Single Name="POUName" Type="string">ST_AlarmScadaStatus</Single>
+							<Single Name="LibraryId" Type="string"></Single>
+							<Single Name="ApplicationGuid" Type="System.Guid">00000000-0000-0000-0000-000000000000</Single>
+							<Single Name="ChecksumNoInit" Type="uint">1274940749</Single>
+						</Single>
+						<Single Name="ParentId" Type="int">30</Single>
+						<Single Name="Checked" Type="bool">True</Single>
+						<Single Name="NameExported" Type="string">Suppressed</Single>
+						<Single Name="Name" Type="string">Suppressed</Single>
+						<Single Name="AccessRights" Type="{888f0c75-f718-4773-bcab-aa93730a29f0}">ReadWrite</Single>
+						<Single Name="Id" Type="int">33</Single>
+						<Single Name="IecType" Type="{49024f35-79fd-4141-9400-33ce135a766a}" Method="IArchivable">
+							<Single Name="IsArray" Type="bool">False</Single>
+							<Single Name="IsEnum" Type="bool">False</Single>
+							<Single Name="IsUserdefType" Type="bool">False</Single>
+							<Single Name="OriginalIecType" Type="{636e1f80-e297-4d71-b65d-3ba1b13e7f92}" Method="IArchivable">
+								<Single Name="Data" Type="string">BOOL</Single>
+							</Single>
+							<Single Name="IsDummyOriginalIecType" Type="bool">False</Single>
+							<Single Name="BaseIecType" Type="{636e1f80-e297-4d71-b65d-3ba1b13e7f92}" Method="IArchivable">
+								<Single Name="Data" Type="string">BOOL</Single>
+							</Single>
+						</Single>
+						<Single Name="SymbolType" Type="string">BOOL</Single>
+					</Single>
+				</Value>
+			</Entry>
+			<Entry>
+				<Key>
+					<Single Type="int">34</Single>
+				</Key>
+				<Value>
+					<Single Type="{ddf889a7-4541-421b-90c3-0e717eca243d}" Method="IArchivable">
+						<Single Name="DeclaringPrecompileId" Type="{052ef3d8-7e1a-41a7-9f17-00e2a3b02d56}" Method="IArchivable">
+							<Single Name="POUName" Type="string">ST_AlarmScadaStatus</Single>
+							<Single Name="LibraryId" Type="string"></Single>
+							<Single Name="ApplicationGuid" Type="System.Guid">00000000-0000-0000-0000-000000000000</Single>
+							<Single Name="ChecksumNoInit" Type="uint">1274940749</Single>
+						</Single>
+						<Single Name="ParentId" Type="int">30</Single>
+						<Single Name="Checked" Type="bool">True</Single>
+						<Single Name="NameExported" Type="string">Condition</Single>
+						<Single Name="Name" Type="string">Condition</Single>
+						<Single Name="AccessRights" Type="{888f0c75-f718-4773-bcab-aa93730a29f0}">ReadWrite</Single>
+						<Single Name="Id" Type="int">34</Single>
+						<Single Name="IecType" Type="{49024f35-79fd-4141-9400-33ce135a766a}" Method="IArchivable">
+							<Single Name="IsArray" Type="bool">False</Single>
+							<Single Name="IsEnum" Type="bool">False</Single>
+							<Single Name="IsUserdefType" Type="bool">False</Single>
+							<Single Name="OriginalIecType" Type="{636e1f80-e297-4d71-b65d-3ba1b13e7f92}" Method="IArchivable">
+								<Single Name="Data" Type="string">BOOL</Single>
+							</Single>
+							<Single Name="IsDummyOriginalIecType" Type="bool">False</Single>
+							<Single Name="BaseIecType" Type="{636e1f80-e297-4d71-b65d-3ba1b13e7f92}" Method="IArchivable">
+								<Single Name="Data" Type="string">BOOL</Single>
+							</Single>
+						</Single>
+						<Single Name="SymbolType" Type="string">BOOL</Single>
+					</Single>
+				</Value>
+			</Entry>
+			<Entry>
+				<Key>
+					<Single Type="int">36</Single>
+				</Key>
+				<Value>
+					<Single Type="{ddf889a7-4541-421b-90c3-0e717eca243d}" Method="IArchivable">
+						<Single Name="DeclaringPrecompileId" Type="{052ef3d8-7e1a-41a7-9f17-00e2a3b02d56}" Method="IArchivable">
+							<Single Name="POUName" Type="string">ST_AlarmSettings</Single>
+							<Single Name="LibraryId" Type="string"></Single>
+							<Single Name="ApplicationGuid" Type="System.Guid">00000000-0000-0000-0000-000000000000</Single>
+							<Single Name="ChecksumNoInit" Type="uint">926335875</Single>
+						</Single>
+						<Single Name="ParentId" Type="int">35</Single>
+						<Single Name="Checked" Type="bool">True</Single>
+						<Single Name="NameExported" Type="string">Information</Single>
+						<Single Name="Name" Type="string">Information</Single>
+						<Single Name="AccessRights" Type="{888f0c75-f718-4773-bcab-aa93730a29f0}">ReadWrite</Single>
+						<Single Name="Id" Type="int">36</Single>
+						<Single Name="IecType" Type="{49024f35-79fd-4141-9400-33ce135a766a}" Method="IArchivable">
+							<Single Name="IsArray" Type="bool">False</Single>
+							<Single Name="IsEnum" Type="bool">False</Single>
+							<Single Name="IsUserdefType" Type="bool">False</Single>
+							<Single Name="OriginalIecType" Type="{636e1f80-e297-4d71-b65d-3ba1b13e7f92}" Method="IArchivable">
+								<Single Name="Data" Type="string">STRING(GVL_Alarm.DEFAULT_INFORMATION_LENGTH)</Single>
+							</Single>
+							<Single Name="IsDummyOriginalIecType" Type="bool">False</Single>
+							<Single Name="BaseIecType" Type="{636e1f80-e297-4d71-b65d-3ba1b13e7f92}" Method="IArchivable">
+								<Single Name="Data" Type="string">STRING(GVL_Alarm.DEFAULT_INFORMATION_LENGTH)</Single>
+							</Single>
+						</Single>
+						<Single Name="SymbolType" Type="string">STRING(GVL_Alarm.DEFAULT_INFORMATION_LENGTH)</Single>
+					</Single>
+				</Value>
+			</Entry>
+			<Entry>
+				<Key>
+					<Single Type="int">38</Single>
+				</Key>
+				<Value>
+					<Single Type="{ddf889a7-4541-421b-90c3-0e717eca243d}" Method="IArchivable">
+						<Single Name="DeclaringPrecompileId" Type="{052ef3d8-7e1a-41a7-9f17-00e2a3b02d56}" Method="IArchivable">
+							<Single Name="POUName" Type="string">ST_AlarmScadaControl</Single>
+							<Single Name="LibraryId" Type="string"></Single>
+							<Single Name="ApplicationGuid" Type="System.Guid">00000000-0000-0000-0000-000000000000</Single>
+							<Single Name="ChecksumNoInit" Type="uint">2546760615</Single>
+						</Single>
+						<Single Name="ParentId" Type="int">37</Single>
+						<Single Name="Checked" Type="bool">True</Single>
+						<Single Name="NameExported" Type="string">Reset</Single>
+						<Single Name="Name" Type="string">Reset</Single>
+						<Single Name="AccessRights" Type="{888f0c75-f718-4773-bcab-aa93730a29f0}">ReadWrite</Single>
+						<Single Name="Id" Type="int">38</Single>
+						<Single Name="IecType" Type="{49024f35-79fd-4141-9400-33ce135a766a}" Method="IArchivable">
+							<Single Name="IsArray" Type="bool">False</Single>
+							<Single Name="IsEnum" Type="bool">False</Single>
+							<Single Name="IsUserdefType" Type="bool">False</Single>
+							<Single Name="OriginalIecType" Type="{636e1f80-e297-4d71-b65d-3ba1b13e7f92}" Method="IArchivable">
+								<Single Name="Data" Type="string">BOOL</Single>
+							</Single>
+							<Single Name="IsDummyOriginalIecType" Type="bool">False</Single>
+							<Single Name="BaseIecType" Type="{636e1f80-e297-4d71-b65d-3ba1b13e7f92}" Method="IArchivable">
+								<Single Name="Data" Type="string">BOOL</Single>
+							</Single>
+						</Single>
+						<Single Name="SymbolType" Type="string">BOOL</Single>
+					</Single>
+				</Value>
+			</Entry>
+		</Dictionary2>
+		<Single Name="NextId" Type="int">39</Single>
+	</Single>
+	<Single Name="UseUsermanagmentForAccessRights" Type="bool">False</Single>
+	<Single Name="NodeIdAsString" Type="bool">False</Single>
+	<Single Name="AlarmGroupSet" Type="{f6746a78-f6da-4e10-acf4-02c1596ace7e}" Method="IArchivable">
+		<List2 Name="AlarmGroupEntries" />
+	</Single>
+</Single>
