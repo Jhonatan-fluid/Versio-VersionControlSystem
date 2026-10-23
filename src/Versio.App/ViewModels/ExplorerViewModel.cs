@@ -150,7 +150,32 @@ public sealed class ExplorerViewModel : ObservableObject
         }
     }
 
+    /// <summary>Reload the tree; returns once the newest refresh, not just this one, is done.</summary>
+    /// <remarks>
+    /// A refresh that a newer one supersedes stops early by design, and before 2026-10-23 its
+    /// caller got control back then, with the tree still empty or stale. Showing the panel or
+    /// a file-watcher event starts that newer refresh, so <c>OpenObjectAsync</c>, which awaits
+    /// this to find a type link's target, sometimes found nothing and jumped to the Project
+    /// panel. That was the flake in
+    /// <c>From_the_explorer_a_link_selects_in_the_explorer_and_stays_there</c>, 2 failures in 8.
+    /// Each call now follows the chain to the latest refresh before it returns.
+    /// </remarks>
     public async Task RefreshAsync()
+    {
+        var mine = RefreshOnceAsync();
+        _latest = mine;
+        await mine.ConfigureAwait(true);
+
+        while (!ReferenceEquals(_latest, mine))
+        {
+            mine = _latest;
+            await mine.ConfigureAwait(true);
+        }
+    }
+
+    private Task _latest = Task.CompletedTask;
+
+    private async Task RefreshOnceAsync()
     {
         var generation = ++_generation;
 
