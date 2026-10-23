@@ -69,12 +69,25 @@ values are left out because they are CODESYS's references to its own generated o
 are counted, not listed, because the only configuration in hand selects nothing, so the shape of
 a selected variable was never seen. The note under the table says so.
 
+**Then the library moved its symbols to OPC UA** (its commit `77e424f`): `Symbols` went, and
+`Communication Manager → OPC UA Server → Symbol Set` came, and the Symbol Set drew as 779 lines
+of XML. `CodesysCatalogs.SymbolSet` now draws each published variable with its members nested
+under it and the access each is published at. The file keeps three lists that it joins:
+`SymbolItems` (the roots), `TypeEntries` (each type's member ids) and `AllEntries` (each member),
+and a member of a structured type finds its own members by the type's name. A type that contains
+itself is walked once per branch. An unticked member is drawn with "not published", because
+ticking is what a change to this file usually is. The Communication Manager, the OPC UA Server,
+Plc Logic and the Application have **no settings in their files at all**: each is an empty
+archive element. They still show their raw XML, as Plc Logic always has. A "no settings of its
+own" view belongs in the shell's render choice, `ShellViewModel.cs`, which another session had
+uncommitted edits in, so it was left as a follow-up.
+
 **Evidence.** `A_library_is_drawn_as_codesys_draws_it_the_pou_pool_apart_from_the_device_tree`
 (CODESYS pure) uses the library's real file list. Setting `View = null` in `Describe` turns it
 red, along with the fixture's tree test, which now reads `Devices → Device`.
 `A_manifest_that_names_its_panes_is_grouped_by_them_and_not_by_the_pool_guess` (Core) goes red
 when the builder is put back to the guess alone. The persistent-list and symbol tests each went
-red with their branch removed.
+red with their branch removed, and so did the Symbol Set test with its reader unhooked or its nesting cut; the self-containing type's test went red with the branch guard swapped for a depth cap.
 
 **Not done.** The App and web viewer were not looked at after the change: the tree's two new
 levels and the two tables are tested, not seen. The dev build on `_attrcheck` was closed to
