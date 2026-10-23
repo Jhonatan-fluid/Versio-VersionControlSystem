@@ -97,7 +97,14 @@ public sealed record PullFileList(IReadOnlyList<PullFile> Files, bool Truncated)
 public sealed record PullLabel(string Name, string Color);
 
 /// <summary>A reviewer's standing: REQUESTED, or their latest APPROVED, CHANGES_REQUESTED, COMMENTED or DISMISSED review.</summary>
-public sealed record PullReviewer(string Login, string State);
+/// <param name="IsTeam">A requested team rather than a person; teams cannot be withdrawn by login.</param>
+public sealed record PullReviewer(string Login, string State, bool IsTeam = false, string? AvatarUrl = null);
+
+/// <summary>One kind of reaction on a body, a comment or a review: GitHub's content word, how many, and whether the viewer is among them.</summary>
+public sealed record ReactionGroup(string Content, int Count, bool ViewerHasReacted);
+
+/// <summary>What a timeline entry points at elsewhere: an issue or pull request that mentioned this one.</summary>
+public sealed record TimelineReference(int Number, string Title, string Repository, string? Url, bool IsPull, string State);
 
 /// <summary>
 /// A pull request's live state, as of the read: what the page polls to notice that the review's
@@ -137,6 +144,54 @@ public sealed record PullSummary(
 
     /// <summary>GitHub's own word on whether the viewer may edit the pull request (title, body, base, state, labels).</summary>
     public bool ViewerCanUpdate { get; init; }
+
+    // ---- what GitHub's page shows in its header and sidebar (docs/web/FINISH.md, B1, B12) ----
+
+    /// <summary>Lines added and removed, and files changed, as GitHub counts them for its header.</summary>
+    public int Additions { get; init; }
+
+    public int Deletions { get; init; }
+
+    public int ChangedFiles { get; init; }
+
+    /// <summary>Commits on the branch, as GitHub counts them for its tab.</summary>
+    public int CommitCount { get; init; }
+
+    /// <summary>Conversation comments plus review comments (GitHub's <c>totalCommentsCount</c>).</summary>
+    public int CommentCount { get; init; }
+
+    public DateTimeOffset? CreatedAt { get; init; }
+
+    public DateTimeOffset? ClosedAt { get; init; }
+
+    public DateTimeOffset? MergedAt { get; init; }
+
+    /// <summary>Who merged it, when merged.</summary>
+    public string? MergedBy { get; init; }
+
+    public string Author { get; init; } = "";
+
+    public string? AuthorAvatar { get; init; }
+
+    /// <summary>GitHub's word for who the author is to the repository: OWNER, MEMBER, COLLABORATOR, CONTRIBUTOR, FIRST_TIME_CONTRIBUTOR, NONE.</summary>
+    public string AuthorAssociation { get; init; } = "";
+
+    public bool Locked { get; init; }
+
+    public string? LockReason { get; init; }
+
+    public string? Milestone { get; init; }
+
+    /// <summary>The head's repository as owner/name when it is a fork; null when the branch is this repository's.</summary>
+    public string? HeadRepository { get; init; }
+
+    public IReadOnlyList<ReactionGroup> Reactions { get; init; } = [];
+
+    /// <summary>The live head's combined check state: SUCCESS, FAILURE, PENDING, ERROR, EXPECTED; null when GitHub has none.</summary>
+    public string? CheckRollup { get; init; }
+
+    /// <summary>The names of the checks branch protection requires on this pull request, as GitHub marks them on the live head.</summary>
+    public IReadOnlyList<string> RequiredChecks { get; init; } = [];
 }
 
 /// <summary>What a merge needs to know about a pull request, read on its own (slice 6, S11).</summary>
@@ -179,7 +234,29 @@ public sealed record PendingReviewRead(PendingReview? Review);
 
 /// <summary>One comment in a review thread. <paramref name="Body"/> is Markdown written by anyone who can comment: untrusted.</summary>
 /// <param name="CanEdit">GitHub's own word on whether the viewer may edit it (viewerCanUpdate); controls follow it, GitHub still decides.</param>
-public sealed record ReviewComment(string Id, string Author, string Body, DateTimeOffset When, string? Commit, string? OriginalCommit, bool CanEdit = false, bool CanDelete = false);
+public sealed record ReviewComment(string Id, string Author, string Body, DateTimeOffset When, string? Commit, string? OriginalCommit, bool CanEdit = false, bool CanDelete = false)
+{
+    /// <summary>The review this comment belongs to, so the conversation can list it under that review as GitHub does.</summary>
+    public string? ReviewId { get; init; }
+
+    /// <summary>GitHub's excerpt of the diff the comment was written on: text, drawn as a code block, never markup.</summary>
+    public string? DiffHunk { get; init; }
+
+    public string AuthorAssociation { get; init; } = "";
+
+    public string? AvatarUrl { get; init; }
+
+    /// <summary>When last edited, for the "edited" mark; null when never.</summary>
+    public DateTimeOffset? EditedAt { get; init; }
+
+    /// <summary>The comment's own page on GitHub, for a permalink.</summary>
+    public string? Url { get; init; }
+
+    public IReadOnlyList<ReactionGroup> Reactions { get; init; } = [];
+
+    /// <summary>A draft in the viewer's pending review, not yet visible to anyone else.</summary>
+    public bool Pending { get; init; }
+}
 
 /// <summary>A review thread on a file, as GitHub anchors it.</summary>
 /// <param name="Line">The line in GitHub's CURRENT diff, or null when the thread is outdated or on the file.</param>
@@ -217,17 +294,71 @@ public sealed record ReviewThreadList(IReadOnlyList<ReviewThread> Threads, bool 
 /// <summary>
 /// One entry in a pull request's conversation.
 /// </summary>
-/// <param name="Kind">comment, review, commit, force-push, merged, closed, reopened, ready, draft.</param>
+/// <param name="Kind">
+/// comment, review, commit, force-push, merged, closed, reopened, ready, draft; and the events GitHub's
+/// conversation shows between them (docs/web/FINISH.md, B3): labeled, unlabeled, assigned, unassigned,
+/// review-requested, review-request-removed, review-dismissed, renamed, base-changed, base-force-push,
+/// head-deleted, head-restored, cross-referenced, referenced, milestoned, demilestoned, locked, unlocked,
+/// auto-merge-on, auto-merge-off, queued, dequeued, deployed.
+/// </param>
 /// <param name="Body">Markdown for comments and reviews (untrusted); the headline for a commit.</param>
 /// <param name="State">A review's APPROVED, CHANGES_REQUESTED, COMMENTED or DISMISSED.</param>
-/// <param name="Id">A conversation comment's node id, for editing and deleting it; null for everything else.</param>
-public sealed record TimelineItem(string Kind, string Actor, DateTimeOffset When, string? Body, string? State, string? Sha, string? Id = null, bool CanEdit = false, bool CanDelete = false);
+/// <param name="Sha">A commit's oid; after a force-push, the new head; what a reference points at.</param>
+/// <param name="Id">A conversation comment's or a review's node id; null for everything else.</param>
+public sealed record TimelineItem(string Kind, string Actor, DateTimeOffset When, string? Body, string? State, string? Sha, string? Id = null, bool CanEdit = false, bool CanDelete = false)
+{
+    /// <summary>What the event named: a label, an assignee, a reviewer, a milestone, a branch, a title, an environment.</summary>
+    public string? Target { get; init; }
+
+    /// <summary>A label's colour, six hex digits, when the target is a label.</summary>
+    public string? TargetColor { get; init; }
+
+    /// <summary>What was there before: the old title, the old base, the commit before a force-push.</summary>
+    public string? Previous { get; init; }
+
+    /// <summary>The issue or pull request that referred to this one.</summary>
+    public TimelineReference? Reference { get; init; }
+
+    /// <summary>A dismissal's message, a lock's reason, auto-merge's reason for being turned off.</summary>
+    public string? Message { get; init; }
+
+    public string AuthorAssociation { get; init; } = "";
+
+    public string? AvatarUrl { get; init; }
+
+    public DateTimeOffset? EditedAt { get; init; }
+
+    public string? Url { get; init; }
+
+    public IReadOnlyList<ReactionGroup> Reactions { get; init; } = [];
+
+    /// <summary>A commit's signature: true verified, false unverified, null when GitHub did not say.</summary>
+    public bool? Verified { get; init; }
+}
 
 /// <summary>A pull request's conversation in order, and whether it was cut.</summary>
 public sealed record Timeline(IReadOnlyList<TimelineItem> Items, bool Truncated);
 
 /// <summary>A commit on a pull request's branch.</summary>
-public sealed record PullCommit(string Sha, string Headline, string Author, DateTimeOffset When);
+public sealed record PullCommit(string Sha, string Headline, string Author, DateTimeOffset When)
+{
+    /// <summary>The author's GitHub login when GitHub matched one; <see cref="Author"/> falls back to the git name.</summary>
+    public string? AuthorLogin { get; init; }
+
+    public string? AuthorAvatar { get; init; }
+
+    /// <summary>The committer's name when it is not the author's (a rebase, a merge by someone else).</summary>
+    public string? Committer { get; init; }
+
+    /// <summary>The message after its first line.</summary>
+    public string Body { get; init; } = "";
+
+    public bool? Verified { get; init; }
+
+    public int ParentCount { get; init; } = 1;
+
+    public string? Url { get; init; }
+}
 
 /// <summary>A pull request's commits, oldest first, and whether GitHub's 250 cut them.</summary>
 public sealed record PullCommitList(IReadOnlyList<PullCommit> Commits, bool Truncated);
@@ -238,7 +369,31 @@ public sealed record PullCommitList(IReadOnlyList<PullCommit> Commits, bool Trun
 /// <param name="Status">queued, in_progress or completed for a run; pending or completed for a status.</param>
 /// <param name="Conclusion">success, failure, neutral, cancelled, skipped, timed_out, action_required, stale, error; null while running.</param>
 /// <param name="Url">Where its log is, https only, or null: a CI's link is not ours to vouch for, so it is only ever opened, never fetched.</param>
-public sealed record CheckInfo(string Name, string Status, string? Conclusion, string? Url, string Source);
+public sealed record CheckInfo(string Name, string Status, string? Conclusion, string? Url, string Source)
+{
+    /// <summary>The check run's id, for its annotations; null for a status.</summary>
+    public long? Id { get; init; }
+
+    public DateTimeOffset? StartedAt { get; init; }
+
+    public DateTimeOffset? CompletedAt { get; init; }
+
+    /// <summary>The GitHub App that owns the run (GitHub Actions, a CI vendor); a status's creator.</summary>
+    public string? App { get; init; }
+
+    /// <summary>The check suite the run belongs to, so runs of one workflow group together.</summary>
+    public long? Suite { get; init; }
+
+    /// <summary>The run's output title and summary (Markdown by the CI: untrusted), and how many annotations it left.</summary>
+    public string? Title { get; init; }
+
+    public string? Summary { get; init; }
+
+    public int AnnotationCount { get; init; }
+
+    /// <summary>A status's description line.</summary>
+    public string? Description { get; init; }
+}
 
 /// <summary>A commit's checks, and whether there were more than were read.</summary>
 /// <param name="Truncated">GitHub listed more check runs or statuses than the bounded paging read: the page says so, never shows a partial list as whole.</param>

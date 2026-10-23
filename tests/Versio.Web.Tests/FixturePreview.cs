@@ -98,8 +98,11 @@ public sealed class FixturePreview
         [
             new ReviewThread("T-new", simulation, false, false, 22, null, "RIGHT", 22, "LINE",
             [
-                new ReviewComment("C1", "sam", "Half the step: is **0.2** right for the plant's cooling, or is that the soak rig?", when, next, next, CanEdit: true, CanDelete: true),
-                new ReviewComment("C2", "jo", "Plant data: 0.2/s. The rig was 0.1.\n\n<script>alert('this must draw as text')</script>", when.AddMinutes(9), next, next),
+                new ReviewComment("C1", "sam", "Half the step: is **0.2** right for the plant's cooling, or is that the soak rig?", when, next, next, CanEdit: true, CanDelete: true)
+                {
+                    ReviewId = "PRR_LEE", DiffHunk = "@@ -19,7 +19,7 @@\n a\n b\n c\n-x\n+y", AuthorAssociation = "OWNER", Reactions = [new ReactionGroup("HEART", 1, false)],
+                },
+                new ReviewComment("C2", "jo", "Plant data: 0.2/s. The rig was 0.1.\n\n<script>alert('this must draw as text')</script>", when.AddMinutes(9), next, next) { ReviewId = "PRR_LEE", EditedAt = when.AddMinutes(12) },
             ], false, CanReply: true, CanResolve: true),
             new ReviewThread("T-old", simulation, true, false, 22, null, "LEFT", 22, "LINE",
                 [new ReviewComment("C3", "sam", "This old value is the bug.", when, next, next, CanEdit: true, CanDelete: true)], false, CanReply: true, CanUnresolve: true),
@@ -114,17 +117,31 @@ public sealed class FixturePreview
         ], false);
         repo.Checks[next] =
         [
-            new CheckInfo("build", "completed", "success", "https://github.com/acme/plant/actions/runs/1", "check-run"),
-            new CheckInfo("plc-compile", "completed", "failure", "https://github.com/acme/plant/actions/runs/2", "check-run"),
-            new CheckInfo("soak-test", "in_progress", null, null, "check-run"),
+            new CheckInfo("build", "completed", "success", "https://github.com/acme/plant/actions/runs/1", "check-run") { Id = 1, App = "GitHub Actions", Suite = 10, StartedAt = when.AddMinutes(3), CompletedAt = when.AddMinutes(7), Title = "Build passed", Summary = "All **12** projects built." },
+            new CheckInfo("plc-compile", "completed", "failure", "https://github.com/acme/plant/actions/runs/2", "check-run") { Id = 2, App = "GitHub Actions", Suite = 10, StartedAt = when.AddMinutes(3), CompletedAt = when.AddMinutes(9), Title = "2 errors", Summary = "`PLC_PRG` line 12: unknown identifier `tSetpoint`.", AnnotationCount = 2 },
+            new CheckInfo("soak-test", "in_progress", null, null, "check-run") { Id = 3, App = "Soak rig", Suite = 11, StartedAt = when.AddMinutes(10) },
+            new CheckInfo("ci/jenkins", "completed", "success", "https://jenkins.example/job/plant/42", "status") { App = "jenkins-bot", Description = "Build #42 passed", CompletedAt = when.AddMinutes(8) },
         ];
+        // The conversation GitHub would show: the push, the label and reviewer events, a comment
+        // with reactions and an edit mark, a review whose thread the page lists under it (its
+        // comments name the review by id), a cross-reference, a dismissal.
         repo.Timelines[1] = new Timeline(
         [
-            new TimelineItem("commit", "sam", when, "Lower the simulated cooling step", null, next),
-            new TimelineItem("comment", "jo", when.AddMinutes(20), "Soak tests went green with this. **Please check** the interlock still trips.", null, null),
-            new TimelineItem("review", "lee", when.AddMinutes(40), "", "CHANGES_REQUESTED", null),
+            new TimelineItem("commit", "sam", when, "Lower the simulated cooling step", null, next) { Verified = true },
+            new TimelineItem("labeled", "sam", when.AddMinutes(1), null, null, null) { Target = "plc", TargetColor = "1a7f37" },
+            new TimelineItem("labeled", "sam", when.AddMinutes(1), null, null, null) { Target = "needs-soak", TargetColor = "9a6700" },
+            new TimelineItem("review-requested", "sam", when.AddMinutes(2), null, null, null) { Target = "lee" },
+            new TimelineItem("review-requested", "sam", when.AddMinutes(2), null, null, null) { Target = "controls" },
+            new TimelineItem("renamed", "sam", when.AddMinutes(5), null, null, null) { Previous = "Lower the cooling step", Target = "Lower the simulated cooling step" },
+            new TimelineItem("comment", "jo", when.AddMinutes(20), "Soak tests went green with this. **Please check** the interlock still trips.", null, null, "IC_1", CanEdit: true, CanDelete: true)
+            {
+                AuthorAssociation = "MEMBER", EditedAt = when.AddMinutes(25), Reactions = [new ReactionGroup("THUMBS_UP", 2, false), new ReactionGroup("EYES", 1, true)],
+            },
+            new TimelineItem("cross-referenced", "jo", when.AddMinutes(30), null, null, null) { Reference = new TimelineReference(7, "Soak rig cools too fast", "acme/plant", null, false, "OPEN"), Message = "closes" },
+            new TimelineItem("review", "lee", when.AddMinutes(40), "The interlock reads the old value once more before the step lands.", "CHANGES_REQUESTED", next, "PRR_LEE") { AuthorAssociation = "COLLABORATOR" },
+            new TimelineItem("review-dismissed", "sam", when.AddMinutes(50), null, null, null) { Target = "lee", Message = "Addressed in the second commit." },
         ], false);
-        repo.PullCommits[1] = new PullCommitList([new PullCommit(next, "Lower the simulated cooling step", "sam", when)], false);
+        repo.PullCommits[1] = new PullCommitList([new PullCommit(next, "Lower the simulated cooling step", "sam", when) { AuthorLogin = "sam", Body = "The simulation cooled twice as fast as the plant.\n\nMeasured on the soak rig, 2026-10-20.", Verified = true }], false);
         repo.PullPeople[1] = ([new PullLabel("plc", "1a7f37"), new PullLabel("needs-soak", "9a6700")], [new PullReviewer("lee", "CHANGES_REQUESTED"), new PullReviewer("controls", "REQUESTED")]);
         // Slice 5: labels to put on and people who can be assigned. A new pull request can be
         // opened from "next" into "main" (the fixtures carry no template, so its body starts empty).

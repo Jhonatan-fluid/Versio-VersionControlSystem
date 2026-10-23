@@ -93,6 +93,9 @@ internal sealed class FakeGitHub : IRepoSource
         /// <summary>The conversation per pull request.</summary>
         public Dictionary<int, Timeline> Timelines { get; } = [];
 
+        /// <summary>What GitHub's header counts and marks per pull request: the diff's size, and the checks branch protection requires.</summary>
+        public Dictionary<int, (int Additions, int Deletions, int ChangedFiles, IReadOnlyList<string> Required)> PullHeader { get; } = [];
+
         /// <summary>The branch's commits per pull request, oldest first.</summary>
         public Dictionary<int, PullCommitList> PullCommits { get; } = [];
 
@@ -415,6 +418,13 @@ internal sealed class FakeGitHub : IRepoSource
             ViewerIsAuthor = access.Token is { } token && r.Value.PullAuthorToken.TryGetValue(number, out var author) && author == token,
             ViewerLastReviewCommit = access.Token is { } t && r.Value.LastReviewCommit.TryGetValue((number, t), out var last) ? last : null,
             NodeId = "PR_" + number.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            Author = p.Author,
+            CreatedAt = p.Updated,
+            CommitCount = r.Value.PullCommits.TryGetValue(number, out var commits) ? commits.Commits.Count : 0,
+            Additions = r.Value.PullHeader.TryGetValue(number, out var header) ? header.Additions : 0,
+            Deletions = header.Deletions,
+            ChangedFiles = header.ChangedFiles,
+            RequiredChecks = header.Required ?? [],
         }));
     }
 

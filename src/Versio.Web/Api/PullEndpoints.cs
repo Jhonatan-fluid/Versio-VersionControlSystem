@@ -396,7 +396,7 @@ public static class PullEndpoints
                     reviewDecision = live.ReviewDecision,
                     labels = live.Labels.Select(l => new { name = CodeHtml.Spelled(l.Name), value = l.Name, color = l.Color }),
                     assignees = live.Assignees.Select(CodeHtml.Spelled),
-                    reviewers = live.Reviewers.Select(r => new { login = CodeHtml.Spelled(r.Login), state = r.State }),
+                    reviewers = live.Reviewers.Select(r => new { login = CodeHtml.Spelled(r.Login), state = r.State, isTeam = r.IsTeam, avatar = r.AvatarUrl }),
                     // GitHub refuses an author's approval: the page offers it to nobody else.
                     viewerIsAuthor = live.ViewerIsAuthor,
                     viewerLastReviewCommit = live.ViewerLastReviewCommit,
@@ -407,10 +407,52 @@ public static class PullEndpoints
                     markdown = ReviewTags.Strip(live.Body),
                     html = ApiEndpoints.MarkdownFragment(ReviewTags.Strip(live.Body)),
                     viewerCanUpdate = live.ViewerCanUpdate,
+                    // What GitHub's header and sidebar say (docs/web/FINISH.md, B1): the counts, the
+                    // author, the dates, the lock, the milestone, a fork's repository, the reactions.
+                    additions = live.Additions,
+                    deletions = live.Deletions,
+                    changedFiles = live.ChangedFiles,
+                    commits = live.CommitCount,
+                    comments = live.CommentCount,
+                    createdAt = live.CreatedAt,
+                    closedAt = live.ClosedAt,
+                    mergedAt = live.MergedAt,
+                    mergedBy = live.MergedBy is { } by ? CodeHtml.Spelled(by) : null,
+                    author = CodeHtml.Spelled(live.Author),
+                    authorAvatar = live.AuthorAvatar,
+                    authorAssociation = live.AuthorAssociation,
+                    locked = live.Locked,
+                    lockReason = live.LockReason,
+                    milestone = live.Milestone is { } m ? CodeHtml.Spelled(m) : null,
+                    headRepository = live.HeadRepository is { } hr ? CodeHtml.Spelled(hr) : null,
+                    reactions = live.Reactions.Select(Reaction),
+                    checkRollup = live.CheckRollup,
+                    requiredChecks = live.RequiredChecks.Select(CodeHtml.Spelled),
                 },
                 checksError = checks.Ok ? null : Problem(checks.Failure),
                 checks = checks.Ok
-                    ? checks.Value!.Checks.Select(c => new { name = CodeHtml.Spelled(c.Name), status = c.Status, conclusion = c.Conclusion, url = c.Url, source = c.Source })
+                    ? checks.Value!.Checks.Select(c => new
+                    {
+                        name = CodeHtml.Spelled(c.Name),
+                        status = c.Status,
+                        conclusion = c.Conclusion,
+                        url = c.Url,
+                        source = c.Source,
+                        id = c.Id,
+                        startedAt = c.StartedAt,
+                        completedAt = c.CompletedAt,
+                        app = c.App is { } app ? CodeHtml.Spelled(app) : null,
+                        suite = c.Suite,
+                        title = c.Title is { } t ? CodeHtml.Spelled(t) : null,
+                        // A run's summary is Markdown written by the CI (S6: untrusted): rendered by
+                        // Core and sanitised by the page, as every body is.
+                        summary = c.Summary is { } sm ? ApiEndpoints.MarkdownFragment(sm) : null,
+                        annotations = c.AnnotationCount,
+                        description = c.Description is { } d ? CodeHtml.Spelled(d) : null,
+                        // Required by branch protection, as GitHub marks the LIVE head's checks; the
+                        // list here is the snapshot head's, so a renamed check reads as not required.
+                        required = live is not null && live.RequiredChecks.Contains(c.Name, StringComparer.Ordinal),
+                    })
                     : null,
                 // More checks than were read: the page says the list is cut, so a failure past the
                 // bound is never hidden behind a list of passes.
@@ -516,6 +558,15 @@ public static class PullEndpoints
                         originalCommit = c.OriginalCommit,
                         canEdit = c.CanEdit,
                         canDelete = c.CanDelete,
+                        reviewId = c.ReviewId,
+                        // The hunk is text the page draws in a code block; spelled, never markup.
+                        diffHunk = c.DiffHunk is { } hunk ? CodeHtml.Spelled(hunk) : null,
+                        association = c.AuthorAssociation,
+                        avatar = c.AvatarUrl,
+                        editedAt = c.EditedAt,
+                        url = c.Url,
+                        reactions = c.Reactions.Select(Reaction),
+                        pending = c.Pending,
                     }),
                 }),
             });
@@ -551,6 +602,20 @@ public static class PullEndpoints
                         markdown = i.CanEdit ? ReviewTags.Strip(i.Body ?? "") : null,
                         canEdit = i.CanEdit,
                         canDelete = i.CanDelete,
+                        // The event's own words (FINISH.md, B3): what it named, what was there before,
+                        // what it pointed at, who the author is to the repository, the picture, the
+                        // edit mark, the permalink, the reactions. Everything a person typed is spelled.
+                        target = i.Target is { } target ? CodeHtml.Spelled(target) : null,
+                        targetColor = i.TargetColor,
+                        previous = i.Previous is { } previous ? CodeHtml.Spelled(previous) : null,
+                        reference = i.Reference is { } r ? new { number = r.Number, title = CodeHtml.Spelled(r.Title), repository = CodeHtml.Spelled(r.Repository), url = r.Url, isPull = r.IsPull, state = r.State } : null,
+                        message = i.Message is { } message ? CodeHtml.Spelled(message) : null,
+                        association = i.AuthorAssociation,
+                        avatar = i.AvatarUrl,
+                        editedAt = i.EditedAt,
+                        url = i.Url,
+                        reactions = i.Reactions.Select(Reaction),
+                        verified = i.Verified,
                     }),
                 })
                 : ApiEndpoints.Refused(timeline.Failure, http);
@@ -588,10 +653,20 @@ public static class PullEndpoints
                     author = CodeHtml.Spelled(c.Author),
                     when = c.When,
                     inSnapshot = head >= 0 && i <= head,
+                    login = c.AuthorLogin is { } login ? CodeHtml.Spelled(login) : null,
+                    avatar = c.AuthorAvatar,
+                    committer = c.Committer is { } committer ? CodeHtml.Spelled(committer) : null,
+                    body = CodeHtml.Spelled(c.Body),
+                    verified = c.Verified,
+                    parents = c.ParentCount,
+                    url = c.Url,
                 }),
             });
         });
     }
+
+    /// <summary>A reaction group as the page draws it: GitHub's content word, the count, whether the viewer is in it.</summary>
+    private static object Reaction(ReactionGroup g) => new { content = g.Content, count = g.Count, viewerHasReacted = g.ViewerHasReacted };
 
     /// <summary>A failure the page words in place, without failing the whole answer.</summary>
     private static string Problem(RepoFailure failure) => failure switch

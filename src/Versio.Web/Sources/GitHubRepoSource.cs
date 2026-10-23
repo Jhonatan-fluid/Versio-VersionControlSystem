@@ -266,18 +266,36 @@ public sealed class GitHubRepoSource(
 
     // ---- review reads (docs/web/PLAN.md, *Pull request review*, slice 1) ------------------------
 
-    private const string SummaryQuery = """
+    /// <summary>The fields of a reaction group, the same on a body, a comment and a review.</summary>
+    private const string ReactionFields = "reactionGroups { content viewerHasReacted reactors { totalCount } }";
+
+    private const string SummaryQuery = $$"""
         query($owner: String!, $repo: String!, $number: Int!) {
           repository(owner: $owner, name: $repo) {
             pullRequest(number: $number) {
               state isDraft merged mergeable reviewDecision headRefOid baseRefName title body viewerCanUpdate
+              additions deletions changedFiles totalCommentsCount createdAt closedAt mergedAt locked activeLockReason
+              isCrossRepository authorAssociation
+              author { login avatarUrl }
+              mergedBy { login }
+              milestone { title }
+              headRepository { nameWithOwner }
               baseRef { target { oid } }
               labels(first: 30) { nodes { name color } }
               assignees(first: 20) { nodes { login } }
-              reviewRequests(first: 30) { nodes { requestedReviewer { __typename ... on User { login } ... on Team { name } } } }
-              latestOpinionatedReviews(first: 30) { nodes { author { login } state } }
+              reviewRequests(first: 30) { nodes { requestedReviewer { __typename ... on User { login avatarUrl } ... on Team { name } } } }
+              latestOpinionatedReviews(first: 30) { nodes { author { login avatarUrl } state } }
               id viewerDidAuthor
               viewerLatestReview { state commit { oid } }
+              commits(last: 1) {
+                totalCount
+                nodes { commit { statusCheckRollup { state contexts(first: 100) { nodes {
+                  __typename
+                  ... on CheckRun { name isRequired(pullRequestNumber: $number) }
+                  ... on StatusContext { context isRequired(pullRequestNumber: $number) }
+                } } } } }
+              }
+              {{ReactionFields}}
             }
           }
         }
@@ -295,18 +313,41 @@ public sealed class GitHubRepoSource(
             var reviewers = new List<PullReviewer>();
             foreach (var r in p.GetProperty("latestOpinionatedReviews").GetProperty("nodes").EnumerateArray())
             {
-                reviewers.Add(new PullReviewer(Login(r, "author"), r.GetProperty("state").GetString() ?? ""));
+                reviewers.Add(new PullReviewer(Login(r, "author"), r.GetProperty("state").GetString() ?? "", false, Avatar(r, "author")));
             }
 
             foreach (var r in p.GetProperty("reviewRequests").GetProperty("nodes").EnumerateArray())
             {
                 var who = r.GetProperty("requestedReviewer");
+                // A team is a team: it is asked for as one and cannot be withdrawn by a login (FINISH.md, B7).
+                var team = who.ValueKind == JsonValueKind.Object && Text(who, "__typename") == "Team";
                 var name = who.ValueKind == JsonValueKind.Object
                     ? Text(who, "login") is { Length: > 0 } login ? login : Text(who, "name")
                     : "";
                 if (name.Length > 0 && reviewers.All(x => x.Login != name))
                 {
-                    reviewers.Add(new PullReviewer(name, "REQUESTED"));
+                    reviewers.Add(new PullReviewer(name, "REQUESTED", team, team ? null : Avatar(who)));
+                }
+            }
+
+            // The live head's checks, as branch protection sees them: which are required, and the whole's state.
+            string? rollup = null;
+            var required = new List<string>();
+            if (p.TryGetProperty("commits", out var commits) && commits.ValueKind == JsonValueKind.Object)
+            {
+                foreach (var node in commits.TryGetProperty("nodes", out var cn) && cn.ValueKind == JsonValueKind.Array ? cn.EnumerateArray() : default)
+                {
+                    if (node.TryGetProperty("commit", out var commit) && commit.TryGetProperty("statusCheckRollup", out var roll) && roll.ValueKind == JsonValueKind.Object)
+                    {
+                        rollup = Text(roll, "state") is { Length: > 0 } st ? st : null;
+                        foreach (var c in roll.TryGetProperty("contexts", out var cx) && cx.TryGetProperty("nodes", out var nodes) && nodes.ValueKind == JsonValueKind.Array ? nodes.EnumerateArray() : default)
+                        {
+                            if (Bool(c, "isRequired"))
+                            {
+                                required.Add(Text(c, "name") is { Length: > 0 } n ? n : Text(c, "context"));
+                            }
+                        }
+                    }
                 }
             }
 
@@ -334,6 +375,28 @@ public sealed class GitHubRepoSource(
                 Title = Text(p, "title"),
                 Body = Text(p, "body"),
                 ViewerCanUpdate = Bool(p, "viewerCanUpdate"),
+                // Every field below is read tolerantly: a server answering an older shape (the tests'
+                // fake, an Enterprise behind on its schema) leaves them at their defaults rather than
+                // failing the read that carries the "this pull request changed" signal.
+                Additions = Int(p, "additions") ?? 0,
+                Deletions = Int(p, "deletions") ?? 0,
+                ChangedFiles = Int(p, "changedFiles") ?? 0,
+                CommitCount = p.TryGetProperty("commits", out var cc) && cc.ValueKind == JsonValueKind.Object ? Int(cc, "totalCount") ?? 0 : 0,
+                CommentCount = Int(p, "totalCommentsCount") ?? 0,
+                CreatedAt = Date(p, "createdAt"),
+                ClosedAt = Date(p, "closedAt"),
+                MergedAt = Date(p, "mergedAt"),
+                MergedBy = p.TryGetProperty("mergedBy", out var mb) && mb.ValueKind == JsonValueKind.Object ? Text(mb, "login") : null,
+                Author = Login(p, "author"),
+                AuthorAvatar = Avatar(p, "author"),
+                AuthorAssociation = Text(p, "authorAssociation"),
+                Locked = Bool(p, "locked"),
+                LockReason = Text(p, "activeLockReason") is { Length: > 0 } lr ? lr : null,
+                Milestone = p.TryGetProperty("milestone", out var ms) && ms.ValueKind == JsonValueKind.Object ? Text(ms, "title") : null,
+                HeadRepository = Bool(p, "isCrossRepository") && p.TryGetProperty("headRepository", out var hr) && hr.ValueKind == JsonValueKind.Object ? Text(hr, "nameWithOwner") : null,
+                Reactions = Reactions(p),
+                CheckRollup = rollup,
+                RequiredChecks = required,
             };
         }, ct);
 
@@ -548,7 +611,7 @@ public sealed class GitHubRepoSource(
         return RepoResult<IReadOnlyList<string>>.Of(viewed);
     }
 
-    private const string ThreadsQuery = """
+    private const string ThreadsQuery = $$"""
         query($owner: String!, $repo: String!, $number: Int!, $after: String) {
           repository(owner: $owner, name: $repo) {
             pullRequest(number: $number) {
@@ -559,7 +622,7 @@ public sealed class GitHubRepoSource(
                   id path isResolved isOutdated line startLine originalLine diffSide subjectType viewerCanReply viewerCanResolve viewerCanUnresolve
                   comments(first: 50) {
                     pageInfo { hasNextPage endCursor }
-                    nodes { id author { login } body createdAt commit { oid } originalCommit { oid } viewerCanUpdate viewerCanDelete }
+                    nodes { {{CommentFields}} }
                   }
                 }
               }
@@ -568,13 +631,13 @@ public sealed class GitHubRepoSource(
         }
         """;
 
-    private const string ThreadCommentsQuery = """
+    private const string ThreadCommentsQuery = $$"""
         query($id: ID!, $after: String) {
           node(id: $id) {
             ... on PullRequestReviewThread {
               comments(first: 100, after: $after) {
                 pageInfo { hasNextPage endCursor }
-                nodes { id author { login } body createdAt commit { oid } originalCommit { oid } viewerCanUpdate viewerCanDelete }
+                nodes { {{CommentFields}} }
               }
             }
           }
@@ -696,26 +759,69 @@ public sealed class GitHubRepoSource(
         Oid(c, "commit"),
         Oid(c, "originalCommit"),
         Bool(c, "viewerCanUpdate"),
-        Bool(c, "viewerCanDelete"));
+        Bool(c, "viewerCanDelete"))
+    {
+        ReviewId = c.TryGetProperty("pullRequestReview", out var review) && review.ValueKind == JsonValueKind.Object && Text(review, "id") is { Length: > 0 } rid ? rid : null,
+        DiffHunk = Text(c, "diffHunk") is { Length: > 0 } hunk ? hunk : null,
+        AuthorAssociation = Text(c, "authorAssociation"),
+        AvatarUrl = Avatar(c, "author"),
+        EditedAt = Date(c, "lastEditedAt"),
+        Url = Https(Text(c, "url")),
+        Reactions = Reactions(c),
+        Pending = Text(c, "state") == "PENDING",
+    };
 
-    private const string TimelineQuery = """
+    /// <summary>The fields read of every review comment, in the threads query and the thread's later pages alike.</summary>
+    private const string CommentFields = "id author { login avatarUrl } body createdAt lastEditedAt url authorAssociation state diffHunk commit { oid } originalCommit { oid } pullRequestReview { id } viewerCanUpdate viewerCanDelete " + ReactionFields;
+
+    private const string TimelineQuery = $$"""
         query($owner: String!, $repo: String!, $number: Int!, $after: String) {
           repository(owner: $owner, name: $repo) {
             pullRequest(number: $number) {
               timelineItems(first: 100, after: $after, itemTypes: [ISSUE_COMMENT, PULL_REQUEST_REVIEW, PULL_REQUEST_COMMIT,
-                HEAD_REF_FORCE_PUSHED_EVENT, MERGED_EVENT, CLOSED_EVENT, REOPENED_EVENT, READY_FOR_REVIEW_EVENT, CONVERT_TO_DRAFT_EVENT]) {
+                HEAD_REF_FORCE_PUSHED_EVENT, MERGED_EVENT, CLOSED_EVENT, REOPENED_EVENT, READY_FOR_REVIEW_EVENT, CONVERT_TO_DRAFT_EVENT,
+                LABELED_EVENT, UNLABELED_EVENT, ASSIGNED_EVENT, UNASSIGNED_EVENT, REVIEW_REQUESTED_EVENT, REVIEW_REQUEST_REMOVED_EVENT,
+                REVIEW_DISMISSED_EVENT, RENAMED_TITLE_EVENT, BASE_REF_CHANGED_EVENT, BASE_REF_FORCE_PUSHED_EVENT, HEAD_REF_DELETED_EVENT,
+                HEAD_REF_RESTORED_EVENT, CROSS_REFERENCED_EVENT, REFERENCED_EVENT, MILESTONED_EVENT, DEMILESTONED_EVENT, LOCKED_EVENT,
+                UNLOCKED_EVENT, AUTO_MERGE_ENABLED_EVENT, AUTO_MERGE_DISABLED_EVENT, ADDED_TO_MERGE_QUEUE_EVENT, REMOVED_FROM_MERGE_QUEUE_EVENT,
+                DEPLOYED_EVENT]) {
                 pageInfo { hasNextPage endCursor }
                 nodes {
                   __typename
-                  ... on IssueComment { id author { login } body createdAt viewerCanUpdate viewerCanDelete }
-                  ... on PullRequestReview { author { login } body state submittedAt createdAt }
-                  ... on PullRequestCommit { commit { oid messageHeadline committedDate author { name user { login } } } }
-                  ... on HeadRefForcePushedEvent { actor { login } createdAt afterCommit { oid } }
-                  ... on MergedEvent { actor { login } createdAt commit { oid } }
+                  ... on IssueComment { id author { login avatarUrl } body createdAt lastEditedAt url authorAssociation viewerCanUpdate viewerCanDelete {{ReactionFields}} }
+                  ... on PullRequestReview { id author { login avatarUrl } body state submittedAt createdAt lastEditedAt url authorAssociation commit { oid } {{ReactionFields}} }
+                  ... on PullRequestCommit { url commit { oid messageHeadline committedDate author { name avatarUrl user { login } } signature { isValid } } }
+                  ... on HeadRefForcePushedEvent { actor { login } createdAt beforeCommit { oid } afterCommit { oid } }
+                  ... on MergedEvent { actor { login } createdAt commit { oid } mergeRefName }
                   ... on ClosedEvent { actor { login } createdAt }
                   ... on ReopenedEvent { actor { login } createdAt }
                   ... on ReadyForReviewEvent { actor { login } createdAt }
                   ... on ConvertToDraftEvent { actor { login } createdAt }
+                  ... on LabeledEvent { actor { login } createdAt label { name color } }
+                  ... on UnlabeledEvent { actor { login } createdAt label { name color } }
+                  ... on AssignedEvent { actor { login } createdAt assignee { __typename ... on User { login } ... on Bot { login } ... on Mannequin { login } ... on Organization { login } } }
+                  ... on UnassignedEvent { actor { login } createdAt assignee { __typename ... on User { login } ... on Bot { login } ... on Mannequin { login } ... on Organization { login } } }
+                  ... on ReviewRequestedEvent { actor { login } createdAt requestedReviewer { __typename ... on User { login } ... on Team { name } } }
+                  ... on ReviewRequestRemovedEvent { actor { login } createdAt requestedReviewer { __typename ... on User { login } ... on Team { name } } }
+                  ... on ReviewDismissedEvent { actor { login } createdAt dismissalMessage review { author { login } } }
+                  ... on RenamedTitleEvent { actor { login } createdAt previousTitle currentTitle }
+                  ... on BaseRefChangedEvent { actor { login } createdAt previousRefName currentRefName }
+                  ... on BaseRefForcePushedEvent { actor { login } createdAt beforeCommit { oid } afterCommit { oid } }
+                  ... on HeadRefDeletedEvent { actor { login } createdAt headRefName }
+                  ... on HeadRefRestoredEvent { actor { login } createdAt }
+                  ... on CrossReferencedEvent { actor { login } createdAt willCloseTarget source { __typename
+                    ... on Issue { number title url state repository { nameWithOwner } }
+                    ... on PullRequest { number title url state repository { nameWithOwner } } } }
+                  ... on ReferencedEvent { actor { login } createdAt commit { oid messageHeadline } commitRepository { nameWithOwner } }
+                  ... on MilestonedEvent { actor { login } createdAt milestoneTitle }
+                  ... on DemilestonedEvent { actor { login } createdAt milestoneTitle }
+                  ... on LockedEvent { actor { login } createdAt lockReason }
+                  ... on UnlockedEvent { actor { login } createdAt }
+                  ... on AutoMergeEnabledEvent { actor { login } createdAt }
+                  ... on AutoMergeDisabledEvent { actor { login } createdAt reason }
+                  ... on AddedToMergeQueueEvent { actor { login } createdAt }
+                  ... on RemovedFromMergeQueueEvent { actor { login } createdAt }
+                  ... on DeployedEvent { actor { login } createdAt deployment { environment } }
                 }
               }
             }
@@ -758,29 +864,96 @@ public sealed class GitHubRepoSource(
     private static TimelineItem? TimelineEntry(JsonElement n)
     {
         DateTimeOffset At(string property) => n.GetProperty(property).GetDateTimeOffset();
+        // An event names what it did to: a label, a person or team, a title, a branch, a milestone.
+        TimelineItem Event(string kind, string? target = null, string? previous = null, string? message = null, string? sha = null, string? color = null) =>
+            new(kind, Login(n, "actor"), At("createdAt"), null, null, sha) { Target = target, Previous = previous, Message = message, TargetColor = color };
+        string Named(string property, params string[] names)
+        {
+            if (!n.TryGetProperty(property, out var who) || who.ValueKind != JsonValueKind.Object)
+            {
+                return "";
+            }
+
+            foreach (var name in names)
+            {
+                if (Text(who, name) is { Length: > 0 } found)
+                {
+                    return found;
+                }
+            }
+
+            return "";
+        }
+
         return n.GetProperty("__typename").GetString() switch
         {
             "IssueComment" => new TimelineItem("comment", Login(n, "author"), At("createdAt"), Text(n, "body"), null, null,
-                Text(n, "id") is { Length: > 0 } id ? id : null, Bool(n, "viewerCanUpdate"), Bool(n, "viewerCanDelete")),
+                Text(n, "id") is { Length: > 0 } id ? id : null, Bool(n, "viewerCanUpdate"), Bool(n, "viewerCanDelete"))
+            {
+                AuthorAssociation = Text(n, "authorAssociation"), AvatarUrl = Avatar(n, "author"), EditedAt = Date(n, "lastEditedAt"), Url = Https(Text(n, "url")), Reactions = Reactions(n),
+            },
             "PullRequestReview" => new TimelineItem("review", Login(n, "author"),
                 n.TryGetProperty("submittedAt", out var s) && s.ValueKind == JsonValueKind.String ? s.GetDateTimeOffset() : At("createdAt"),
-                Text(n, "body"), Text(n, "state"), null),
-            "PullRequestCommit" => Commit(n.GetProperty("commit")),
-            "HeadRefForcePushedEvent" => new TimelineItem("force-push", Login(n, "actor"), At("createdAt"), null, null, Oid(n, "afterCommit")),
-            "MergedEvent" => new TimelineItem("merged", Login(n, "actor"), At("createdAt"), null, null, Oid(n, "commit")),
-            "ClosedEvent" => new TimelineItem("closed", Login(n, "actor"), At("createdAt"), null, null, null),
-            "ReopenedEvent" => new TimelineItem("reopened", Login(n, "actor"), At("createdAt"), null, null, null),
-            "ReadyForReviewEvent" => new TimelineItem("ready", Login(n, "actor"), At("createdAt"), null, null, null),
-            "ConvertToDraftEvent" => new TimelineItem("draft", Login(n, "actor"), At("createdAt"), null, null, null),
+                Text(n, "body"), Text(n, "state"), Oid(n, "commit"), Text(n, "id") is { Length: > 0 } rid ? rid : null)
+            {
+                AuthorAssociation = Text(n, "authorAssociation"), AvatarUrl = Avatar(n, "author"), EditedAt = Date(n, "lastEditedAt"), Url = Https(Text(n, "url")), Reactions = Reactions(n),
+            },
+            "PullRequestCommit" => Commit(n.GetProperty("commit"), Https(Text(n, "url"))),
+            "HeadRefForcePushedEvent" => Event("force-push", sha: Oid(n, "afterCommit"), previous: Oid(n, "beforeCommit")),
+            "MergedEvent" => Event("merged", target: Text(n, "mergeRefName"), sha: Oid(n, "commit")),
+            "ClosedEvent" => Event("closed"),
+            "ReopenedEvent" => Event("reopened"),
+            "ReadyForReviewEvent" => Event("ready"),
+            "ConvertToDraftEvent" => Event("draft"),
+            "LabeledEvent" => Event("labeled", target: Named("label", "name"), color: HexColor(Named("label", "color"))),
+            "UnlabeledEvent" => Event("unlabeled", target: Named("label", "name"), color: HexColor(Named("label", "color"))),
+            "AssignedEvent" => Event("assigned", target: Named("assignee", "login")),
+            "UnassignedEvent" => Event("unassigned", target: Named("assignee", "login")),
+            "ReviewRequestedEvent" => Event("review-requested", target: Named("requestedReviewer", "login", "name")),
+            "ReviewRequestRemovedEvent" => Event("review-request-removed", target: Named("requestedReviewer", "login", "name")),
+            "ReviewDismissedEvent" => Event("review-dismissed", target: n.TryGetProperty("review", out var r) && r.ValueKind == JsonValueKind.Object ? Login(r, "author") : "", message: Text(n, "dismissalMessage")),
+            "RenamedTitleEvent" => Event("renamed", target: Text(n, "currentTitle"), previous: Text(n, "previousTitle")),
+            "BaseRefChangedEvent" => Event("base-changed", target: Text(n, "currentRefName"), previous: Text(n, "previousRefName")),
+            "BaseRefForcePushedEvent" => Event("base-force-push", sha: Oid(n, "afterCommit"), previous: Oid(n, "beforeCommit")),
+            "HeadRefDeletedEvent" => Event("head-deleted", target: Text(n, "headRefName")),
+            "HeadRefRestoredEvent" => Event("head-restored"),
+            "CrossReferencedEvent" => Event("cross-referenced", message: Bool(n, "willCloseTarget") ? "closes" : null) with { Reference = Reference(n) },
+            "ReferencedEvent" => Event("referenced", target: n.TryGetProperty("commitRepository", out var cr) && cr.ValueKind == JsonValueKind.Object ? Text(cr, "nameWithOwner") : null,
+                message: n.TryGetProperty("commit", out var rc) && rc.ValueKind == JsonValueKind.Object ? Text(rc, "messageHeadline") : null, sha: Oid(n, "commit")),
+            "MilestonedEvent" => Event("milestoned", target: Text(n, "milestoneTitle")),
+            "DemilestonedEvent" => Event("demilestoned", target: Text(n, "milestoneTitle")),
+            "LockedEvent" => Event("locked", message: Text(n, "lockReason") is { Length: > 0 } reason ? reason : null),
+            "UnlockedEvent" => Event("unlocked"),
+            "AutoMergeEnabledEvent" => Event("auto-merge-on"),
+            "AutoMergeDisabledEvent" => Event("auto-merge-off", message: Text(n, "reason") is { Length: > 0 } why ? why : null),
+            "AddedToMergeQueueEvent" => Event("queued"),
+            "RemovedFromMergeQueueEvent" => Event("dequeued"),
+            "DeployedEvent" => Event("deployed", target: n.TryGetProperty("deployment", out var d) && d.ValueKind == JsonValueKind.Object ? Text(d, "environment") : null),
             _ => null,
         };
 
-        static TimelineItem Commit(JsonElement c)
+        static TimelineItem Commit(JsonElement c, string? url)
         {
             var author = c.GetProperty("author");
             var user = author.TryGetProperty("user", out var u) && u.ValueKind == JsonValueKind.Object ? Text(u, "login") : "";
             return new TimelineItem("commit", user.Length > 0 ? user : Text(author, "name"), c.GetProperty("committedDate").GetDateTimeOffset(),
-                Text(c, "messageHeadline"), null, Text(c, "oid"));
+                Text(c, "messageHeadline"), null, Text(c, "oid"))
+            {
+                AvatarUrl = Avatar(author),
+                Url = url,
+                Verified = c.TryGetProperty("signature", out var sig) && sig.ValueKind == JsonValueKind.Object ? Bool(sig, "isValid") : null,
+            };
+        }
+
+        static TimelineReference? Reference(JsonElement n)
+        {
+            if (!n.TryGetProperty("source", out var src) || src.ValueKind != JsonValueKind.Object || Int(src, "number") is not { } number)
+            {
+                return null;
+            }
+
+            var repo = src.TryGetProperty("repository", out var rp) && rp.ValueKind == JsonValueKind.Object ? Text(rp, "nameWithOwner") : "";
+            return new TimelineReference(number, Text(src, "title"), repo, Https(Text(src, "url")), Text(src, "__typename") == "PullRequest", Text(src, "state"));
         }
     }
 
@@ -798,13 +971,26 @@ public sealed class GitHubRepoSource(
                 {
                     var commit = c.GetProperty("commit");
                     var author = commit.GetProperty("author");
-                    var login = c.TryGetProperty("author", out var a) && a.ValueKind == JsonValueKind.Object ? Text(a, "login") : "";
+                    var user = c.TryGetProperty("author", out var a) && a.ValueKind == JsonValueKind.Object ? a : default;
+                    var login = user.ValueKind == JsonValueKind.Object ? Text(user, "login") : "";
                     var message = commit.GetProperty("message").GetString() ?? "";
+                    var newline = message.IndexOf('\n', StringComparison.Ordinal);
+                    var committer = commit.TryGetProperty("committer", out var cm) && cm.ValueKind == JsonValueKind.Object ? Text(cm, "name") : "";
                     return new PullCommit(
                         c.GetProperty("sha").GetString() ?? "",
-                        message.Split('\n')[0],
+                        newline < 0 ? message : message[..newline],
                         login.Length > 0 ? login : author.GetProperty("name").GetString() ?? "",
-                        author.GetProperty("date").GetDateTimeOffset());
+                        author.GetProperty("date").GetDateTimeOffset())
+                    {
+                        AuthorLogin = login.Length > 0 ? login : null,
+                        AuthorAvatar = user.ValueKind == JsonValueKind.Object ? Avatar(user) : null,
+                        // Named only when it is somebody else: a rebase, or a merge made by another hand.
+                        Committer = committer.Length > 0 && committer != Text(author, "name") ? committer : null,
+                        Body = newline < 0 ? "" : message[(newline + 1)..].Trim('\n', '\r'),
+                        Verified = commit.TryGetProperty("verification", out var v) && v.ValueKind == JsonValueKind.Object ? Bool(v, "verified") : null,
+                        ParentCount = c.TryGetProperty("parents", out var ps) && ps.ValueKind == JsonValueKind.Array ? ps.GetArrayLength() : 1,
+                        Url = Https(Text(c, "html_url")),
+                    };
                 }).ToList(), ct).ConfigureAwait(false);
             if (!one.Ok)
             {
@@ -845,12 +1031,26 @@ public sealed class GitHubRepoSource(
     /// </remarks>
     public async Task<RepoResult<CheckList>> GetChecksAsync(RepoAccess access, string owner, string repo, string commitSha, CancellationToken ct)
     {
-        var runs = await PagedChecksAsync(access, $"repos/{E(owner)}/{E(repo)}/commits/{E(commitSha)}/check-runs", "check_runs", r => new CheckInfo(
-            r.GetProperty("name").GetString() ?? "",
-            r.GetProperty("status").GetString() ?? "",
-            Text(r, "conclusion") is { Length: > 0 } c ? c : null,
-            Https(Text(r, "html_url")),
-            "check-run"), ct).ConfigureAwait(false);
+        var runs = await PagedChecksAsync(access, $"repos/{E(owner)}/{E(repo)}/commits/{E(commitSha)}/check-runs", "check_runs", r =>
+        {
+            var output = r.TryGetProperty("output", out var o) && o.ValueKind == JsonValueKind.Object ? o : default;
+            return new CheckInfo(
+                r.GetProperty("name").GetString() ?? "",
+                r.GetProperty("status").GetString() ?? "",
+                Text(r, "conclusion") is { Length: > 0 } c ? c : null,
+                Https(Text(r, "html_url")),
+                "check-run")
+            {
+                Id = r.TryGetProperty("id", out var id) && id.ValueKind == JsonValueKind.Number ? id.GetInt64() : null,
+                StartedAt = Date(r, "started_at"),
+                CompletedAt = Date(r, "completed_at"),
+                App = r.TryGetProperty("app", out var app) && app.ValueKind == JsonValueKind.Object ? Text(app, "name") is { Length: > 0 } an ? an : null : null,
+                Suite = r.TryGetProperty("check_suite", out var suite) && suite.ValueKind == JsonValueKind.Object && suite.TryGetProperty("id", out var sid) && sid.ValueKind == JsonValueKind.Number ? sid.GetInt64() : null,
+                Title = output.ValueKind == JsonValueKind.Object && Text(output, "title") is { Length: > 0 } title ? title : null,
+                Summary = output.ValueKind == JsonValueKind.Object && Text(output, "summary") is { Length: > 0 } summary ? summary : null,
+                AnnotationCount = output.ValueKind == JsonValueKind.Object ? Int(output, "annotations_count") ?? 0 : 0,
+            };
+        }, ct).ConfigureAwait(false);
         if (!runs.Ok)
         {
             return runs;
@@ -864,7 +1064,13 @@ public sealed class GitHubRepoSource(
                 state == "pending" ? "pending" : "completed",
                 state == "pending" ? null : state,
                 Https(Text(s, "target_url")),
-                "status");
+                "status")
+            {
+                StartedAt = Date(s, "created_at"),
+                CompletedAt = state == "pending" ? null : Date(s, "updated_at"),
+                App = s.TryGetProperty("creator", out var creator) && creator.ValueKind == JsonValueKind.Object ? Text(creator, "login") is { Length: > 0 } cl ? cl : null : null,
+                Description = Text(s, "description") is { Length: > 0 } d ? d : null,
+            };
         }, ct).ConfigureAwait(false);
         return statuses.Ok
             ? RepoResult<CheckList>.Of(new CheckList([.. runs.Value!.Checks, .. statuses.Value!.Checks], runs.Value.Truncated || statuses.Value.Truncated))
@@ -914,6 +1120,37 @@ public sealed class GitHubRepoSource(
 
     private static string? Https(string url) =>
         Uri.TryCreate(url, UriKind.Absolute, out var u) && u.Scheme == Uri.UriSchemeHttps ? u.AbsoluteUri : null;
+
+    /// <summary>
+    /// A person's picture, only from GitHub's avatar host: the page's CSP admits images from there
+    /// alone, so any other address would be a broken picture, and a CI's or a Markdown's address is
+    /// not ours to vouch for.
+    /// </summary>
+    private static string? Avatar(JsonElement who) =>
+        who.ValueKind == JsonValueKind.Object && Https(Text(who, "avatarUrl") is { Length: > 0 } a ? a : Text(who, "avatar_url")) is { } url
+            && new Uri(url).Host.Equals("avatars.githubusercontent.com", StringComparison.OrdinalIgnoreCase) ? url : null;
+
+    private static string? Avatar(JsonElement element, string property) =>
+        element.TryGetProperty(property, out var who) ? Avatar(who) : null;
+
+    private static DateTimeOffset? Date(JsonElement element, string property) =>
+        element.TryGetProperty(property, out var v) && v.ValueKind == JsonValueKind.String && v.TryGetDateTimeOffset(out var when) ? when : null;
+
+    /// <summary>GitHub's reaction groups on a node, those with anyone in them.</summary>
+    private static IReadOnlyList<ReactionGroup> Reactions(JsonElement element)
+    {
+        if (!element.TryGetProperty("reactionGroups", out var groups) || groups.ValueKind != JsonValueKind.Array)
+        {
+            return [];
+        }
+
+        return groups.EnumerateArray()
+            .Select(g => new ReactionGroup(Text(g, "content"),
+                g.TryGetProperty("reactors", out var r) && r.ValueKind == JsonValueKind.Object ? Int(r, "totalCount") ?? 0 : 0,
+                Bool(g, "viewerHasReacted")))
+            .Where(g => g.Count > 0 && g.Content.Length > 0)
+            .ToList();
+    }
 
     private static string HexColor(string color) => color.Length == 6 && color.All(Uri.IsHexDigit) ? color.ToLowerInvariant() : "";
 
