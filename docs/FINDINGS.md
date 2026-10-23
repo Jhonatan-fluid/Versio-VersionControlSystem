@@ -19,6 +19,69 @@ produce a diff touching everything else.
 
 ---
 
+### A File-Based Storage library's device tree was filed under POUs
+
+**2026-10-23, branch `PrReview`, the owner's `CodesysStandardLibrary` (`FsLibrary.fbslib`).**
+The Project panel's root read `00_Template`, `01_Core` and a `POUs` folder side by side, and
+`POUs` held the device `CODESYS_Control_Win_V3_x64` with its whole application (`Main`,
+`TestAlarm`, `TestLogger`, the tasks), the library manager, `Project Settings` and `ProjectInfo`.
+That is backwards: CODESYS draws the library in its POUs pane and the test application in its
+Devices pane. In the same look, `PersistentVars` and `Symbols` drew as raw archive XML on the
+Rendered tab.
+
+**Cause of the grouping.** `ProjectTreeBuilder.GroupPoolObjects` guesses: when foldered objects
+sit beside root-level ones, the root-level ones are the pool. That is true of the classic mirror,
+where the device tree is directories and the pool is files at the root. A File-Based Storage
+folder is the other way round. Its device is a root-level `.device.xml.v3` with everything under
+its `^` folder, and its pool is the user's folders plus a few root files. So the guess filed the
+device under POUs and left the real pool loose.
+
+**Fix.** The vendor says which pane an object is in, and the builder no longer guesses when it
+is told. `ProjectObject.View` is new, nullable and left out of the JSON when null, so no existing
+manifest serialises differently. `CodesysFileBasedLayout.ViewOf` names `Devices` for a root
+`.device.xml.v3` and anything under its `^` folder, and `POUs` for everything else. When any
+object names a view, `ProjectTreeBuilder.GroupByView` files each top-level object under it and
+`GroupPoolObjects` is skipped. Only top-level objects are moved, because a member belongs with
+its owner whatever its own field says. The builder learnt no vendor word: `Devices` is a
+constant in the CODESYS pack, and the classic mirror keeps the old guess because its manifest
+names no views.
+
+**Where Project Settings and the top-level `Libraries.json` go.** POUs. CODESYS's own tree for
+this library, read through its scripting connection, lists the library folders and *Project
+Information* apart from `CODESYS_Control_Win_V3_x64`. The device subtree holds only Plc Logic →
+Application and the application's own objects. The application's `Libraries.json` is the
+application's library manager and stays under it. The root one is the project-level manager,
+which is the pool's, as the classic mirror's group already said (see *POUs* in this file). That
+connection does not list the library manager or the project settings at all, so their place is
+reasoned from being outside the device's `^` folder, not read off the IDE. **The owner should
+confirm it against the IDE's own POUs pane.**
+
+**Cause of the raw XML, and fix.** `CodesysMemberTable` tabled an archive-XML declaration only
+when the body was an LD/FBD network list. A persistent variable list has an `Interface` and no
+`Implementation` at all, so it fell through to raw. It is now tabled as the global-variable list
+the IDE shows. That also covers a parameter list kept as `.gvl.xml.v3`. A visualisation has the
+same shape, but its text is a bare `VAR_IN_OUT` block with no object keyword, which the parser
+does not table. A guard on the table's kind was written to keep visuals out, and a mutation
+check showed it could never fire, so it was removed. A test with a real parameter in a visual's
+interface pins the behaviour instead. The symbol configuration (`.symbolconfig.xml.v3`) is new
+in `CodesysCatalogs.SymbolConfiguration`: one row per option as CODESYS names it. GUID-typed
+values are left out because they are CODESYS's references to its own generated objects. Lists
+are counted, not listed, because the only configuration in hand selects nothing, so the shape of
+a selected variable was never seen. The note under the table says so.
+
+**Evidence.** `A_library_is_drawn_as_codesys_draws_it_the_pou_pool_apart_from_the_device_tree`
+(CODESYS pure) uses the library's real file list. Setting `View = null` in `Describe` turns it
+red, along with the fixture's tree test, which now reads `Devices → Device`.
+`A_manifest_that_names_its_panes_is_grouped_by_them_and_not_by_the_pool_guess` (Core) goes red
+when the builder is put back to the guess alone. The persistent-list and symbol tests each went
+red with their branch removed.
+
+**Not done.** The App and web viewer were not looked at after the change: the tree's two new
+levels and the two tables are tested, not seen. The dev build on `_attrcheck` was closed to
+rebuild.
+
+---
+
 ### A block's properties sat among its methods, and a deleted one looked like any other
 
 **2026-10-22, branch `PrReview`, the same `FB_Logger` once the fix below had put its deleted

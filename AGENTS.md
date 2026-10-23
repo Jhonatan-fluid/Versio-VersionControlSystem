@@ -252,11 +252,11 @@ stays that way.
 
 | Suite | Count | Time | Needs |
 |---|---|---|---|
-| `Versio.Core.Tests` | 1,811 | under a second | nothing |
+| `Versio.Core.Tests` | 1,812 | under a second | nothing |
 | `Versio.Integration.Tests` | 176 | ~10 s | real git |
 | `Versio.App.Tests` | 797 | ~3.6 min on 2026-09-22, 8 m 38 s on 2026-10-05, 10 m 46 s on 2026-10-19, 10 m 42 s on 2026-10-22 (idleness not checked); STA, no window shown; it was ~50 s once | nothing |
 | `Versio.Arch.Tests` | 36 | instant | nothing — it reads assembly metadata, IL and the `.csproj` files |
-| `Versio.Plc.Codesys.Pure.Tests` | 380 | under a second | nothing — the planner, the codecs, the protocol |
+| `Versio.Plc.Codesys.Pure.Tests` | 385 | under a second | nothing — the planner, the codecs, the protocol |
 | `Versio.Plc.Codesys.Parity.Tests` | 100 | ~15 s | `python` on PATH — **skips cleanly without it, so check the count, not the colour** |
 | `Versio.Plc.TiaPortal.Pure.Tests` | 98 | instant | nothing — format, planner, protocol, LAD and FBD parser |
 | `Versio.Plc.TiaPortal.Tests` | 5 | seconds when skipped; minutes when Portal runs the import gate | **real TIA Portal** — skips cleanly without Openness membership or LFS content. Import Fact is green |
