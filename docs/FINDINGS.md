@@ -81,8 +81,10 @@ Plc Logic and the Application have **no settings in their files at all**: each i
 archive element. They still show their raw XML, as Plc Logic always has. **Then they said so
 (`06fedf4`):** `IPlcProjectFormat.HoldsNoSettings`, default false, is answered by the CODESYS
 pack for archive XML with no text anywhere, and `EmptyObjectNote` is the one wording. The web
-viewer draws it. The desktop pane does not yet: its branch goes in `ShellViewModel.cs`, which
-waits for another session's uncommitted edits. The Application was expected to be empty and is
+viewer draws it, and the desktop pane does too, from the same wording: an arm in the Rendered
+choice after the ladder and before Markdown. It waited for another session's `ShellViewModel.cs`
+edits to land. Deleting the arm turns
+`EmptyObjectPaneFlowTests_an_object_with_nothing_in_its_own_file_says_so` red. The Application was expected to be empty and is
 not: it holds boot-application, memory and signing settings, and still shows raw.
 
 **Evidence.** `A_library_is_drawn_as_codesys_draws_it_the_pou_pool_apart_from_the_device_tree`
