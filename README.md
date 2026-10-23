@@ -214,7 +214,7 @@ Versio.sln
 ├─ tests/
 │  ├─ Versio.TestSupport/       not a test project: the three helpers more than one suite
 │  │                            needs (TestPaths, TestLogger, VendorSeamScanner, LadderInvariants)
-│  ├─ Versio.Core.Tests/        1,812 unit tests — pure, no IO, under a second
+│  ├─ Versio.Core.Tests/        1,831 unit tests — pure, no IO, under a second
 │  ├─ Versio.Integration.Tests/ 176 tests against real git and the real filesystem, ~10 s.
 │  │                            NO CODESYS: that is a different project now, so this one
 │  │                            needs no filter and cannot accidentally cost half an hour
@@ -405,7 +405,7 @@ dotnet test tests/Versio.Core.Tests
 
 | Suite | Tests | Needs | Runs in |
 |---|---|---|---|
-| `Versio.Core.Tests` | 1,812 | nothing — pure, no IO, no clock, no UI | ~0.3 s |
+| `Versio.Core.Tests` | 1,831 | nothing — pure, no IO, no clock, no UI | ~0.3 s |
 | `Versio.Integration.Tests` | 176 | a real `git.exe` and the real filesystem | ~10 s |
 | `Versio.Arch.Tests` | 36 | nothing — it reads assembly metadata, IL, and the project files | instant |
 | `Versio.App.Tests` | 797 | Windows (WPF). Builds the real dialogs against the real stylesheet on an STA thread; **no window is ever shown** | ~3.6–8.6 min |

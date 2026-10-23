@@ -21,7 +21,7 @@ UX remainder) is built and tested as of 2026-08-25** — UX-6 find boxes, UX-7 `
 Escape, UX-8 copy-a-commit, UX-12 amend-while-unpushed — and its visual half joins the
 eyeball list in item 2. Do not start from `archive/` or a handoff.
 
-**Tests:** 3,862 across twelve projects (plus 127 vitest in `web/`), last counted 2026-10-23
+**Tests:** 3,881 across twelve projects (plus 127 vitest in `web/`), last counted 2026-10-23
 on `PrReview` — re-derived by summing the table below, which the old total no longer matched; the toolchain-gated
 counts (TIA 5, TwinCAT 6, CODESYS 55) are from their last gate runs, not re-run for the count. **The Rendered view of an ST object reads like the IDE (2026-09-20):** no
 `@@` line, one gutter, a Declaration / Implementation divider, and the implementation
@@ -61,7 +61,7 @@ marking, duplicate-param keys, and the detail-pane lookup. All of them are in
 
 | Project | Tests | Time | Needs |
 |---|---|---|---|
-| `Versio.Core.Tests` | 1,812 | under a second | nothing |
+| `Versio.Core.Tests` | 1,831 | under a second | nothing |
 | `Versio.Integration.Tests` | 176 | ~10 s | real git |
 | `Versio.App.Tests` | 797 (re-counted 2026-10-22) | 12 m 19 s, 10 m 42 s and 9 m 5 s on 2026-10-22; 10 m 46 s on 2026-10-19; 10 m 58 s on 2026-10-16; 6 m 35 s on 2026-10-10; 8 m 38 s on 2026-10-05; ~3.6 min on 2026-09-22 | nothing |
 | `Versio.Arch.Tests` | 36 | instant | nothing |

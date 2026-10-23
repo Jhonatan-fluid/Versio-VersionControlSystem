@@ -98,6 +98,63 @@ rebuild.
 
 ---
 
+### An attribute change showed nowhere on the Rendered tab
+
+**2026-10-23, branch `PrReview`, the owner's `CodesysStandardLibrary`.** `F_UpdateMeta.fn.st`
+gained one line, `{attribute 'linkalways'}`, above its header. The tree said M, Raw showed the
+line, and the Rendered tab drew the interface table and the code with nothing marked: no row
+changed, and no sentence said anything had. A silent hide, the shape AGENTS.md calls a bug even
+when every part is correct.
+
+**Cause.** `StDeclarationTable.Clean` dropped every `{…}` pragma from the code so declarations
+would parse, and nothing kept them. So an attribute on the object (`linkalways`) and one on a
+single variable (`{attribute 'symbol' := 'readwrite'}` above `FB_Alarm.Scada`) were both
+invisible, and a change to either one showed nowhere.
+
+**Fix, in three parts, from a mockup the owner approved first:**
+
+- **Attributes are read** in the neutral IEC reader, so CODESYS and TwinCAT get them alike:
+  `MemberTable.Attributes` for the ones above the header, `MemberRow.Attributes` for a
+  variable's own. Only `attribute 'name' [:= 'value']` counts as an attribute. A `{warning}`,
+  an `{IF defined}` or a `{region}` is not one. An attribute waits for the next declaration
+  across blank lines, as the compiler does, and a pragma written after a declaration's code
+  belongs to the next declaration. A row's line span now starts at its first attribute, so a
+  changed attribute marks the row and a review comment on that line lands on it.
+- **They are drawn as chips.** The object's chips go in a strip under the title, and a
+  variable's go under its name rather than in a column, because most variables have none.
+  `MemberTableDiff` matches attributes by name and marks each chip added, changed (with the old
+  value struck after it) or removed. A row whose only change is an attribute is a modified row.
+  This is the same on the desktop and in the web fragment. Which attribute wins (FB_Alarm's
+  block says `symbol = none` and Scada says `readwrite`) is CODESYS's rule, and Core does not
+  apply it.
+- **The safety net: `MemberTable.UnshownChange`.** The reader records every declaration line
+  no row, heading or chip accounts for (a doc comment, a comment between sections, a pragma
+  that is not an attribute), plus what the header says beyond what is drawn (`EXTENDS`, a
+  modifier, but not a function's return type, which is its Return row). When that set changes,
+  the table says "1 declaration change is not shown in this table (line 3)" with an *Open Raw*
+  link. The two sides are lined up as sequences, so a line that only moved does not trigger it.
+  This is deliberately narrower than the note the owner had removed on 2026-10-11, which fired
+  for any change outside the rows, including the code below the table, which marks itself.
+
+`Coverage.Table` vouches for a changed attribute line when its tokens are exactly the drawn
+pragma's tokens, so a pull request review counts an attribute change as shown. A pragma
+spelled another way (`{ attribute … }`) stays a gap.
+
+**Checked by breaking it:** each of these, mutated, turns at least one Core test red: the
+attribute clause in `Differs`, the `UnshownChange` assignment, the table-level
+`CompareAttributes` call, the header residue, giving trailing pragmas to the next declaration,
+claiming the opening lines of a block comment (this one stayed green until a test was added for
+it), the row chips in `Coverage`, and the row chips in `MemberTableHtml`. After every restore the
+file was touched and the baseline re-run green.
+
+**Not covered by any test:** the desktop XAML (the chip template, the strip, the warning
+border). The App suite drives the view model, not the templates. The dev build opened a copy of
+the library with zero `ERR` lines; how it looks was left for the owner to eyeball. Also left
+alone: a pragma on one value of an enumeration, which is claimed but not drawn, and a pragma
+written after code on a line in the middle of a declaration that spans several lines.
+
+---
+
 ### A block's properties sat among its methods, and a deleted one looked like any other
 
 **2026-10-22, branch `PrReview`, the same `FB_Logger` once the fix below had put its deleted
