@@ -131,6 +131,66 @@
                 <Setter Property="Text" Value="{Binding ChangeSummary}" />
                 <Setter Property="Visibility" Value="{Binding HasChangeSummary, Converter={StaticResource BoolToVisibility}}" />
             </Style>
+            <!-- One attribute ({attribute 'symbol' := 'readwrite'}) as a chip: the object's in a
+                 strip under the table's title, a member's under its name. Added green, changed
+                 amber with the old value struck after it, removed red and struck; the change in
+                 words on hover, so it never rests on colour alone. -->
+            <DataTemplate x:Key="AttributeChip" DataType="{x:Type projects:MemberAttribute}">
+                <Border Margin="0,2,4,0" Padding="5,0" CornerRadius="3" BorderThickness="1"
+                        ToolTip="{Binding ChangeLabel}">
+                    <Border.Style>
+                        <Style TargetType="Border">
+                            <Setter Property="BorderBrush" Value="{DynamicResource Brush.Border.Subtle}" />
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding IsAdded}" Value="True">
+                                    <Setter Property="Background" Value="{DynamicResource Brush.Diff.AddedBg}" />
+                                    <Setter Property="BorderBrush" Value="{DynamicResource Brush.Status.Added}" />
+                                </DataTrigger>
+                                <DataTrigger Binding="{Binding IsModified}" Value="True">
+                                    <Setter Property="BorderBrush" Value="{DynamicResource Brush.Status.Modified}" />
+                                </DataTrigger>
+                                <DataTrigger Binding="{Binding IsRemoved}" Value="True">
+                                    <Setter Property="Background" Value="{DynamicResource Brush.Diff.DeletedBg}" />
+                                    <Setter Property="BorderBrush" Value="{DynamicResource Brush.Status.Deleted}" />
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </Border.Style>
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock Text="{Binding Text}"
+                                   AutomationProperties.Name="Attribute"
+                                   FontFamily="{DynamicResource Font.Mono}"
+                                   FontSize="{DynamicResource Font.Size.Caption}">
+                            <TextBlock.Style>
+                                <Style TargetType="TextBlock">
+                                    <Setter Property="Foreground" Value="{DynamicResource Brush.Text.Secondary}" />
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding IsAdded}" Value="True">
+                                            <Setter Property="Foreground" Value="{DynamicResource Brush.Status.Added}" />
+                                        </DataTrigger>
+                                        <DataTrigger Binding="{Binding IsModified}" Value="True">
+                                            <Setter Property="Foreground" Value="{DynamicResource Brush.Status.Modified}" />
+                                        </DataTrigger>
+                                        <DataTrigger Binding="{Binding IsRemoved}" Value="True">
+                                            <Setter Property="Foreground" Value="{DynamicResource Brush.Status.Deleted}" />
+                                            <Setter Property="TextDecorations" Value="Strikethrough" />
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </TextBlock.Style>
+                        </TextBlock>
+                        <TextBlock Text="{Binding OlderValue}" Margin="4,0,0,0"
+                                   TextDecorations="Strikethrough"
+                                   FontFamily="{DynamicResource Font.Mono}"
+                                   FontSize="{DynamicResource Font.Size.Caption}"
+                                   Foreground="{DynamicResource Brush.Text.Disabled}"
+                                   Visibility="{Binding IsModified, Converter={StaticResource BoolToVisibility}}" />
+                    </StackPanel>
+                </Border>
+            </DataTemplate>
+            <ItemsPanelTemplate x:Key="AttributeChipPanel">
+                <WrapPanel />
+            </ItemsPanelTemplate>
         </ResourceDictionary>
     </Window.Resources>
 
@@ -1392,6 +1452,39 @@
                                                    Foreground="{DynamicResource Brush.Status.Modified}"
                                                    Visibility="{Binding HasChangeSummary,
                                                        Converter={StaticResource BoolToVisibility}}" />
+                                        <!-- A declaration change the table cannot draw (a doc
+                                             comment, an EXTENDS, a pragma that is no attribute).
+                                             Only then: the owner removed a broader note on
+                                             2026-10-11, and this one says only what the pane
+                                             would otherwise hide. FINDINGS 2026-10-23. -->
+                                        <Border Margin="0,-4,0,8" Padding="6,3"
+                                                BorderThickness="1" CornerRadius="3"
+                                                BorderBrush="{DynamicResource Brush.Status.Modified}"
+                                                Visibility="{Binding HasUnshownChange,
+                                                    Converter={StaticResource BoolToVisibility}}">
+                                            <TextBlock TextWrapping="Wrap"
+                                                       AutomationProperties.Name="A declaration change not shown in this table"
+                                                       FontFamily="{DynamicResource Font.UI}"
+                                                       FontSize="{DynamicResource Font.Size.Caption}"
+                                                       Foreground="{DynamicResource Brush.Status.Modified}">
+                                                <Run Text="{Binding UnshownChange, Mode=OneWay}" />
+                                                <Hyperlink Command="{Binding DataContext.ShowRawCommand,
+                                                               RelativeSource={RelativeSource AncestorType=Window}}"
+                                                           Foreground="{DynamicResource Brush.Accent.Default}">Open Raw</Hyperlink>
+                                            </TextBlock>
+                                        </Border>
+                                        <!-- The object's own attributes, under the title. -->
+                                        <DockPanel Margin="0,0,0,8"
+                                                   Visibility="{Binding HasAttributes,
+                                                       Converter={StaticResource BoolToVisibility}}">
+                                            <TextBlock DockPanel.Dock="Left" Text="ATTRIBUTES"
+                                                       Margin="0,3,8,0" VerticalAlignment="Top"
+                                                       Style="{StaticResource SectionLabel}" />
+                                            <ItemsControl ItemsSource="{Binding Attributes}"
+                                                          AutomationProperties.Name="Attributes of this object"
+                                                          ItemTemplate="{StaticResource AttributeChip}"
+                                                          ItemsPanel="{StaticResource AttributeChipPanel}" />
+                                        </DockPanel>
                                         <Border BorderBrush="{DynamicResource Brush.Border.Subtle}"
                                                 BorderThickness="1"
                                                 SnapsToDevicePixels="True"
@@ -1498,6 +1591,7 @@
                                                                             </Style>
                                                                         </TextBlock.Style>
                                                                     </TextBlock>
+                                                                    <StackPanel>
                                                                     <TextBlock Text="{Binding DisplayName}"
                                                                                TextTrimming="CharacterEllipsis"
                                                                                FontFamily="{DynamicResource Font.Mono}"
@@ -1521,6 +1615,18 @@
                                                                             </Style>
                                                                         </TextBlock.Style>
                                                                     </TextBlock>
+                                                                    <!-- The member's own attributes, as chips under its
+                                                                         name rather than a column: most members have
+                                                                         none, and a column empty on nearly every row
+                                                                         takes its width from the comment. -->
+                                                                    <ItemsControl ItemsSource="{Binding Attributes}"
+                                                                                  AutomationProperties.Name="Attributes of this member"
+                                                                                  MaxWidth="280" HorizontalAlignment="Left"
+                                                                                  ItemTemplate="{StaticResource AttributeChip}"
+                                                                                  ItemsPanel="{StaticResource AttributeChipPanel}"
+                                                                                  Visibility="{Binding HasAttributes,
+                                                                                      Converter={StaticResource BoolToVisibility}}" />
+                                                                    </StackPanel>
                                                                     </DockPanel>
                                                                 </Border>
                                                                 <Border Grid.Column="1" Style="{StaticResource MemberTableCell}" MinWidth="88"

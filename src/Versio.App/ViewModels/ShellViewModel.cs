@@ -6836,6 +6836,18 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         return table with { Members = rows };
     }
 
+    /// <summary>
+    /// "Open Raw" on a member table that warns it does not draw a declaration change: the Raw
+    /// chip pressed for the reader, the same as pressing it.
+    /// </summary>
+    public RelayCommand ShowRawCommand => _showRawCommand ??= new RelayCommand(() =>
+    {
+        _logger.Info(LogCategory.Ui, "Raw opened from a member table's unshown-change note");
+        ShowRawTab = true;
+    });
+
+    private RelayCommand? _showRawCommand;
+
     /// <summary>A linked type pressed in a member table; the parameter is the object's guid.</summary>
     public RelayCommand<string> OpenObjectCommand =>
         _openObjectCommand ??= new RelayCommand<string>(OpenObject);
@@ -7249,7 +7261,14 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         // changed.
         var marked = MemberTableDiff.Compare(baseline, current);
 
-        _logger.Debug(LogCategory.Ui, $"member table {current.Name}: {marked.ChangeSummary}");
+        var attributes = marked.Attributes.Concat(marked.Members.SelectMany(m => m.Attributes)).Count(a => a.Change != MemberChange.None);
+        _logger.Debug(LogCategory.Ui, $"member table {current.Name}: {marked.ChangeSummary} {attributes} attribute(s) changed");
+        if (marked.HasUnshownChange)
+        {
+            // Said at Info: the pane is warning the reader that it hides something, and the log
+            // should hold that too when they ask why the table told them to go to Raw.
+            _logger.Info(LogCategory.Ui, $"member table {current.Name}: {marked.UnshownChange}");
+        }
         RenderedContent = shown is InterfaceRender render ? render with { Table = marked } : marked;
     }
 
