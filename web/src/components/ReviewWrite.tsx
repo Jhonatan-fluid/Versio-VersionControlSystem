@@ -13,7 +13,7 @@ export function newOpKey(): string {
   return `${Date.now()}-${random.slice(0, 32).padEnd(16, '0')}`;
 }
 
-interface Draft {
+export interface Draft {
   body: string;
   /** Set when first submitted, kept for every retry, dropped once the outcome is known. */
   opKey: string | null;
@@ -24,7 +24,7 @@ interface Draft {
 }
 
 /** Drafts survive a reload, a "load the latest" and a dropped connection: losing someone's words is the failure that matters. */
-function readDraft(slot: string): Draft {
+export function readDraft(slot: string): Draft {
   try {
     const raw = sessionStorage.getItem(slot);
     return raw ? (JSON.parse(raw) as Draft) : { body: '', opKey: null };
@@ -33,7 +33,7 @@ function readDraft(slot: string): Draft {
   }
 }
 
-function writeDraft(slot: string, draft: Draft | null) {
+export function writeDraft(slot: string, draft: Draft | null) {
   try {
     if (draft === null || (!draft.body && !draft.opKey)) {
       sessionStorage.removeItem(slot);

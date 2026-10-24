@@ -5,7 +5,7 @@ import { api } from '../api';
 import { CommentCard, anchorOf } from '../components/Conversation';
 import { FragmentHost } from '../components/FragmentHost';
 import { ErrorPanel } from '../components/Pane';
-import { describe, newOpKey, releasesKey } from '../components/ReviewWrite';
+import { describe, newOpKey, readDraft, releasesKey, writeDraft, type Draft } from '../components/ReviewWrite';
 import { RepoLayout } from '../components/RepoLayout';
 import { TreePanel } from '../components/TreePanel';
 import { Avatar, Blankslate, Icon, Loading, RelativeTime } from '../components/ui';
@@ -130,39 +130,52 @@ function CommitComments({ owner, repo, sha, onOpenPath }: { owner: string; repo:
 
 /** The box for a comment on the commit: the same key rules as every comment box, without a snapshot. */
 function CommitCommentBox({ owner, repo, sha, onDone }: { owner: string; repo: string; sha: string; onDone: () => void }) {
-  const [body, setBody] = useState('');
-  // Held from the first submission to the outcome, as CommentBox holds its key: a retry is the
-  // same operation to the server, never a second comment.
-  const [opKey, setOpKey] = useState<string | null>(null);
+  // The words and the held key are kept where every comment box keeps its draft (ReviewWrite's
+  // session storage), not in this component's state: the key is held from the first submission
+  // to the outcome so a retry is the same operation to the server, and a reload or a dropped
+  // connection mid-post must find that key again — held in React state only, as the first
+  // version did, the reload minted a new one and the retry was a second comment (review,
+  // 2026-10-24).
+  const slot = `commit:${owner}/${repo}:${sha}:comment`;
+  const [draft, setDraft] = useState<Draft>(() => readDraft(slot));
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState<string | null>(null);
+  useEffect(() => writeDraft(slot, draft), [slot, draft]);
+  const locked = draft.opKey !== null;
   async function submit() {
-    if (!body.trim() || busy) {
+    if (!draft.body.trim() || busy) {
       return;
     }
-    const key = opKey ?? newOpKey();
-    setOpKey(key);
+    const key = draft.opKey ?? newOpKey();
+    setDraft({ body: draft.body, opKey: key });
     setBusy(true);
     setNote(null);
-    const answer = await api.addCommitComment(owner, repo, sha, { opKey: key, body });
+    const answer = await api.addCommitComment(owner, repo, sha, { opKey: key, body: draft.body });
     setBusy(false);
     if (answer.outcome === 'done') {
-      setBody('');
-      setOpKey(null);
+      writeDraft(slot, null);
+      setDraft({ body: '', opKey: null });
       onDone();
       return;
     }
-    if (releasesKey(answer, opKey !== null)) {
-      setOpKey(null);
+    if (releasesKey(answer, draft.opKey !== null)) {
+      setDraft((d) => ({ ...d, opKey: null }));
     }
     setNote(describe(answer));
   }
   return (
     <div className="commit-comment-new comment-box">
-      <textarea value={body} placeholder="Leave a comment on this commit" readOnly={opKey !== null} rows={4} onChange={(e) => { setBody(e.target.value); setOpKey(null); }} />
+      {/* Once submitted the text is the key's payload: a retry with other words is another write,
+          which the server refuses. "Edit text" starts over with a new key, as CommentBox's does. */}
+      <textarea value={draft.body} placeholder="Leave a comment on this commit" readOnly={locked} rows={4} onChange={(e) => setDraft({ body: e.target.value, opKey: null })} />
       {note && <p className="notice comment-note" role="status">{note}</p>}
       <div className="comment-actions">
-        <button type="button" className="btn btn-primary" onClick={submit} disabled={busy || !body.trim()}>{opKey !== null && !busy ? 'Try again' : 'Comment on this commit'}</button>
+        {locked && !busy && (
+          <button type="button" className="button-quiet" onClick={() => { setDraft({ ...draft, opKey: null }); setNote(null); }} title="Edit the text again; a new submission follows">
+            Edit text
+          </button>
+        )}
+        <button type="button" className="btn btn-primary" onClick={submit} disabled={busy || !draft.body.trim()}>{locked && !busy ? 'Try again' : 'Comment on this commit'}</button>
       </div>
     </div>
   );
@@ -270,7 +283,7 @@ function CommitFile({ owner, repo, base, head, file, view, layout, onView, onLay
       </header>
       {!folded && (
         <div className="file-review-body">
-          {result.state === 'loading' && <p className="muted" aria-busy="true">Loading...</p>}
+          {result.state === 'loading' && <Loading what="Drawing the file…" />}
           {result.state === 'error' && <ErrorPanel error={result.error} signInUrl={signInUrl} />}
           {result.state === 'ok' && (
             <>

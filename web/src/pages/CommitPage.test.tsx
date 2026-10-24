@@ -46,6 +46,8 @@ function answer(url: string): unknown {
 }
 
 let writes: { url: string; body: Record<string, unknown>; csrf: string | null }[] = [];
+/** What the server answers a post with; a test sets it to see the box hold its key. */
+let postAnswer: Record<string, unknown> = { outcome: 'done', id: 'CC_3' };
 
 async function render(path: string) {
   urls = [];
@@ -55,7 +57,7 @@ async function render(path: string) {
     if (init?.method === 'POST') {
       const headers = (init.headers ?? {}) as Record<string, string>;
       writes.push({ url, body: JSON.parse(init.body as string) as Record<string, unknown>, csrf: headers['X-Versio-Request'] ?? null });
-      return new Response(JSON.stringify({ outcome: 'done', id: 'CC_3' }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+      return new Response(JSON.stringify(postAnswer), { status: 200, headers: { 'Content-Type': 'application/json' } });
     }
     return new Response(JSON.stringify(answer(url)), { status: 200, headers: { 'Content-Type': 'application/json' } });
   }));
@@ -83,6 +85,8 @@ describe('CommitPage', () => {
   afterEach(() => {
     vi.unstubAllGlobals();
     document.body.innerHTML = '';
+    sessionStorage.clear();
+    postAnswer = { outcome: 'done', id: 'CC_3' };
   });
 
   it('draws the card: message and body, both people, the signature, the stats, the parent, Browse files', async () => {
@@ -145,5 +149,44 @@ describe('CommitPage', () => {
     // Posted: read again, so the new comment shows without a reload.
     expect(urls.filter((u) => u.includes('/commit/comments')).length).toBe(2);
     act(() => root.unmount());
+  });
+
+  // The key is held across a reload (review, 2026-10-24): a post whose outcome is unknown, then
+  // the page opened again, finds the same words and the same key, so the retry is the same
+  // operation to the server and never a second comment.
+  it('keeps the words and the held key across a reload, so a retry is the same operation', async () => {
+    postAnswer = { outcome: 'unknown', message: 'The connection was lost while posting.' };
+    const first = await render(`/acme/plant/commit/${sha}`);
+    const box = first.host.querySelector('.commit-comment-new')!;
+    const textarea = box.querySelector('textarea')!;
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')!.set!.call(textarea, 'Looks right.');
+      textarea.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    await act(async () => {
+      Array.from(box.querySelectorAll('button')).find((b) => b.textContent === 'Comment on this commit')!.click();
+      await new Promise((r) => setTimeout(r, 20));
+    });
+    expect(writes).toHaveLength(1);
+    const key = writes[0]!.body.opKey as string;
+    expect(box.querySelector('.comment-note')?.textContent).toContain('connection was lost');
+    act(() => first.root.unmount());
+
+    postAnswer = { outcome: 'done', id: 'CC_3' };
+    const second = await render(`/acme/plant/commit/${sha}`);
+    const again = second.host.querySelector('.commit-comment-new')!;
+    expect(again.querySelector('textarea')?.value).toBe('Looks right.');
+    expect(again.querySelector('textarea')?.readOnly).toBe(true);
+    const retry = Array.from(again.querySelectorAll('button')).find((b) => b.textContent === 'Try again');
+    expect(retry).toBeDefined();
+    await act(async () => {
+      retry!.click();
+      await new Promise((r) => setTimeout(r, 20));
+    });
+    expect(writes).toHaveLength(1);
+    expect(writes[0]!.body.opKey).toBe(key);
+    expect(again.querySelector('textarea')?.value).toBe('');
+    expect(sessionStorage.length).toBe(0);
+    act(() => second.root.unmount());
   });
 });
