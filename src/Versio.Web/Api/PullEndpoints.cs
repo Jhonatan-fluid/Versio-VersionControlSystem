@@ -585,7 +585,9 @@ public static class PullEndpoints
                         id = c.Id,
                         author = CodeHtml.Spelled(c.Author),
                         when = c.When,
-                        html = ApiEndpoints.MarkdownFragment(ReviewTags.Strip(c.Body)),
+                        // The suggestion fence is drawn by the page as the widget (below), so the
+                        // prose is rendered without it: once, as github.com shows it.
+                        html = ApiEndpoints.MarkdownFragment(Suggestions.Without(ReviewTags.Strip(c.Body))),
                         // The text to edit, tags removed: only ever a textarea's value on the page, never markup.
                         markdown = c.CanEdit ? ReviewTags.Strip(c.Body) : null,
                         commit = c.Commit,

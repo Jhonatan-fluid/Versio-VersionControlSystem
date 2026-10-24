@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 import { Link } from 'react-router';
 import type { Reaction, ReviewThread, TimelineItem } from '../api';
 import { FragmentHost } from './FragmentHost';
@@ -24,18 +24,75 @@ const emoji: Record<string, string> = {
   THUMBS_UP: '👍', THUMBS_DOWN: '👎', LAUGH: '😄', HOORAY: '🎉', CONFUSED: '😕', HEART: '❤️', ROCKET: '🚀', EYES: '👀',
 };
 
-/** The reactions on a body, a comment or a review: read-only pills (writing them is FINISH.md Step 5). */
-export function Reactions({ reactions }: { reactions?: Reaction[] | null }) {
-  if (!reactions || reactions.length === 0) {
+/** GitHub's eight reactions, in the order its picker shows them. */
+export const reactionWords = ['THUMBS_UP', 'THUMBS_DOWN', 'LAUGH', 'HOORAY', 'CONFUSED', 'HEART', 'ROCKET', 'EYES'] as const;
+
+/**
+ * The reactions on a body, a comment or a review: pills, and — when the viewer may react — each
+ * pill a toggle of their own reaction, with GitHub's picker to add another (FINISH.md Step 5).
+ * `onToggle` is the page's: it posts, and nothing here keeps a key.
+ */
+export function Reactions({ reactions, onToggle }: { reactions?: Reaction[] | null; onToggle?: (content: string, on: boolean) => void }) {
+  const [picking, setPicking] = useState(false);
+  const list = reactions ?? [];
+  if (list.length === 0 && !onToggle) {
     return null;
   }
+  const pill = (r: Reaction) => (
+    <span aria-hidden="true">{emoji[r.content] ?? r.content}</span>
+  );
   return (
     <div className="reactions" aria-label="Reactions">
-      {reactions.map((r) => (
+      {list.map((r) => onToggle ? (
+        <button key={r.content} type="button" className={`reaction${r.viewerHasReacted ? ' is-mine' : ''}`} title={`${r.count} ${r.content.toLowerCase().replace('_', ' ')}`}
+          aria-pressed={r.viewerHasReacted} onClick={() => onToggle(r.content, !r.viewerHasReacted)}>
+          {pill(r)} {r.count}
+        </button>
+      ) : (
         <span key={r.content} className={`reaction${r.viewerHasReacted ? ' is-mine' : ''}`} title={`${r.count} ${r.content.toLowerCase().replace('_', ' ')}`}>
-          <span aria-hidden="true">{emoji[r.content] ?? r.content}</span> {r.count}
+          {pill(r)} {r.count}
         </span>
       ))}
+      {onToggle && (
+        <span className="reaction-add">
+          <button type="button" className="reaction reaction-add-button" aria-label="Add reaction" aria-expanded={picking} onClick={() => setPicking(!picking)}>
+            <Icon name="smiley" size={14} />
+          </button>
+          {picking && (
+            <span className="reaction-picker" role="menu">
+              {reactionWords.map((w) => (
+                <button key={w} type="button" role="menuitem" className={`reaction-pick${list.some((r) => r.content === w && r.viewerHasReacted) ? ' is-mine' : ''}`}
+                  title={w.toLowerCase().replace('_', ' ')} onClick={() => { setPicking(false); onToggle(w, !list.some((r) => r.content === w && r.viewerHasReacted)); }}>
+                  {emoji[w]}
+                </button>
+              ))}
+            </span>
+          )}
+        </span>
+      )}
+    </div>
+  );
+}
+
+/** GitHub's words for a hidden comment's reason. */
+export function minimizedWords(reason?: string | null): string {
+  const words: Record<string, string> = { SPAM: 'spam', ABUSE: 'abuse', OFF_TOPIC: 'off-topic', OUTDATED: 'outdated', DUPLICATE: 'duplicate', RESOLVED: 'resolved' };
+  return reason ? words[reason] ?? reason.toLowerCase().replace('_', ' ') : 'hidden';
+}
+
+/**
+ * A hidden comment, as github.com draws it: one line saying why, and the comment behind a "Show"
+ * — folded, never dropped, so a hidden remark can still be read and unhidden.
+ */
+export function Minimized({ reason, children }: { reason?: string | null; children: ReactNode }) {
+  const [shown, setShown] = useState(false);
+  return (
+    <div className="comment-minimized">
+      <p className="comment-minimized-note text-muted">
+        This comment was marked as {minimizedWords(reason)}.
+        <button type="button" className="link-button" onClick={() => setShown(!shown)} aria-expanded={shown}>{shown ? 'Hide comment' : 'Show comment'}</button>
+      </p>
+      {shown && children}
     </div>
   );
 }
@@ -58,6 +115,11 @@ interface CardProps {
   /** The card's colour: a review's state. */
   tone?: 'default' | 'success' | 'danger';
   reactions?: Reaction[] | null;
+  /** The viewer's own reaction toggled: given only when they may react. */
+  onReact?: (content: string, on: boolean) => void;
+  /** Hidden on GitHub: the body folds behind its reason. */
+  minimized?: boolean;
+  minimizedReason?: string | null;
   children: ReactNode;
 }
 
@@ -67,9 +129,15 @@ export function anchorOf(url?: string | null): string | null {
   return url && url.includes('#') && /^[a-z]+-[a-z0-9]+$/i.test(hash) ? hash : null;
 }
 
-export function CommentCard({ author, avatar, association, when, editedAt, url, anchor, verb = 'commented', tools, badge, tone = 'default', reactions, children }: CardProps) {
+export function CommentCard({ author, avatar, association, when, editedAt, url, anchor, verb = 'commented', tools, badge, tone = 'default', reactions, onReact, minimized, minimizedReason, children }: CardProps) {
+  const body = (
+    <>
+      <div className="comment-body">{children}</div>
+      <Reactions reactions={reactions} onToggle={onReact} />
+    </>
+  );
   return (
-    <div className={`comment-row${tone === 'default' ? '' : ` comment-row-${tone}`}`} id={anchor ?? undefined}>
+    <div className={`comment-row${tone === 'default' ? '' : ` comment-row-${tone}`}${minimized ? ' is-minimized' : ''}`} id={anchor ?? undefined}>
       <Avatar login={author} url={avatar} size={40} />
       <article className="comment">
         <header className="comment-head">
@@ -86,8 +154,7 @@ export function CommentCard({ author, avatar, association, when, editedAt, url, 
             </span>
           )}
         </header>
-        <div className="comment-body">{children}</div>
-        <Reactions reactions={reactions} />
+        {minimized ? <Minimized reason={minimizedReason}>{body}</Minimized> : body}
       </article>
     </div>
   );
@@ -213,10 +280,15 @@ interface ReviewCardProps {
   onOpenPath: (path: string) => void;
   /** Where a thread's file opens in the review (Files changed, that file). */
   fileLink: (path: string) => string;
+  /** Header tools: Edit, Dismiss review. */
+  tools?: ReactNode;
+  /** An editor in place of the summary while it is being edited. */
+  editor?: ReactNode;
+  onReact?: (content: string, on: boolean) => void;
 }
 
 /** A review on the rail: its state as the badge, its summary as a card, its threads under it. */
-export function ReviewCard({ item, threads, renderThread, onOpenPath, fileLink }: ReviewCardProps) {
+export function ReviewCard({ item, threads, renderThread, onOpenPath, fileLink, tools, editor, onReact }: ReviewCardProps) {
   const { verb, icon, tone } = reviewLook(item.state);
   const anchor = anchorOf(item.url);
   return (
@@ -226,13 +298,17 @@ export function ReviewCard({ item, threads, renderThread, onOpenPath, fileLink }
         <div className="timeline-meta">
           <Avatar login={item.actor} url={item.avatar} size={20} />
           <span className="text-bold">{item.actor}</span> {verb} <RelativeTime when={item.when} />
+          {item.editedAt && <span className="text-muted" title={`Edited ${new Date(item.editedAt).toLocaleString()}`}>· edited</span>}
           <RoleBadge association={item.association} />
           {item.url && <a href={item.url} target="_blank" rel="noopener noreferrer" className="text-muted" title="On GitHub"><Icon name="link" /></a>}
+          {tools && <span className="comment-head-tools">{tools}</span>}
         </div>
-        {item.html && (
+        {editor ? (
+          <div className="comment comment-review-summary"><div className="comment-body">{editor}</div></div>
+        ) : (item.html || onReact) && (
           <div className="comment comment-review-summary">
-            <div className="comment-body"><FragmentHost html={item.html} path="" onOpenPath={onOpenPath} line={null} onLine={() => {}} /></div>
-            <Reactions reactions={item.reactions} />
+            {item.html && <div className="comment-body"><FragmentHost html={item.html} path="" onOpenPath={onOpenPath} line={null} onLine={() => {}} /></div>}
+            <Reactions reactions={item.reactions} onToggle={onReact} />
           </div>
         )}
         {threads.length > 0 && (

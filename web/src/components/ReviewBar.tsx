@@ -1,9 +1,11 @@
 import { useEffect, useState } from 'react';
 import type { CoverageSummary, PendingReviewView, ReviewFile, ReviewSnapshot, ReviewStatus, WriteAnswer } from '../api';
 import { api } from '../api';
+import { sanitize } from '../fragment';
 import type { Async } from '../useAsync';
 import { useAsync } from '../useAsync';
-import { ActionButton, describe, newOpKey, releasesKey, sentUnder } from './ReviewWrite';
+import { ActionButton, CommentBox, describe, newOpKey, releasesKey, sentUnder } from './ReviewWrite';
+import { Avatar, Counter, Icon } from './ui';
 
 export type ReviewEvent = 'COMMENT' | 'APPROVE' | 'REQUEST_CHANGES';
 
@@ -62,6 +64,9 @@ const never = () => new Promise<never>(() => {});
 export function ReviewBar({ owner, repo, snap, slots, status, pending, files, opened, viewed, onChanged, onStale, onOpenPath }: ReviewBarProps) {
   const [open, setOpen] = useState(false);
   const [submitted, setSubmitted] = useState<string | null>(null);
+  // The drafts of the pending review, each editable in place (Step 5): which one is being edited.
+  const [editing, setEditing] = useState<string | null>(null);
+  const [draftsOpen, setDraftsOpen] = useState(false);
   // Read again right after a submit, not at the next poll: a push that landed while the review was
   // being submitted is what the reviewer most needs told (C2 — the race we narrow but cannot close).
   const [movedSince, setMovedSince] = useState(false);
@@ -91,20 +96,48 @@ export function ReviewBar({ owner, repo, snap, slots, status, pending, files, op
               confirm="Discard your pending review and its comments? This cannot be undone." onDone={onChanged} />
           )}
           {pending.state === 'ok' && (
-            <button type="button" className="button" onClick={() => setOpen(!open)} aria-expanded={open}>
-              {review ? 'Finish your review' : 'Review changes'}
-            </button>
+            // GitHub's "Review changes" button with its pending count; the dialog opens under it.
+            <span className="review-changes">
+              <button type="button" className="btn btn-primary" onClick={() => setOpen(!open)} aria-expanded={open}>
+                {review ? 'Finish your review' : 'Review changes'}
+              </button>
+              {review && review.comments.length > 0 && <Counter scheme="primary">{review.comments.length}</Counter>}
+              <Icon name="triangle-down" className="text-muted" />
+            </span>
           )}
         </span>
       </div>
       {review && review.comments.length > 0 && (
-        <ul className="row-list review-pending-comments">
-          {review.comments.map((c) => (
-            <li key={c.id}>
-              <button type="button" className="link-button" onClick={() => onOpenPath(c.path)}>{c.pathLabel}</button>
-            </li>
-          ))}
-        </ul>
+        <div className="review-pending-comments">
+          <button type="button" className="link-button" onClick={() => setDraftsOpen(!draftsOpen)} aria-expanded={draftsOpen}>
+            {draftsOpen ? 'Hide your drafts' : 'Show your drafts'}
+          </button>
+          {draftsOpen && (
+            <ul className="row-list">
+              {review.comments.map((c) => (
+                <li key={c.id} className="review-draft">
+                  <div className="review-draft-head">
+                    <button type="button" className="link-button" onClick={() => onOpenPath(c.path)}>{c.pathLabel}</button>
+                    {c.line != null && <span className="text-muted"> line {c.startLine != null && c.startLine !== c.line ? `${c.startLine}–` : ''}{c.line}</span>}
+                    {c.markdown !== undefined && editing !== c.id && (
+                      <span className="comment-tools">
+                        <button type="button" className="link-button" onClick={() => setEditing(c.id)}>Edit</button>
+                        <ActionButton owner={owner} repo={repo} snap={snap} path={`/comments/${encodeURIComponent(c.id)}/delete`} label="Delete" confirm="Delete this draft?" onDone={onChanged} />
+                      </span>
+                    )}
+                  </div>
+                  {editing === c.id ? (
+                    // A draft is a review comment of the viewer's own: the same edit route as any comment, on a pending one.
+                    <CommentBox owner={owner} repo={repo} snap={snap} slot={`${slots}:edit:${c.id}`} path={`/comments/${encodeURIComponent(c.id)}`} method="PATCH"
+                      initial={c.markdown ?? ''} submitLabel="Save" onCancel={() => setEditing(null)} onDone={() => { setEditing(null); onChanged(); }} onStale={onStale} />
+                  ) : (
+                    <div className="review-draft-body fragment" dangerouslySetInnerHTML={{ __html: sanitize(c.html) }} />
+                  )}
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
       )}
       {submitted && (
         <p className="notice" role="status">
@@ -300,19 +333,33 @@ function ReviewDialog({ owner, repo, snap, slot, pending, author, notes, onOpenP
   );
 }
 
+type ReviewerRow = { login: string; state: string; isTeam?: boolean; avatar?: string | null; slug?: string | null };
+
+/** GitHub's icon beside a reviewer's standing. */
+function reviewerMark(state: string): { icon: 'check' | 'x' | 'comment' | 'dot-fill' | 'eye'; tone: string; words: string } {
+  switch (state) {
+    case 'APPROVED': return { icon: 'check', tone: 'text-success', words: 'approved these changes' };
+    case 'CHANGES_REQUESTED': return { icon: 'x', tone: 'text-danger', words: 'requested changes' };
+    case 'COMMENTED': return { icon: 'comment', tone: 'text-muted', words: 'left review comments' };
+    case 'DISMISSED': return { icon: 'x', tone: 'text-muted', words: 'review was dismissed' };
+    default: return { icon: 'dot-fill', tone: 'text-attention', words: 'awaiting requested review' };
+  }
+}
+
 /**
- * Who is asked to review: add by login, remove a request. Safe to repeat, so no key is held across
- * clicks beyond the one in flight.
+ * Who is asked to review: people by login, teams by slug (Step 5); a request withdrawn, a reviewer
+ * who already reviewed asked again (GitHub's "re-request"). Safe to repeat, so no key is held
+ * across clicks beyond the one in flight.
  */
-export function ReviewersEditor({ owner, repo, snap, reviewers, onChanged }: { owner: string; repo: string; snap: ReviewSnapshot; reviewers: { login: string; state: string }[]; onChanged: () => void }) {
+export function ReviewersEditor({ owner, repo, snap, reviewers, onChanged }: { owner: string; repo: string; snap: ReviewSnapshot; reviewers: ReviewerRow[]; onChanged: () => void }) {
   const [login, setLogin] = useState('');
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState<string | null>(null);
 
-  async function change(add: string[], remove: string[]) {
+  async function change(body: { add?: string[]; remove?: string[]; addTeams?: string[]; removeTeams?: string[] }) {
     setBusy(true);
     setNote(null);
-    const answer = await api.review.write(owner, repo, snap, '/reviewers', 'POST', { add, remove, opKey: newOpKey() });
+    const answer = await api.review.write(owner, repo, snap, '/reviewers', 'POST', { ...body, opKey: newOpKey() });
     setBusy(false);
     if (answer.outcome === 'done') {
       setLogin('');
@@ -322,22 +369,42 @@ export function ReviewersEditor({ owner, repo, snap, reviewers, onChanged }: { o
     }
   }
 
+  // "org/team" or "team:slug" names a team by its slug; anything else is a person's login.
+  function ask() {
+    const typed = login.trim();
+    if (!typed) {
+      return;
+    }
+    const team = typed.startsWith('team:') ? typed.slice('team:'.length) : typed.includes('/') ? typed.slice(typed.lastIndexOf('/') + 1) : null;
+    void change(team ? { addTeams: [team] } : { add: [typed] });
+  }
+
   return (
     <div className="reviewers-editor">
       <ul className="row-list">
-        {reviewers.map((r) => (
-          <li key={r.login}>
-            {r.login} <span className="muted">{r.state.toLowerCase().replace('_', ' ')}</span>
-            {/* Only an open request can be withdrawn, and only a person's (a team's name has a slash). */}
-            {r.state === 'REQUESTED' && /^[A-Za-z0-9-]+$/.test(r.login) && (
-              <button type="button" className="link-button" disabled={busy} onClick={() => change([], [r.login])} aria-label={`Stop asking ${r.login}`}>remove</button>
-            )}
-          </li>
-        ))}
+        {reviewers.map((r) => {
+          const mark = reviewerMark(r.state);
+          const teamSlug = r.isTeam ? r.slug ?? null : null;
+          // A person is named by login; a team only by its slug, when the server gave one.
+          const canName = !r.isTeam || teamSlug !== null;
+          return (
+            <li key={r.login} className="reviewer-row">
+              {r.isTeam ? <Icon name="person" className="text-muted" /> : <Avatar login={r.login} url={r.avatar} size={20} />}
+              <span className="reviewer-name">{r.login}</span>
+              <span className={`reviewer-mark ${mark.tone}`} title={mark.words}><Icon name={mark.icon} size={14} /></span>
+              {canName && r.state === 'REQUESTED' && (
+                <button type="button" className="link-button" disabled={busy} onClick={() => change(r.isTeam ? { removeTeams: [teamSlug!] } : { remove: [r.login] })} aria-label={`Stop asking ${r.login}`}>remove</button>
+              )}
+              {canName && r.state !== 'REQUESTED' && (
+                <button type="button" className="link-button" disabled={busy} onClick={() => change(r.isTeam ? { addTeams: [teamSlug!] } : { add: [r.login] })} aria-label={`Re-request review from ${r.login}`} title="Re-request review"><Icon name="sync" size={14} /></button>
+              )}
+            </li>
+          );
+        })}
       </ul>
-      <form className="reviewers-add" onSubmit={(e) => { e.preventDefault(); if (login.trim()) { change([login.trim()], []); } }}>
-        <input value={login} onChange={(e) => setLogin(e.target.value)} placeholder="GitHub login" aria-label="Ask for a review from" disabled={busy} />
-        <button type="submit" className="button-quiet" disabled={busy || !login.trim()}>Ask</button>
+      <form className="reviewers-add" onSubmit={(e) => { e.preventDefault(); ask(); }}>
+        <input value={login} onChange={(e) => setLogin(e.target.value)} placeholder="Login, or org/team" aria-label="Ask for a review from" disabled={busy} />
+        <button type="submit" className="btn btn-small" disabled={busy || !login.trim()}>Ask</button>
       </form>
       {note && <p className="notice comment-note" role="status">{note}</p>}
     </div>

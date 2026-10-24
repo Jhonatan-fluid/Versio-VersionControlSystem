@@ -14,11 +14,12 @@ import { PullPage, placementSelector, threadSelector } from './PullPage';
 const head = 'd'.repeat(40);
 const token = 'sealed-token';
 
-// A Raw text diff as TextDiffHtml draws it: rows carry the old and new file lines.
+// A Raw text diff as TextDiffHtml draws it: rows carry the old and new file lines, the sign in
+// its marker span and the line's text in its code element.
 const rawDiff = `<div class="cd-page cd-diff">
-  <div class="cd-drow" data-old-line="2" data-line="2"><span class="cd-num">2</span>VAR</div>
-  <div class="cd-drow" data-old-line="3"><span class="cd-num">3</span>-  run : BOOL;</div>
-  <div class="cd-drow" data-line="3"><span class="cd-num">3</span>+  run : BOOL := TRUE;</div>
+  <div class="cd-drow" data-old-line="2" data-line="2"><span class="cd-num">2</span><span class="cd-marker"> </span><code class="cd-code">VAR</code></div>
+  <div class="cd-drow" data-old-line="3"><span class="cd-num">3</span><span class="cd-marker">-</span><code class="cd-code">  run : BOOL;</code></div>
+  <div class="cd-drow" data-line="3"><span class="cd-num">3</span><span class="cd-marker">+</span><code class="cd-code">  run : BOOL := TRUE;</code></div>
 </div>`;
 
 // A rendered body as SourceHtml draws it: data-line is the line within its SECTION, not the file
@@ -80,6 +81,8 @@ interface Options {
   commits?: unknown[];
   counts?: Record<string, unknown>;
   threadReview?: string;
+  /** A suggested change on the first thread's comment (Step 5). */
+  suggestion?: string | null;
 }
 
 let calls: { url: string; snapshot: string | null; method: string; csrf: string | null; body: Record<string, unknown> | null }[] = [];
@@ -124,7 +127,8 @@ function answer(url: string, o: Options): unknown {
   }
   if (url.endsWith('/threads')) {
     const comment = (id: string, html: string) => ({ id, author: 'sam', when: '2026-10-17T09:00:00Z', html, markdown: 'text', commit: head, originalCommit: head, canEdit: true, canDelete: true,
-      reviewId: id === 'c1' ? o.threadReview ?? null : null, diffHunk: id === 'c1' ? '@@ -1,3 +1,3 @@\n a\n-b\n+c' : null });
+      reviewId: id === 'c1' ? o.threadReview ?? null : null, diffHunk: id === 'c1' ? '@@ -1,3 +1,3 @@\n a\n-b\n+c' : null,
+      suggestion: id === 'c1' ? o.suggestion ?? null : null, reactions: id === 'c1' ? [{ content: 'HEART', count: 2, viewerHasReacted: false }] : [] });
     const may = { canReply: true, canResolve: true, canUnresolve: true };
     return {
       truncated: false,
@@ -158,6 +162,9 @@ function answer(url: string, o: Options): unknown {
   }
   if (url.endsWith('/labels')) {
     return { labels: [{ value: 'plc', label: 'plc', color: '0e8a16' }, { value: 'safety', label: 'safety', color: 'd73a4a' }] };
+  }
+  if (url.endsWith('/milestones')) {
+    return { milestones: [{ number: 5, title: 'v2' }] };
   }
   if (url.endsWith('/branches')) {
     return { branches: [{ name: 'main', label: 'main', commit: 'x' }], truncated: false };
@@ -1051,7 +1058,9 @@ describe('PullPage review', () => {
     await click(button(host, 'Ask')!, host);
     await click(button(host, 'remove')!, host);
 
-    expect(writes().map((w) => w.body)).toMatchObject([{ add: ['lee'], remove: [] }, { add: [], remove: ['kim'] }]);
+    // Only the half being changed is sent (Step 5): an add, then a removal.
+    expect(writes().map((w) => w.body)).toMatchObject([{ add: ['lee'] }, { remove: ['kim'] }]);
+    expect(writes()[0]!.body).not.toHaveProperty('remove');
     act(() => root.unmount());
   });
 });
@@ -1613,6 +1622,202 @@ describe('PullPage files changed', () => {
     });
     await settle(host);
     expect(host.querySelector('.files-tree .tree-row.is-selected')?.textContent).toContain('Valve');
+    act(() => root.unmount());
+  });
+});
+
+// Step 5 of docs/web/FINISH.md: the writes GitHub's page has — reactions, hiding, dismissing and
+// editing a review, close with comment, suggested changes, the milestone, notifications, the lock,
+// re-requesting a reviewer, a team by slug, a draft edited in place.
+describe('PullPage review writes', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+    document.body.innerHTML = '';
+    sessionStorage.clear();
+  });
+
+  async function click(element: Element, host: HTMLElement) {
+    await act(async () => {
+      (element as HTMLElement).click();
+    });
+    await settle(host, () => false);
+  }
+
+  async function fill(element: HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement, value: string) {
+    await act(async () => {
+      const proto = element instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : element instanceof HTMLSelectElement ? HTMLSelectElement.prototype : HTMLInputElement.prototype;
+      Object.getOwnPropertyDescriptor(proto, 'value')!.set!.call(element, value);
+      element.dispatchEvent(new Event(element instanceof HTMLSelectElement ? 'change' : 'input', { bubbles: true }));
+    });
+  }
+
+  const at = '2026-10-17T09:00:00Z';
+  const button = (root: ParentNode, label: string) => Array.from(root.querySelectorAll('button')).find((b) => b.textContent?.trim() === label);
+  const writes = () => calls.filter((c) => c.method !== 'GET' && !c.url.endsWith('/markdown'));
+  const live = { nodeId: 'PR_12', canReact: true, viewerSubscription: 'SUBSCRIBED', milestoneNumber: null, locked: false };
+  const comment = (id: string, more: Record<string, unknown> = {}) => ({ kind: 'comment', actor: 'sam', when: at, html: '<p>hi</p>', text: null, state: null, sha: null, id, markdown: 'hi', canEdit: true, canDelete: true, ...more });
+  const review = (id: string, state: string, more: Record<string, unknown> = {}) => ({ kind: 'review', actor: 'kim', when: at, html: '<p>fine</p>', text: null, state, sha: null, id, markdown: 'fine', canEdit: true, canDelete: false, ...more });
+
+  it('toggles the viewer’s reaction on the description, a comment and a line comment, naming each subject', async () => {
+    const { host, root } = await render('/acme/plant/pull/12', { writable: true, counts: live, timeline: [comment('IC_1')] });
+    const cards = host.querySelectorAll('.comment-row');
+    // The description's picker, then a thumbs up; the comment's existing pill is a toggle.
+    await click(cards[0]!.querySelector('.reaction-add-button')!, host);
+    await click(cards[0]!.querySelector('.reaction-pick[title="thumbs up"]')!, host);
+
+    expect(writes().map((w) => w.body)).toMatchObject([{ subject: 'PR_12', content: 'THUMBS_UP', on: true }]);
+    expect(writes()[0]!.url.endsWith('/pulls/12/reactions')).toBe(true);
+    act(() => root.unmount());
+  });
+
+  it('a line comment’s reaction pill is a toggle, and a hidden one is folded behind its reason', async () => {
+    const { host, root } = await render('/acme/plant/pull/12/files?path=src%2FPump.st&view=raw', { writable: true, counts: live });
+    const thread = host.querySelector('[data-thread="NEW3"]')!;
+    await click(thread.querySelector('button.reaction')!, host);
+
+    expect(writes().map((w) => w.body)).toMatchObject([{ subject: 'c1', content: 'HEART', on: true }]);
+    act(() => root.unmount());
+  });
+
+  it('hides a comment with a reason and draws a hidden one folded, with Show and Unhide', async () => {
+    const { host, root } = await render('/acme/plant/pull/12', { writable: true, counts: live, timeline: [comment('IC_1'), comment('IC_2', { minimized: true, minimizedReason: 'OUTDATED' })] });
+    const cards = host.querySelectorAll('.timeline-comment .comment-row');
+    expect(cards[1]!.querySelector('.comment-minimized-note')?.textContent).toContain('marked as outdated');
+    expect(cards[1]!.querySelector('.comment-body')).toBeNull();
+    await click(button(cards[1]!, 'Show comment')!, host);
+    expect(cards[1]!.querySelector('.comment-body')).not.toBeNull();
+
+    await click(button(cards[0]!, 'Hide')!, host);
+    await fill(cards[0]!.querySelector<HTMLSelectElement>('.reason-form select')!, 'SPAM');
+    await click(button(cards[0]!, 'Hide comment')!, host);
+    // The write re-reads the conversation: the cards are found again rather than held.
+    await click(button(host.querySelectorAll('.timeline-comment .comment-row')[1]!, 'Unhide')!, host);
+
+    expect(writes().map((w) => [w.url.slice(w.url.indexOf('/comments/')), w.body])).toMatchObject([
+      ['/comments/IC_1/minimize', { classifier: 'SPAM' }],
+      ['/comments/IC_2/minimize', { classifier: null }],
+    ]);
+    act(() => root.unmount());
+  });
+
+  it('dismisses an approval with a reason, and edits the viewer’s own review summary', async () => {
+    const { host, root } = await render('/acme/plant/pull/12', { writable: true, counts: live, timeline: [review('PRR_1', 'APPROVED'), review('PRR_2', 'COMMENTED', { canEdit: false })] });
+    const items = host.querySelectorAll('.timeline-review');
+    expect(button(items[1]!, 'Dismiss review')).toBeUndefined();
+    await click(button(items[0]!, 'Dismiss review')!, host);
+    await fill(items[0]!.querySelector<HTMLTextAreaElement>('.reason-form textarea')!, 'Stale after the rebase');
+    await click(items[0]!.querySelector<HTMLButtonElement>('.reason-form button[type="submit"]')!, host);
+
+    await click(button(host.querySelectorAll('.timeline-review')[0]!, 'Edit')!, host);
+    await fill(host.querySelector<HTMLTextAreaElement>('.timeline-review textarea')!, 'Better words');
+    await click(button(host.querySelectorAll('.timeline-review')[0]!, 'Save')!, host);
+
+    expect(writes().map((w) => [w.method, w.url.slice(w.url.indexOf('/reviews/')), w.body])).toMatchObject([
+      ['POST', '/reviews/PRR_1/dismiss', { body: 'Stale after the rebase' }],
+      ['PATCH', '/reviews/PRR_1', { body: 'Better words' }],
+    ]);
+    act(() => root.unmount());
+  });
+
+  it('closes with a comment: the comment is posted first, then the state, each its own operation', async () => {
+    const { host, root } = await render('/acme/plant/pull/12', { writable: true, counts: live });
+    expect(button(host, 'Close pull request')).toBeDefined();
+    await fill(host.querySelector<HTMLTextAreaElement>('.comment-new textarea')!, 'Not needed any more.');
+    await click(button(host, 'Close with comment')!, host);
+
+    const sent = writes();
+    expect(sent.map((w) => w.url.slice(w.url.lastIndexOf('/')))).toEqual(['/comments', '/state']);
+    expect(sent[0]!.body).toMatchObject({ body: 'Not needed any more.' });
+    expect(sent[1]!.body).toMatchObject({ open: false });
+    expect(sent[0]!.body!.opKey).not.toBe(sent[1]!.body!.opKey);
+    act(() => root.unmount());
+  });
+
+  it('a refused comment closes nothing', async () => {
+    const refused = { status: 422, body: { error: 'github-refused', message: 'GitHub refused this.' } };
+    const { host, root } = await render('/acme/plant/pull/12', { writable: true, counts: live, writes: { '/comments': refused } });
+    await fill(host.querySelector<HTMLTextAreaElement>('.comment-new textarea')!, 'Not needed any more.');
+    await click(button(host, 'Close with comment')!, host);
+
+    expect(writes().map((w) => w.url.slice(w.url.lastIndexOf('/')))).toEqual(['/comments']);
+    act(() => root.unmount());
+  });
+
+  it('draws a suggested change as a diff, applies it in one commit on confirm, and batches several', async () => {
+    vi.spyOn(window, 'confirm').mockReturnValue(true);
+    const { host, root } = await render('/acme/plant/pull/12/files?path=src%2FPump.st&view=raw', { writable: true, canMerge: true, counts: live, suggestion: '  run : BOOL := TRUE;\n' });
+    const thread = host.querySelector('[data-thread="NEW3"]')!;
+    expect(thread.querySelector('.suggestion-body')?.textContent).toContain('+  run : BOOL := TRUE;');
+
+    await click(button(thread, 'Add suggestion to batch')!, host);
+    expect(host.querySelector('.batch-bar')?.textContent).toContain('1 suggestion in the batch');
+    await click(button(host.querySelector('.batch-bar')!, 'Commit suggestions (1)')!, host);
+    await click(button(host.querySelector('[data-thread="NEW3"]')!, 'Apply suggestion')!, host);
+
+    expect(writes().map((w) => [w.url.slice(w.url.indexOf('/suggestions')), w.body])).toMatchObject([
+      ['/suggestions/apply', { comments: ['c1'] }],
+      ['/suggestions/apply', { comments: ['c1'] }],
+    ]);
+    expect(host.querySelector('.batch-bar')).toBeNull();
+    act(() => root.unmount());
+  });
+
+  it('offers no apply without the merge tier, and none on an outdated or old-side thread', async () => {
+    const { host, root } = await render('/acme/plant/pull/12/files?path=src%2FPump.st&view=raw', { writable: true, canMerge: false, counts: live, suggestion: 'x\n' });
+    expect(host.querySelector('.suggestion')).not.toBeNull();
+    expect(button(host, 'Apply suggestion')).toBeUndefined();
+    act(() => root.unmount());
+  });
+
+  it('puts the line’s own text in a suggestion block from the comment toolbar', async () => {
+    const { host, root } = await render('/acme/plant/pull/12/files?path=src%2FPump.st&view=raw', { writable: true, counts: live });
+    await click(host.querySelector('[data-line="3"] .cd-num')!, host);
+    await click(button(host.querySelector('.thread-draft')!, 'Suggest a change')!, host);
+
+    expect(host.querySelector<HTMLTextAreaElement>('.thread-draft textarea')?.value).toBe('```suggestion\n  run : BOOL := TRUE;\n```\n');
+    act(() => root.unmount());
+  });
+
+  it('sets the milestone, the viewer’s notifications and the lock from the sidebar', async () => {
+    const { host, root } = await render('/acme/plant/pull/12', { writable: true, counts: live });
+    await fill(host.querySelector<HTMLSelectElement>('.milestone-editor select')!, '5');
+    await click(button(host, 'Unsubscribe')!, host);
+    await click(button(host, 'Lock conversation')!, host);
+    await fill(host.querySelector<HTMLSelectElement>('.lock-action select')!, 'RESOLVED');
+    await click(button(host.querySelector('.lock-action')!, 'Lock')!, host);
+
+    expect(writes().map((w) => [w.url.slice(w.url.lastIndexOf('/')), w.body])).toMatchObject([
+      ['/milestone', { number: 5 }],
+      ['/subscription', { state: 'UNSUBSCRIBED' }],
+      ['/lock', { lock: true, reason: 'RESOLVED' }],
+    ]);
+    act(() => root.unmount());
+  });
+
+  it('re-requests a reviewer who already reviewed, and withdraws a team by its slug', async () => {
+    const reviewers = [{ login: 'kim', state: 'APPROVED' }, { login: 'Controls', state: 'REQUESTED', isTeam: true, slug: 'plc-controls' }];
+    const { host, root } = await render('/acme/plant/pull/12', { writable: true, counts: { ...live, reviewers } });
+    const rows = host.querySelectorAll('.reviewer-row');
+    await click(rows[0]!.querySelector('[aria-label="Re-request review from kim"]')!, host);
+    await click(rows[1]!.querySelector('[aria-label="Stop asking Controls"]')!, host);
+    await fill(host.querySelector<HTMLInputElement>('.reviewers-add input')!, 'acme/safety');
+    await click(button(host, 'Ask')!, host);
+
+    expect(writes().map((w) => w.body)).toMatchObject([{ add: ['kim'] }, { removeTeams: ['plc-controls'] }, { addTeams: ['safety'] }]);
+    act(() => root.unmount());
+  });
+
+  it('shows the pending review’s drafts with their words and lines, and edits one in place', async () => {
+    const pending = { id: 'PRR_1', commit: head, onSnapshotHead: true, comments: [{ id: 'C1', path: 'src/Pump.st', pathLabel: 'src/Pump.st', html: '<p>x</p>', markdown: 'x', line: 3, startLine: null }] };
+    const { host, root } = await render('/acme/plant/pull/12', { writable: true, counts: live, pending });
+    await click(button(host, 'Show your drafts')!, host);
+    expect(host.querySelector('.review-draft')?.textContent).toContain('line 3');
+    await click(button(host.querySelector('.review-draft')!, 'Edit')!, host);
+    await fill(host.querySelector<HTMLTextAreaElement>('.review-draft textarea')!, 'y');
+    await click(button(host.querySelector('.review-draft')!, 'Save')!, host);
+
+    expect(writes().map((w) => [w.method, w.url.slice(w.url.indexOf('/comments/')), w.body])).toMatchObject([['PATCH', '/comments/C1', { body: 'y' }]]);
     act(() => root.unmount());
   });
 });

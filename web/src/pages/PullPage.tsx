@@ -5,12 +5,12 @@ import { ApiError, api } from '../api';
 import type { Annotation } from '../components/FragmentHost';
 import { FragmentHost } from '../components/FragmentHost';
 import { FilesTree } from '../components/FilesTree';
-import { CommentCard, CommitRow, EventRow, Reactions, ReviewCard, RoleBadge, anchorOf } from '../components/Conversation';
+import { CommentCard, CommitRow, EventRow, Minimized, Reactions, ReviewCard, RoleBadge, anchorOf } from '../components/Conversation';
 import { MergeBox } from '../components/MergeBox';
 import { ErrorPanel } from '../components/Pane';
-import { AssigneesEditor, BaseEditor, LabelsEditor, StateActions, TitleEditor } from '../components/PullMeta';
+import { AssigneesEditor, BaseEditor, LabelsEditor, LockAction, MilestoneEditor, StateActions, SubscriptionAction, TitleEditor } from '../components/PullMeta';
 import { ReviewBar, ReviewersEditor } from '../components/ReviewBar';
-import { ActionButton, CommentBox, newOpKey } from '../components/ReviewWrite';
+import { ActionButton, CommentBox, ReasonAction, describe, newOpKey } from '../components/ReviewWrite';
 import { RepoLayout } from '../components/RepoLayout';
 import { Avatar, Blankslate, Flash, Icon, IssueLabel, Layout as TwoColumn, Loading, RelativeTime, SidebarSection, StateBadge, UnderlineNav, pullState, type NavItem } from '../components/ui';
 import { blobUrl, compareUrl, parsePullTab, pullUrl, type PullTab } from '../routes';
@@ -104,6 +104,57 @@ interface Writer {
    * takes no more comments here (C2), so the button is not drawn.
    */
   review: { path: string; label: string } | undefined;
+  /** The merge tier is on (S11): suggested changes can be applied, which is a commit. */
+  canMerge: boolean;
+  /** The viewer's own reaction on a subject, toggled: safe to repeat, so a fresh key per click. */
+  react: (subject: string, content: string, on: boolean) => void;
+  /** Suggestions set aside to commit together, by comment id (GitHub's "Add suggestion to batch"). */
+  batch: ReadonlySet<string>;
+  toggleBatch: (commentId: string) => void;
+}
+
+/** GitHub's reasons for hiding a comment, as the Hide form offers them. */
+const hideReasons = [
+  { value: 'OUTDATED', label: 'Outdated' }, { value: 'RESOLVED', label: 'Resolved' }, { value: 'DUPLICATE', label: 'Duplicate' },
+  { value: 'OFF_TOPIC', label: 'Off-topic' }, { value: 'SPAM', label: 'Spam' }, { value: 'ABUSE', label: 'Abuse' },
+];
+
+/** Hide (with a reason) or unhide a comment: a write for people with write access, which GitHub decides. */
+function HideTools({ writer, id, minimized }: { writer: Writer; id: string; minimized: boolean }) {
+  return minimized ? (
+    <ActionButton owner={writer.owner} repo={writer.repo} snap={writer.snap} path={`/comments/${encodeURIComponent(id)}/minimize`} payload={{ classifier: null }} label="Unhide" onDone={writer.onChanged} onStale={writer.onStale} />
+  ) : (
+    <ReasonAction owner={writer.owner} repo={writer.repo} snap={writer.snap} path={`/comments/${encodeURIComponent(id)}/minimize`} label="Hide" kind="choice" options={hideReasons}
+      payloadFor={(classifier) => ({ classifier })} submitLabel="Hide comment" onDone={writer.onChanged} onStale={writer.onStale} />
+  );
+}
+
+/**
+ * A suggested change in a comment, drawn as github.com draws it: the lines it proposes under a
+ * "Suggested change" header, and — with the merge tier on, for a thread still on its lines of the
+ * new file — "Apply suggestion" (one commit, now) and "Add suggestion to batch" (one commit for
+ * several, from the Files changed bar).
+ */
+function Suggestion({ text, commentId, thread, writer }: { text: string; commentId: string; thread: ReviewThread; writer: Writer | null }) {
+  const lines = text.replace(/\n$/, '').split('\n');
+  const applicable = thread.side === 'RIGHT' && !thread.outdated && thread.subject === 'LINE' && thread.line !== null;
+  const inBatch = writer?.batch.has(commentId) ?? false;
+  return (
+    <div className="suggestion">
+      <div className="suggestion-head">
+        <span className="text-bold">Suggested change</span>
+        {writer?.canMerge && applicable && (
+          <span className="suggestion-tools">
+            <button type="button" className="btn btn-small" onClick={() => writer.toggleBatch(commentId)} aria-pressed={inBatch}>{inBatch ? 'Remove from batch' : 'Add suggestion to batch'}</button>
+            <ActionButton owner={writer.owner} repo={writer.repo} snap={writer.snap} path="/suggestions/apply" payload={{ comments: [commentId] }} label="Apply suggestion"
+              confirm={`Commit this suggestion to ${writer.snap.headLabel}, on commit ${writer.snap.headSha.slice(0, 8)}? If anything is pushed first, GitHub refuses.`} onDone={writer.onChanged} onStale={writer.onStale} button />
+          </span>
+        )}
+        {writer?.canMerge && !applicable && <span className="text-muted text-small">{thread.outdated ? 'Cannot be applied: the lines changed since.' : 'Applies only to lines of the new file.'}</span>}
+      </div>
+      <pre className="suggestion-body">{lines.map((l, i) => <span key={i} className="suggestion-line">{text.length === 0 ? '' : `+${l}`}{'\n'}</span>)}{text.length === 0 && <span className="text-muted">(the lines are removed)</span>}</pre>
+    </div>
+  );
 }
 
 /** Where a draft may also go: the pending review, unless the viewer's is on another commit. */
@@ -244,11 +295,37 @@ function PullReview({ me }: { me: Me | null }) {
     setStaleWrite(false);
     setLoads((x) => x + 1);
   };
+  // Suggestions batched to commit together; a new snapshot is a new review, with nothing batched.
+  const [batch, setBatch] = useState<ReadonlySet<string>>(() => new Set());
+  useEffect(() => setBatch(new Set()), [token]);
+  const [reactNote, setReactNote] = useState<string | null>(null);
   const writer: Writer | null = snap?.writable
     ? {
         owner, repo, snap, slots: `versio:draft:${owner}/${repo}#${n}`, onChanged: () => setChanged((x) => x + 1), onStale: () => setStaleWrite(true),
         login: me?.login ?? '?', avatar: me?.avatarUrl ?? null,
         review: reviewAlternative(pending.state === 'ok' ? pending.value : null),
+        canMerge: snap.canMerge === true,
+        batch,
+        toggleBatch: (id) => setBatch((b) => {
+          const next = new Set(b);
+          if (next.has(id)) {
+            next.delete(id);
+          } else {
+            next.add(id);
+          }
+          return next;
+        }),
+        // A reaction is the viewer's own and safe to repeat: posted with a fresh key, read back by
+        // the next refresh; a refusal is said once at the top, not held against the pill.
+        react: (subject, content, on) => {
+          void api.review.write(owner, repo, snap, '/reactions', 'POST', { subject, content, on, opKey: newOpKey() }).then((answer) => {
+            if (answer.outcome === 'done') {
+              setChanged((x) => x + 1);
+            } else {
+              setReactNote(describe(answer));
+            }
+          });
+        },
       }
     : null;
   const last = status?.summary?.viewerLastReviewCommit ?? null;
@@ -316,6 +393,11 @@ function PullReview({ me }: { me: Me | null }) {
       {status?.summaryError === 'sign-in' && signIn && (
         <p className="notice" role="note">
           Without signing in, this page cannot tell whether the pull request has changed since you opened it, and review threads are not shown. <a href={signIn}>Sign in</a>
+        </p>
+      )}
+      {reactNote && (
+        <p className="notice" role="status">
+          Your reaction was not saved: {reactNote} <button type="button" className="link-button" onClick={() => setReactNote(null)}>Dismiss</button>
         </p>
       )}
     </>
@@ -401,6 +483,15 @@ function PullReview({ me }: { me: Me | null }) {
               <div className="files-main">
                 {revision}
                 {reviewBar}
+                {writer && writer.batch.size > 0 && (
+                  <div className="batch-bar" role="status">
+                    <span>{writer.batch.size} suggestion{writer.batch.size === 1 ? '' : 's'} in the batch.</span>
+                    <ActionButton owner={owner} repo={repo} snap={writer.snap} path="/suggestions/apply" payload={{ comments: [...writer.batch] }} label={`Commit suggestions (${writer.batch.size})`}
+                      confirm={`Commit ${writer.batch.size} suggestion${writer.batch.size === 1 ? '' : 's'} to ${snap!.headLabel} in one commit, on ${snap!.headSha.slice(0, 8)}? If anything is pushed first, GitHub refuses.`}
+                      onDone={() => { setBatch(new Set()); writer.onChanged(); }} onStale={writer.onStale} button />
+                    <button type="button" className="link-button" onClick={() => setBatch(new Set())}>Clear</button>
+                  </div>
+                )}
                 {/* Every file, stacked, as GitHub stacks them: each section loads its drawing as it
                     comes into view, the one the URL names opens first and is scrolled to. A link
                     to another file of this pull request goes to that file's section; to anything
@@ -484,6 +575,7 @@ function Summary({ status, writer }: { status: ReviewStatus | null; writer: Writ
               {s.reviewDecision && <p>{decision[s.reviewDecision] ?? s.reviewDecision}</p>}
               {s.mergeable === 'CONFLICTING' && <p className="text-danger">Has conflicts with its base</p>}
               {writer && s.viewerCanUpdate && <StateActions owner={writer.owner} repo={writer.repo} snap={writer.snap} summary={s} onChanged={writer.onChanged} onStale={writer.onStale} />}
+              {writer && s.viewerCanUpdate && <LockAction owner={writer.owner} repo={writer.repo} snap={writer.snap} summary={s} onChanged={writer.onChanged} onStale={writer.onStale} />}
             </SidebarSection>
           ) : null}
           <SidebarSection heading="Reviewers">
@@ -513,9 +605,18 @@ function Summary({ status, writer }: { status: ReviewStatus | null; writer: Writ
               <p className="text-muted">None yet</p>
             )}
           </SidebarSection>
-          {s.milestone && (
+          {writer && s.viewerCanUpdate ? (
             <SidebarSection heading="Milestone">
-              <p>{s.milestone}</p>
+              <MilestoneEditor owner={writer.owner} repo={writer.repo} snap={writer.snap} summary={s} onChanged={writer.onChanged} onStale={writer.onStale} />
+            </SidebarSection>
+          ) : s.milestone ? (
+            <SidebarSection heading="Milestone">
+              <p><Icon name="milestone" className="text-muted" /> {s.milestone}</p>
+            </SidebarSection>
+          ) : null}
+          {writer && s.viewerSubscription !== undefined && s.viewerSubscription !== null && (
+            <SidebarSection heading="Notifications">
+              <SubscriptionAction owner={writer.owner} repo={writer.repo} snap={writer.snap} summary={s} onChanged={writer.onChanged} onStale={writer.onStale} />
             </SidebarSection>
           )}
           <SidebarSection heading="Assignees">
@@ -662,11 +763,44 @@ function Conversation({ snap, live, timeline, writer, onOpenPath, threads, fileL
   const descriptionTools = writer && live?.viewerCanUpdate && editing !== 'description'
     ? <button type="button" className="link-button" onClick={startEditing}>Edit</button>
     : undefined;
+  // The viewer's reaction on something: only with a writer, and on the description only when
+  // GitHub says they may react to it and named its node.
+  const reactOn = (subject: string | null | undefined) => (writer && subject ? (content: string, on: boolean) => writer.react(subject, content, on) : undefined);
+  // "Close with comment": the comment box's own submit, then the state change, each its own
+  // operation with its own key. The close goes only once the comment is posted, as on GitHub.
+  const submitComment = useRef<(() => Promise<boolean>) | null>(null);
+  const [closing, setClosing] = useState(false);
+  const [closeNote, setCloseNote] = useState<string | null>(null);
+  async function changeState(open: boolean, withComment: boolean) {
+    if (!writer || closing) {
+      return;
+    }
+    setClosing(true);
+    setCloseNote(null);
+    const posted = withComment ? await (submitComment.current?.() ?? Promise.resolve(false)) : true;
+    if (!posted) {
+      setClosing(false);
+      return;
+    }
+    const answer = await api.review.write(writer.owner, writer.repo, writer.snap, '/state', 'POST', { open, opKey: newOpKey() });
+    setClosing(false);
+    if (answer.outcome === 'done') {
+      writer.onChanged();
+    } else {
+      if (answer.error === 'snapshot-stale' || answer.error === 'snapshot-expired') {
+        writer.onStale();
+      }
+      setCloseNote(describe(answer));
+    }
+  }
+  const [hasDraft, setHasDraft] = useState(false);
+  const canClose = writer && live && live.viewerCanUpdate && !live.merged;
   return (
     <>
       {/* GitHub's first card is the description, by the author, with the body's reactions. */}
       <CommentCard author={snap.author} avatar={live?.authorAvatar} association={live?.authorAssociation} when={live?.createdAt ?? snap.when}
-        verb={live?.draft ?? snap.draft ? 'opened this draft' : 'opened this'} tools={descriptionTools} reactions={live?.reactions}>
+        verb={live?.draft ?? snap.draft ? 'opened this draft' : 'opened this'} tools={descriptionTools} reactions={live?.reactions}
+        onReact={live?.canReact ? reactOn(live.nodeId) : undefined}>
         {writer && from !== null && editing === 'description' ? (
           // It names the text it replaces: someone else's edit meanwhile is refused, never overwritten.
           <CommentBox owner={writer.owner} repo={writer.repo} snap={writer.snap} slot={`${writer.slots}:description`} path="/edit"
@@ -684,15 +818,18 @@ function Conversation({ snap, live, timeline, writer, onOpenPath, threads, fileL
         <ol className="timeline">
           {timeline.value.items.map((item, i) => {
             if (item.kind === 'comment') {
-              const tools = writer && item.id && editing !== item.id && (item.canEdit || item.canDelete) ? (
+              const tools = writer && item.id && editing !== item.id ? (
                 <>
                   {item.canEdit && <button type="button" className="link-button" onClick={() => setEditing(item.id)}>Edit</button>}
+                  {/* Hiding is for people with write access; GitHub refuses the rest in its own words. */}
+                  <HideTools writer={writer} id={item.id} minimized={item.minimized === true} />
                   {item.canDelete && <ActionButton owner={writer.owner} repo={writer.repo} snap={writer.snap} path={`/comments/${encodeURIComponent(item.id)}/delete`} label="Delete" confirm="Delete this comment on GitHub?" onDone={writer.onChanged} />}
                 </>
               ) : undefined;
               return (
                 <li key={item.id ?? i} className="timeline-item timeline-comment">
-                  <CommentCard author={item.actor} avatar={item.avatar} association={item.association} when={item.when} editedAt={item.editedAt} url={item.url} anchor={anchorOf(item.url)} tools={tools} reactions={item.reactions}>
+                  <CommentCard author={item.actor} avatar={item.avatar} association={item.association} when={item.when} editedAt={item.editedAt} url={item.url} anchor={anchorOf(item.url)} tools={tools} reactions={item.reactions}
+                    onReact={reactOn(item.id)} minimized={item.minimized === true} minimizedReason={item.minimizedReason}>
                     {writer && item.id && editing === item.id ? (
                       <CommentBox owner={writer.owner} repo={writer.repo} snap={writer.snap} slot={`${writer.slots}:edit:${item.id}`} path={`/comments/${encodeURIComponent(item.id)}`} method="PATCH"
                         initial={item.markdown ?? ''} submitLabel="Save" onCancel={() => setEditing(null)} onDone={() => { setEditing(null); writer.onChanged(); }} onStale={writer.onStale} />
@@ -704,7 +841,23 @@ function Conversation({ snap, live, timeline, writer, onOpenPath, threads, fileL
               );
             }
             if (item.kind === 'review') {
-              return <ReviewCard key={item.id ?? i} item={item} threads={threadsOf(item.id)} renderThread={renderThread} onOpenPath={onOpenPath} fileLink={fileLink} />;
+              // An approval or a request for changes can be dismissed by anyone with write access (GitHub
+              // decides); the summary is the author's to edit. Both as GitHub's own page offers them.
+              const dismissable = item.state === 'APPROVED' || item.state === 'CHANGES_REQUESTED';
+              const tools = writer && item.id && editing !== item.id && (item.canEdit || dismissable) ? (
+                <>
+                  {item.canEdit && <button type="button" className="link-button" onClick={() => setEditing(item.id)}>Edit</button>}
+                  {dismissable && (
+                    <ReasonAction owner={writer.owner} repo={writer.repo} snap={writer.snap} path={`/reviews/${encodeURIComponent(item.id)}/dismiss`} label="Dismiss review" kind="text"
+                      placeholder="Why is this review being dismissed?" payloadFor={(body) => ({ body })} submitLabel="Dismiss review" onDone={writer.onChanged} onStale={writer.onStale} />
+                  )}
+                </>
+              ) : undefined;
+              const editor = writer && item.id && editing === item.id ? (
+                <CommentBox owner={writer.owner} repo={writer.repo} snap={writer.snap} slot={`${writer.slots}:edit-review:${item.id}`} path={`/reviews/${encodeURIComponent(item.id)}`} method="PATCH"
+                  initial={item.markdown ?? ''} submitLabel="Save" onCancel={() => setEditing(null)} onDone={() => { setEditing(null); writer.onChanged(); }} onStale={writer.onStale} />
+              ) : undefined;
+              return <ReviewCard key={item.id ?? i} item={item} threads={threadsOf(item.id)} renderThread={renderThread} onOpenPath={onOpenPath} fileLink={fileLink} tools={tools} editor={editor} onReact={reactOn(item.id)} />;
             }
             if (item.kind === 'commit') {
               return <CommitRow key={`${item.sha}-${i}`} item={item} />;
@@ -720,9 +873,25 @@ function Conversation({ snap, live, timeline, writer, onOpenPath, threads, fileL
           <Avatar login={writer.login} url={writer.avatar} size={40} />
           <div className="comment comment-new">
             <div className="comment-head"><span className="text-bold">Add a comment</span></div>
-            <div className="comment-body">
+            <div className="comment-body" onInput={(e) => setHasDraft(((e.target as HTMLTextAreaElement).value ?? '').trim().length > 0)}>
+              {live?.locked && <p className="notice" role="note"><Icon name="lock" size={12} /> This conversation is locked{live.lockReason ? ` as ${live.lockReason.toLowerCase().replace('_', ' ')}` : ''}. Only people with write access can comment.</p>}
               <CommentBox owner={writer.owner} repo={writer.repo} snap={writer.snap} slot={`${writer.slots}:conversation`} path="/comments"
-                submitLabel="Comment" onDone={writer.onChanged} onStale={writer.onStale} />
+                submitLabel="Comment" onDone={() => { setHasDraft(false); writer.onChanged(); }} onStale={writer.onStale} submitRef={submitComment} />
+              {canClose && (
+                // GitHub's buttons beside Comment: close (with the comment, when one is written), or reopen.
+                <div className="comment-actions comment-state-actions">
+                  {closeNote && <span className="comment-note-inline" role="status">{closeNote}</span>}
+                  {live.state === 'OPEN' ? (
+                    <button type="button" className="btn btn-small" disabled={closing} onClick={() => void changeState(false, hasDraft)}>
+                      <Icon name="git-pull-request-closed" className="btn-icon text-danger" /> {hasDraft ? 'Close with comment' : 'Close pull request'}
+                    </button>
+                  ) : (
+                    <button type="button" className="btn btn-small" disabled={closing} onClick={() => void changeState(true, hasDraft)}>
+                      <Icon name="git-pull-request" className="btn-icon text-success" /> {hasDraft ? 'Reopen with comment' : 'Reopen pull request'}
+                    </button>
+                  )}
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -1059,7 +1228,7 @@ function FileReview({ writer, path, file, result, threads, threadsState, view, o
   // On a drawing, on an element the server will resolve (a member row, a network), or on a drawn
   // source line of the file its block names — a code body under a table is another file.
   type Draft =
-    | { kind: 'line'; side: 'LEFT' | 'RIGHT'; line: number; file: string; startLine?: number }
+    | { kind: 'line'; side: 'LEFT' | 'RIGHT'; line: number; file: string; startLine?: number; text?: string }
     | { kind: 'anchor'; dom: string };
   const [drafting, setDrafting] = useState<Draft | null>(null);
   const [fileComment, setFileComment] = useState(false);
@@ -1069,14 +1238,15 @@ function FileReview({ writer, path, file, result, threads, threadsState, view, o
   useEffect(() => setDrafting(null), [path, view]);
   // A shift-click on a second line of the same file and side makes the draft a range, as a
   // shift-click does on GitHub: GitHub takes a range inside one hunk on one side, which the
-  // server checks before posting (HunkLines.Accepts).
-  function pickLine(side: 'LEFT' | 'RIGHT', line: number, file: string, shift: boolean) {
+  // server checks before posting (HunkLines.Accepts). The line's text rides along for a
+  // suggested change to start from; a range has none, since only the last line's text is known.
+  function pickLine(side: 'LEFT' | 'RIGHT', line: number, file: string, shift: boolean, text?: string) {
     setDrafting((d) => {
       if (shift && d && d.kind === 'line' && d.side === side && d.file === file && d.line !== line) {
         const [from, to] = d.line < line ? [d.startLine ?? d.line, line] : [line, d.line];
         return { kind: 'line', side, file, line: to, startLine: from };
       }
-      return { kind: 'line', side, line, file };
+      return { kind: 'line', side, line, file, text };
     });
   }
   const canLine = writer !== null && view === 'raw' && file?.inline === true;
@@ -1121,6 +1291,8 @@ function FileReview({ writer, path, file, result, threads, threadsState, view, o
                 ? { path, from: file?.previousPath ?? undefined, dom: drafting.dom }
                 : { path: drafting.file, line: drafting.line, side: drafting.side, ...(drafting.startLine ? { startLine: drafting.startLine } : {}) }}
               submitLabel="Comment" alternative={writer.review} onCancel={() => setDrafting(null)}
+              // A suggestion is a change to the new file's lines: offered on a new-side line whose text is known.
+              suggestFrom={drafting.kind === 'line' && drafting.side === 'RIGHT' && !drafting.startLine && drafting.text !== undefined ? drafting.text : null}
               onDone={() => { setDrafting(null); writer.onChanged(); }} onStale={writer.onStale} />
           </div>
         ),
@@ -1218,7 +1390,7 @@ function FileReview({ writer, path, file, result, threads, threadsState, view, o
           const side = row.line !== null ? 'RIGHT' : 'LEFT';
           const line = row.line ?? row.oldLine;
           if (line !== null) {
-            pickLine(side, line, path, row.shift);
+            pickLine(side, line, path, row.shift, row.text);
           }
         } : canDraw ? (row) => {
           // A drawn source line names its file line on each side it exists on; the new side wins
@@ -1226,7 +1398,7 @@ function FileReview({ writer, path, file, result, threads, threadsState, view, o
           const side = row.fileLine !== null ? 'RIGHT' : 'LEFT';
           const line = row.fileLine ?? row.oldFileLine;
           if (line !== null && row.srcPath) {
-            pickLine(side, line, row.srcPath, row.shift);
+            pickLine(side, line, row.srcPath, row.shift, row.text);
           }
         } : undefined}
         onAnchorPick={canDraw ? (ids) => {
@@ -1263,30 +1435,37 @@ function Thread({ thread, writer, onOpenPath, moved = false }: { thread: ReviewT
           </span>
         )}
       </header>
-      {thread.comments.map((c) => (
-        <div key={c.id} className={`thread-comment${c.pending ? ' is-pending' : ''}`} id={anchorOf(c.url) ?? undefined}>
-          <span className="thread-meta">
-            <Avatar login={c.author} url={c.avatar} size={16} />
-            <strong>{c.author}</strong> <RelativeTime when={c.when} />
-            {c.editedAt && <span className="text-muted" title={`Edited ${new Date(c.editedAt).toLocaleString()}`}> · edited</span>}
-            <RoleBadge association={c.association} />
-            {c.pending && <span className="row-badge" title="A draft of your review: nobody else sees it until you submit">Pending</span>}
-            {writer && editing !== c.id && (
-              <span className="comment-tools">
-                {c.canEdit && <button type="button" className="link-button" onClick={() => setEditing(c.id)}>Edit</button>}
-                {c.canDelete && <ActionButton owner={writer.owner} repo={writer.repo} snap={writer.snap} path={`/comments/${encodeURIComponent(c.id)}/delete`} label="Delete" confirm="Delete this comment on GitHub?" onDone={writer.onChanged} />}
-              </span>
-            )}
-          </span>
-          {writer && editing === c.id ? (
-            <CommentBox owner={writer.owner} repo={writer.repo} snap={writer.snap} slot={`${writer.slots}:edit:${c.id}`} path={`/comments/${encodeURIComponent(c.id)}`} method="PATCH"
-              initial={c.markdown ?? ''} submitLabel="Save" onCancel={() => setEditing(null)} onDone={() => { setEditing(null); writer.onChanged(); }} onStale={writer.onStale} />
-          ) : (
+      {thread.comments.map((c) => {
+        const body = writer && editing === c.id ? (
+          <CommentBox owner={writer.owner} repo={writer.repo} snap={writer.snap} slot={`${writer.slots}:edit:${c.id}`} path={`/comments/${encodeURIComponent(c.id)}`} method="PATCH"
+            initial={c.markdown ?? ''} submitLabel="Save" onCancel={() => setEditing(null)} onDone={() => { setEditing(null); writer.onChanged(); }} onStale={writer.onStale} />
+        ) : (
+          <>
             <FragmentHost html={c.html} path="" onOpenPath={onOpenPath} line={null} onLine={() => {}} />
-          )}
-          <Reactions reactions={c.reactions} />
-        </div>
-      ))}
+            {c.suggestion !== undefined && c.suggestion !== null && <Suggestion text={c.suggestion} commentId={c.id} thread={thread} writer={writer} />}
+          </>
+        );
+        return (
+          <div key={c.id} className={`thread-comment${c.pending ? ' is-pending' : ''}${c.minimized ? ' is-minimized' : ''}`} id={anchorOf(c.url) ?? undefined}>
+            <span className="thread-meta">
+              <Avatar login={c.author} url={c.avatar} size={16} />
+              <strong>{c.author}</strong> <RelativeTime when={c.when} />
+              {c.editedAt && <span className="text-muted" title={`Edited ${new Date(c.editedAt).toLocaleString()}`}> · edited</span>}
+              <RoleBadge association={c.association} />
+              {c.pending && <span className="row-badge" title="A draft of your review: nobody else sees it until you submit">Pending</span>}
+              {writer && editing !== c.id && (
+                <span className="comment-tools">
+                  {c.canEdit && <button type="button" className="link-button" onClick={() => setEditing(c.id)}>Edit</button>}
+                  {!c.pending && <HideTools writer={writer} id={c.id} minimized={c.minimized === true} />}
+                  {c.canDelete && <ActionButton owner={writer.owner} repo={writer.repo} snap={writer.snap} path={`/comments/${encodeURIComponent(c.id)}/delete`} label="Delete" confirm="Delete this comment on GitHub?" onDone={writer.onChanged} />}
+                </span>
+              )}
+            </span>
+            {c.minimized ? <Minimized reason={c.minimizedReason}>{body}</Minimized> : body}
+            <Reactions reactions={c.reactions} onToggle={writer ? (content, on) => writer.react(c.id, content, on) : undefined} />
+          </div>
+        );
+      })}
       {thread.truncated && <p className="muted">More replies on GitHub.</p>}
       {writer && thread.canReply && (replying ? (
         <CommentBox owner={writer.owner} repo={writer.repo} snap={writer.snap} slot={`${writer.slots}:reply:${thread.id}`} path={`/threads/${encodeURIComponent(thread.id)}/replies`}

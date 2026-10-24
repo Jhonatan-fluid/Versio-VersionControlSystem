@@ -302,7 +302,8 @@ export interface PendingReviewView {
     onSnapshotHead: boolean;
     /** More comments than were read: said, never shown as all of them. */
     truncated?: boolean;
-    comments: { id: string; path: string; pathLabel: string; html: string }[];
+    /** Each draft's words and place too (Step 5), so the review panel can edit it there; absent from an older server. */
+    comments: { id: string; path: string; pathLabel: string; html: string; markdown?: string; line?: number | null; startLine?: number | null }[];
   } | null;
 }
 
@@ -326,7 +327,14 @@ export interface ReviewStatus {
     /** name is shown; value is the name as GitHub has it, sent back to remove it. */
     labels: { name: string; value: string; color: string }[];
     assignees: string[];
-    reviewers: { login: string; state: string; isTeam?: boolean; avatar?: string | null }[];
+    /** A team carries the slug REST asks and withdraws it by. */
+    reviewers: { login: string; state: string; isTeam?: boolean; avatar?: string | null; slug?: string | null }[];
+    /** The pull request's node, what a reaction on its description names (Step 5). */
+    nodeId?: string;
+    milestoneNumber?: number | null;
+    /** The viewer's notifications: SUBSCRIBED, UNSUBSCRIBED, IGNORED; null when GitHub did not say. */
+    viewerSubscription?: string | null;
+    canReact?: boolean;
     /** GitHub refuses an author's approval: the page does not offer it. */
     viewerIsAuthor: boolean;
     /** What GitHub's header and sidebar show (docs/web/FINISH.md, B1): absent from an older server's answer. */
@@ -412,6 +420,11 @@ export interface ReviewComment {
   reactions?: Reaction[];
   /** A draft of the viewer's pending review: nobody else sees it yet. */
   pending?: boolean;
+  /** Hidden on GitHub, and why (SPAM, ABUSE, OFF_TOPIC, OUTDATED, DUPLICATE, RESOLVED): drawn folded. */
+  minimized?: boolean;
+  minimizedReason?: string | null;
+  /** The suggested change the comment carries (its ```suggestion block), as text; null without one. */
+  suggestion?: string | null;
   /** The text to edit, Versio's tags removed; only when the viewer may edit. */
   markdown: string | null;
   canEdit: boolean;
@@ -490,6 +503,8 @@ export interface TimelineItem {
   url?: string | null;
   reactions?: Reaction[];
   verified?: boolean | null;
+  minimized?: boolean;
+  minimizedReason?: string | null;
 }
 
 export interface ReviewTimeline {
@@ -681,6 +696,8 @@ export const api = {
   pullTemplate: (owner: string, repo: string, base: string, signal?: AbortSignal) =>
     get<{ markdown: string | null; path: string | null }>(`${repoBase(owner, repo)}/pulls/template${query({ base })}`, signal),
   labels: (owner: string, repo: string, signal?: AbortSignal) => get<{ labels: RepoLabel[] }>(`${repoBase(owner, repo)}/labels`, signal),
+  /** The open milestones: the number is what a write names, the title is shown. */
+  milestones: (owner: string, repo: string, signal?: AbortSignal) => get<{ milestones: { number: number; title: string }[] }>(`${repoBase(owner, repo)}/milestones`, signal),
   releases: (owner: string, repo: string, signal?: AbortSignal) => get<ReleaseList>(`${repoBase(owner, repo)}/releases`, signal),
   releaseView: (owner: string, repo: string, tag: string, signal?: AbortSignal) =>
     get<ReleaseView>(`${repoBase(owner, repo)}/releases/view${query({ tag })}`, signal),

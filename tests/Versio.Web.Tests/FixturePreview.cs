@@ -103,6 +103,8 @@ public sealed class FixturePreview
                     ReviewId = "PRR_LEE", DiffHunk = "@@ -19,7 +19,7 @@\n a\n b\n c\n-x\n+y", AuthorAssociation = "OWNER", Reactions = [new ReactionGroup("HEART", 1, false)],
                 },
                 new ReviewComment("C2", "jo", "Plant data: 0.2/s. The rig was 0.1.\n\n<script>alert('this must draw as text')</script>", when.AddMinutes(9), next, next) { ReviewId = "PRR_LEE", EditedAt = when.AddMinutes(12) },
+                // A suggested change (Step 5): drawn as a diff under the comment, with Apply / Add to batch under the merge tier.
+                new ReviewComment("C2s", "lee", "Then say so in the code:\n```suggestion\n\t\t\tGlob_Var.TempActual := Glob_Var.TempActual - 0.2; (* plant data *)\n```", when.AddMinutes(14), next, next) { ReviewId = "PRR_LEE", AuthorAssociation = "COLLABORATOR" },
             ], false, CanReply: true, CanResolve: true),
             new ReviewThread("T-old", simulation, true, false, 22, null, "LEFT", 22, "LINE",
                 [new ReviewComment("C3", "sam", "This old value is the bug.", when, next, next, CanEdit: true, CanDelete: true)], false, CanReply: true, CanUnresolve: true),

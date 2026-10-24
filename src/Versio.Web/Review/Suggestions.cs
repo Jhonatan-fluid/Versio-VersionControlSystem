@@ -35,6 +35,13 @@ public static partial class Suggestions
     }
 
     /// <summary>
+    /// The body with its first suggestion fence taken out: what is drawn as prose, while the page
+    /// draws the suggestion itself as a diff with its buttons — github.com shows the block once, as
+    /// the widget, never also as a code block.
+    /// </summary>
+    public static string Without(string body) => body is null ? "" : Fence().Replace(body, "", 1).Trim();
+
+    /// <summary>
     /// The file with lines <paramref name="startLine"/>..<paramref name="endLine"/> (1-based, inclusive,
     /// of the file as it is) replaced by <paramref name="suggestion"/>; null when the range is not in the file.
     /// </summary>

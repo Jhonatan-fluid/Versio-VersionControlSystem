@@ -6,6 +6,23 @@ import { hasLadder, linkTarget, mermaidBlocks, sanitize } from '../fragment';
 let ladderRun = 0;
 
 /**
+ * A row's own text: the code element of the cell the gutter sits in (a Raw row, a split cell,
+ * a drawn source line all put theirs in `.cd-code`), or failing that the row less its numbers
+ * and its diff marker. What a suggested change starts from, so the person edits the line rather
+ * than retypes it.
+ */
+function rowText(row: HTMLElement, gutter: HTMLElement): string {
+  const cell = gutter.closest<HTMLElement>('.cd-cell') ?? row;
+  const code = cell.querySelector<HTMLElement>('.cd-code');
+  if (code) {
+    return code.textContent ?? '';
+  }
+  const copy = cell.cloneNode(true) as HTMLElement;
+  copy.querySelectorAll('.cd-num, .cd-marker, .thread-slot').forEach((e) => e.remove());
+  return copy.textContent ?? '';
+}
+
+/**
  * Something the page draws BETWEEN the fragment's rows — a review thread under its line — placed
  * after the row that `selector` finds. The selector is built by the page from the renderers'
  * data-* markers, never from text a fragment carries.
@@ -34,7 +51,7 @@ interface Props {
    * A gutter click on a diff row, with both of its file lines: the new side's (data-line) and the
    * old side's (data-old-line). A review comment needs the side; a link to a line does not.
    */
-  onRowPick?: (row: { line: number | null; oldLine: number | null; fileLine: number | null; oldFileLine: number | null; srcPath: string | null; shift: boolean }) => void;
+  onRowPick?: (row: { line: number | null; oldLine: number | null; fileLine: number | null; oldFileLine: number | null; srcPath: string | null; shift: boolean; text: string }) => void;
   /** A folded stretch ("N unchanged lines") was clicked: the page asks for the whole file. */
   onUnfold?: () => void;
   /**
@@ -251,6 +268,9 @@ export function FragmentHost({ html, path, onOpenPath, line, onLine, annotations
         oldFileLine: n(row.dataset.oldFileLine),
         srcPath: row.closest<HTMLElement>('[data-src-path]')?.dataset.srcPath || null,
         shift: event.shiftKey,
+        // The line's own text, for a suggested change to start from (Step 5): the row without its
+        // gutter, and without the diff's leading sign on a Raw row.
+        text: rowText(row, gutter),
       });
       return;
     }

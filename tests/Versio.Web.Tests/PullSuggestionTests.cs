@@ -193,6 +193,9 @@ public sealed class PullSuggestionTests
         var plain = threads.EnumerateArray().First(t => t.GetProperty("id").GetString() == "T_plain").GetProperty("comments")[0];
 
         Assert.Equal("  run : BOOL := TRUE;\n", run.GetProperty("suggestion").GetString());
+        // The prose alone is rendered: the fence is the page's widget, not a second code block.
+        Assert.Contains("Default it.", run.GetProperty("html").GetString(), StringComparison.Ordinal);
+        Assert.DoesNotContain("TRUE", run.GetProperty("html").GetString(), StringComparison.Ordinal);
         Assert.Equal(JsonValueKind.Null, plain.GetProperty("suggestion").ValueKind);
     }
 }

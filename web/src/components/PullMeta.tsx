@@ -2,7 +2,8 @@ import { useState } from 'react';
 import type { RepoLabel, ReviewSnapshot, ReviewStatus, WriteAnswer } from '../api';
 import { api } from '../api';
 import { useAsync } from '../useAsync';
-import { ActionButton, describe, newOpKey } from './ReviewWrite';
+import { ActionButton, ReasonAction, describe, newOpKey } from './ReviewWrite';
+import { Icon } from './ui';
 
 type Summary = NonNullable<ReviewStatus['summary']>;
 
@@ -131,6 +132,59 @@ export function LabelsEditor(props: MetaProps & { summary: Summary }) {
         </select>
       )}
       {write.note && <p className="notice comment-note" role="status">{write.note}</p>}
+    </div>
+  );
+}
+
+/** The milestone, one of the repository's open ones or none: put on, never made, as labels are (Step 5). */
+export function MilestoneEditor(props: MetaProps & { summary: Summary }) {
+  const write = useMetaWrite(props);
+  const milestones = useAsync((s) => api.milestones(props.owner, props.repo, s), [props.owner, props.repo]);
+  const current = props.summary.milestoneNumber ?? null;
+  return (
+    <div className="milestone-editor">
+      {props.summary.milestone && <p><Icon name="milestone" className="text-muted" /> {props.summary.milestone}</p>}
+      {milestones.state === 'ok' && (
+        <select value={current ?? ''} disabled={write.busy} aria-label="Milestone"
+          onChange={(e) => write.run('/milestone', { number: e.target.value === '' ? null : Number(e.target.value) })}>
+          <option value="">No milestone</option>
+          {(milestones.value.milestones ?? []).map((m) => <option key={m.number} value={m.number}>{m.title}</option>)}
+        </select>
+      )}
+      {milestones.state === 'error' && <p className="text-muted text-small">Milestones could not be read.</p>}
+      {write.note && <p className="notice comment-note" role="status">{write.note}</p>}
+    </div>
+  );
+}
+
+/** Lock the conversation with GitHub's reasons, or unlock it: a write for people with write access, which GitHub decides. */
+export function LockAction({ owner, repo, snap, summary, onChanged, onStale }: MetaProps & { summary: Summary }) {
+  if (summary.locked) {
+    return (
+      <p className="lock-action">
+        <ActionButton owner={owner} repo={repo} snap={snap} path="/lock" payload={{ lock: false }} label="Unlock conversation" onDone={onChanged} onStale={onStale} />
+      </p>
+    );
+  }
+  return (
+    <p className="lock-action">
+      <ReasonAction owner={owner} repo={repo} snap={snap} path="/lock" label="Lock conversation" kind="choice" submitLabel="Lock"
+        options={[{ value: null, label: 'No reason' }, { value: 'OFF_TOPIC', label: 'Off-topic' }, { value: 'TOO_HEATED', label: 'Too heated' }, { value: 'RESOLVED', label: 'Resolved' }, { value: 'SPAM', label: 'Spam' }]}
+        payloadFor={(reason) => ({ lock: true, reason })} onDone={onChanged} onStale={onStale} />
+    </p>
+  );
+}
+
+/** The viewer's own notifications for this pull request: GitHub's Subscribe / Unsubscribe. */
+export function SubscriptionAction({ owner, repo, snap, summary, onChanged, onStale }: MetaProps & { summary: Summary }) {
+  const subscribed = summary.viewerSubscription === 'SUBSCRIBED';
+  return (
+    <div className="subscription-action">
+      <ActionButton owner={owner} repo={repo} snap={snap} path="/subscription" payload={{ state: subscribed ? 'UNSUBSCRIBED' : 'SUBSCRIBED' }}
+        label={subscribed ? 'Unsubscribe' : 'Subscribe'} onDone={onChanged} onStale={onStale} button />
+      <p className="text-muted text-small">
+        {subscribed ? "You're receiving notifications because you're watching this pull request." : summary.viewerSubscription === 'IGNORED' ? "You're ignoring this pull request." : "You're not receiving notifications from this pull request."}
+      </p>
     </div>
   );
 }

@@ -21,6 +21,15 @@ public sealed class SuggestionsTests
         Assert.Null(Suggestions.Read(null));
     }
 
+    /// <summary>The prose is drawn without the fence, which the page draws as the widget: shown once, as on github.com.</summary>
+    [Fact]
+    public void The_body_without_its_suggestion_is_the_prose_alone()
+    {
+        Assert.Equal("Use the default.", Suggestions.Without("Use the default.\n\n```suggestion\n  run : BOOL := TRUE;\n```\n"));
+        Assert.Equal("Before\n\nAfter", Suggestions.Without("Before\n```suggestion\nx\n```\nAfter"));
+        Assert.Equal("No code here.", Suggestions.Without("No code here."));
+    }
+
     [Fact]
     public void Applying_replaces_the_lines_and_keeps_the_files_line_endings_and_its_final_newline()
     {
