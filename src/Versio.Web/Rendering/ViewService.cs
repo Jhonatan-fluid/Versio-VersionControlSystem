@@ -587,7 +587,10 @@ public sealed partial class ViewService(
                 var oldTable = Text(before, path) is { } ot ? format.TryParseMemberTable(path, ot) : null;
                 var newTable = Text(after, path) is { } nt ? format.TryParseMemberTable(path, nt) : null;
                 var baseline = oldTable is { IsValid: true } ? oldTable : new MemberTable { Name = newTable!.Name, IsInterface = newTable.IsInterface, IsDataType = newTable.IsDataType, IsVariableList = newTable.IsVariableList };
-                var current = newTable is { IsValid: true } ? newTable : baseline with { Members = [] };
+                // A deleted file's "current" table has no rows and no framing either: the older
+                // framing carried over would answer for new-side lines that do not exist (latent,
+                // rule 1 short-circuits a missing side; closed all the same, review 2026-10-24).
+                var current = newTable is { IsValid: true } ? newTable : baseline with { Members = [], Structural = [], Unshown = [] };
                 // A member's type that changed between the two versions changes this block's
                 // meaning while its own text may not move: highlighted, and said above the table.
                 var changedPaths = ChangedPaths(olderModel, newerModel).Select(c => c.Path).ToHashSet(StringComparer.Ordinal);

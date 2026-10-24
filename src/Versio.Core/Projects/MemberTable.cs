@@ -362,6 +362,14 @@ public sealed record MemberTable
     /// </summary>
     public IReadOnlyList<LineSpan> StructuralBefore { get; init; } = [];
 
+    /// <summary>
+    /// <see cref="Unshown"/> for the OLDER version of a comparison: what the table said it does not
+    /// draw there. Review coverage refuses to vouch for any line on either list, whatever row's span
+    /// it falls in — a pragma between a row's comment and its declaration sits inside the row's
+    /// span and is drawn nowhere (review, 2026-10-24).
+    /// </summary>
+    public IReadOnlyList<UnshownLine> UnshownBefore { get; init; } = [];
+
     /// <summary>The layout with its name: a bare "Optimized" under a title read as a status.</summary>
     public string MemoryLayoutCaption =>
         MemoryLayout.Length == 0 ? string.Empty : "Memory layout: " + MemoryLayout;

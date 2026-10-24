@@ -236,8 +236,20 @@ public static class Coverage
             row.Lines is { } now && row.WasLines is { } was
             && Words(Text(newLines, now)).SequenceEqual(Words(Text(oldLines, was)), StringComparer.Ordinal);
 
+        // What the table itself says it does not draw, on each side. It overrides every rule
+        // below: a row's span runs from its comment to its declaration, and a pragma or a
+        // conditional line between the two is inside the span and drawn nowhere — vouched for by
+        // the modified row, it was reported "complete" with the change hidden (review, 2026-10-24).
+        var unshownNew = compared.Unshown.Select(u => u.Line).ToHashSet();
+        var unshownOld = compared.UnshownBefore.Select(u => u.Line).ToHashSet();
+
         return (side, line) =>
         {
+            if ((side == ReviewSide.New ? unshownNew : unshownOld).Contains(line))
+            {
+                return false;
+            }
+
             var holders = rows.Where(r => (side == ReviewSide.New ? r.Lines : r.WasLines) is { } span && span.Contains(line)).ToList();
             if (holders.Any(r => r.Change != MemberChange.None || SameWords(r)))
             {
@@ -282,7 +294,11 @@ public static class Coverage
     /// A network whose lines changed while its drawing did not is one whose vendor renumbered an
     /// element id or rewrote layout data: the vendor's bookkeeping, which a diagram cannot show and
     /// a reviewer cannot act on. A changed network is marked where it changed, so its span is the
-    /// drawing saying so.
+    /// drawing saying so. <b>The cost, stated:</b> the model carries an element's operand, its
+    /// kind and its instance, not everything the file holds for it — an operand's comment, its
+    /// symbol comment, its address, a contact's attributes, a TIA part's flags — and an edit to one
+    /// of those alone compares as Same and is vouched for by this rule. FINISH.md carries it with
+    /// the element anchors, which need the same per-element parsing.
     /// </para>
     /// <para>
     /// Spans come from the networks the rows hold, so a moved network vouches for its old lines as
@@ -292,8 +308,14 @@ public static class Coverage
     public static Evidence Ladder(LadderComparison comparison, IReadOnlyList<LineSpan> oldStructural, IReadOnlyList<LineSpan> newStructural)
     {
         ArgumentNullException.ThrowIfNull(comparison);
-        var newSpans = comparison.Rows.Select(r => r.New?.Network.Lines).OfType<LineSpan>().ToList();
-        var oldSpans = comparison.HasOldSide ? comparison.Rows.Select(r => r.Old?.Network.Lines).OfType<LineSpan>().ToList() : [];
+        // A placeholder network — one in a language the diagram does not draw (an IL network
+        // in a ladder, an SCL compile unit in a LAD block) — holds no elements, so its fingerprint
+        // is its title and its language and nothing of its text: two versions with different
+        // instructions compare as Same. Its span is not vouched for; those lines stay gaps, which is
+        // the honest answer for code the drawing shows as a box with a name (review, 2026-10-24).
+        static bool Drawn(LadderNetwork network) => network.UnsupportedLanguage is null;
+        var newSpans = comparison.Rows.Select(r => r.New?.Network).Where(n => n is not null && Drawn(n)).Select(n => n!.Lines).OfType<LineSpan>().ToList();
+        var oldSpans = comparison.HasOldSide ? comparison.Rows.Select(r => r.Old?.Network).Where(n => n is not null && Drawn(n)).Select(n => n!.Lines).OfType<LineSpan>().ToList() : [];
         var framing = Structural(oldStructural, newStructural);
         return (side, line) => (side == ReviewSide.New ? newSpans : oldSpans).Any(s => s.Contains(line)) || framing(side, line);
     }

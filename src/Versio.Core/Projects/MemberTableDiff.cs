@@ -117,6 +117,7 @@ public static class MemberTableDiff
             ChangeSummary = Summary(added, modified, removed),
             Attributes = CompareAttributes(baseline.Attributes, current.Attributes),
             UnshownChange = Unshown(baseline.Unshown, current.Unshown),
+            UnshownBefore = baseline.Unshown,
             // The older version's framing rides along, so coverage can vouch for a keyword line
             // that was taken away on the side it was on.
             StructuralBefore = baseline.Structural,

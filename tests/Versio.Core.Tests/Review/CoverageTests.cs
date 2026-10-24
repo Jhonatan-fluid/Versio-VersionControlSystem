@@ -151,10 +151,12 @@ public sealed class CoverageTests
     [Fact]
     public void A_keyword_line_that_carries_a_comment_is_not_framing()
     {
-        // The STRUCT keyword's line is framing until it says something: a comment there is drawn nowhere.
+        // The STRUCT keyword's line is framing until it says something: a comment there is drawn
+        // nowhere. The replace reaches END_STRUCT too, and since 2026-10-24 that line's comment is a
+        // gap as well — it was claimed regardless of its comment until then.
         var report = Table(Before, Before.Replace("STRUCT\n", "STRUCT // packed\n", StringComparison.Ordinal));
 
-        Assert.Equal(["New 2-2 not-shown"], Where(report));
+        Assert.Equal(["New 2-2 not-shown", "New 5-5 not-shown"], Where(report));
     }
 
     // ---- rule 4: one edit, one gap ---------------------------------------------------------------
@@ -255,6 +257,65 @@ public sealed class CoverageTests
         Assert.Equal(["New 3-3 not-shown"], Where(XmlCompared(Xml, Xml.Replace("Retain=\"false\"", "Retain=\"true\"", StringComparison.Ordinal))));
         // The same line with a change the row does draw is the row's to vouch for, attribute and all.
         Assert.True(XmlCompared(Xml, Xml.Replace("Type=\"Int\" Retain=\"false\"", "Type=\"Real\" Retain=\"true\"", StringComparison.Ordinal)).Complete);
+    }
+
+    // ---- review of 2026-10-24: what the table says it does not draw is never vouched for ----------
+
+    [Fact]
+    public void A_pragma_between_a_rows_comment_and_its_declaration_is_a_gap_even_when_the_row_changed()
+    {
+        // The row's span runs from its comment to its declaration; the pragma between is inside it
+        // and drawn nowhere, and the modified row vouched for it.
+        const string Cap = "TYPE S :\nSTRUCT\n\t// the cap\n\t{warning 'check'}\n\tLimit : INT := 5;\nEND_STRUCT\nEND_TYPE\n";
+        var report = Table(Cap, Cap.Replace("'check'", "'other'", StringComparison.Ordinal).Replace(":= 5", ":= 6", StringComparison.Ordinal));
+        Assert.Contains("New 4-4 not-shown", Where(report));
+        Assert.False(report.Complete);
+
+        // With an attribute pragma above, the row's claim ran from the attribute to the declaration
+        // and took the warning line with it: not listed as unshown, not framing, vouched for.
+        const string Hidden = "TYPE S :\nSTRUCT\n\t{attribute 'hide'}\n\t{warning 'check'}\n\tLimit : INT := 5;\nEND_STRUCT\nEND_TYPE\n";
+        var report2 = Table(Hidden, Hidden.Replace("'check'", "'other'", StringComparison.Ordinal).Replace(":= 5", ":= 6", StringComparison.Ordinal));
+        Assert.Contains("New 4-4 not-shown", Where(report2));
+    }
+
+    [Fact]
+    public void A_comment_on_a_section_or_end_keyword_line_or_a_methods_header_is_not_framing()
+    {
+        Assert.Equal(["New 2-2 not-shown"], Where(Table(Block, Block.Replace("FB\nVAR\n", "FB\nVAR // safety inputs\n", StringComparison.Ordinal), "FB.st")));
+        Assert.Equal(["New 7-7 not-shown"], Where(Table(Block, Block.Replace("END_VAR\n", "END_VAR // closed\n", StringComparison.Ordinal), "FB.st")));
+        // A method header's comment has no Return row to be drawn in.
+        const string M = "METHOD M\nVAR_INPUT\n\tx : BOOL;\nEND_VAR\n";
+        Assert.Equal(["New 1-1 not-shown"], Where(Table(M, M.Replace("METHOD M\n", "METHOD M // note\n", StringComparison.Ordinal), "M.st")));
+        // One with a return type draws the comment in the Return row: shown.
+        const string F = "METHOD F : INT\nVAR_INPUT\n\tx : BOOL;\nEND_VAR\n";
+        Assert.True(Table(F, F.Replace("METHOD F : INT\n", "METHOD F : INT // note\n", StringComparison.Ordinal), "F.st").Complete);
+    }
+
+    [Fact]
+    public void An_enumerations_pragma_or_stray_comment_is_a_gap_and_a_value_change_is_complete()
+    {
+        const string E = "TYPE E :\n(\n\t{attribute 'hide'}\n\tA := 0,\n\tB := 1\n) INT;\nEND_TYPE\n";
+        Assert.Equal(["New 3-3 not-shown"], Where(Table(E, E.Replace("'hide'", "'show'", StringComparison.Ordinal), "E.st")));
+        Assert.True(Table(E, E.Replace("B := 1", "B := 2", StringComparison.Ordinal), "E.st").Complete);
+        // A comment a value takes as its own is drawn in the value's cell; one no value takes is not.
+        const string C = "TYPE E :\n(\n\t// first\n\tA := 0,\n\tB := 1\n\t// trailing\n) INT;\nEND_TYPE\n";
+        Assert.True(Table(C, C.Replace("// first", "// one", StringComparison.Ordinal), "E.st").Complete);
+        Assert.Equal(["New 6-6 not-shown"], Where(Table(C, C.Replace("// trailing", "// tail", StringComparison.Ordinal), "E.st")));
+    }
+
+    [Fact]
+    public void A_placeholder_network_in_a_language_the_diagram_does_not_draw_vouches_for_nothing()
+    {
+        // An IL network in a ladder: no elements, so its text is not in its fingerprint and two
+        // versions with different instructions compare as Same. Its lines stay gaps.
+        var il = Network(2, "B", 21, 30) with { UnsupportedLanguage = "IL", Nodes = [], Nets = [] };
+        var comparison = LadderDiff.Compare(new LadderBody("L", [Network(1, "A", 10, 20), il]), new LadderBody("L", [Network(1, "A", 10, 20), il]));
+        Assert.Equal([LadderChange.Same, LadderChange.Same], comparison.Rows.Select(r => r.Change));
+
+        var report = Coverage.Check([("L.xml", Lines(), Lines((15, "renumbered"), (25, "LD X")))],
+            new Dictionary<string, IReadOnlyList<Coverage.Evidence>> { ["L.xml"] = [Coverage.Ladder(comparison, [], [])] }, _ => "no-evidence");
+
+        Assert.Equal(["New 25-25 not-shown"], Where(report));
     }
 
     // ---- rule 6: a ladder's evidence -------------------------------------------------------------

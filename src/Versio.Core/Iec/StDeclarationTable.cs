@@ -299,14 +299,13 @@ public static partial class StDeclarationTable
             return null;
         }
 
-        // The header line stands as its residue (HeaderResidue), not as itself.
-        claimed.Add(header);
         var name = rest[0].TrimEnd(':');
         var rows = new List<MemberRow>();
 
         // "FUNCTION F : INT" / "METHOD M : BOOL" / "PROPERTY P : REAL": the result, under the
         // block's own name, which is how Structured Text assigns it.
         var colon = lines[header].Code.IndexOf(':', StringComparison.Ordinal);
+        var returnRow = false;
         if (kind == Kind.Function && colon >= 0)
         {
             var type = UntilKeyword(lines[header].Code[(colon + 1)..].Trim());
@@ -314,7 +313,17 @@ public static partial class StDeclarationTable
             {
                 AddHeading(rows, "Return");
                 rows.Add(Row(name, type, "", lines[header].Comment, "Return", new LineSpan(header, header)));
+                returnRow = true;
             }
+        }
+
+        // The header line stands as its residue (HeaderResidue), not as itself — except a
+        // function's or method's with a comment and no Return row to draw the comment in: a
+        // residue is not made for those kinds, so the comment was framing and a change to it
+        // went unreported (review, 2026-10-24). Unclaimed, the line is listed as not shown.
+        if (kind != Kind.Function || returnRow || lines[header].Comment.Length == 0)
+        {
+            claimed.Add(header);
         }
 
         string? section = null;
@@ -325,7 +334,7 @@ public static partial class StDeclarationTable
             {
                 // Closed by END_VAR: anything before the next VAR is not a variable.
                 section = SectionOf(d.Structural, kind);
-                claimed.Add(d.First);
+                ClaimKeywordLine(lines, d.First, claimed);
                 continue;
             }
 
@@ -416,11 +425,25 @@ public static partial class StDeclarationTable
         {
             if (IsEnd(lines[i].Code, "END_" + opener) || IsEnd(lines[i].Code, "END_TYPE"))
             {
-                claimed.Add(i);
+                ClaimKeywordLine(lines, i, claimed);
             }
         }
 
         return new MemberTable { Name = name, Members = rows, IsDataType = true };
+    }
+
+    /// <summary>
+    /// A keyword line (<c>VAR_INPUT</c>, <c>END_VAR</c>, <c>END_STRUCT</c>) is the declaration's
+    /// own syntax and framing — until it carries a comment, which is drawn nowhere: then the line
+    /// stays unclaimed and is reported as not shown. The STRUCT line always checked its comment;
+    /// the section and end lines did not (review, 2026-10-24).
+    /// </summary>
+    private static void ClaimKeywordLine(List<Line> lines, int index, HashSet<int> claimed)
+    {
+        if (lines[index].Comment.Length == 0)
+        {
+            claimed.Add(index);
+        }
     }
 
     /// <summary>
@@ -429,13 +452,12 @@ public static partial class StDeclarationTable
     /// </summary>
     private static MemberTable Enumeration(List<Line> lines, int header, string name, string afterColon, HashSet<int> claimed)
     {
-        // Every line from the header to END_TYPE is a value, its comment or the base type, all
-        // drawn. The one thing claimed here that is not drawn is a pragma on a single value,
-        // rare enough in an enumeration to leave unreported rather than to split this loop.
-        for (var i = header; i < lines.Count; i++)
-        {
-            claimed.Add(i);
-        }
+        // Claimed line by line: a value's line and the comment lines a value draws, the opener,
+        // the closer with the base type, and END_TYPE. Not a pragma on a value, not a comment no
+        // value took, not a comment on the header: those are drawn nowhere, and once review
+        // coverage trusted the claims (2026-10-23) "claim every line" made a changed pragma read
+        // as shown (review, 2026-10-24).
+        ClaimKeywordLine(lines, header, claimed);
 
         var close = afterColon.LastIndexOf(')');
         var baseType = close >= 0
@@ -445,6 +467,7 @@ public static partial class StDeclarationTable
         var rows = new List<MemberRow>();
         var depth = 0;
         var pending = new List<string>();
+        var pendingLines = new List<int>();
         for (var i = header; i < lines.Count; i++)
         {
             var line = lines[i];
@@ -478,6 +501,7 @@ public static partial class StDeclarationTable
             if (items.Length == 0 && line.Code.Length == 0 && line.Comment.Length > 0)
             {
                 pending.Add(line.Comment);
+                pendingLines.Add(i);
                 continue;
             }
 
@@ -491,8 +515,30 @@ public static partial class StDeclarationTable
                 pending.Clear();
             }
 
+            if (items.Length > 0)
+            {
+                // A value's line is drawn with its comment; the comment lines above it are drawn in
+                // its cell. Those are the row's.
+                claimed.Add(i);
+                claimed.UnionWith(pendingLines);
+                pendingLines.Clear();
+            }
+            else if (i > header && line.Code.Length > 0 && line.Comment.Length == 0)
+            {
+                // The opener, or the closer with the base type: syntax, drawn as the table's kind.
+                claimed.Add(i);
+            }
+
             if (line.Code.Contains(')', StringComparison.Ordinal) && depth == 0 && i > header)
             {
+                for (var k = i + 1; k < lines.Count; k++)
+                {
+                    if (IsEnd(lines[k].Code, "END_TYPE"))
+                    {
+                        ClaimKeywordLine(lines, k, claimed);
+                    }
+                }
+
                 break;
             }
         }
@@ -521,7 +567,7 @@ public static partial class StDeclarationTable
             if (d.Structural is not null)
             {
                 section = First(d.Structural) == "VAR_GLOBAL" ? Qualified("Global", Words(d.Structural).Skip(1)) : null;
-                claimed.Add(d.First);
+                ClaimKeywordLine(lines, d.First, claimed);
                 continue;
             }
 
@@ -585,9 +631,15 @@ public static partial class StDeclarationTable
         Declaration Flush(string declaration)
         {
             var comment = bufferComment.Length > 0 ? bufferComment : string.Join(' ', pending);
-            var first = attributeLines.Count > 0 ? Math.Min(attributeLines.Min(), bufferFirst) : bufferFirst;
-            var used = Enumerable.Range(first, bufferLast - first + 1)
+            // What the row accounts for: its attribute lines, its comment lines and the declaration
+            // itself — never the range between, which a pragma the table does not draw ({warning
+            // …}, {IF …}) can sit in. The first version claimed the whole range from the first
+            // attribute, so such a line was "shown" by a row that drew nothing of it and a change
+            // there was reported complete (review, 2026-10-24).
+            var used = attributeLines
+                .Concat(Enumerable.Range(bufferFirst, bufferLast - bufferFirst + 1))
                 .Concat(bufferComment.Length > 0 ? [] : pendingLines)
+                .Distinct()
                 .ToList();
             // The span starts at the first line the row accounts for, its comment lines above
             // included (2026-10-23): a comment the table draws in the row's cell is the row's,
