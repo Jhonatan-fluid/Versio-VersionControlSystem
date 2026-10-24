@@ -115,7 +115,9 @@ public static class CodePageAssets
         .mt-table { border-collapse: collapse; width: 100%; font: 13px/20px var(--cd-mono); }
         .mt-table th { text-align: left; font: 600 11px var(--cd-ui); color: var(--cd-muted);
           padding: 4px 8px; border-bottom: 1px solid var(--cd-border); }
-        .mt-table td { padding: 1px 8px; vertical-align: top; }
+        .mt-table td { padding: 1px 8px; vertical-align: top; overflow-wrap: anywhere; }
+        .mt-table .mt-name { white-space: nowrap; }
+        .mt-page { overflow-x: auto; }
         .mt-mark { width: 16px; text-align: center; font-weight: 600; }
         .mt-section td { padding-top: 10px; font: 600 11px var(--cd-ui); color: var(--cd-muted);
           text-transform: uppercase; }

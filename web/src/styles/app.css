@@ -217,6 +217,9 @@ code, kbd, pre { font-family: var(--font-mono); }
 .tree-row.tone-added .tree-name { color: var(--color-success-fg); }
 .tree-row.tone-modified .tree-name { color: var(--color-attention-fg); }
 .tree-row.tone-deleted .tree-name { color: var(--color-danger-fg); }
+.tree-icon-project { color: var(--color-accent-fg); }
+/* An HTML object's Web page tab (Step 9): the file framed sandboxed, as the desktop's third chip. */
+.page-frame { width: 100%; min-height: 480px; height: 70vh; border: 1px solid var(--color-border-default); border-radius: var(--radius); background: #fff; }
 .code-refs-link { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; color: var(--color-fg-muted); }
 .code-refs-link:hover { color: var(--color-accent-fg); text-decoration: none; }
 /* GitHub's commit page with the desktop's card (Step 8). */

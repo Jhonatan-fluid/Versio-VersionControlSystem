@@ -59,10 +59,12 @@ describe('Mermaid blocks', () => {
 });
 
 describe('Markdown links', () => {
-  it('stay in the viewer for relative paths and resolve ..', () => {
+  it('stay in the viewer for relative paths to other Markdown documents and resolve ..', () => {
     expect(linkTarget('docs/STATUS.md', 'README.md')).toEqual({ kind: 'internal', path: 'docs/STATUS.md' });
     expect(linkTarget('../README.md#top', 'docs/web/PLAN.md')).toEqual({ kind: 'internal', path: 'docs/README.md' });
-    expect(linkTarget('/src/a.st', 'docs/x.md')).toEqual({ kind: 'internal', path: 'src/a.st' });
+    expect(linkTarget('/docs/Guide.MARKDOWN', 'docs/x.md')).toEqual({ kind: 'internal', path: 'docs/Guide.MARKDOWN' });
+    // The desktop's rule (FINISH.md D2): a source file has its own row to click, so a link to one goes nowhere.
+    expect(linkTarget('/src/a.st', 'docs/x.md')).toBeNull();
   });
 
   it('open http(s) elsewhere and refuse every other scheme', () => {

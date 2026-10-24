@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router';
 import type { Branch, Layout, Me, PaneView, TreeNode } from '../api';
-import { api } from '../api';
+import { api, rawUrl } from '../api';
 import { ErrorPanel, Pane } from '../components/Pane';
 import { RepoLayout } from '../components/RepoLayout';
 import { TreePanel } from '../components/TreePanel';
@@ -167,6 +167,7 @@ export function RepoPage({ me }: { me: Me | null }) {
               onLine={(n) => navigate({ hash: `L${n}`, search: search.toString() }, { replace: true })}
               comparing={false}
               signInUrl={signIn}
+              pageUrl={ref && path ? rawUrl(owner, repo, ref, path) : null}
             />
           ) : tree.state === 'ok' ? (
             <Blankslate icon="file" heading="Pick an object in the tree">Every POU, data type, variable list, network and document opens here, drawn as the desktop draws it.</Blankslate>

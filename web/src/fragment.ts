@@ -47,9 +47,12 @@ export function hasLadder(html: string): boolean {
 
 /**
  * Where a Markdown link may go. Core writes links into data-href, never href, so nothing in a
- * document can navigate by itself; this decides what a click does. Same-repository relative
- * paths stay in the viewer; http(s) opens a new tab with no opener and no referrer; anything else
- * (javascript:, data:, file:) goes nowhere.
+ * document can navigate by itself; this decides what a click does. A same-repository relative
+ * path to another Markdown document stays in the viewer — the desktop's rule (ShellViewModel
+ * .OpenLink): a document is a web of `.md` links, and a source file has its own row to click, so a
+ * link to one goes nowhere rather than opening the pane on something the document did not mean
+ * to show (aligned 2026-10-24, FINISH.md D2); http(s) opens a new tab with no opener and no
+ * referrer; anything else (javascript:, data:, file:) goes nowhere.
  */
 export function linkTarget(href: string, currentPath: string): { kind: 'internal'; path: string } | { kind: 'external'; url: string } | null {
   const value = href.trim();
@@ -78,5 +81,6 @@ export function linkTarget(href: string, currentPath: string): { kind: 'internal
     }
     parts.push(part);
   }
-  return parts.length ? { kind: 'internal', path: parts.join('/') } : null;
+  const path = parts.join('/');
+  return parts.length && /\.(md|markdown)$/i.test(path) ? { kind: 'internal', path } : null;
 }

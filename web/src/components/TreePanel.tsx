@@ -12,18 +12,19 @@ interface Props {
   comparing?: boolean;
 }
 
-/** The glyph per kind: a folder, a file, a project, an object; the catalog rows by what they are. */
-const icon: Record<TreeNode['kind'], { name: IconName; className: string } | null> = {
-  folder: { name: 'file-directory-fill', className: 'tree-icon tree-icon-folder' },
-  file: { name: 'file', className: 'tree-icon' },
-  project: null,
-  object: null,
-  library: null,
-  task: null,
-  device: null,
+/**
+ * The glyph per kind, the desktop's kind icons (TreeRow, FINISH.md Step 9): a folder, a file, a
+ * project, an object, and the catalog rows by what they are.
+ */
+const icon: Record<TreeNode['kind'], { name: IconName; className: string; title: string }> = {
+  folder: { name: 'file-directory-fill', className: 'tree-icon tree-icon-folder', title: 'Folder' },
+  file: { name: 'file', className: 'tree-icon', title: 'File' },
+  project: { name: 'repo', className: 'tree-icon tree-icon-project', title: 'Project' },
+  object: { name: 'code', className: 'tree-icon', title: 'Object' },
+  library: { name: 'book', className: 'tree-icon', title: 'Library' },
+  task: { name: 'clock', className: 'tree-icon', title: 'Task' },
+  device: { name: 'device-desktop', className: 'tree-icon', title: 'Device' },
 };
-
-const letter: Partial<Record<TreeNode['kind'], string>> = { project: 'P', object: 'O', library: 'L', task: 'T', device: 'D' };
 
 /** The desktop's one-letter glyph per state (TreeRow.Glyph), blank when unchanged. */
 export const glyph: Record<string, string> = { added: 'A', modified: 'M', deleted: 'D', renamed: 'R', copied: 'C', untracked: '?', conflicted: '!' };
@@ -148,7 +149,7 @@ function Node({ node, depth, filter, selected, onSelect, openAll }: { node: Tree
         title={node.label}
       >
         <span className="tree-caret" aria-hidden="true">{branch ? <Icon name={shown ? 'chevron-down' : 'chevron-right'} size={12} /> : ''}</span>
-        {glyphOf ? <Icon name={glyphOf.name} className={glyphOf.className} /> : letter[node.kind] && <span className={`tree-kind kind-${node.kind}`} aria-hidden="true">{letter[node.kind]}</span>}
+        <Icon name={glyphOf.name} className={glyphOf.className} label={glyphOf.title} />
         <span className="tree-name">{node.name}</span>
         {node.toolchain && <span className="tree-pill" title="The toolchain that opens this project">{node.toolchain}</span>}
         {annotation && <span className="tree-annotation">{annotation}</span>}

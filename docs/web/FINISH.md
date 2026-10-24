@@ -386,8 +386,8 @@ table, ladder (LAD/FBD), SCL body (`TiaPortalProjectFormat.cs:242-288`); TwinCAT
 | Vendor | Object kind | Desktop | Web | Gap |
 |---|---|---|---|---|
 | All | Project row (`.project`, `.apXX`, `.tsproj`, FBS folder) | Project card + coverage, Raw explanation (`:7845-7968`, `:8113-8172`) | Row only expands; nothing opens (`TreePanel.tsx:72`) | **Card missing** |
-| All | `.html` | Rendered / Raw / **Web page** tab (`:3100-3111`) | Highlighted source | **Web-page tab missing** |
-| All | `.md` | Markdown, follows `.md` links only | Markdown, follows any repo path | Link rule differs |
+| All | `.html` | Rendered / Raw / **Web page** tab (`:3100-3111`) | ~~Highlighted source~~ Rendered / Raw / Web page (Step 9: the raw route framed with every sandbox flag off, the route's own sandbox policy behind it) | ~~Web-page tab missing~~ |
+| All | `.md` | Markdown, follows `.md` links only | ~~Markdown, follows any repo path~~ follows `.md` links only (Step 9) | ~~Link rule differs~~ |
 | CODESYS | POU / method / interface (ST) | Table + code | Same | — |
 | CODESYS | POU in LD/FBD (`.xml`, FBS `.pou.xml.v3`) | Table + networks | Same | — |
 | CODESYS | CFC, SFC, IL | Raw XML as source | Same | Neither draws (future renderer) |
@@ -420,7 +420,7 @@ Also from the map:
 - **Tree rows** (desktop `TreeRow.cs`): ~~the web lacks the A/M/D/R/?/! letter (`:283`), roll-up colour
   and changed-below count (`:301-306`), struck deleted names (`:179`), the annotation (type "FB" /
   "Method", library version, task schedule, export state, `:231`), the toolchain label (`:216`)~~ (Step 8),
-  kind icons (`:191`; the web draws a letter, `TreePanel.tsx:10`), and the panel summaries (tree,
+  ~~kind icons (`:191`; the web draws a letter, `TreePanel.tsx:10`)~~ (Step 9), and the panel summaries (tree,
   coverage, findings, staleness, in-sync list).
 - **History** (`HistoryPage.tsx:45-60` vs `CommitHeading.cs`, `HistoryViewModel.cs`): the web lacks
   ~~the body, "N files · +x −y", the objects sentence~~ (Step 8, on the commit's page), branch/tag labels, ~~expanding a commit into its
@@ -675,6 +675,13 @@ attribute rows, column widths, scroll inside the table. Markdown link rule align
 Tree and Files changed group by project with the vendor's pill from `ToolchainLabels`, the object
 type annotation and kind icons (`TreeNodeDto` grows `Toolchain`, `Type`, `Detail`, `Status`,
 `RollUp`, `ChangedDescendants`). Reword the four vendor-naming comments in the web.
+**Where it stands, 2026-10-24.** The Core half (`RenderChoice`, the catalogs and cards, the notices
+for what stays source, the grown tree node, the reworded comments) landed with the 2026-10-23
+merges; the web half landed in Steps 8 and 9: the tree's pills, types, marks and kind icons; the
+`.html` Web page tab; the `.md` link rule aligned to the desktop's; the member table's cells
+wrapping inside the table. Left: a renderer for what both hosts still draw as source (CFC, SFC,
+IL, visualisation, text list, image pool, recipe, TIA tag table, TwinCAT native files) — each
+named in the pane as not yet drawn.
 
 **Step 10 — Operations and gates.** Audit lines for every write path; live-head checks; the two
 flakes retired; the App permission list; `docs/web/ARCHITECTURE.md` + `THREAT-MODEL.md` updated for

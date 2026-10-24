@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react';
 import type { Async } from '../useAsync';
 import type { Layout, PaneView, View } from '../api';
 import { ApiError } from '../api';
@@ -19,6 +20,12 @@ interface Props {
   full?: boolean;
   onFull?: (full: boolean) => void;
   signInUrl: string | null;
+  /**
+   * Where the file's own bytes are served, for an HTML object's "Web page" tab (the desktop's
+   * third chip, FINISH.md Step 9): framed sandboxed — no script, no origin, no form — with the
+   * raw route's own sandbox policy behind the frame's attribute.
+   */
+  pageUrl?: string | null;
 }
 
 const kinds: Record<string, string> = {
@@ -39,7 +46,12 @@ function folderOf(path: string): string {
 }
 
 /** The object pane: what the desktop's Rendered and Raw tabs show, placed from the server's HTML. */
-export function Pane({ result, view, layout, onView, onLayout, onLayer, onOpenPath, line, onLine, comparing, signInUrl, full = false, onFull }: Props) {
+export function Pane({ result, view, layout, onView, onLayout, onLayer, onOpenPath, line, onLine, comparing, signInUrl, full = false, onFull, pageUrl }: Props) {
+  // The web page tab is the pane's own: not in the URL, since a pasted link should open on the
+  // drawing, and gone the moment another file opens.
+  const [page, setPage] = useState(false);
+  const shownPath = result.state === 'ok' ? result.value.path : null;
+  useEffect(() => setPage(false), [shownPath]);
   if (result.state === 'loading') {
     return <section className="pane pane-empty" aria-busy="true">Loading...</section>;
   }
@@ -49,6 +61,7 @@ export function Pane({ result, view, layout, onView, onLayout, onLayer, onOpenPa
   }
 
   const v = result.value;
+  const webPage = v.kind === 'webpage' && pageUrl ? pageUrl : null;
   // The desktop's PaneHeading: a small label for the KIND of view, the name in the face an
   // ellipsis cannot eat, the folder after it in the quiet one, the full path as the tooltip.
   // The folder comes from the SPELLED label (security rule 9), not the raw path — the raw path
@@ -65,8 +78,9 @@ export function Pane({ result, view, layout, onView, onLayout, onLayer, onOpenPa
         </div>
         <div className="pane-tools">
           <div className="segmented" role="tablist" aria-label="View">
-            <button type="button" role="tab" aria-selected={view === 'rendered'} onClick={() => onView('rendered')}>Rendered</button>
-            <button type="button" role="tab" aria-selected={view === 'raw'} onClick={() => onView('raw')}>Raw</button>
+            <button type="button" role="tab" aria-selected={view === 'rendered' && !page} onClick={() => { setPage(false); onView('rendered'); }}>Rendered</button>
+            <button type="button" role="tab" aria-selected={view === 'raw' && !page} onClick={() => { setPage(false); onView('raw'); }}>Raw</button>
+            {webPage && <button type="button" role="tab" aria-selected={page} onClick={() => setPage(true)}>Web page</button>}
           </div>
           {comparing && onFull && (
             <label className="full-file-label" title="Every line, on both tabs; clear, the drawing is folded to the lines around each change">
@@ -96,7 +110,14 @@ export function Pane({ result, view, layout, onView, onLayout, onLayer, onOpenPa
       {v.notices.map((n) => (
         <p key={n} className="notice" role="note">{n}</p>
       ))}
-      <FragmentHost html={v.html} path={v.path} onOpenPath={onOpenPath} line={line} onLine={onLine} />
+      {page && webPage ? (
+        // sandbox with nothing allowed: no script, no same-origin, no form, no popup. The raw
+        // route answers with the same sandbox in its policy, so the page is inert even opened
+        // directly; the desktop draws it with its scripts off, as this does.
+        <iframe className="page-frame" sandbox="" src={webPage} title={`${v.title} as a web page`} />
+      ) : (
+        <FragmentHost html={v.html} path={v.path} onOpenPath={onOpenPath} line={line} onLine={onLine} />
+      )}
     </section>
   );
 }
