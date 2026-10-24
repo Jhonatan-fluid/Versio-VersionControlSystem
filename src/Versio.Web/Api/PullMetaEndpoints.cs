@@ -82,6 +82,10 @@ public static partial class PullWriteEndpoints
             return await w.RunWithoutSnapshotAsync(http, owner, repo, request, "commit-comment", ReviewTags.PayloadHash(sha, body),
                 precondition: async who =>
                 {
+                    // The audit line below names no revision for a write without a snapshot (it says
+                    // "#0 head -"); this one says which commit, so the two lines together answer
+                    // "was my comment posted, and where" (S10).
+                    w.Log.Info(LogCategory.Web, $"write commit-comment {who} {owner}/{repo} on commit {sha[..8]}");
                     var resolved = await w.Source.ResolveCommitAsync(who, owner, repo, sha, ct).ConfigureAwait(false);
                     return resolved.Ok ? null : resolved.Failure == RepoFailure.NotFound
                         ? Results.Json(new { error = "not-found", message = "Not found, or not visible to you." }, statusCode: 404)

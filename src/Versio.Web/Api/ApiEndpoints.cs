@@ -249,7 +249,8 @@ public static partial class ApiEndpoints
                 {
                     // Whether the box is drawn: writes on here and a signed-in person (S9, S1).
                     writable = http.RequestServices.GetRequiredService<Microsoft.Extensions.Options.IOptions<WebOptions>>().Value.Writable(owner, repo) && who.Value!.Kind == AccessKind.User,
-                    comments = comments.Value!.Select(c => new
+                    truncated = comments.Value!.Truncated,
+                    comments = comments.Value.Comments.Select(c => new
                     {
                         id = c.Id,
                         author = CodeHtml.Spelled(c.Author),
@@ -280,7 +281,7 @@ public static partial class ApiEndpoints
 
             var tags = await source.GetTagsAsync(who.Value!, owner, repo, ct).ConfigureAwait(false);
             return tags.Ok
-                ? Results.Ok(new { tags = tags.Value!.Select(t => new { name = t.Name, label = CodeHtml.Spelled(t.Name), commit = t.CommitSha }) })
+                ? Results.Ok(new { tags = tags.Value!.Tags.Select(t => new { name = t.Name, label = CodeHtml.Spelled(t.Name), commit = t.CommitSha }), truncated = tags.Value.Truncated })
                 : Refused(tags.Failure, http);
         });
 
@@ -515,7 +516,7 @@ public static partial class ApiEndpoints
             if (who.Value!.Token is not null)
             {
                 var open = query.Search.Replace("is:closed", "is:open", StringComparison.Ordinal).Replace("is:merged", "is:open", StringComparison.Ordinal);
-                var closed = query.Search.Replace("is:open", "is:closed", StringComparison.Ordinal);
+                var closed = query.Search.Replace("is:open", "is:closed", StringComparison.Ordinal).Replace("is:merged", "is:closed", StringComparison.Ordinal);
                 var found = await source.SearchPullsAsync(who.Value, query.Search, open, closed, ListLimit, after, ct).ConfigureAwait(false);
                 return found.Ok
                     ? Results.Ok(new

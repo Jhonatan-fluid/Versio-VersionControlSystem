@@ -187,13 +187,19 @@ public sealed class PullWriteTests
     [Fact]
     public async Task Signed_out_nothing_is_written()
     {
-        var (host, writer, _, token) = await StartAsync(Build());
+        var w = Build();
+        var (host, writer, _, token) = await StartAsync(w);
         await using var __ = host;
+        w.GitHub.Reads.Clear();
 
         var response = await Post(host, "/comments", new { opKey = Key(), body = "hi" }, cookie: null, Headers(token));
 
         response.AssertStatus(HttpStatusCode.Unauthorized);
         Assert.Empty(writer.Writes);
+        // And nothing was asked of GitHub for it: the session is asked for before access is
+        // resolved, so an anonymous flood with the forgery headers costs no App-token reads
+        // (review, 2026-10-24).
+        Assert.Empty(w.GitHub.Reads);
     }
 
     [Fact]

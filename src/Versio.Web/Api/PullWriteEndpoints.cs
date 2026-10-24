@@ -574,7 +574,9 @@ public static partial class PullWriteEndpoints
             // sign of a misconfigured repository list, and a burst of them is somebody probing.
             if (!ApiEndpoints.Valid(owner, repo) || !options.Value.Writable(owner, repo))
             {
-                log.Info(LogCategory.Web, $"write refused (S9: writes are off for {owner}/{repo}) {http.Request.Method} {http.Request.Path}");
+                // Route values are percent-decoded, so an invalid name is not written into the log
+                // as it came (a %0A would start a line of its own): the valid ones are named.
+                log.Info(LogCategory.Web, $"write refused (S9: writes are off for {(ApiEndpoints.Valid(owner, repo) ? $"{owner}/{repo}" : "an invalid repository name")}) {http.Request.Method} {http.Request.Path}");
                 return ApiEndpoints.NotFoundJson();
             }
 
@@ -612,6 +614,17 @@ public static partial class PullWriteEndpoints
 
             // S1: a person's own token, nothing else. Not the installation token, not anonymous, not
             // (when it exists) an Okta session without GitHub: a review must be in somebody's name.
+            // The session is asked for FIRST, before access is resolved: resolving it for a request
+            // with no session read the repository's visibility from GitHub under the App's token,
+            // uncached for a private repository, on every anonymous probe that had the three S4
+            // headers — a flood with no limiter in front of it, since the per-session limiter has
+            // no session to count (review, 2026-10-24). With no session there is nobody to write as.
+            if (await access.SessionAsync(http, http.RequestAborted).ConfigureAwait(false) is null)
+            {
+                log.Info(LogCategory.Web, $"write refused (S1: no session) {http.Request.Method} {http.Request.Path}");
+                return Results.Json(new { error = "sign-in", message = "Sign in with GitHub to comment, so it is in your name." }, statusCode: 401);
+            }
+
             var who = await access.ResolveAsync(http, owner, repo, http.RequestAborted).ConfigureAwait(false);
             if (!who.Ok)
             {
@@ -801,6 +814,9 @@ public static partial class PullWriteEndpoints
 
             if (snapshot is null)
             {
+                // Said in the log (S10): an expired token is ordinary, an invalid one is hand-made
+                // or another viewer's, and either way the write did not happen.
+                log.Info(LogCategory.Web, $"write {action} {who} {owner}/{repo}#{number} refused: snapshot {(refused == SnapshotRefusal.Expired ? "expired" : "invalid")}");
                 return refused == SnapshotRefusal.Expired
                     ? Results.Json(new { error = "snapshot-expired", message = "This review was loaded too long ago. Reload the pull request." }, statusCode: 409)
                     : Results.Json(new { error = "snapshot-invalid", message = "This review's revision could not be read. Reload the pull request." }, statusCode: 400);
@@ -975,6 +991,7 @@ public static partial class PullWriteEndpoints
                 // entry; only one of them gets past here, the rest say "in progress".
                 if (!await ledger.TryTakeOverAsync(ledgerKey, reservation, new OperationEntry(payloadHash, OperationState.Pending, null, now, now), ct).ConfigureAwait(false))
                 {
+                    Audit(who, action, owner, repo, number, snapshot, key, "another retry took the key over; still being posted");
                     return Results.Json(new { outcome = "pending", message = "Still being posted." }, statusCode: 202);
                 }
             }
@@ -1069,12 +1086,19 @@ public static partial class PullWriteEndpoints
             }
 
             var drawn = await views.CompareAsync(who, older.Value.Model, newer.Value.Model, path, Versio.Web.Rendering.PaneView.Rendered, false, ct, from).ConfigureAwait(false);
-            var anchor = drawn.Ok ? drawn.Value!.Anchors.SingleOrDefault(a => a.Dom == dom) : null;
-            if (anchor is null)
+            // Exactly one element answers to the id. Two would be a renderer's defect, and a
+            // refusal that says so beats the exception SingleOrDefault threw (a 500 with the
+            // operation left pending in the ledger — review, 2026-10-24).
+            var matches = drawn.Ok ? drawn.Value!.Anchors.Where(a => a.Dom == dom).Take(2).ToList() : [];
+            if (matches.Count != 1)
             {
-                log.Info(LogCategory.Web, $"anchor comment refused: {dom} is not drawn in {s.Owner}/{s.Repo}#{s.Number} {path}");
+                log.Info(LogCategory.Web, matches.Count == 0
+                    ? $"anchor comment refused: {dom} is not drawn in {s.Owner}/{s.Repo}#{s.Number} {path}"
+                    : $"anchor comment refused: {dom} is drawn twice in {s.Owner}/{s.Repo}#{s.Number} {path}, which is a renderer's defect");
                 return (Results.Json(new { error = "anchor-not-found", message = "That element is not in this version's drawing. Reload the file." }, statusCode: 422), null);
             }
+
+            var anchor = matches[0];
 
             var side = anchor.Side == Versio.Core.Review.ReviewSide.New ? "RIGHT" : "LEFT";
             var semantic = new Versio.Core.Review.SemanticAnchor(anchor.Kind, anchor.SourcePath, anchor.Side,

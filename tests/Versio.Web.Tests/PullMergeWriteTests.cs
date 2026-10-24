@@ -474,6 +474,40 @@ public sealed class PullMergeWriteTests
         Assert.Equal(w.Head, w.Repo.Refs["fix"]);
     }
 
+    /// <summary>
+    /// A retry after a lost answer reconciles before any precondition runs, so the reconcile must
+    /// find the branch itself: the first version read what the precondition had set and threw, and
+    /// every retry after a lost delete was a 500 the person could not get past (review, 2026-10-24).
+    /// </summary>
+    [Fact]
+    public async Task A_retry_of_a_lost_delete_finds_the_branch_itself_and_finishes_the_delete()
+    {
+        var w = Build();
+        w.Repo.PullStates[12] = "MERGED";
+        var (host, writer, alice, token, _) = await StartAsync(w);
+        await using var __ = host;
+        writer.Next.Enqueue(FakeWriter.Mode.LostBefore);
+        var key = Key();
+
+        var lost = await Post(host, alice, token, "/delete-branch", new { opKey = key });
+        lost.AssertStatus(HttpStatusCode.Accepted);
+        Assert.True(w.Repo.Refs.ContainsKey("fix"));
+
+        var retry = await Post(host, alice, token, "/delete-branch", new { opKey = key });
+
+        retry.AssertStatus(HttpStatusCode.OK);
+        Assert.Equal("done", JsonDocument.Parse(await retry.Body()).RootElement.GetProperty("outcome").GetString());
+        Assert.False(w.Repo.Refs.ContainsKey("fix"));
+        Assert.Single(writer.Branches);
+
+        // The same for a restore: its reconcile reads the merge state on a retry too.
+        writer.Next.Enqueue(FakeWriter.Mode.LostBefore);
+        var restoreKey = Key();
+        (await Post(host, alice, token, "/restore-branch", new { opKey = restoreKey })).AssertStatus(HttpStatusCode.Accepted);
+        (await Post(host, alice, token, "/restore-branch", new { opKey = restoreKey })).AssertStatus(HttpStatusCode.OK);
+        Assert.Equal(w.Head, w.Repo.Refs["fix"]);
+    }
+
     [Fact]
     public async Task A_lost_answer_to_a_delete_is_settled_by_the_branch_being_gone()
     {

@@ -213,8 +213,18 @@ public static partial class PullWriteEndpoints
                 // Gone is done; still there is not, and deleting again is as safe as the first time was.
                 async (who, s, key, since) =>
                 {
-                    var tip = await w.Source.ResolveCommitAsync(who, owner, repo, branch!, ct).ConfigureAwait(false);
-                    return tip.Ok ? RepoResult<string>.Of("") : tip.Failure == RepoFailure.NotFound ? RepoResult<string>.Of(branch!) : tip.As<string>();
+                    // A retry after a lost answer reconciles BEFORE any precondition runs, so the
+                    // branch is not known here then and is read from the merge state. The first
+                    // version read `branch!`, threw, and every retry after a lost answer was a 500
+                    // the person could not get past (review, 2026-10-24).
+                    var head = branch ?? (await w.MergeStateAsync(who, s, ct).ConfigureAwait(false)).State?.HeadRef;
+                    if (string.IsNullOrEmpty(head))
+                    {
+                        return RepoResult<string>.Fail(RepoFailure.Upstream, "the merge state could not be read");
+                    }
+
+                    var tip = await w.Source.ResolveCommitAsync(who, owner, repo, head, ct).ConfigureAwait(false);
+                    return tip.Ok ? RepoResult<string>.Of("") : tip.Failure == RepoFailure.NotFound ? RepoResult<string>.Of(head) : tip.As<string>();
                 },
                 idempotent: true, ct).ConfigureAwait(false);
         }).WithMetadata(new MergeEndpoint());
@@ -240,8 +250,15 @@ public static partial class PullWriteEndpoints
                 async (who, s, key) => Done(await w.Writer.CreateBranchAsync(who, owner, repo, state!.HeadRef, state.HeadSha, CancellationToken.None).ConfigureAwait(false), state!.HeadRef),
                 async (who, s, key, since) =>
                 {
-                    var tip = await w.Source.ResolveCommitAsync(who, owner, repo, state!.HeadRef, ct).ConfigureAwait(false);
-                    return tip.Ok ? RepoResult<string>.Of(tip.Value == state.HeadSha ? state.HeadRef : "") : tip.Failure == RepoFailure.NotFound ? RepoResult<string>.Of("") : tip.As<string>();
+                    // Read here on a retry, for the reason the delete's reconcile gives.
+                    var known = state ?? (await w.MergeStateAsync(who, s, ct).ConfigureAwait(false)).State;
+                    if (known is null || known.HeadRef.Length == 0)
+                    {
+                        return RepoResult<string>.Fail(RepoFailure.Upstream, "the merge state could not be read");
+                    }
+
+                    var tip = await w.Source.ResolveCommitAsync(who, owner, repo, known.HeadRef, ct).ConfigureAwait(false);
+                    return tip.Ok ? RepoResult<string>.Of(tip.Value == known.HeadSha ? known.HeadRef : "") : tip.Failure == RepoFailure.NotFound ? RepoResult<string>.Of("") : tip.As<string>();
                 },
                 idempotent: true, ct).ConfigureAwait(false);
         }).WithMetadata(new MergeEndpoint());

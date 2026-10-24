@@ -39,6 +39,11 @@ public sealed class SuggestionsTests
         Assert.Equal("a\nX\nd", Suggestions.Apply("a\nb\nc\nd", 2, 3, "X"));
         // An empty suggestion deletes the lines, as on github.com.
         Assert.Equal("a\nd\n", Suggestions.Apply("a\nb\nc\nd\n", 2, 3, ""));
+        // A blank line before the closing fence is a line (github.com keeps it); only the newline
+        // that ends the fence's body is not (review, 2026-10-24).
+        Assert.Equal("x\n\n", Suggestions.Read("```suggestion\nx\n\n```"));
+        Assert.Equal("a\nx\n\nc\n", Suggestions.Apply("a\nb\nc\n", 2, 2, "x\n\n"));
+        Assert.Equal("a\nx\nc\n", Suggestions.Apply("a\nb\nc\n", 2, 2, "x"));
     }
 
     [Fact]

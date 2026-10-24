@@ -202,8 +202,20 @@ public static partial class PullWriteEndpoints
                     return (ApiEndpoints.Refused(bytes.Failure), null);
                 }
 
+                // The file must come back from text as the bytes it was: a file that is not UTF-8
+                // (a Windows-1252 degree sign in a comment, a UTF-16 export) decodes with U+FFFD in
+                // place of every bad byte, and committing that rewrites the whole file — the noise
+                // Suggestions.cs exists to avoid, and a loss of the characters (review, 2026-10-24).
+                // A BOM round-trips (GetString keeps it as U+FEFF), so a file with one is still fine.
+                var raw = bytes.Value!;
+                var text = Encoding.UTF8.GetString(raw);
+                if (!Encoding.UTF8.GetBytes(text).AsSpan().SequenceEqual(raw))
+                {
+                    Log.Info(LogCategory.Web, $"suggestion refused: {s.Owner}/{s.Repo}#{s.Number} {group.Key} is not UTF-8 text");
+                    return (Results.Json(new { error = "file-not-utf8", message = "The file is not UTF-8 text, so a suggestion is not applied to it from here." }, statusCode: 422), null);
+                }
+
                 // Applied from the bottom up, so an earlier edit's line count never shifts a later one.
-                var text = Encoding.UTF8.GetString(bytes.Value!);
                 foreach (var edit in group.OrderByDescending(e => e.Start))
                 {
                     if (Suggestions.Apply(text, edit.Start, edit.End, edit.Suggestion) is not { } applied)

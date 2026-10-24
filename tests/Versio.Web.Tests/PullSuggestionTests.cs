@@ -27,13 +27,14 @@ public sealed class PullSuggestionTests
         new(id, "src/Pump.st", false, outdated, line, startLine, side, line, "LINE",
             [new ReviewComment(commentId, author, body, When, null, null)], false, true, true, false);
 
-    private static World Build()
+    /// <param name="pump">The reviewed file's bytes, where a test needs other than <see cref="Before"/> (the fake's blobs are keyed by content at commit time).</param>
+    private static World Build(byte[]? pump = null)
     {
         var github = new FakeGitHub();
         var repo = github.Add("acme", "plant");
         var start = github.Commit(repo, "start", new Dictionary<string, byte[]> { ["src/Pump.st"] = Encoding.UTF8.GetBytes("PROGRAM Pump\nVAR\nEND_VAR\n") });
         github.Commit(repo, "main", new Dictionary<string, byte[]>(repo.Commits[start], StringComparer.Ordinal));
-        var head = github.Commit(repo, "fix", new Dictionary<string, byte[]> { ["src/Pump.st"] = Encoding.UTF8.GetBytes(Before) });
+        var head = github.Commit(repo, "fix", new Dictionary<string, byte[]> { ["src/Pump.st"] = pump ?? Encoding.UTF8.GetBytes(Before) });
         repo.MergeBases[(repo.Refs["main"], head)] = start;
         repo.Pulls.Add((new PullInfo(12, "Fix", "jo", When, "main", "fix", head, false), "Why"));
         repo.PullFiles[12] = new PullFileList([new PullFile("src/Pump.st", "modified", null, "@@ -2,1 +2,3 @@\n VAR\n+  run : BOOL;\n+  stop : BOOL;")], false);
@@ -92,6 +93,39 @@ public sealed class PullSuggestionTests
         Assert.StartsWith("Apply suggestion from code review\n\nCo-authored-by: sam <sam@users.noreply.github.com>\n\n<!-- versio:op v1 ", commit.Message, StringComparison.Ordinal);
         Assert.Equal("PROGRAM Pump\nVAR\n  run : BOOL := TRUE;\n  stop : BOOL;\nEND_VAR\n", FileAfter(w));
         Assert.Equal("alice", writer.Writes.Single().Access.Who);
+    }
+
+    /// <summary>
+    /// A file that is not UTF-8 is not rewritten: decoding it would put U+FFFD in place of every
+    /// bad byte and the commit would change the whole file (review, 2026-10-24). A BOM is fine.
+    /// </summary>
+    [Fact]
+    public async Task A_file_that_is_not_UTF8_text_takes_no_suggestion_and_one_with_a_BOM_does()
+    {
+        // A Windows-1252 degree sign in a comment on the first line; the suggested line is untouched.
+        var latin = Encoding.UTF8.GetBytes("PROGRAM Pump // ").Concat([(byte)0xB0]).Concat(Encoding.UTF8.GetBytes("\nVAR\n  run : BOOL;\n  stop : BOOL;\nEND_VAR\n")).ToArray();
+        var w = Build(latin);
+        var (host, writer, alice, token) = await StartAsync(w);
+        await using var _ = host;
+
+        var refused = await Apply(host, alice, token, "C_run");
+
+        refused.AssertStatus(HttpStatusCode.UnprocessableEntity);
+        Assert.Equal("file-not-utf8", JsonDocument.Parse(await refused.Body()).RootElement.GetProperty("error").GetString());
+        Assert.Empty(writer.Commits);
+        Assert.Equal(latin, w.Repo.Commits[w.Repo.Refs["fix"]]["src/Pump.st"]);
+
+        var bom = Encoding.UTF8.GetPreamble().Concat(Encoding.UTF8.GetBytes(Before)).ToArray();
+        var w2 = Build(bom);
+        var (host2, writer2, alice2, token2) = await StartAsync(w2);
+        await using var __ = host2;
+
+        (await Apply(host2, alice2, token2, "C_run")).AssertStatus(HttpStatusCode.OK);
+
+        var after = w2.Repo.Commits[w2.Repo.Refs["fix"]]["src/Pump.st"];
+        Assert.Equal(Encoding.UTF8.GetPreamble(), after.Take(3));
+        Assert.Equal("PROGRAM Pump\nVAR\n  run : BOOL := TRUE;\n  stop : BOOL;\nEND_VAR\n", Encoding.UTF8.GetString(after, 3, after.Length - 3));
+        Assert.Single(writer2.Commits);
     }
 
     /// <summary>A batch is one commit; applied bottom-up so the first edit never shifts the second's lines.</summary>

@@ -299,6 +299,14 @@ public sealed class GitHubWriterTests : IAsyncLifetime
         var query = _requests.Single(r => r.Method == "GET").Path;
         Assert.Contains("head=acme%3Afeature", query, StringComparison.Ordinal);
         Assert.Contains("state=all", query, StringComparison.Ordinal);
+
+        // A fork's head is already owner:branch, and is asked for as it is (review, 2026-10-24:
+        // prefixed again it asked for acme:bob:feature, which lists nothing, so a lost answer to
+        // opening a fork's pull request could never be reconciled).
+        _requests.Clear();
+        var fork = await Writer().FindCreatedPullAsync(Alice, "acme", "plant", "bob:feature", "main", "<!-- versio:op v1 K -->", CancellationToken.None);
+        Assert.Equal(22, fork.Value);
+        Assert.Contains("head=bob%3Afeature", _requests.Single(r => r.Method == "GET").Path, StringComparison.Ordinal);
     }
 
     /// <summary>The merge carries the reviewed head as GitHub's precondition, and GitHub's 409 for a moved head is a refusal, never "unknown".</summary>

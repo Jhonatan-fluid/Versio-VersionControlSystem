@@ -510,7 +510,12 @@ public sealed class GitHubWriter(IHttpClientFactory clients, IOptions<WebOptions
 
     public async Task<RepoResult<int>> FindCreatedPullAsync(RepoAccess access, string owner, string repo, string head, string @base, string tag, CancellationToken ct)
     {
-        var found = await SearchAsync(access, $"repos/{E(owner)}/{E(repo)}/pulls?state=all&head={E(owner + ":" + head)}&base={E(@base)}",
+        // GitHub's list filter names the head as owner:branch. A fork's head arrives that way
+        // already (Step 7); prefixing it again asked for acme:bob:feature, which lists nothing, so
+        // a lost answer to opening a fork's pull request could never be reconciled and the form
+        // stayed locked while the pull request existed (review, 2026-10-24).
+        var qualified = head.Contains(':', StringComparison.Ordinal) ? head : owner + ":" + head;
+        var found = await SearchAsync(access, $"repos/{E(owner)}/{E(repo)}/pulls?state=all&head={E(qualified)}&base={E(@base)}",
             Tagged(access, tag, p => p.GetProperty("number").GetInt32().ToString(CultureInfo.InvariantCulture)), ct).ConfigureAwait(false);
         return found.Ok ? RepoResult<int>.Of(found.Value!.Length > 0 ? int.Parse(found.Value, CultureInfo.InvariantCulture) : 0) : found.As<int>();
     }

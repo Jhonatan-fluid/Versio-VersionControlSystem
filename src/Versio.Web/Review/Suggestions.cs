@@ -66,7 +66,11 @@ public static partial class Suggestions
             return null;
         }
 
-        var replacement = suggestion.Length == 0 ? [] : suggestion.TrimEnd('\n').Split('\n').ToList();
+        // The fence's body ends with the newline before the closing fence, which is not a line;
+        // a blank line before that IS one, as on github.com — TrimEnd('\n') took every trailing
+        // blank line with it (review, 2026-10-24).
+        var body = suggestion.EndsWith('\n') ? suggestion[..^1] : suggestion;
+        var replacement = suggestion.Length == 0 ? [] : body.Split('\n').ToList();
         lines.RemoveRange(startLine - 1, endLine - startLine + 1);
         lines.InsertRange(startLine - 1, replacement);
         var result = new StringBuilder();
