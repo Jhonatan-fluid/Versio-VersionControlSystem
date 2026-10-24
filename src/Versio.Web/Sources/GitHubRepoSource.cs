@@ -131,7 +131,7 @@ public sealed class GitHubRepoSource(
             return bytes;
         }
 
-        // The blob is a pointer; the file is in LFS. A TIA project's export is (Open item 1).
+        // The blob is a pointer; the file is in LFS, as a vendor's large exports are (Open item 1).
         if (pointer.Size > maxBytes)
         {
             return RepoResult<byte[]>.Fail(RepoFailure.TooLarge, $"LFS object of {pointer.Size} bytes");

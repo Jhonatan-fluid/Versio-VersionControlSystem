@@ -16,7 +16,16 @@ namespace Versio.Web.Api;
 /// <param name="Name">For display: hidden characters spelled (security rule 9).</param>
 /// <param name="Path">For navigation: exactly the file's path, which is what the API is asked for.</param>
 /// <param name="Label">The path for display, spelled.</param>
-public sealed record TreeNodeDto(string Name, string Path, string Label, string Kind, string? Primary, IReadOnlyList<string> Files, IReadOnlyList<TreeNodeDto> Children);
+/// <param name="Toolchain">The vendor pill the desktop tree shows on a project row, spelled; empty elsewhere.</param>
+/// <param name="Type">The object's type as the vendor names it (a GUID or a word); null for a file or folder.</param>
+/// <param name="TypeName">The type as the tree's chip says it, spelled; null when there is none.</param>
+/// <param name="Detail">The row's detail text (a device parameter's value, a project's export state), spelled.</param>
+/// <param name="Status">The row's own change: unmodified, added, modified, deleted, renamed.</param>
+/// <param name="RollUp">The strongest change under the row.</param>
+/// <param name="ChangedDescendants">How many rows under this one changed.</param>
+public sealed record TreeNodeDto(
+    string Name, string Path, string Label, string Kind, string? Primary, IReadOnlyList<string> Files, IReadOnlyList<TreeNodeDto> Children,
+    string Toolchain, string? Type, string? TypeName, string Detail, string Status, string RollUp, int ChangedDescendants);
 
 /// <summary>
 /// The JSON API the page calls (docs/web/PLAN.md Step 2). Every route resolves its credential
@@ -636,8 +645,15 @@ public static partial class ApiEndpoints
     internal static void Audit(IVersioLogger log, RepoAccess access, RepoModel model, string path, string? view) =>
         log.Info(LogCategory.Web, $"view {access} {model.Owner}/{model.Repo}@{model.CommitSha[..Math.Min(8, model.CommitSha.Length)]} {path} {view ?? "rendered"}");
 
+    /// <summary>
+    /// The desktop's row, sent whole: the page draws the pill, the chip, the detail and the marks
+    /// from these rather than deriving them from the path. Every text shown is spelled (rule 9);
+    /// the type is the vendor's identifier and goes as it is, for a link to carry.
+    /// </summary>
     private static TreeNodeDto Dto(ProjectTreeNode node) =>
-        new(CodeHtml.Spelled(node.Name), node.Path, CodeHtml.Spelled(node.Path), node.Kind.ToString().ToLowerInvariant(), node.PrimaryFile, node.Files, node.Children.Select(Dto).ToList());
+        new(CodeHtml.Spelled(node.Name), node.Path, CodeHtml.Spelled(node.Path), node.Kind.ToString().ToLowerInvariant(), node.PrimaryFile, node.Files, node.Children.Select(Dto).ToList(),
+            CodeHtml.Spelled(node.Toolchain), node.Type, node.TypeName is null ? null : CodeHtml.Spelled(node.TypeName), CodeHtml.Spelled(node.Detail),
+            node.Status.ToString().ToLowerInvariant(), node.RollUp.ToString().ToLowerInvariant(), node.ChangedDescendants);
 
     [GeneratedRegex("^[A-Za-z0-9_.-]{1,100}$")]
     private static partial Regex Name();

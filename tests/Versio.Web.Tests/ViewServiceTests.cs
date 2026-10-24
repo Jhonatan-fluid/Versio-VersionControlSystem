@@ -12,9 +12,11 @@ using Xunit;
 namespace Versio.Web.Tests;
 
 /// <summary>
-/// What the page shows for an object, decided as the desktop decides it, over this repository's
-/// real exports: tables, ladders, code under an interface, Markdown, source; and two commits
-/// compared, including a change nothing in the drawing shows.
+/// What the page shows for an object over this repository's real exports: tables, ladders, code
+/// under an interface, Markdown, source; and two commits compared, including a change nothing in
+/// the drawing shows. The decision is Core's (<c>RenderChoice</c>); that both hosts make the same
+/// one is <c>RenderChoiceParityTests</c>' claim, in the desktop suite, which this class once
+/// claimed and could not keep. The kinds added when the choice moved are in <c>RenderedKindsTests</c>.
 /// </summary>
 public sealed class ViewServiceTests
 {
@@ -392,7 +394,7 @@ public sealed class ViewServiceTests
         var rendered = await views.ViewAsync(RepoAccess.Anonymous, model, plcLogic, PaneView.Rendered, false, CancellationToken.None);
         var raw = await views.ViewAsync(RepoAccess.Anonymous, model, plcLogic, PaneView.Raw, false, CancellationToken.None);
 
-        Assert.Equal("markdown", rendered.Value!.Kind);
+        Assert.Equal("note", rendered.Value!.Kind);
         Assert.Contains(EmptyObjectNote.For(hasChildren: true), System.Net.WebUtility.HtmlDecode(rendered.Value.Html), StringComparison.Ordinal);
         Assert.Equal("source", raw.Value!.Kind);
     }

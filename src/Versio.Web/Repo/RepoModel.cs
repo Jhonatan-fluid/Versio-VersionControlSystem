@@ -58,7 +58,14 @@ public sealed record RepoModel(
         var index = new Dictionary<string, ProjectTreeNode>(StringComparer.Ordinal);
         foreach (var node in Flatten(Nodes))
         {
-            var keys = node.Kind == ProjectNodeKind.File ? node.Files.Append(node.Path) : node.Files;
+            // A row whose path is not one of its files is still a row the page can ask for: a
+            // project (its file is the vendor's binary, or a folder of readable source with no
+            // file of its own), a device object (its path is the device, its file the catalog
+            // beside it), and a reference, task or device row grafted from a catalog (its path
+            // carries a row marker). Until 2026-10-23 those asked for 404s, so the tree offered
+            // rows the pane could not open — RenderChoiceParityTests found every one of them
+            // against the desktop, which draws them. Folders alone have nothing to open.
+            var keys = node.Kind == ProjectNodeKind.Folder ? node.Files : node.Files.Append(node.Path);
             foreach (var file in keys)
             {
                 if (node.Kind == ProjectNodeKind.Object || !index.ContainsKey(file))
@@ -332,9 +339,9 @@ public sealed class RepoModelLoader(IRepoSource source, IMemoryCache cache, IVer
     }
 
     /// <summary>
-    /// Folders a vendor saves as its own readable source (CODESYS File-Based Storage's
-    /// <c>.fbsproj</c>), described by their format from the file list alone, as the desktop's
-    /// explorer does. Never synced, never adopted: shown and drawn.
+    /// Folders a vendor saves as its own readable source (the extensions each format claims as
+    /// <c>SourceProjectExtensions</c>), described by their format from the file list alone, as the
+    /// desktop's explorer does. Never synced, never adopted: shown and drawn.
     /// </summary>
     /// <remarks>
     /// <c>DescribeSourceProject</c> takes the list, never the disk, which is exactly what GitHub's
