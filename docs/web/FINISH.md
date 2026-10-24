@@ -717,11 +717,26 @@ wrapping inside the table. Left: a renderer for what both hosts still draw as so
 IL, visualisation, text list, image pool, recipe, TIA tag table, TwinCAT native files) — each
 named in the pane as not yet drawn.
 
-**Step 10 — Operations and gates.** Audit lines for every write path; live-head checks; the two
+~~**Step 10 — Operations and gates.** Audit lines for every write path; live-head checks; the two
 flakes retired; the App permission list; `docs/web/ARCHITECTURE.md` + `THREAT-MODEL.md` updated for
 the new writes (suggestions, branch delete, reactions, lock); FINDINGS entries for what the real PR
 revealed (coverage noise, flat list, raw device objects); STATUS counts re-derived; then the owner's
-real-GitHub gates on a throwaway repository, writes on, merge last.
+real-GitHub gates on a throwaway repository, writes on, merge last.~~
+**Done 2026-10-24, all but the owner's gates.** Audit lines: every way out of a write is in the
+log now — a retry answered from the ledger, one still in flight, an abandoned or unknown one
+reconciled, an expired-snapshot settle in each of its outcomes, an expired or malformed key, and
+the gate's S9 (writes off), S11 (merge tier off) and S8 (body cap) refusals. Live-head checks:
+`/status` reads the latest commit's checks in counts once the head moved, and the Checks tab says
+so over the reviewed commit's list. The two flakes: `PerformanceTests` was the resolution cache
+written after its single flight let go (reproduced once in ten runs on the old binary, 32 of 32
+after the fix — FINDINGS 2026-10-24); the review page's vitest waits for the page to be at rest
+(no read in flight for three ticks) instead of a fixed forty ticks, which also took that file from
+three minutes to eighteen seconds. The App permission list is in PLAN.md's App section.
+ARCHITECTURE and THREAT-MODEL carry every write since Step 5; FINDINGS has the coverage noise
+(2026-10-23), the raw device objects (2026-10-23) and the flat list (2026-10-24); the counts are
+re-derived. **Left, the owner's:** the real-GitHub gates on a throwaway repository with writes on
+— post, lose the network mid-post, approve as a second user, open a pull request, apply a
+suggestion, delete a branch, merge last — and the 422 for a comment outside GitHub's hunks (B6b).
 
 ### Future renderers and anchors (named, not scheduled)
 

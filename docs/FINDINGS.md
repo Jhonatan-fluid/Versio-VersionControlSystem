@@ -19,6 +19,51 @@ produce a diff touching everything else.
 
 ---
 
+### The `PerformanceTests` flake: a resolution cached after its single flight ended, so a request in between resolved again
+
+**Seen four times, 2026-10-19 to 2026-10-23, in full `Versio.Web.Tests` runs under load;
+closed 2026-10-24 (FINISH.md Step 10).** `A_page_load_asks_GitHub_for_each_thing_once` sends a
+page load's four requests at once and pins "resolve" at one GitHub call. One run in several
+counted two.
+
+**Cause: the cache was written after the flight, not inside it.** `Loader.ResolveAsync` checked
+the memory cache, joined a `SingleFlight` keyed on the reference, and wrote the cache once the
+flight returned. `SingleFlight` retires its key in a `finally` the moment the shared task
+completes — so between that and the caller's `cache.Set`, a fourth request found neither the
+flight nor the cache and started a second resolve. A window of microseconds, which a loaded
+machine widened into one failure in several runs; the suspect named in STATUS each time it was
+seen, never proven because nobody read `SingleFlight`'s `finally` beside the caller.
+
+**Fix:** the cache write moved inside the flight's factory, before the shared task completes.
+Nothing else changed; the test is unchanged and is the measurement (ten consecutive class runs
+after the fix, in Step 10's commit).
+
+**The rule:** a single flight hands off to a cache only if the cache is written before the flight
+lets go. "Suspected, not investigated" written four times in STATUS was the cost of leaving it.
+
+---
+
+### The pull request's Files changed was a flat list of 85 names, and the tree it needed already existed
+
+**2026-10-23, the owner's real pull request.** Files changed listed 85 paths with no folders, no
+project and no object: eight rows read `.folder_meta.json`, four names appeared twice (a method of
+two function blocks), and nothing said which block a method belonged to without hovering. The
+desktop's Project panel shows the same change as a tree with A/M/D marks and roll-ups.
+
+**Cause: the review's inventory was built from GitHub's file list and handed to the page as it
+came.** `RepoExplorerBuilder.Build` — the desktop's tree — took no change list on the web, and
+the one compare route answered a flat list too (`docs/web/PLAN.md`'s "compare as marks on the
+tree" was planned and never built). The page had nothing to group by.
+
+**Fix (Steps 3 and 8):** `RepoExplorerBuilder.Build(files, projects, options, formats, changes)`
+marks the tree with a change list, rolls folders up and lists deleted objects struck; the web's
+`/tree?base=` and the review's `FilesTree` draw it; every file is stacked under a sticky header
+with the object's name and where it lives. The tree was always the desktop's; the web had thrown
+the structure away at the list boundary — the same shape as the 2026-10-23 renderer-choice finding
+below, one file along.
+
+---
+
 ### A Markdown link rule silenced every type link on the web page, and no page test clicked one
 
 **2026-10-24, writing Step 3c's peek test (docs/web/FINISH.md).** The first test that clicked a

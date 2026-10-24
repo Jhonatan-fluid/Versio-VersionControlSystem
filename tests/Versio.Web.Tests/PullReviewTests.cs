@@ -346,11 +346,14 @@ public sealed class PullReviewTests
         await using var host = await TestHost.StartAsync(w.GitHub);
         var alice = SignIn(host);
         var (token, _) = await SnapshotAsync(host, alice);
+        w.Repo.Checks[w.Head] = [new CheckInfo("build", "completed", "success", "https://ci.example/1", "check-run")];
 
         var fresh = Json(await (await WithSnapshot(host, "/api/repos/acme/plant/pulls/12/status", token, alice)).Body());
         w.Repo.Refs["main"] = w.Start;
         var baseMoved = Json(await (await WithSnapshot(host, "/api/repos/acme/plant/pulls/12/status", token, alice)).Body());
         w.Repo.Refs["main"] = w.MainTip;
+        // The latest commit's checks (Step 10): one red, one still running.
+        w.Repo.Checks[new string('7', 40)] = [new CheckInfo("build", "completed", "failure", null, "check-run"), new CheckInfo("soak", "in_progress", null, null, "check-run")];
         w.Open(new string('7', 40));
         var headMoved = Json(await (await WithSnapshot(host, "/api/repos/acme/plant/pulls/12/status", token, alice)).Body());
 
@@ -360,6 +363,12 @@ public sealed class PullReviewTests
         Assert.False(baseMoved.GetProperty("headMoved").GetBoolean());
         Assert.True(headMoved.GetProperty("stale").GetBoolean());
         Assert.True(headMoved.GetProperty("headMoved").GetBoolean());
+        // The live head's checks come in counts only once the head moved; the list stays the reviewed commit's.
+        Assert.Equal(JsonValueKind.Null, fresh.GetProperty("liveChecks").ValueKind);
+        Assert.Equal(JsonValueKind.Null, baseMoved.GetProperty("liveChecks").ValueKind);
+        var live = headMoved.GetProperty("liveChecks");
+        Assert.Equal((new string('7', 40), 2, 1, 1), (live.GetProperty("head").GetString(), live.GetProperty("total").GetInt32(), live.GetProperty("failed").GetInt32(), live.GetProperty("running").GetInt32()));
+        Assert.Equal(1, headMoved.GetProperty("checks").GetArrayLength());
     }
 
     /// <summary>

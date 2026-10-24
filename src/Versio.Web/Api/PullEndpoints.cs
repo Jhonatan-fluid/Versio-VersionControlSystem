@@ -412,6 +412,13 @@ public static class PullEndpoints
             var summary = await source.GetPullSummaryAsync(opened.Access!, owner, repo, number, ct).ConfigureAwait(false);
             var checks = await source.GetChecksAsync(opened.Access!, owner, repo, s.HeadSha, ct).ConfigureAwait(false);
             var live = summary.Ok ? summary.Value! : null;
+            // The LIVE head's checks too, once the branch has moved (Step 10): the list below is the
+            // reviewed commit's, which is right for the review, but GitHub's page shows the latest
+            // commit's, and a reviewer told "stale" should also know whether the new commit is red.
+            // Counts only: the rows stay the reviewed commit's.
+            var liveChecks = live is not null && live.HeadSha != s.HeadSha
+                ? await source.GetChecksAsync(opened.Access!, owner, repo, live.HeadSha, ct).ConfigureAwait(false)
+                : null;
             return Results.Ok(new
             {
                 // Unknown is not "unchanged": without the live state, the page cannot vouch for the
@@ -495,6 +502,19 @@ public static class PullEndpoints
                 // More checks than were read: the page says the list is cut, so a failure past the
                 // bound is never hidden behind a list of passes.
                 checksTruncated = checks.Ok && checks.Value!.Truncated,
+                // The live head's, in counts, only once the head moved; null otherwise, and null
+                // when they could not be read, which the page says rather than reading as green.
+                liveChecks = liveChecks is { Ok: true } lc
+                    ? new
+                    {
+                        head = live!.HeadSha,
+                        total = lc.Value!.Checks.Count,
+                        failed = lc.Value.Checks.Count(c => c.Conclusion is { } conclusion && conclusion is not ("success" or "neutral" or "skipped")),
+                        running = lc.Value.Checks.Count(c => c.Status != "completed"),
+                        truncated = lc.Value.Truncated,
+                    }
+                    : null,
+                liveChecksError = liveChecks is { Ok: false } failed ? Problem(failed.Failure) : null,
             });
         });
 

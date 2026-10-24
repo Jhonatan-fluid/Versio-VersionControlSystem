@@ -715,13 +715,22 @@ public static partial class ApiEndpoints
                 return RepoResult<string>.Of(known);
             }
 
-            var result = await _resolving.RunAsync(key, () => source.ResolveCommitAsync(who, owner, repo, reference, CancellationToken.None)).WaitAsync(ct).ConfigureAwait(false);
-            if (result.Ok)
+            // The cache is written INSIDE the flight, before the flight is over: written after it,
+            // a request arriving between the flight's end (SingleFlight retires the key in its
+            // finally) and the write missed both — the flight gone, the cache still empty — and
+            // resolved again. That is the `PerformanceTests` flake seen four times between
+            // 2026-10-19 and 2026-10-23 ("resolve" read twice under four simultaneous page-load
+            // requests), suspected each time and closed in Step 10 (FINDINGS 2026-10-24).
+            return await _resolving.RunAsync(key, async () =>
             {
-                cache.Set(key, result.Value!, new MemoryCacheEntryOptions { Size = 1, AbsoluteExpirationRelativeToNow = ResolutionLifetime });
-            }
+                var result = await source.ResolveCommitAsync(who, owner, repo, reference, CancellationToken.None).ConfigureAwait(false);
+                if (result.Ok)
+                {
+                    cache.Set(key, result.Value!, new MemoryCacheEntryOptions { Size = 1, AbsoluteExpirationRelativeToNow = ResolutionLifetime });
+                }
 
-            return result;
+                return result;
+            }).WaitAsync(ct).ConfigureAwait(false);
         }
 
         public async Task<RepoResult<(RepoAccess Access, RepoModel Model)>> ModelAsync(

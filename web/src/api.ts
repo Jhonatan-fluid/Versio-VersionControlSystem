@@ -471,6 +471,9 @@ export interface ReviewStatus {
   checksError: string | null;
   /** More checks than were read: shown as cut, so a failure past the bound is never hidden behind passes. */
   checksTruncated?: boolean;
+  /** The LIVE head's checks in counts, once the branch moved (Step 10); null until then, or when they could not be read. */
+  liveChecks?: { head: string; total: number; failed: number; running: number; truncated: boolean } | null;
+  liveChecksError?: string | null;
   checks: ReviewCheck[] | null;
 }
 

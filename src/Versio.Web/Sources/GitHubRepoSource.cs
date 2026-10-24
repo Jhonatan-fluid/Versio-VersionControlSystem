@@ -441,9 +441,10 @@ public sealed class GitHubRepoSource(
         """;
 
     /// <remarks>
-    /// <c>mergeStateStatus</c> (what blocks a merge) is not asked for yet: the merge box is slice
-    /// 6, and a field GitHub still gates behind a preview would fail the whole query, taking the
-    /// "this pull request changed" signal down with it.
+    /// <c>mergeStateStatus</c> (what blocks a merge) is read by <see cref="GetMergeStateAsync"/>
+    /// for the merge box, not here: this is the "did the pull request change" signal, polled every
+    /// half minute, and a field GitHub gates behind a preview would fail the whole query and take
+    /// that signal down with it. (The remark said "not asked for yet" from slice 2 until Step 10.)
     /// </remarks>
     public Task<RepoResult<PullSummary>> GetPullSummaryAsync(RepoAccess access, string owner, string repo, int number, CancellationToken ct) =>
         GraphAsync(access, SummaryQuery, new { owner, repo, number }, data =>

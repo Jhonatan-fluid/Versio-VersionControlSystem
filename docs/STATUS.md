@@ -21,7 +21,7 @@ UX remainder) is built and tested as of 2026-08-25** — UX-6 find boxes, UX-7 `
 Escape, UX-8 copy-a-commit, UX-12 amend-while-unpushed — and its visual half joins the
 eyeball list in item 2. Do not start from `archive/` or a handoff.
 
-**Tests:** 4,045 across twelve projects (plus 180 vitest in `web/`), last counted 2026-10-24
+**Tests:** 4,045 across twelve projects (plus 181 vitest in `web/`), last counted 2026-10-24
 on `VersioWeb` with the coverage-rules and renderer-choice branches merged (Core 1,900, Web 380) — re-derived by summing the table below; the toolchain-gated
 counts (TIA 5, TwinCAT 6, CODESYS 55) are from their last gate runs, not re-run for the count. **The Rendered view of an ST object reads like the IDE (2026-09-20):** no
 `@@` line, one gutter, a Declaration / Implementation divider, and the implementation
@@ -72,7 +72,7 @@ marking, duplicate-param keys, and the detail-pane lookup. All of them are in
 | `Versio.Plc.TwinCat.Pure.Tests` | 23 | instant | nothing |
 | `Versio.Plc.TwinCat.Tests` | 6 | seconds when skipped; ~5 min when XAE runs the import gate | **real TwinCAT XAE** — skips without `TcXaeShell.DTE.17.0` or the fixture |
 | `Versio.Web.Tests` | 439 | a few seconds | nothing — GitHub is faked |
-| `web/` (vitest) | 180 | ~2 min on 2026-10-23 (the review page's tests wait on ticks) | the pinned Node in `web/.node` |
+| `web/` (vitest) | 181 | ~40 s on 2026-10-24 (the review page waits for its reads, not ticks) | the pinned Node in `web/.node` |
 | `Versio.Plc.Codesys.Tests` | 55 | **~30 min**; 41 m 14 s, 55/55, on 2026-10-11 on `WebViewer` | **real CODESYS** |
 
 The first ten are the loop to work in — about thirty seconds plus the UI suite. The last is
@@ -337,12 +337,16 @@ One list. Reorder it; do not copy it into another file.
    - CFC;
    - the owner's eyeball of the drawing (right rail?) and of the row.
 10. **Versio Web, a read-only browser view of a repository on GitHub — built 2026-10-11 on
-   `WebViewer`, since merged.** **Continue from [`web/FINISH.md`](web/FINISH.md) (2026-10-23):**
-   the owner looked at the page on a real pull request and the list of what a finished product
-   still needs — GitHub's look and feel in place of the desktop shell, the pull request page at
-   parity (comments everywhere, landing on the right GitHub line; checks; merge box; lists), every
-   desktop drawing for every vendor, links that reveal their target — lives there with its order.
-   The history below is how it got here. The design, the security rules and what each step measured are
+   `WebViewer`, since merged.** **[`web/FINISH.md`](web/FINISH.md) is the queue, and its Steps 0–10
+   landed between 2026-10-23 and 2026-10-24 on `VersioWeb`:** GitHub's look and feel in place of
+   the desktop shell, the pull request page at parity (comments everywhere, landing on the right
+   GitHub line; checks with their annotations; the merge box; the lists and the form; commit
+   comments), every desktop drawing for every vendor through Core's one renderer choice, links that
+   stay in context and reveal their target, "used by", and the operations work (audit lines on every
+   write path, the live head's checks, both flakes retired, the App permission list). **What is
+   left there is the owner's: the real-GitHub gates on a throwaway repository, writes on, merge
+   last** — and the named future renderers and anchors (ladder elements, catalog rows, the
+   desktop's own ST links). The history below is how it got here. The design, the security rules and what each step measured are
    in [`web/PLAN.md`](web/PLAN.md). An ASP.NET Core server (`src/Versio.Web`) renders with
    Versio.Core and the three pure packs; a React page (`web/`) places that HTML and draws no
    code. Built: the HTML renderers for source, text diffs and member tables (Outpost's Step 2b,
@@ -439,21 +443,27 @@ One list. Reorder it; do not copy it into another file.
    it off (one by a writer does not — GitHub's rule, corrected here 2026-10-20). Then the external penetration test with
    writes on, before anyone but the owner has them. **The PR review plan's six slices are built;
    every real-GitHub gate is the owner's to run.**
-   **A loose end seen once, 2026-10-19:** `PerformanceTests.A_page_load_asks_GitHub_for_each_thing_once`
+   ~~**A loose end seen once, 2026-10-19:** `PerformanceTests.A_page_load_asks_GitHub_for_each_thing_once`
    failed one full Web run and passed three after; not investigated. A suspect, unproven: the
    loader's resolution cache is written after its single-flight finishes, so a request arriving in
-   between resolves again.
-   **A second, seen 2026-10-20:** the review page's vitest waits a fixed number of short ticks for
+   between resolves again.~~ **Closed 2026-10-24 (FINISH Step 10):** the suspect was right.
+   `SingleFlight` retires its key in a `finally` before the caller's `cache.Set`, so a request in
+   between resolved again. The write moved inside the flight; the old binary failed once in ten
+   class runs, the fixed one passed 32 of 32 — FINDINGS 2026-10-24.
+   ~~**A second, seen 2026-10-20:** the review page's vitest waits a fixed number of short ticks for
    reads to land (`settle` in `PullPage.test.tsx`). With a mutation run's builds loading the machine,
    six slice 5 tests failed together and one failed again later; on an idle machine 86/86, twice.
-   Timing, not behaviour, by every sign — but a wait-for-condition would retire it.
-   **The `PerformanceTests` flake above was seen a second time, 2026-10-20**, once in a full Web run
+   Timing, not behaviour, by every sign — but a wait-for-condition would retire it.~~ **Closed
+   2026-10-24:** `settle` waits for the page to be at rest — no stubbed read in flight for three
+   ticks — with a ceiling only a hang reaches; the file went from about three minutes to eighteen
+   seconds, which is what the fixed ticks had been costing.
+   ~~**The `PerformanceTests` flake above was seen a second time, 2026-10-20**, once in a full Web run
    right after the GraphQL-errors change; three runs after it were green (340/340 each). Still not
    investigated; the resolution-cache race stays the suspect. **A third sighting the same day**,
    once in a full run; four runs after it green (348/348). Three in a day is no longer rare enough to
    leave: it is the next loose end to take up. **A fourth, 2026-10-23**, once in a full Web run on
    the coverage-rules branch while an integration run shared the machine; alone and in a second full
-   run, green (364/364). Still the resolution-cache suspect, still not investigated.
+   run, green (364/364). Still the resolution-cache suspect, still not investigated.~~ Closed, see above.
    **Left, all needing the owner or a deployment:**
    - **register the GitHub App** (on GitHub: read-only Contents and Metadata, a callback at
      `/auth/callback`) and run sign-in against real GitHub; until then the server runs

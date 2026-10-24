@@ -72,7 +72,17 @@ React nor TypeScript ever draws a rung or highlights a line.
 ## Access to GitHub: a GitHub App, with the token kept on the server
 
 1. **Register a GitHub App ("Versio Viewer"), not an OAuth App.** Permissions: `Contents: read`,
-   `Metadata: read`, nothing else. The organisation installs it on only the repositories it chooses.
+   `Metadata: read`, nothing else for the viewer. The organisation installs it on only the repositories it chooses.
+   **With the review's writes (FINISH.md Step 10, the list the App is registered with once):**
+   `Pull requests: write` (comments, reviews, reviewers, labels, state, draft, milestone, lock, the
+   merge, update-branch, the merge queue), `Issues: write` (reactions, hiding a comment, subscriptions,
+   assignees), `Contents: write` (the merge tier only: merging, applying suggestions as commits,
+   deleting and restoring the head branch; a separate App or a separate installation if the viewer
+   is to stay read-only), `Checks: read` and `Actions: read` (runs and their annotations;
+   `Actions: write` only if re-running a check is ever added — it is not), `Administration: read`
+   (branch protection and rulesets for "required" — refused where not granted, and the page then says
+   it cannot tell), `Members: read` (team reviewers by slug). Each write names the person, never the
+   App: the App's token stays read-only (rule 3).
    An OAuth App's `repo` scope would give write access to every repository the user has, and a
    viewer has no reason to hold that.
 2. **Sign-in uses the app's user flow (OAuth with PKCE).** The server swaps the code for a

@@ -1085,6 +1085,18 @@ function Checks({ status, onOpenPath, notes, fileLink }: { status: ReviewStatus 
   const key = (c: ReviewCheck, i: number) => `${c.source}-${c.id ?? c.name}-${i}`;
   return (
     <>
+      {/* The list is the reviewed commit's; once the branch moved, the latest commit's checks are
+          said in counts (Step 10), so a red new commit is not hidden behind a green reviewed one. */}
+      {status.headMoved && status.liveChecks && (
+        <Flash scheme={status.liveChecks.failed > 0 ? 'danger' : status.liveChecks.running > 0 ? 'warning' : 'default'}>
+          The branch moved since you opened this review. On its latest commit ({status.liveChecks.head.slice(0, 7)}):{' '}
+          {status.liveChecks.total === 0 ? 'no checks yet' : `${status.liveChecks.total} check${status.liveChecks.total === 1 ? '' : 's'}, ${status.liveChecks.failed} failing, ${status.liveChecks.running} in progress`}
+          {status.liveChecks.truncated ? ', more on GitHub' : ''}. The list below is the reviewed commit's.
+        </Flash>
+      )}
+      {status.headMoved && !status.liveChecks && (
+        <Flash scheme="warning">The branch moved since you opened this review, and the latest commit's checks could not be read. The list below is the reviewed commit's.</Flash>
+      )}
       {status.checksTruncated && (
         <p className="notice" role="note">GitHub lists more checks than were read here. A failing one may be among those not shown: see them all on GitHub.</p>
       )}

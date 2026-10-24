@@ -113,6 +113,8 @@ function answer(url: string, o: Options): unknown {
         title: o.live?.title ?? 'Fix interlock', titleText: o.live?.title ?? 'Fix interlock', markdown: o.live?.markdown ?? 'The delay was wrong.',
         html: `<div class="md-page"><p>${o.live?.markdown ?? 'The delay was wrong.'}</p></div>`, viewerCanUpdate: o.canUpdate ?? true, ...(o.counts ?? {}) },
       checksError: null, checks: o.checks ?? [{ name: 'build', status: 'completed', conclusion: 'failure', url: 'https://ci.example/1', source: 'check-run' }], checksTruncated: o.checksCut ?? false,
+      // The latest commit's checks, in counts, once the head moved (Step 10).
+      liveChecks: moved ? { head: 'e'.repeat(40), total: 2, failed: 1, running: 0, truncated: false } : null,
     };
   }
   if (url.endsWith('/files')) {
@@ -200,7 +202,16 @@ function Jumper() {
 
 async function render(path: string, o: Options = {}) {
   calls = [];
+  pending = 0;
   vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
+    pending++;
+    try {
+      return await answerFetch(url, init, o);
+    } finally {
+      pending--;
+    }
+  }));
+  async function answerFetch(url: string, init: RequestInit | undefined, o: Options): Promise<Response> {
     const headers = (init?.headers ?? {}) as Record<string, string>;
     const method = init?.method ?? 'GET';
     const body = typeof init?.body === 'string' ? (JSON.parse(init.body) as Record<string, unknown>) : null;
@@ -217,7 +228,7 @@ async function render(path: string, o: Options = {}) {
       return new Response(typeof reply.body === 'string' ? reply.body : JSON.stringify(reply.body), { status: reply.status, headers });
     }
     return new Response(JSON.stringify(answer(url, o)), { status: 200, headers: { 'Content-Type': 'application/json' } });
-  }));
+  }
   const host = document.createElement('div');
   document.body.appendChild(host);
   const root = createRoot(host);
@@ -236,18 +247,29 @@ async function render(path: string, o: Options = {}) {
   return { host, root };
 }
 
+/** Reads the stubbed fetch has not answered yet: what `settle` waits on. */
+let pending = 0;
+
+/**
+ * Waits for the page to come to rest: no read in flight, and none started for three ticks after
+ * the last answer (a dependent read follows an answer by an effect, which needs a tick). With
+ * `until`, waits for that instead. Until Step 10 this was a fixed forty ticks plus ten once the
+ * pane head showed, which failed under a loaded machine (STATUS, 2026-10-20: six tests together)
+ * — timing, not behaviour — so it waits for a condition now, with a ceiling that only a hang hits.
+ */
 async function settle(host: HTMLElement, until?: () => boolean) {
-  for (let i = 0; i < 40 && !(until?.() ?? false); i++) {
+  let quiet = 0;
+  for (let i = 0; i < 400; i++) {
     await act(async () => {
       await new Promise((r) => setTimeout(r, 5));
     });
-    if (!until && host.querySelector('.pane-head')) {
-      // Let the dependent reads land too.
-      for (let j = 0; j < 10; j++) {
-        await act(async () => {
-          await new Promise((r) => setTimeout(r, 5));
-        });
-      }
+    if (until?.()) {
+      return;
+    }
+    // Quiet: nothing in flight for three ticks running. A `() => false` caller means "until the
+    // page is at rest", which is this.
+    quiet = pending === 0 ? quiet + 1 : 0;
+    if (quiet >= 3 && host.isConnected) {
       return;
     }
   }
@@ -2023,6 +2045,18 @@ describe('PullPage comments everywhere', () => {
     expect(host.querySelector('.file-review[data-file="src/Pump.st"]')).not.toBeNull();
     await click(peek.querySelector('button[aria-label="Close the peek"]')!, host);
     expect(host.querySelector('.peek')).toBeNull();
+    act(() => root.unmount());
+  });
+
+  // Step 10: once the branch moved, the Checks tab says how the LATEST commit's checks stand,
+  // in counts, over the reviewed commit's list.
+  it("says how the latest commit's checks stand once the branch moved, over the reviewed commit's list", async () => {
+    const { host, root } = await render('/acme/plant/pull/12/checks', { stale: true });
+
+    const flash = host.querySelector('.flash-danger')!;
+    expect(flash.textContent).toContain('latest commit (eeeeeee)');
+    expect(flash.textContent).toContain('2 checks, 1 failing, 0 in progress');
+    expect(host.querySelectorAll('.check').length).toBe(1);
     act(() => root.unmount());
   });
 

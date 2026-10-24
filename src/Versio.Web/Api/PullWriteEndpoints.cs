@@ -570,14 +570,18 @@ public static partial class PullWriteEndpoints
             var repo = http.GetRouteValue("repo") as string ?? "";
 
             // S9 first, as 404: with writes off for this repository, a write route does not exist.
+            // Said in the log all the same (Step 10): a 404 the operator did not expect is the first
+            // sign of a misconfigured repository list, and a burst of them is somebody probing.
             if (!ApiEndpoints.Valid(owner, repo) || !options.Value.Writable(owner, repo))
             {
+                log.Info(LogCategory.Web, $"write refused (S9: writes are off for {owner}/{repo}) {http.Request.Method} {http.Request.Path}");
                 return ApiEndpoints.NotFoundJson();
             }
 
             // S11: the merge tier is its own switch on top, and likewise does not exist without it.
             if (http.GetEndpoint()?.Metadata.GetMetadata<MergeEndpoint>() is not null && !options.Value.Writes.Merge)
             {
+                log.Info(LogCategory.Web, $"write refused (S11: the merge tier is off) {http.Request.Method} {http.Request.Path}");
                 return ApiEndpoints.NotFoundJson();
             }
 
@@ -597,6 +601,7 @@ public static partial class PullWriteEndpoints
             var max = Math.Max(1024, options.Value.Writes.MaxBodyBytes);
             if (http.Request.ContentLength > max)
             {
+                log.Warn(LogCategory.Web, $"write refused (S8: body of {http.Request.ContentLength} bytes over {max}) {http.Request.Method} {http.Request.Path}");
                 return Results.Json(new { error = "too-large", message = "That is too long to post." }, statusCode: 413);
             }
 
@@ -854,8 +859,13 @@ public static partial class PullWriteEndpoints
             Func<RepoAccess, ReviewSnapshot?, string, DateTimeOffset, Task<RepoResult<string>>> reconcile, CancellationToken ct)
         {
             var expired = Results.Json(new { error = "snapshot-expired", message = "This review was loaded too long ago. Reload the pull request." }, statusCode: 409);
-            if (ReviewTags.CheckKey(request.OpKey, clock.UtcNow) != KeyCheck.Ok)
+            // Every way out of here is in the log (Step 10): a settle is a write that may have
+            // happened, and the one line that says how it was answered is what an investigation of
+            // "was my comment posted?" has to go on.
+            var check = ReviewTags.CheckKey(request.OpKey, clock.UtcNow);
+            if (check != KeyCheck.Ok)
             {
+                Audit(who, action, owner, repo, number, old, request.OpKey ?? "", $"expired snapshot, key {check.ToString().ToLowerInvariant()}: reload");
                 return expired;
             }
 
@@ -864,19 +874,24 @@ public static partial class PullWriteEndpoints
             var entry = await ledger.FindAsync(ledgerKey, ct).ConfigureAwait(false);
             if (entry is null || entry.PayloadHash != Bound(payloadHash, old))
             {
+                Audit(who, action, owner, repo, number, old, key, entry is null ? "expired snapshot, nothing recorded: reload" : "expired snapshot, different payload: reload");
                 return expired;
             }
 
             switch (entry.State)
             {
                 case OperationState.Succeeded:
+                    Audit(who, action, owner, repo, number, old, key, "expired snapshot, settled done from the ledger");
                     return Results.Ok(new { outcome = "done", id = entry.Result });
                 case OperationState.Pending when clock.UtcNow - entry.Reserved < AbandonedAfter:
+                    Audit(who, action, owner, repo, number, old, key, "expired snapshot, still in flight");
                     return Results.Json(new { outcome = "pending", message = "Still being posted." }, statusCode: 202);
                 case OperationState.Pending or OperationState.Unknown:
+                    Audit(who, action, owner, repo, number, old, key, "expired snapshot, reconciling");
                     return await ReconcileAsync(who, old, key, entry, reconcile, ledgerKey, action, owner, repo, number).ConfigureAwait(false) ?? UnknownResult();
                 default:
                     // Failed: the ledger knows nothing was written under this key.
+                    Audit(who, action, owner, repo, number, old, key, "expired snapshot, settled as refused from the ledger");
                     Settled(http);
                     return expired;
             }
@@ -913,9 +928,12 @@ public static partial class PullWriteEndpoints
             switch (ReviewTags.CheckKey(request.OpKey, now))
             {
                 case KeyCheck.Malformed:
+                    // A page never sends one: a malformed key is a hand-made request, worth a line.
+                    log.Warn(LogCategory.Web, $"write {action} {who} {owner}/{repo}#{number} refused: malformed operation key");
                     return Invalid("op-key", "This request has no usable operation key.");
                 case KeyCheck.Expired:
                     // Never re-run: the person submits again, deliberately, with a new key.
+                    Audit(who, action, owner, repo, number, snapshot, request.OpKey!, "refused: operation key expired");
                     return Results.Json(new { error = "operation-expired", message = "This was submitted too long ago to retry. Check whether it was posted, then submit it again if not." }, statusCode: 422);
             }
 
@@ -930,14 +948,19 @@ public static partial class PullWriteEndpoints
                     return Results.Json(new { error = "op-mismatch", message = "This retry does not match what was first submitted." }, statusCode: 422);
                 }
 
+                // A retry answered from the ledger is a write that did NOT go to GitHub again: said,
+                // so a log reader counting posts against GitHub's own list finds them equal.
                 switch (existing.State)
                 {
                     case OperationState.Succeeded:
+                        Audit(who, action, owner, repo, number, snapshot, key, "answered done from the ledger");
                         return Results.Ok(new { outcome = "done", id = existing.Result });
                     case OperationState.Pending when now - existing.Reserved < AbandonedAfter:
+                        Audit(who, action, owner, repo, number, snapshot, key, "still in flight");
                         return Results.Json(new { outcome = "pending", message = "Still being posted." }, statusCode: 202);
                     case OperationState.Pending or OperationState.Unknown:
                         // Abandoned, or sent with no answer: find out before doing anything else.
+                        Audit(who, action, owner, repo, number, snapshot, key, existing.State == OperationState.Pending ? "abandoned; reconciling" : "unknown earlier; reconciling");
                         var found = await ReconcileAsync(who, snapshot, key, existing, reconcile, ledgerKey, action, owner, repo, number).ConfigureAwait(false);
                         if (found is not null || !idempotent)
                         {
@@ -1010,7 +1033,6 @@ public static partial class PullWriteEndpoints
         private static IResult UnknownResult() =>
             Results.Json(new { outcome = "unknown", message = "This may or may not have been posted. Refresh to check before posting it again." }, statusCode: 202);
 
-        /// <summary>A line comment's preconditions: the pull request still at this snapshot, and a line GitHub will take.</summary>
         /// <summary>
         /// A comment on a drawn element's preconditions: the pull request still at this snapshot, the
         /// element really in the snapshot's drawing of that file, and where GitHub will take it.
