@@ -407,12 +407,16 @@ public sealed class GitHubRepoSource(
     private const string MergeStateQuery = """
         query($owner: String!, $repo: String!, $number: Int!) {
           repository(owner: $owner, name: $repo) {
-            mergeCommitAllowed squashMergeAllowed rebaseMergeAllowed autoMergeAllowed
+            mergeCommitAllowed squashMergeAllowed rebaseMergeAllowed autoMergeAllowed deleteBranchOnMerge
             pullRequest(number: $number) {
-              id state merged headRefOid mergeStateStatus
+              id state merged headRefOid mergeStateStatus headRefName isCrossRepository
+              headRef { name }
               mergeCommit { oid }
               viewerCanEnableAutoMerge viewerCanDisableAutoMerge
               autoMergeRequest { mergeMethod enabledBy { login } }
+              isInMergeQueue
+              mergeQueueEntry { position }
+              mergeQueue { id }
             }
           }
         }
@@ -459,7 +463,18 @@ public sealed class GitHubRepoSource(
                 Bool(p, "viewerCanEnableAutoMerge"),
                 Bool(p, "viewerCanDisableAutoMerge"),
                 Text(p, "id"),
-                Oid(p, "mergeCommit"));
+                Oid(p, "mergeCommit"))
+            {
+                // The merge box's rest (FINISH.md Step 6): the branch to delete or restore, whether
+                // the repository does that itself, and the merge queue. Each read tolerantly.
+                HeadRef = Text(p, "headRefName"),
+                HeadRefExists = p.TryGetProperty("headRef", out var hr) && hr.ValueKind == JsonValueKind.Object,
+                IsCrossRepository = Bool(p, "isCrossRepository"),
+                DeleteBranchOnMerge = Bool(r, "deleteBranchOnMerge"),
+                HasMergeQueue = p.TryGetProperty("mergeQueue", out var mq) && mq.ValueKind == JsonValueKind.Object,
+                InMergeQueue = Bool(p, "isInMergeQueue"),
+                QueuePosition = p.TryGetProperty("mergeQueueEntry", out var entry) && entry.ValueKind == JsonValueKind.Object ? Int(entry, "position") : null,
+            };
         }, ct, preview: "application/vnd.github.merge-info-preview+json");
 
     public Task<RepoResult<IReadOnlyList<string>>> GetCommitParentsAsync(RepoAccess access, string owner, string repo, string sha, CancellationToken ct) =>

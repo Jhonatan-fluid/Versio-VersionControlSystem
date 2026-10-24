@@ -674,7 +674,7 @@ function MergeSummary({ live, status }: { live: ReviewStatus['summary']; status:
   const checks = status?.checks ?? [];
   const failed = checks.filter((c) => c.conclusion && !['success', 'neutral', 'skipped'].includes(c.conclusion)).length;
   const running = checks.filter((c) => c.status !== 'completed').length;
-  const rows: { tone: 'success' | 'danger' | 'attention' | 'muted'; icon: 'check-circle-fill' | 'x-circle-fill' | 'dot-fill' | 'clock'; text: string; detail?: string }[] = [];
+  const rows: { tone: 'success' | 'danger' | 'attention' | 'muted'; icon: 'check-circle-fill' | 'x-circle-fill' | 'dot-fill' | 'clock'; text: string; detail?: string; list?: ReviewCheck[] }[] = [];
   if (live.reviewDecision === 'APPROVED') {
     rows.push({ tone: 'success', icon: 'check-circle-fill', text: 'Changes approved', detail: `${live.reviewers.filter((r) => r.state === 'APPROVED').length} approving review` });
   } else if (live.reviewDecision === 'CHANGES_REQUESTED') {
@@ -685,11 +685,12 @@ function MergeSummary({ live, status }: { live: ReviewStatus['summary']; status:
   if (checks.length > 0) {
     const required = checks.filter((c) => c.required);
     const requiredFailed = required.filter((c) => c.conclusion && !['success', 'neutral', 'skipped'].includes(c.conclusion)).length;
+    // Each check under the summary, as GitHub's "Show all checks" lists them (Step 6).
     rows.push(failed > 0
-      ? { tone: 'danger', icon: 'x-circle-fill', text: requiredFailed > 0 ? 'Some required checks were not successful' : 'Some checks were not successful', detail: `${failed} failing${running > 0 ? `, ${running} in progress` : ''}, ${checks.length - failed - running} successful` }
+      ? { tone: 'danger', icon: 'x-circle-fill', text: requiredFailed > 0 ? 'Some required checks were not successful' : 'Some checks were not successful', detail: `${failed} failing${running > 0 ? `, ${running} in progress` : ''}, ${checks.length - failed - running} successful`, list: checks }
       : running > 0
-        ? { tone: 'attention', icon: 'clock', text: "Some checks haven't completed yet", detail: `${running} in progress, ${checks.length - running} successful` }
-        : { tone: 'success', icon: 'check-circle-fill', text: 'All checks have passed', detail: `${checks.length} successful check${checks.length === 1 ? '' : 's'}` });
+        ? { tone: 'attention', icon: 'clock', text: "Some checks haven't completed yet", detail: `${running} in progress, ${checks.length - running} successful`, list: checks }
+        : { tone: 'success', icon: 'check-circle-fill', text: 'All checks have passed', detail: `${checks.length} successful check${checks.length === 1 ? '' : 's'}`, list: checks });
   }
   if (live.mergeable === 'CONFLICTING') {
     rows.push({ tone: 'danger', icon: 'x-circle-fill', text: 'This branch has conflicts that must be resolved', detail: 'Merge the base branch into this branch, or rebase it, then push.' });
@@ -704,9 +705,29 @@ function MergeSummary({ live, status }: { live: ReviewStatus['summary']; status:
       {rows.map((r) => (
         <div key={r.text} className={`merge-summary-row tone-${r.tone}`}>
           <Icon name={r.icon} className="merge-summary-icon" />
-          <div>
+          <div className="merge-summary-text">
             <div className="text-bold">{r.text}</div>
             {r.detail && <div className="text-muted text-small">{r.detail}</div>}
+            {r.list && (
+              <details className="merge-summary-checks">
+                <summary className="link-button">Show all checks</summary>
+                <ul className="row-list">
+                  {r.list.map((c, i) => {
+                    const state = c.status !== 'completed' ? 'running' : c.conclusion ?? 'unknown';
+                    const icon = state === 'success' ? 'check-circle-fill' : state === 'running' ? 'dot-fill' : state === 'neutral' || state === 'skipped' ? 'skip' : 'x-circle-fill';
+                    return (
+                      <li key={`${c.source}-${c.id ?? c.name}-${i}`} className={`check-${state} merge-summary-check`}>
+                        <span className="check-mark"><Icon name={icon} size={14} /></span>
+                        <span className="check-name">{c.name}</span>
+                        {c.required && <span className="row-badge check-required">Required</span>}
+                        <span className="text-muted text-small">{state === 'running' ? 'in progress' : state.replace('_', ' ')}</span>
+                        {c.url && <a href={c.url} target="_blank" rel="noopener noreferrer">Details</a>}
+                      </li>
+                    );
+                  })}
+                </ul>
+              </details>
+            )}
           </div>
         </div>
       ))}

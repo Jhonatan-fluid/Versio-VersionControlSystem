@@ -292,6 +292,15 @@ export interface MergeStateView {
   autoMerge: { method: string; by: string } | null;
   canDisableAutoMerge: boolean;
   mergeCommit: string | null;
+  /** The rest of GitHub's box (FINISH.md Step 6); absent from an older server's answer. */
+  headRef?: string;
+  headRefLabel?: string;
+  headRefExists?: boolean;
+  isCrossRepository?: boolean;
+  deleteBranchOnMerge?: boolean;
+  hasMergeQueue?: boolean;
+  inMergeQueue?: boolean;
+  queuePosition?: number | null;
 }
 
 /** The viewer's pending review: one per person per pull request, created on the commit it will approve. */

@@ -298,6 +298,15 @@ public static class PullEndpoints
                 autoMerge = m.AutoMergeMethod is null ? null : new { method = m.AutoMergeMethod, by = CodeHtml.Spelled(m.AutoMergeBy ?? "") },
                 canDisableAutoMerge = m.ViewerCanDisableAutoMerge,
                 mergeCommit = m.MergeCommit,
+                // The rest of GitHub's box (FINISH.md Step 6): the branch to delete or restore, and the queue.
+                headRef = m.HeadRef,
+                headRefLabel = CodeHtml.Spelled(m.HeadRef),
+                headRefExists = m.HeadRefExists,
+                isCrossRepository = m.IsCrossRepository,
+                deleteBranchOnMerge = m.DeleteBranchOnMerge,
+                hasMergeQueue = m.HasMergeQueue,
+                inMergeQueue = m.InMergeQueue,
+                queuePosition = m.QueuePosition,
             });
         });
     }

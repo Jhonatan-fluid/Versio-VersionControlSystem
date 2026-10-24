@@ -512,8 +512,39 @@ public sealed class PullPreview
         public Task<WriteResult<string>> MergePullAsync(RepoAccess access, string owner, string repo, int number, string headSha, string method, string? title, string? message, CancellationToken ct) =>
             inner.MergePullAsync(access, owner, repo, number, headSha, method, title, message, ct);
 
-        public Task<WriteResult<bool>> UpdateBranchAsync(RepoAccess access, string owner, string repo, int number, string expectedHeadSha, CancellationToken ct) =>
-            inner.UpdateBranchAsync(access, owner, repo, number, expectedHeadSha, ct);
+        public Task<WriteResult<bool>> UpdateBranchAsync(RepoAccess access, string owner, string repo, int number, string expectedHeadSha, string method, string pullNodeId, CancellationToken ct) =>
+            inner.UpdateBranchAsync(access, owner, repo, number, expectedHeadSha, method, pullNodeId, ct);
+
+        public async Task<WriteResult<bool>> DeleteBranchAsync(RepoAccess access, string owner, string repo, string branch, CancellationToken ct)
+        {
+            var r = await inner.DeleteBranchAsync(access, owner, repo, branch, ct);
+            if (r.Outcome == WriteOutcome.Done)
+            {
+                foreach (var number in store.Pulls.Where(p => p.Info.HeadRef == branch).Select(p => p.Info.Number).ToList())
+                {
+                    Timeline(number, t => [.. t, new TimelineItem("head-deleted", access.Who, Now, null, null, null) { Target = branch }]);
+                }
+            }
+
+            return r;
+        }
+
+        public async Task<WriteResult<bool>> CreateBranchAsync(RepoAccess access, string owner, string repo, string branch, string sha, CancellationToken ct)
+        {
+            var r = await inner.CreateBranchAsync(access, owner, repo, branch, sha, ct);
+            if (r.Outcome == WriteOutcome.Done)
+            {
+                foreach (var number in store.Pulls.Where(p => p.Info.HeadRef == branch).Select(p => p.Info.Number).ToList())
+                {
+                    Timeline(number, t => [.. t, new TimelineItem("head-restored", access.Who, Now, null, null, null)]);
+                }
+            }
+
+            return r;
+        }
+
+        public Task<WriteResult<bool>> SetQueuedAsync(RepoAccess access, string pullNodeId, bool queued, string expectedHeadSha, CancellationToken ct) =>
+            inner.SetQueuedAsync(access, pullNodeId, queued, expectedHeadSha, ct);
 
         public Task<WriteResult<bool>> EnableAutoMergeAsync(RepoAccess access, string pullNodeId, string method, string expectedHeadSha, CancellationToken ct) =>
             inner.EnableAutoMergeAsync(access, pullNodeId, method, expectedHeadSha, ct);

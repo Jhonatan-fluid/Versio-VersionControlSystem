@@ -349,9 +349,9 @@ internal sealed class FakeWriter : IRepoWriter
         return Task.FromResult(mode == Mode.LostAfter ? WriteResult<string>.Unknown() : WriteResult<string>.Done(new string('m', 40)));
     }
 
-    public Task<WriteResult<bool>> UpdateBranchAsync(RepoAccess access, string owner, string repo, int number, string expectedHeadSha, CancellationToken ct)
+    public Task<WriteResult<bool>> UpdateBranchAsync(RepoAccess access, string owner, string repo, int number, string expectedHeadSha, string method, string pullNodeId, CancellationToken ct)
     {
-        Calls.Enqueue(("update-branch", access, expectedHeadSha));
+        Calls.Enqueue(("update-branch", access, $"{expectedHeadSha} {method}"));
         var live = Repo!.Pulls.First(p => p.Info.Number == number).Info;
         if (live.HeadSha != expectedHeadSha)
         {
@@ -364,11 +364,55 @@ internal sealed class FakeWriter : IRepoWriter
             return Task.FromResult(mode == Mode.Refused ? WriteResult<bool>.Refused(RepoFailure.Upstream, "Validation Failed") : WriteResult<bool>.Unknown());
         }
 
-        // GitHub's update: a merge commit, the old head its first parent and the base its second.
-        Repo.Parents[new string('u', 40)] = [expectedHeadSha, Repo.Refs[live.BaseRef]];
-        Replace(number, (info, body) => (info with { HeadSha = new string('u', 40) }, body));
+        if (method == "REBASE")
+        {
+            // A rebase rewrites the branch onto the base: a new head whose one parent is the base's tip.
+            Repo.Parents[new string('r', 40)] = [Repo.Refs[live.BaseRef]];
+            Replace(number, (info, body) => (info with { HeadSha = new string('r', 40) }, body));
+        }
+        else
+        {
+            // GitHub's update: a merge commit, the old head its first parent and the base its second.
+            Repo.Parents[new string('u', 40)] = [expectedHeadSha, Repo.Refs[live.BaseRef]];
+            Replace(number, (info, body) => (info with { HeadSha = new string('u', 40) }, body));
+        }
+
         return Task.FromResult(mode == Mode.LostAfter ? WriteResult<bool>.Unknown() : WriteResult<bool>.Done(true));
     }
+
+    /// <summary>Branches deleted and created here, in order.</summary>
+    public ConcurrentQueue<(string Action, string Branch, string? Sha)> Branches { get; } = new();
+
+    public Task<WriteResult<bool>> DeleteBranchAsync(RepoAccess access, string owner, string repo, string branch, CancellationToken ct) =>
+        Run("delete-branch", access, branch, () =>
+        {
+            Branches.Enqueue(("delete", branch, null));
+            Repo!.Refs.Remove(branch);
+            return true;
+        });
+
+    public Task<WriteResult<bool>> CreateBranchAsync(RepoAccess access, string owner, string repo, string branch, string sha, CancellationToken ct) =>
+        Run("create-branch", access, $"{branch} {sha}", () =>
+        {
+            Branches.Enqueue(("create", branch, sha));
+            Repo!.Refs[branch] = sha;
+            return true;
+        });
+
+    public Task<WriteResult<bool>> SetQueuedAsync(RepoAccess access, string pullNodeId, bool queued, string expectedHeadSha, CancellationToken ct) =>
+        Run(queued ? "enqueue" : "dequeue", access, $"{pullNodeId} {expectedHeadSha}", () =>
+        {
+            if (queued)
+            {
+                Repo!.Queued[NumberOf(pullNodeId)] = Repo.Queued.Count + 1;
+            }
+            else
+            {
+                Repo!.Queued.Remove(NumberOf(pullNodeId));
+            }
+
+            return true;
+        });
 
     public Task<WriteResult<bool>> EnableAutoMergeAsync(RepoAccess access, string pullNodeId, string method, string expectedHeadSha, CancellationToken ct) =>
         Run("auto-merge-on", access, $"{method} {expectedHeadSha}", () =>

@@ -226,7 +226,28 @@ public sealed record MergeState(
     bool ViewerCanEnableAutoMerge,
     bool ViewerCanDisableAutoMerge,
     string NodeId,
-    string? MergeCommit);
+    string? MergeCommit)
+{
+    /// <summary>The head branch's name; what a delete or a restore names.</summary>
+    public string HeadRef { get; init; } = "";
+
+    /// <summary>Whether the head branch still exists (GitHub's <c>headRef</c> is null once deleted).</summary>
+    public bool HeadRefExists { get; init; } = true;
+
+    /// <summary>The head lives in a fork: its branch is not this repository's to delete or restore.</summary>
+    public bool IsCrossRepository { get; init; }
+
+    /// <summary>The repository deletes head branches itself after a merge: said on the page instead of offering the button.</summary>
+    public bool DeleteBranchOnMerge { get; init; }
+
+    /// <summary>The base branch has a merge queue (FINISH.md Step 6); enqueuing is offered only then.</summary>
+    public bool HasMergeQueue { get; init; }
+
+    public bool InMergeQueue { get; init; }
+
+    /// <summary>The pull request's place in the queue, when it is in one.</summary>
+    public int? QueuePosition { get; init; }
+}
 
 /// <summary>One comment of a pending review, as its author sees it. <paramref name="Body"/> is Markdown: untrusted.</summary>
 public sealed record PendingComment(string Id, string Path, string Body)

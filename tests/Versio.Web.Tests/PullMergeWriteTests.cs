@@ -246,7 +246,7 @@ public sealed class PullMergeWriteTests
         (await Post(host, alice, token, "/update-branch", new { opKey = Key() })).AssertStatus(HttpStatusCode.OK);
         var status = await Get(host, alice, token, "/status");
 
-        Assert.Equal(w.Head, writer.Calls.Single(c => c.Action == "update-branch").Detail);
+        Assert.Equal($"{w.Head} MERGE", writer.Calls.Single(c => c.Action == "update-branch").Detail);
         Assert.True(status.GetProperty("headMoved").GetBoolean());
     }
 
@@ -405,4 +405,122 @@ public sealed class PullMergeWriteTests
         Assert.Contains("consent", await response.Body(), StringComparison.Ordinal);
         Assert.Empty(writer.Calls);
     }
+
+    // ---- Step 6: the rest of GitHub's box ------------------------------------------------------
+
+    [Fact]
+    public async Task The_branch_is_updated_with_a_rebase_on_request_and_its_lost_answer_stays_unknown()
+    {
+        var w = Build();
+        var (host, writer, alice, token, _) = await StartAsync(w);
+        await using var __ = host;
+
+        (await Post(host, alice, token, "/update-branch", new { opKey = Key(), method = "SQUASH" })).AssertStatus(HttpStatusCode.BadRequest);
+        (await Post(host, alice, token, "/update-branch", new { opKey = Key(), method = "REBASE" })).AssertStatus(HttpStatusCode.OK);
+        Assert.Equal($"{w.Head} REBASE", writer.Calls.Single(c => c.Action == "update-branch").Detail);
+
+        // A rebase rewrites every commit, so nothing on the new head says it was this update: said as unknown, never guessed done.
+        var (host2, writer2, alice2, token2, _) = await StartAsync(Build());
+        await using var ___ = host2;
+        writer2.Next.Enqueue(FakeWriter.Mode.LostAfter);
+        var lost = await Post(host2, alice2, token2, "/update-branch", new { opKey = Key(), method = "REBASE" });
+        lost.AssertStatus(HttpStatusCode.Accepted);
+        Assert.Contains("\"outcome\":\"unknown\"", await lost.Body(), StringComparison.Ordinal);
+    }
+
+    /// <summary>The owner's decision (FINISH.md Step 6): the branch is deleted after a merge, only while it is still at the pull request's own head, and the race is said rather than closed.</summary>
+    [Fact]
+    public async Task A_merged_pull_requests_branch_is_deleted_only_while_it_is_at_the_merged_head()
+    {
+        var w = Build();
+        var (host, writer, alice, token, _) = await StartAsync(w);
+        await using var __ = host;
+
+        var open = await Post(host, alice, token, "/delete-branch", new { opKey = Key() });
+        w.Repo.PullStates[12] = "MERGED";
+        w.Repo.Refs["fix"] = new string('9', 40);
+        var moved = await Post(host, alice, token, "/delete-branch", new { opKey = Key() });
+        w.Repo.Refs["fix"] = w.Head;
+        var deleted = await Post(host, alice, token, "/delete-branch", new { opKey = Key() });
+        var again = await Post(host, alice, token, "/delete-branch", new { opKey = Key() });
+
+        open.AssertStatus(HttpStatusCode.Conflict);
+        Assert.Contains("still-open", await open.Body(), StringComparison.Ordinal);
+        moved.AssertStatus(HttpStatusCode.Conflict);
+        Assert.Contains("branch-moved", await moved.Body(), StringComparison.Ordinal);
+        deleted.AssertStatus(HttpStatusCode.OK);
+        again.AssertStatus(HttpStatusCode.Conflict);
+        Assert.Contains("branch-gone", await again.Body(), StringComparison.Ordinal);
+        Assert.Equal([("delete", "fix", (string?)null)], writer.Branches);
+        Assert.False(w.Repo.Refs.ContainsKey("fix"));
+    }
+
+    [Fact]
+    public async Task A_forks_branch_is_not_deleted_and_a_deleted_branch_is_restored_at_the_pull_requests_head()
+    {
+        var w = Build();
+        w.Repo.PullStates[12] = "MERGED";
+        var (host, writer, alice, token, _) = await StartAsync(w);
+        await using var __ = host;
+
+        w.Repo.CrossRepository.Add(12);
+        (await Post(host, alice, token, "/delete-branch", new { opKey = Key() })).AssertStatus(HttpStatusCode.UnprocessableEntity);
+        w.Repo.CrossRepository.Remove(12);
+        (await Post(host, alice, token, "/restore-branch", new { opKey = Key() })).AssertStatus(HttpStatusCode.Conflict);
+        w.Repo.Refs.Remove("fix");
+        (await Post(host, alice, token, "/restore-branch", new { opKey = Key() })).AssertStatus(HttpStatusCode.OK);
+
+        Assert.Equal([("create", "fix", (string?)w.Head)], writer.Branches);
+        Assert.Equal(w.Head, w.Repo.Refs["fix"]);
+    }
+
+    [Fact]
+    public async Task A_lost_answer_to_a_delete_is_settled_by_the_branch_being_gone()
+    {
+        var w = Build();
+        w.Repo.PullStates[12] = "MERGED";
+        var (host, writer, alice, token, _) = await StartAsync(w);
+        await using var __ = host;
+        writer.Next.Enqueue(FakeWriter.Mode.LostAfter);
+
+        var response = await Post(host, alice, token, "/delete-branch", new { opKey = Key() });
+
+        response.AssertStatus(HttpStatusCode.OK);
+        Assert.True(JsonDocument.Parse(await response.Body()).RootElement.GetProperty("reconciled").GetBoolean());
+        Assert.Single(writer.Branches);
+    }
+
+    [Fact]
+    public async Task The_merge_queue_takes_the_pull_request_in_and_out_only_where_the_base_has_one()
+    {
+        var w = Build();
+        var (host, writer, alice, token, _) = await StartAsync(w);
+        await using var __ = host;
+
+        (await Post(host, alice, token, "/merge-queue", new { opKey = Key(), enqueue = true })).AssertStatus(HttpStatusCode.UnprocessableEntity);
+        w.Repo.MergeQueueBranches.Add("main");
+        (await Post(host, alice, token, "/merge-queue", new { opKey = Key(), enqueue = false })).AssertStatus(HttpStatusCode.Conflict);
+        (await Post(host, alice, token, "/merge-queue", new { opKey = Key(), enqueue = true })).AssertStatus(HttpStatusCode.OK);
+        var queued = await Get(host, alice, token, "/merge-state");
+        (await Post(host, alice, token, "/merge-queue", new { opKey = Key(), enqueue = false })).AssertStatus(HttpStatusCode.OK);
+
+        Assert.Equal(["enqueue", "dequeue"], writer.Writes.Select(c => c.Action));
+        Assert.Equal($"PR_12 {w.Head}", writer.Writes[0].Detail);
+        Assert.Equal((true, true, 1), (queued.GetProperty("hasMergeQueue").GetBoolean(), queued.GetProperty("inMergeQueue").GetBoolean(), queued.GetProperty("queuePosition").GetInt32()));
+        Assert.Empty(w.Repo.Queued);
+    }
+
+    [Fact]
+    public async Task The_merge_state_names_the_branch_and_whether_the_repository_deletes_it_itself()
+    {
+        var w = Build();
+        w.Repo.DeleteBranchOnMerge = true;
+        var (host, _, alice, token, _) = await StartAsync(w);
+        await using var __ = host;
+
+        var state = await Get(host, alice, token, "/merge-state");
+
+        Assert.Equal(("fix", true, true, false), (state.GetProperty("headRef").GetString(), state.GetProperty("headRefExists").GetBoolean(), state.GetProperty("deleteBranchOnMerge").GetBoolean(), state.GetProperty("isCrossRepository").GetBoolean()));
+    }
+
 }

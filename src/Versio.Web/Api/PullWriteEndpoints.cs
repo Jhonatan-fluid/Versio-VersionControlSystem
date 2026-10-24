@@ -656,8 +656,8 @@ public static partial class PullWriteEndpoints
 
         public IRepoSource Source => source;
 
-        /// <summary>For the other parts of this class: a primary constructor's parameters are seen only by the part that declares them.</summary>
-        private IVersioLogger Log => log;
+        /// <summary>For the other parts of this class, and the branch routes' own log lines: a primary constructor's parameters are seen only by the part that declares them.</summary>
+        internal IVersioLogger Log => log;
 
         private PullReview Review => review;
 

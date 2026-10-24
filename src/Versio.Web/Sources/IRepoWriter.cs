@@ -129,8 +129,23 @@ public interface IRepoWriter
     /// <param name="method">MERGE, SQUASH or REBASE.</param>
     Task<WriteResult<string>> MergePullAsync(RepoAccess access, string owner, string repo, int number, string headSha, string method, string? title, string? message, CancellationToken ct);
 
-    /// <summary>Brings the base into the head branch, only if the head is still <paramref name="expectedHeadSha"/>.</summary>
-    Task<WriteResult<bool>> UpdateBranchAsync(RepoAccess access, string owner, string repo, int number, string expectedHeadSha, CancellationToken ct);
+    /// <summary>
+    /// Brings the base into the head branch, only if the head is still <paramref name="expectedHeadSha"/>:
+    /// by a merge commit (REST), or by rebasing the branch onto the base (GraphQL, <paramref name="method"/> REBASE).
+    /// </summary>
+    Task<WriteResult<bool>> UpdateBranchAsync(RepoAccess access, string owner, string repo, int number, string expectedHeadSha, string method, string pullNodeId, CancellationToken ct);
+
+    /// <summary>
+    /// Deletes a branch. GitHub's ref delete takes no expected commit, so the caller reads the tip
+    /// first and says the window stays open (docs/web/FINISH.md, Step 6, the owner's decision).
+    /// </summary>
+    Task<WriteResult<bool>> DeleteBranchAsync(RepoAccess access, string owner, string repo, string branch, CancellationToken ct);
+
+    /// <summary>Creates a branch at <paramref name="sha"/>: GitHub's "Restore branch" after a merge.</summary>
+    Task<WriteResult<bool>> CreateBranchAsync(RepoAccess access, string owner, string repo, string branch, string sha, CancellationToken ct);
+
+    /// <summary>Adds the pull request to its base branch's merge queue, only if the head is still <paramref name="expectedHeadSha"/>; or takes it out.</summary>
+    Task<WriteResult<bool>> SetQueuedAsync(RepoAccess access, string pullNodeId, bool queued, string expectedHeadSha, CancellationToken ct);
 
     /// <summary>
     /// Turns auto-merge on, only if the head is still <paramref name="expectedHeadSha"/>. Not a pin:

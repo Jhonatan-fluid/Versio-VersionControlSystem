@@ -296,9 +296,45 @@ public sealed class GitHubWriter(IHttpClientFactory clients, IOptions<WebOptions
             root => root.TryGetProperty("sha", out var sha) ? sha.GetString() ?? "merged" : "merged", ct);
     }
 
-    /// <remarks><c>expected_head_sha</c>: GitHub refuses (422) if the head is no longer the reviewed commit.</remarks>
-    public Task<WriteResult<bool>> UpdateBranchAsync(RepoAccess access, string owner, string repo, int number, string expectedHeadSha, CancellationToken ct) =>
-        RestAsync(access, HttpMethod.Put, $"repos/{E(owner)}/{E(repo)}/pulls/{N(number)}/update-branch", new { expected_head_sha = expectedHeadSha }, _ => true, ct);
+    private const string UpdateBranchMutation = """
+        mutation($pull: ID!, $head: GitObjectID!, $method: PullRequestBranchUpdateMethod!) {
+          updatePullRequestBranch(input: { pullRequestId: $pull, expectedHeadOid: $head, updateMethod: $method }) { pullRequest { id } }
+        }
+        """;
+
+    /// <remarks>
+    /// <c>expected_head_sha</c> (REST, a merge commit) or <c>expectedHeadOid</c> (GraphQL, which alone
+    /// offers the rebase): GitHub refuses if the head is no longer the reviewed commit.
+    /// </remarks>
+    public Task<WriteResult<bool>> UpdateBranchAsync(RepoAccess access, string owner, string repo, int number, string expectedHeadSha, string method, string pullNodeId, CancellationToken ct) =>
+        method == "REBASE"
+            ? MutateAsync(access, UpdateBranchMutation, new { pull = pullNodeId, head = expectedHeadSha, method }, _ => true, ct)
+            : RestAsync(access, HttpMethod.Put, $"repos/{E(owner)}/{E(repo)}/pulls/{N(number)}/update-branch", new { expected_head_sha = expectedHeadSha }, _ => true, ct);
+
+    /// <remarks>A DELETE with no body; GitHub answers 204. A 422 "Reference does not exist" is a branch already gone, which is what was asked.</remarks>
+    public async Task<WriteResult<bool>> DeleteBranchAsync(RepoAccess access, string owner, string repo, string branch, CancellationToken ct)
+    {
+        var result = await RestAsync(access, HttpMethod.Delete, $"repos/{E(owner)}/{E(repo)}/git/refs/heads/{E(branch)}", new { }, _ => true, ct).ConfigureAwait(false);
+        return result.Outcome == WriteOutcome.Refused && result.Message is { } m && m.Contains("does not exist", StringComparison.OrdinalIgnoreCase)
+            ? WriteResult<bool>.Done(true)
+            : result;
+    }
+
+    public Task<WriteResult<bool>> CreateBranchAsync(RepoAccess access, string owner, string repo, string branch, string sha, CancellationToken ct) =>
+        RestAsync(access, HttpMethod.Post, $"repos/{E(owner)}/{E(repo)}/git/refs", new { @ref = "refs/heads/" + branch, sha }, _ => true, ct);
+
+    private const string EnqueueMutation = """
+        mutation($pull: ID!, $head: GitObjectID!) { enqueuePullRequest(input: { pullRequestId: $pull, expectedHeadOid: $head }) { mergeQueueEntry { id } } }
+        """;
+
+    private const string DequeueMutation = """
+        mutation($pull: ID!) { dequeuePullRequest(input: { id: $pull }) { mergeQueueEntry { id } } }
+        """;
+
+    public Task<WriteResult<bool>> SetQueuedAsync(RepoAccess access, string pullNodeId, bool queued, string expectedHeadSha, CancellationToken ct) =>
+        queued
+            ? MutateAsync(access, EnqueueMutation, new { pull = pullNodeId, head = expectedHeadSha }, _ => true, ct)
+            : MutateAsync(access, DequeueMutation, new { pull = pullNodeId }, _ => true, ct);
 
     private const string EnableAutoMergeMutation = """
         mutation($pull: ID!, $method: PullRequestMergeMethod!, $head: GitObjectID!) {
@@ -659,6 +695,21 @@ public sealed class GitHubWriter(IHttpClientFactory clients, IOptions<WebOptions
             if (!response.IsSuccessStatusCode)
             {
                 return WriteResult<T>.Refused(Refusal(response), Message(text));
+            }
+
+            // A 204 (a deleted ref) has no body to read: done, with nothing to read out of it. A
+            // reader that needs a body on an empty one is the unexpected shape below.
+            if (!isGraph && text.Length == 0)
+            {
+                try
+                {
+                    return WriteResult<T>.Done(read(default));
+                }
+                catch (Exception e) when (e is KeyNotFoundException or InvalidOperationException)
+                {
+                    log.Warn(LogCategory.Web, $"GitHub write {request.Method} {Path(request)} succeeded with no body where one was needed; outcome unknown");
+                    return WriteResult<T>.Unknown();
+                }
             }
 
             try

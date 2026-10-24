@@ -63,6 +63,10 @@ public sealed class GitHubWriterTests : IAsyncLifetime
         app.MapPost("/repos/acme/plant/pulls", () => Results.Json(new { number = 13, node_id = "PR_13" }, statusCode: 201));
         app.MapPatch("/repos/acme/plant/pulls/12", () => Results.Json(new { number = 12 }));
         app.MapPatch("/repos/acme/plant/issues/12", () => Results.Json(new { number = 12 }));
+        // A deleted ref answers 204 with no body; one already gone, 422 in GitHub's words; a created ref, 201.
+        app.MapDelete("/repos/acme/plant/git/refs/heads/fix", () => Results.StatusCode(204));
+        app.MapDelete("/repos/acme/plant/git/refs/heads/gone", () => Results.Json(new { message = "Reference does not exist" }, statusCode: 422));
+        app.MapPost("/repos/acme/plant/git/refs", () => Results.Json(new { @ref = "refs/heads/fix" }, statusCode: 201));
         app.MapPost("/repos/acme/plant/pulls/12/requested_reviewers", () => Results.Json(new { number = 12 }, statusCode: 201));
         app.MapDelete("/repos/acme/plant/issues/12/labels/gone", () => Results.Json(new { message = "Label does not exist" }, statusCode: 404));
         app.MapDelete("/repos/acme/plant/issues/12/labels/{name}", () => Results.Json(Array.Empty<object>()));
@@ -309,10 +313,19 @@ public sealed class GitHubWriterTests : IAsyncLifetime
     public async Task Updating_the_branch_and_auto_merge_name_the_reviewed_head()
     {
         var head = new string('d', 40);
-        var updated = await Writer().UpdateBranchAsync(Alice, "acme", "plant", 12, head, CancellationToken.None);
+        var updated = await Writer().UpdateBranchAsync(Alice, "acme", "plant", 12, head, "MERGE", "PR_12", CancellationToken.None);
         var auto = await Writer().EnableAutoMergeAsync(Alice, "PR_12", "MERGE", head, CancellationToken.None);
 
+        var rebased = await Writer().UpdateBranchAsync(Alice, "acme", "plant", 12, head, "REBASE", "PR_12", CancellationToken.None);
+        var deleted = await Writer().DeleteBranchAsync(Alice, "acme", "plant", "fix", CancellationToken.None);
+        var gone = await Writer().DeleteBranchAsync(Alice, "acme", "plant", "gone", CancellationToken.None);
+        var restored = await Writer().CreateBranchAsync(Alice, "acme", "plant", "fix", head, CancellationToken.None);
+
         Assert.Equal((WriteOutcome.Done, WriteOutcome.Done), (updated.Outcome, auto.Outcome));
+        // A 204 has no body and is done; a ref already gone is what was asked; a rebase goes by GraphQL with the head named.
+        Assert.Equal((WriteOutcome.Done, WriteOutcome.Done, WriteOutcome.Done, WriteOutcome.Done), (rebased.Outcome, deleted.Outcome, gone.Outcome, restored.Outcome));
+        Assert.Contains($"\"head\":\"{head}\"", _requests.Single(r => r.Body.Contains("updatePullRequestBranch", StringComparison.Ordinal)).Body, StringComparison.Ordinal);
+        Assert.Contains("\"ref\":\"refs/heads/fix\"", _requests.Single(r => r.Method == "POST" && r.Path.EndsWith("/git/refs", StringComparison.Ordinal)).Body, StringComparison.Ordinal);
         Assert.Contains($"\"expected_head_sha\":\"{head}\"", _requests.Single(r => r.Path.EndsWith("/update-branch", StringComparison.Ordinal)).Body, StringComparison.Ordinal);
         var mutation = _requests.Single(r => r.Body.Contains("enablePullRequestAutoMerge", StringComparison.Ordinal)).Body;
         Assert.Contains("expectedHeadOid", mutation, StringComparison.Ordinal);

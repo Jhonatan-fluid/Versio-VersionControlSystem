@@ -168,6 +168,18 @@ internal sealed class FakeGitHub : IRepoSource
 
         /// <summary>Each commit's message, for the commits a writer made here.</summary>
         public Dictionary<string, string> CommitMessages { get; } = new(StringComparer.Ordinal);
+
+        /// <summary>The repository's "Automatically delete head branches" setting.</summary>
+        public bool DeleteBranchOnMerge { get; set; }
+
+        /// <summary>Base branches with a merge queue.</summary>
+        public HashSet<string> MergeQueueBranches { get; } = new(StringComparer.Ordinal);
+
+        /// <summary>Pull requests in a merge queue, with their position.</summary>
+        public Dictionary<int, int> Queued { get; } = [];
+
+        /// <summary>Pull requests whose head lives in a fork.</summary>
+        public HashSet<int> CrossRepository { get; } = [];
     }
 
     private readonly Dictionary<string, FakeRepo> _repos = new(StringComparer.OrdinalIgnoreCase);
@@ -527,7 +539,16 @@ internal sealed class FakeGitHub : IRepoSource
             state, state == "MERGED", found[0].HeadSha, r.Value.MergeStatus.TryGetValue(number, out var status) ? status : "CLEAN",
             r.Value.MergeMethods.ToList(), r.Value.AutoMergeAllowed, auto?.Item1, auto?.Item2,
             state == "OPEN" && auto is null, auto is not null, "PR_" + number.ToString(System.Globalization.CultureInfo.InvariantCulture),
-            r.Value.MergeCommits.TryGetValue(number, out var commit) ? commit : null)));
+            r.Value.MergeCommits.TryGetValue(number, out var commit) ? commit : null)
+        {
+            HeadRef = found[0].HeadRef,
+            HeadRefExists = r.Value.Refs.ContainsKey(found[0].HeadRef),
+            IsCrossRepository = r.Value.CrossRepository.Contains(number),
+            DeleteBranchOnMerge = r.Value.DeleteBranchOnMerge,
+            HasMergeQueue = r.Value.MergeQueueBranches.Contains(found[0].BaseRef),
+            InMergeQueue = r.Value.Queued.ContainsKey(number),
+            QueuePosition = r.Value.Queued.TryGetValue(number, out var position) ? position : null,
+        }));
     }
 
     public Task<RepoResult<IReadOnlyList<string>>> GetCommitParentsAsync(RepoAccess access, string owner, string repo, string sha, CancellationToken ct)

@@ -1237,18 +1237,19 @@ describe('PullPage merge box', () => {
   it('asks first, naming the pull request, its branches, the commit and the method, and merges only on yes', async () => {
     const { host, root } = await render('/acme/plant/pull/12', { writable: true, canMerge: true, merge: ready });
     const box = () => host.querySelector('.merge-box')!;
-    await act(async () => {
-      const select = box().querySelector<HTMLSelectElement>('select')!;
-      Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value')!.set!.call(select, 'SQUASH');
-      select.dispatchEvent(new Event('change', { bubbles: true }));
-    });
+    // The split button: the caret opens the method menu, the primary half is named by the method.
+    expect(button(box(), 'Merge pull request')).toBeDefined();
+    await click(box().querySelector('.merge-method-caret')!, host);
+    await click(box().querySelector<HTMLInputElement>('.merge-method-menu input[value="SQUASH"]')!, host);
+    expect(box().querySelector('.merge-method-menu')).toBeNull();
 
-    await click(button(box(), 'Merge...')!, host);
+    await click(button(box(), 'Squash and merge')!, host);
     expect(box().querySelector('.merge-confirm')?.textContent).toContain(`Merge #12 (fix → main) at commit ${head.slice(0, 8)} by squash`);
+    expect(box().querySelector('input[aria-label="Commit title"]')).not.toBeNull();
     await click(button(box(), 'Cancel')!, host);
     expect(writes()).toHaveLength(0);
 
-    await click(button(box(), 'Merge...')!, host);
+    await click(button(box(), 'Squash and merge')!, host);
     await click(button(box(), 'Confirm')!, host);
     const posted = writes()[0]!;
     expect(posted.url.endsWith('/pulls/12/merge')).toBe(true);
@@ -1263,7 +1264,8 @@ describe('PullPage merge box', () => {
     const box = () => host.querySelector('.merge-box')!;
 
     expect(box().textContent).toContain('Required reviews or checks have not passed.');
-    expect(button(box(), 'Merge...')).toBeUndefined();
+    expect(box().textContent).toContain('Merging is blocked.');
+    expect(button(box(), 'Merge pull request')).toBeUndefined();
     await click(button(box(), 'Merge automatically when ready...')!, host);
     // What GitHub does, not what it was once said to: later pushes by writers are merged too.
     expect(box().querySelector('.merge-confirm')?.textContent).toContain('commits pushed after your review');
@@ -1282,7 +1284,7 @@ describe('PullPage merge box', () => {
     const { host, root } = await render('/acme/plant/pull/12', { writable: true, canMerge: true, merge: ready, writes: { '/merge': unknown } });
     const box = () => host.querySelector('.merge-box')!;
     for (let i = 0; i < 2; i++) {
-      await click(button(box(), 'Merge...')!, host);
+      await click(button(box(), 'Merge pull request')!, host);
       await click(button(box(), 'Confirm')!, host);
     }
 
@@ -1297,7 +1299,7 @@ describe('PullPage merge box', () => {
     const { host, root } = await render('/acme/plant/pull/12', { writable: true, canMerge: true, merge: ready, writes: { '/merge': [{ status: 202, body: { outcome: 'unknown', message: 'This may or may not have been posted.' } }, { status: 429, body: { error: 'rate-limited', message: 'Too many requests: this one was not acted on.' } }, { status: 202, body: { outcome: 'unknown', message: 'This may or may not have been posted.' } }] } });
     const box = () => host.querySelector('.merge-box')!;
     for (let i = 0; i < 3; i++) {
-      await click(button(box(), 'Merge...')!, host);
+      await click(button(box(), 'Merge pull request')!, host);
       await click(button(box(), 'Confirm')!, host);
     }
 
@@ -1317,16 +1319,18 @@ describe('PullPage merge box', () => {
         input.dispatchEvent(new Event('input', { bubbles: true }));
       });
     };
-    const confirm = async () => {
-      await click(button(box(), 'Merge...')!, host);
+    // The title is asked for in the confirm step, as on github.com.
+    const confirm = async (text?: string) => {
+      await click(button(box(), 'Merge pull request')!, host);
+      if (text !== undefined) {
+        await message(text);
+      }
       await click(button(box(), 'Confirm')!, host);
     };
 
     await confirm();
-    await message('Another title');
-    await confirm();
-    await message('');
-    await confirm();
+    await confirm('Another title');
+    await confirm('');
 
     const [first, other, again] = writes().map((w) => w.body?.opKey);
     expect(other).not.toBe(first);
@@ -1339,7 +1343,7 @@ describe('PullPage merge box', () => {
     const { host, root } = await render('/acme/plant/pull/12', { writable: true, canMerge: true, merge: ready, writes: { '/merge': refused } });
     const box = () => host.querySelector('.merge-box')!;
     for (let i = 0; i < 2; i++) {
-      await click(button(box(), 'Merge...')!, host);
+      await click(button(box(), 'Merge pull request')!, host);
       await click(button(box(), 'Confirm')!, host);
     }
 
@@ -1352,11 +1356,69 @@ describe('PullPage merge box', () => {
     const behind = { ...ready, mergeStateStatus: 'BEHIND', mergeable: false, blocked: 'The branch must be brought up to date with its base first.' };
     const { host, root } = await render('/acme/plant/pull/12', { writable: true, canMerge: true, merge: behind });
 
-    await click(button(host.querySelector('.merge-box')!, 'Update branch...')!, host);
+    await click(button(host.querySelector('.merge-box')!, 'Update branch')!, host);
+    await click(button(host.querySelector('.merge-box')!, 'Confirm')!, host);
+    // The caret's menu offers the rebase, and says every commit is rewritten.
+    await click(host.querySelector('.merge-box .merge-method-caret')!, host);
+    await click(button(host.querySelector('.merge-box')!, 'Update with rebaseThe branch rebased onto main: every commit rewritten.')!, host);
+    expect(host.querySelector('.merge-confirm')?.textContent).toContain('Every commit of the branch is rewritten');
     await click(button(host.querySelector('.merge-box')!, 'Confirm')!, host);
 
-    expect(writes()[0]!.url.endsWith('/update-branch')).toBe(true);
+    expect(writes().map((w) => [w.url.slice(w.url.lastIndexOf('/')), w.body?.method])).toEqual([['/update-branch', 'MERGE'], ['/update-branch', 'REBASE']]);
     act(() => root.unmount());
+  });
+
+  // Step 6: the branch after a merge (the owner's decision, with the race said), and the merge queue.
+  const merged = { ...ready, merged: true, state: 'MERGED', mergeCommit: 'a'.repeat(40), headRef: 'fix', headRefLabel: 'fix', headRefExists: true, isCrossRepository: false, deleteBranchOnMerge: false };
+
+  it('offers to delete the merged branch, with the race said', async () => {
+    const { host, root } = await render('/acme/plant/pull/12', { writable: true, canMerge: true, merge: merged });
+    const box = () => host.querySelector('.merge-box')!;
+    await click(button(box(), 'Delete branch')!, host);
+    expect(box().querySelector('.merge-confirm')?.textContent).toContain('a push landing in the moment between that check and the delete would be lost');
+    await click(button(box(), 'Confirm')!, host);
+    expect(writes()[0]!.url.endsWith('/delete-branch')).toBe(true);
+    act(() => root.unmount());
+  });
+
+  it('offers to restore a deleted branch', async () => {
+    const { host, root } = await render('/acme/plant/pull/12', { writable: true, canMerge: true, merge: { ...merged, headRefExists: false } });
+    await click(button(host.querySelector('.merge-box')!, 'Restore branch')!, host);
+    await click(button(host.querySelector('.merge-box')!, 'Confirm')!, host);
+    expect(writes()[0]!.url.endsWith('/restore-branch')).toBe(true);
+    act(() => root.unmount());
+  });
+
+  it('says when the repository deletes branches itself, and offers nothing for a fork’s branch', async () => {
+    const { host, root } = await render('/acme/plant/pull/12', { writable: true, canMerge: true, merge: { ...merged, deleteBranchOnMerge: true, headRefExists: false } });
+    expect(host.querySelector('.merge-box')?.textContent).toContain('deletes head branches itself');
+    expect(button(host.querySelector('.merge-box')!, 'Restore branch')).toBeUndefined();
+    act(() => root.unmount());
+    document.body.innerHTML = '';
+
+    const fork = await render('/acme/plant/pull/12', { writable: true, canMerge: true, merge: { ...merged, isCrossRepository: true } });
+    expect(button(fork.host.querySelector('.merge-box')!, 'Delete branch')).toBeUndefined();
+    act(() => fork.root.unmount());
+  });
+
+  it('a base with a merge queue gets Add to merge queue in place of the merge, and Remove once queued', async () => {
+    const queue = { ...ready, hasMergeQueue: true, inMergeQueue: false };
+    const { host, root } = await render('/acme/plant/pull/12', { writable: true, canMerge: true, merge: queue });
+    const box = () => host.querySelector('.merge-box')!;
+    expect(button(box(), 'Merge pull request')).toBeUndefined();
+    await click(button(box(), 'Add to merge queue')!, host);
+    await click(button(box(), 'Confirm')!, host);
+    expect(writes()[0]!.body).toMatchObject({ enqueue: true });
+    act(() => root.unmount());
+  });
+
+  it('a queued pull request says its position and offers to leave the queue', async () => {
+    const queued = await render('/acme/plant/pull/12', { writable: true, canMerge: true, merge: { ...ready, hasMergeQueue: true, inMergeQueue: true, queuePosition: 2 } });
+    expect(queued.host.querySelector('.merge-queued')?.textContent).toContain('position 2');
+    await click(button(queued.host.querySelector('.merge-box')!, 'Remove from queue')!, queued.host);
+    await click(button(queued.host.querySelector('.merge-box')!, 'Confirm')!, queued.host);
+    expect(writes()[0]!.body).toMatchObject({ enqueue: false });
+    act(() => queued.root.unmount());
   });
 
   it('offers nothing when GitHub cannot say, or when the pull request has moved past the reviewed commit', async () => {
@@ -1368,7 +1430,7 @@ describe('PullPage merge box', () => {
 
     const moved = await render('/acme/plant/pull/12', { writable: true, canMerge: true, merge: { ...ready, headSha: 'f'.repeat(40) } });
     expect(moved.host.querySelector('.merge-box')?.textContent).toContain('Load the latest to merge it');
-    expect(button(moved.host.querySelector('.merge-box')!, 'Merge...')).toBeUndefined();
+    expect(button(moved.host.querySelector('.merge-box')!, 'Merge pull request')).toBeUndefined();
     act(() => moved.root.unmount());
   });
 
@@ -1484,6 +1546,10 @@ describe('PullPage conversation', () => {
     }
     expect(host.querySelector('.merge-summary')?.textContent).toContain('Changes approved');
     expect(host.querySelector('.merge-summary')?.textContent).toContain('Some checks were not successful');
+    // Each check listed under the summary (Step 6), with its state and its link.
+    expect(host.querySelector('.merge-summary-checks')?.textContent).toContain('Show all checks');
+    expect(host.querySelector('.merge-summary-check')?.textContent).toContain('build');
+    expect(host.querySelector('.merge-summary-check a')?.getAttribute('href')).toBe('https://ci.example/1');
     act(() => root.unmount());
   });
 

@@ -371,7 +371,22 @@ code, kbd, pre { font-family: var(--font-mono); }
 .merge-ready { display: flex; flex-direction: column; gap: 8px; align-items: flex-start; }
 .merge-auto .link-button { margin-left: 8px; }
 .merge-accept { display: flex; gap: 6px; align-items: baseline; margin: 6px 0; }
-.merge-confirm { border: 1px solid var(--color-attention-emphasis); border-radius: var(--radius); padding: 8px 12px; background: var(--color-attention-subtle); }
+.merge-confirm { border: 1px solid var(--color-attention-emphasis); border-radius: var(--radius); padding: 8px 12px; background: var(--color-attention-subtle); display: flex; flex-direction: column; gap: 8px; }
+.merge-confirm p { margin: 0; }
+/* GitHub's split button (Step 6): the primary half acts, the caret opens the method menu under it. */
+.merge-split { position: relative; display: inline-block; }
+.merge-method-caret { padding-left: 8px; padding-right: 8px; }
+.merge-method-menu { position: absolute; top: 100%; left: 0; z-index: 5; margin-top: 4px; min-width: 300px; padding: 4px 0; background: var(--color-canvas-overlay, var(--color-canvas-default)); border: 1px solid var(--color-border-default); border-radius: var(--radius); box-shadow: var(--shadow-medium, 0 3px 6px rgba(140, 149, 159, 0.15)); display: flex; flex-direction: column; }
+.merge-method-option { display: flex; gap: 8px; align-items: flex-start; padding: 8px 12px; font-size: 13px; text-align: left; cursor: pointer; color: var(--color-fg-default); }
+.merge-method-option:hover { background: var(--color-neutral-muted); text-decoration: none; }
+.merge-method-option input { margin-top: 3px; }
+.merge-branch { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; font-size: 13px; }
+.merge-queued .link-button { margin-left: 8px; }
+.merge-summary-text { min-width: 0; flex: 1; }
+.merge-summary-checks { margin-top: 6px; font-size: 13px; }
+.merge-summary-checks summary { cursor: pointer; font-size: 12px; }
+.merge-summary-check { display: flex; gap: 8px; align-items: center; padding: 4px 0; }
+.merge-summary-check .check-name { font-weight: 400; }
 .new-pull-draft { font-size: 14px; display: inline-flex; gap: 6px; align-items: center; }
 .reviewers-add { display: flex; gap: 6px; margin-top: 4px; }
 .reviewers-add input { flex: 1; min-width: 0; }
