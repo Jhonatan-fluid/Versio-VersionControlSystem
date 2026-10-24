@@ -1437,7 +1437,7 @@ function FileReview({ writer, path, file, result, threads, threadsState, view, o
   }, [hash, placed]);
 
   if (result.state === 'loading') {
-    return <p className="muted" aria-busy="true">Loading...</p>;
+    return <Loading what="Drawing the file…" />;
   }
   if (result.state === 'error') {
     return <ErrorPanel error={result.error} signInUrl={signInUrl} />;

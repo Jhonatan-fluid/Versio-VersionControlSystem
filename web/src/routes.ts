@@ -67,7 +67,7 @@ export function pullsUrl(owner: string, repo: string, query?: string): string {
   return `${repoUrl(owner, repo)}/pulls${query ? `?q=${encodeURIComponent(query)}` : ''}`;
 }
 
-/** Opening a merge request; either branch may be chosen in advance. */
+/** Opening a pull request; either branch may be chosen in advance. */
 export function newPullUrl(owner: string, repo: string, base?: string, head?: string): string {
   const p = new URLSearchParams();
   if (base) {

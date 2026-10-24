@@ -291,16 +291,6 @@ export function FragmentHost({ html, path, onOpenPath, line, onLine, annotations
       return;
     }
 
-    if (onUnfold && element.closest<HTMLElement>('.cd-fold')) {
-      onUnfold();
-      return;
-    }
-
-    if (onUnfold && element.closest<HTMLElement>('.cd-fold')) {
-      onUnfold();
-      return;
-    }
-
     const gutter = element.closest<HTMLElement>('.cd-num');
     const row = gutter?.parentElement;
     if (row && onRowPick) {

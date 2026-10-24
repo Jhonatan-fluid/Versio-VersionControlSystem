@@ -3,6 +3,7 @@ import type { Async } from '../useAsync';
 import type { Layout, PaneView, Usages, View } from '../api';
 import { ApiError } from '../api';
 import { FragmentHost } from './FragmentHost';
+import { Loading } from './ui';
 
 interface Props {
   result: Async<View>;
@@ -89,7 +90,7 @@ export function Pane({ result, view, layout, onView, onLayout, onLayer, onOpenPa
   const shownPath = result.state === 'ok' ? result.value.path : null;
   useEffect(() => setPage(false), [shownPath]);
   if (result.state === 'loading') {
-    return <section className="pane pane-empty" aria-busy="true">Loading...</section>;
+    return <section className="pane pane-empty"><Loading what="Reading the object…" /></section>;
   }
 
   if (result.state === 'error') {

@@ -19,6 +19,41 @@ produce a diff touching everything else.
 
 ---
 
+### A second read of the finished web page: every instance call linked to the first method of that name, and a commit comment's key lived only in React state
+
+**2026-10-24, the owner asked "are you done with the web page? review again your work".** A
+second read of the 36 commits on `VersioWeb`, as if somebody else had written them, with the
+suites green at 1,905 / 439 / 181. Two defects, neither of which any test had seen.
+
+**An identifier after a dot linked to an object.** Step 3c's `CodeHtml.AppendLine` asked the
+resolver for every plain word, and `ObjectIndex` keys methods and properties by their bare name
+(`Start`, `P_Active`), so `pump.Start()` in any body linked `Start` to whichever object called
+`Start` sorted first by path — a silently wrong link in every file with an instance call, and
+the "used by" search counted the same calls as uses of that method. The fixture manifests show
+how common the collision is: `RefrigeratorControl` has ten names exported more than once
+(`P_Active`, `Get`, `P_ClassName` …). **Fix:** a word after a dot is a member of what precedes it
+and is never linked, on both sides (`CodeHtml.IsMember`, shared by the link and the search).
+Mutation: with `IsMember` returning false, `ObjectLinksTests` fails on the new test. What is still
+not seen is a local declared with an object's name; FINISH.md's deferred list says so.
+
+**The commit comment box held its operation key in React state.** Every other comment box keeps
+its draft and its held key in session storage (`ReviewWrite.readDraft`), which is what makes a
+retry after a reload or a dropped connection the same operation to the server. `CommitCommentBox`
+(Step 3b) re-implemented the key rules with `useState`, so an answer of "unknown" followed by a
+reload minted a new key and the retry was a second comment — the one failure the ledger exists to
+prevent, in the one box written without it. **Fix:** the box reads and writes the shared draft
+store under its own slot, and has CommentBox's "Edit text". Mutation: with the write to storage
+removed, the new `CommitPage` test (post → unknown → reload → "Try again" sends the same key)
+fails.
+
+**Also on the way:** `FragmentHost`'s unfold click handler had been pasted three times over in
+Step 3's commit (dead, harmless, and nothing noticed); one comment still said "merge request".
+
+**The rule:** a box that posts is `CommentBox`, or it is built on `CommentBox`'s store. A key rule
+re-implemented beside the one that has the tests is a key rule without them.
+
+---
+
 ### The `PerformanceTests` flake: a resolution cached after its single flight ended, so a request in between resolved again
 
 **Seen four times, 2026-10-19 to 2026-10-23, in full `Versio.Web.Tests` runs under load;
