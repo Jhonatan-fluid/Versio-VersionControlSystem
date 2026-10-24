@@ -227,14 +227,16 @@ built from the `.gvl.xml` layer lands in the `.gvl.st` or `.gvl.xml` file GitHub
 ### B8. Merge box
 - **partial** Merge, squash, rebase exist with confirmation (`MB:127-143`); update branch when
   BEHIND; auto-merge on/off. Good safety rules (no admin bypass) — keep them.
-- **missing** GitHub's merge box content: the list of required reviews ("1 approval required",
-  "Changes requested by X"), the checks summary with each check row, "This branch has conflicts that
-  must be resolved" with the file list, "Merging is blocked" with the rule that blocks, the split
-  "Merge pull request ▾" button, "Delete branch" / "Restore branch" after merge (deferred: no atomic
-  precondition — offer it with the read-then-delete race *stated*, or via
-  `deleteBranchOnMerge` repo setting shown), "Update branch ▾" with "Update with rebase"
-  (`updatePullRequestBranch(updateMethod: REBASE)` unused), merge-queue enqueue.
-- **missing** For a closed PR: "Reopen" / "Delete branch" in the box (box is empty, `MB:74-76`).
+- **partial** GitHub's merge box content: ~~the list of required reviews ("1 approval required",
+  "Changes requested by X"), the checks summary with each check row~~ (Steps 2 and 6: the summary
+  rows, each check under "Show all checks"), "This branch has conflicts that
+  must be resolved" ~~with the file list~~ (said; GitHub's API names no conflicting files), ~~"Merging is blocked" with the rule that blocks~~ (the
+  words from `mergeStateStatus`; the rules themselves are not readable without `Administration: read`), ~~the split
+  "Merge pull request ▾" button, "Delete branch" / "Restore branch" after merge~~ (Step 6: the owner's decision — offered
+  with the read-then-delete race *stated* on the button and in THREAT-MODEL, and
+  `deleteBranchOnMerge` shown when the repository does it itself), ~~"Update branch ▾" with "Update with rebase"~~ (Step 6:
+  `updatePullRequestBranch(updateMethod: REBASE)`; its lost answer stays unknown, since a rebase leaves nothing to recognise), ~~merge-queue enqueue~~ (Step 6: read, enqueue, dequeue, with `expectedHeadOid`).
+- ~~**missing** For a closed PR: "Reopen" / "Delete branch" in the box (box is empty, `MB:74-76`).~~ Step 6: Delete / Restore branch in the box; Reopen beside Comment (Step 5).
 - ~~**missing** "Close pull request" beside Comment; "Close with comment".~~ Step 5: the comment is posted first, then the state, each its own operation; a refused comment closes nothing; Reopen likewise.
 - **missing** Conflict resolution in the browser (PLAN later, on purpose) — list the conflicting files
   at least.
@@ -266,8 +268,8 @@ built from the `.gvl.xml` layer lands in the `.gvl.st` or `.gvl.xml` file GitHub
 ~~reactions add/remove~~ · ~~suggestion apply (single and batch commit)~~ · ~~multi-line comment from the
 page~~ (Step 3) · comment on unchanged lines · ~~minimise / unminimise a comment~~ · ~~lock / unlock~~ · ~~milestone~~ ·
 project · ~~team review request~~ · ~~dismiss review~~ · ~~re-request review~~ · ~~edit a submitted review's
-summary~~ · ~~edit / delete one pending draft comment~~ (every strike here: Step 5, 2026-10-23) · re-run checks · delete / restore head branch ·
-revert PR · rename branch · merge-queue enqueue / dequeue · update branch by rebase · ~~subscribe~~ ·
+summary~~ · ~~edit / delete one pending draft comment~~ (every strike here: Step 5, 2026-10-23) · re-run checks · ~~delete / restore head branch~~ (Step 6) ·
+revert PR · rename branch · ~~merge-queue enqueue / dequeue~~ (Step 6) · ~~update branch by rebase~~ (Step 6) · ~~subscribe~~ ·
 open a PR from a fork · reviewers / labels / assignees at creation · create a label.
 
 ### B12. Data the server does not read although GitHub has it
@@ -618,12 +620,16 @@ sidebar. Left: reviewer autocomplete and CODEOWNERS badges; "move pending review
 head" stays deferred (GitHub itself discards); a suggestion on a range starts from no text (only
 the last line's is known).
 
-**Step 6 — Merge box to parity.** Required reviews and checks listed with their state; conflicts
+~~**Step 6 — Merge box to parity.** Required reviews and checks listed with their state; conflicts
 with file list; blocked reason from `mergeStateStatus` + rulesets; split merge button; update with
 rebase; **delete branch** (owner's decision: a `MapWrite` route that reads the tip, refuses unless it
 equals the merged head, deletes, and says on the button and in THREAT-MODEL that a push in between
 can be lost; `deleteBranchOnMerge` shown when the repository does it itself) and restore branch;
-closed-PR actions; merge queue (read + enqueue when the repo uses it).
+closed-PR actions; merge queue (read + enqueue when the repo uses it).~~ **Done 2026-10-23**
+(`PullMergeEndpoints.cs`: `/update-branch` with `method`, `/delete-branch`, `/restore-branch`,
+`/merge-queue`; `MergeBox.tsx` as GitHub's box). Not done, and why: the conflicting files (GitHub's
+API does not name them) and the blocking rule's name (needs `Administration: read`; the words come
+from `mergeStateStatus`).
 
 **Step 7 — Pull request list and creation.** `/pulls` with open/closed counts, filters, search
 grammar subset (`is:`, `author:`, `label:`, `review:`, `assignee:`, `sort:`), paging; rows with
