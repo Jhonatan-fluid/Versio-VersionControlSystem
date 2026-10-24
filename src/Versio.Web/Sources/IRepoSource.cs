@@ -110,6 +110,16 @@ public sealed record TagInfo(string Name, string CommitSha);
 /// <summary>The tags read, and whether the list is cut: one page is read, and a cut list never passes for the whole.</summary>
 public sealed record TagList(IReadOnlyList<TagInfo> Tags, bool Truncated);
 
+/// <summary>
+/// The repository's labels, and whether the list is cut. A write gated on this list must not refuse
+/// a label it does not hold when the list is cut: "this repository has no label X" was the answer
+/// for the 101st label of a repository with more (review, 2026-10-24).
+/// </summary>
+public sealed record LabelList(IReadOnlyList<PullLabel> Labels, bool Truncated);
+
+/// <summary>The open milestones, and whether the list is cut — the same rule as <see cref="LabelList"/>.</summary>
+public sealed record MilestoneList(IReadOnlyList<MilestoneInfo> Milestones, bool Truncated);
+
 /// <summary>A comment on a commit (GitHub's commit comments, Step 3b): on the commit as a whole, or on a line of one of its files.</summary>
 public sealed record CommitComment(string Id, string Author, string? AuthorAvatar, string Body, DateTimeOffset When, string? Path, int? Line, string? Url);
 
@@ -631,10 +641,10 @@ public interface IRepoSource
     Task<RepoResult<MergeState>> GetMergeStateAsync(RepoAccess access, string owner, string repo, int number, CancellationToken ct);
 
     /// <summary>The repository's labels, by name, up to 100: what may be put on a pull request (labels are not created here).</summary>
-    Task<RepoResult<IReadOnlyList<PullLabel>>> GetLabelsAsync(RepoAccess access, string owner, string repo, CancellationToken ct);
+    Task<RepoResult<LabelList>> GetLabelsAsync(RepoAccess access, string owner, string repo, CancellationToken ct);
 
     /// <summary>The repository's open milestones, up to 100: what a pull request may be put in (none is created here).</summary>
-    Task<RepoResult<IReadOnlyList<MilestoneInfo>>> GetMilestonesAsync(RepoAccess access, string owner, string repo, CancellationToken ct);
+    Task<RepoResult<MilestoneList>> GetMilestonesAsync(RepoAccess access, string owner, string repo, CancellationToken ct);
 
     /// <summary>A commit's whole message: what tells a commit Versio made (it carries the operation tag) from anyone else's.</summary>
     Task<RepoResult<string>> GetCommitMessageAsync(RepoAccess access, string owner, string repo, string sha, CancellationToken ct);

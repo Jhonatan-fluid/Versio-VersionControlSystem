@@ -55,6 +55,7 @@ public sealed partial class ViewService
         var usedBy = new List<Usage>();
         var searched = 0;
         var truncated = false;
+        var byBudget = false;
         foreach (var (other, files) in model.Objects.ObjectsIn(owner.Project))
         {
             if (other.Guid == owner.Guid)
@@ -76,6 +77,7 @@ public sealed partial class ViewService
                 if (searched >= MaxUsageReads || watch.Elapsed > O.RenderBudget)
                 {
                     truncated = true;
+                    byBudget = searched < MaxUsageReads;
                     break;
                 }
 
@@ -107,10 +109,16 @@ public sealed partial class ViewService
 
         var result = new Usages(CodeHtml.Spelled(owner.Name), usedBy, truncated, searched);
         log.Info(LogCategory.Web, $"usages of {owner.Name} at {model.CommitSha[..Math.Min(8, model.CommitSha.Length)]}: {usedBy.Count} object(s) of {searched} file(s) read in {watch.ElapsedMilliseconds} ms{(truncated ? ", cut short" : "")}");
-        // A cut answer is cached too, briefly: it is as true in five minutes as now, and a project
-        // over the bound otherwise re-read up to 1,500 blobs on every view of every object
-        // (review, 2026-10-24).
-        cache.Set(key, result, new MemoryCacheEntryOptions { Size = 1 + usedBy.Count / 16, SlidingExpiration = truncated ? TimeSpan.FromMinutes(5) : TimeSpan.FromMinutes(30) });
+        // An answer cut by the FILE bound is cached too, briefly: it is as true in five minutes as
+        // now, and a project over the bound otherwise re-read up to 1,500 blobs on every view of
+        // every object (review, 2026-10-24). One cut by the render budget is not: that is a slow
+        // minute, and a second read with the blobs warm finishes — serving "N at least" for five
+        // minutes would have made a transient slowness look like the project's size.
+        if (!byBudget)
+        {
+            cache.Set(key, result, new MemoryCacheEntryOptions { Size = 1 + usedBy.Count / 16, SlidingExpiration = truncated ? TimeSpan.FromMinutes(5) : TimeSpan.FromMinutes(30) });
+        }
+
         return RepoResult<Usages>.Of(result);
     }
 }

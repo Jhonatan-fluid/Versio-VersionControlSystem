@@ -49,6 +49,15 @@ public sealed class PullQueryTests
         Assert.Equal(refused, word);
     }
 
+    /// <summary>The counts' queries swap the state by token: a quoted value holding the words is left alone (review, 2026-10-24).</summary>
+    [Fact]
+    public void The_state_is_swapped_by_token_and_never_inside_a_quoted_value()
+    {
+        Assert.Equal("repo:acme/plant is:pr is:closed label:\"is:closed\" sort:updated-desc", PullQuery.WithState("repo:acme/plant is:pr is:open label:\"is:closed\" sort:updated-desc", "closed"));
+        Assert.Equal("repo:acme/plant is:pr is:open x", PullQuery.WithState("repo:acme/plant is:pr is:merged x", "open"));
+        Assert.Equal("repo:acme/plant is:pr is:open", PullQuery.WithState("repo:acme/plant is:pr", "open"));
+    }
+
     [Fact]
     public void An_empty_query_is_the_open_list()
     {

@@ -46,6 +46,7 @@ public sealed class PullSuggestionTests
             Thread("T_old", "C_old", "```suggestion\nx\n```", 3, outdated: true),
             Thread("T_left", "C_left", "```suggestion\nx\n```", 3, side: "LEFT"),
             Thread("T_plain", "C_plain", "No suggestion here.", 3),
+            Thread("T_first", "C_first", "```suggestion\nPROGRAM Pump // the pump\n```", 1),
         ], false);
         return new World(github, repo, head);
     }
@@ -126,6 +127,16 @@ public sealed class PullSuggestionTests
         Assert.Equal(Encoding.UTF8.GetPreamble(), after.Take(3));
         Assert.Equal("PROGRAM Pump\nVAR\n  run : BOOL := TRUE;\n  stop : BOOL;\nEND_VAR\n", Encoding.UTF8.GetString(after, 3, after.Length - 3));
         Assert.Single(writer2.Commits);
+
+        // A suggestion that replaces line 1 keeps the BOM too: it is not part of the line (review
+        // of the review, 2026-10-24 — the first fix dropped it with the line).
+        var w3 = Build(bom);
+        var (host3, _, alice3, token3) = await StartAsync(w3);
+        await using var ___ = host3;
+        (await Apply(host3, alice3, token3, "C_first")).AssertStatus(HttpStatusCode.OK);
+        var first = w3.Repo.Commits[w3.Repo.Refs["fix"]]["src/Pump.st"];
+        Assert.Equal(Encoding.UTF8.GetPreamble(), first.Take(3));
+        Assert.StartsWith("PROGRAM Pump // the pump\nVAR\n", Encoding.UTF8.GetString(first, 3, first.Length - 3), StringComparison.Ordinal);
     }
 
     /// <summary>A batch is one commit; applied bottom-up so the first edit never shifts the second's lines.</summary>

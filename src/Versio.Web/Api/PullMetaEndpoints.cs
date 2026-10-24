@@ -348,7 +348,14 @@ public static partial class PullWriteEndpoints
                 return ApiEndpoints.Refused(labels.Failure);
             }
 
-            var missing = add.FirstOrDefault(a => labels.Value!.All(l => l.Name != a));
+            // A cut list cannot say a label does not exist: GitHub decides then (review, 2026-10-24).
+            if (labels.Value!.Truncated)
+            {
+                Log.Info(LogCategory.Web, $"labels of {s.Owner}/{s.Repo} are more than {GitHubRepoSource.ListPages * 100}: the write is not gated on the list");
+                return null;
+            }
+
+            var missing = add.FirstOrDefault(a => labels.Value.Labels.All(l => l.Name != a));
             return missing is null
                 ? null
                 : Results.Json(new { error = "label-not-found", message = $"This repository has no label {CodeHtml.Spelled(missing)}." }, statusCode: 422);

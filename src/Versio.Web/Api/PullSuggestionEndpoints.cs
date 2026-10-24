@@ -215,6 +215,16 @@ public static partial class PullWriteEndpoints
                     return (Results.Json(new { error = "file-not-utf8", message = "The file is not UTF-8 text, so a suggestion is not applied to it from here." }, statusCode: 422), null);
                 }
 
+                // The BOM is not part of line 1: GetString keeps it as U+FEFF at the front of the
+                // text, and a suggestion that replaces line 1 would have dropped it with the line —
+                // a three-byte change at the file's start the reviewer never saw as text (review of
+                // the review, 2026-10-24). Held aside, put back after.
+                var bom = text.Length > 0 && text[0] == '\uFEFF';
+                if (bom)
+                {
+                    text = text[1..];
+                }
+
                 // Applied from the bottom up, so an earlier edit's line count never shifts a later one.
                 foreach (var edit in group.OrderByDescending(e => e.Start))
                 {
@@ -226,7 +236,7 @@ public static partial class PullWriteEndpoints
                     text = applied;
                 }
 
-                files.Add(new FileChange(group.Key, Encoding.UTF8.GetBytes(text)));
+                files.Add(new FileChange(group.Key, Encoding.UTF8.GetBytes(bom ? "\uFEFF" + text : text)));
             }
 
             // GitHub's own message for the same action, with its co-author trailers: the suggestions'

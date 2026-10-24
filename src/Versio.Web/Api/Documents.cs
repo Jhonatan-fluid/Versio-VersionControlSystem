@@ -10,10 +10,16 @@ namespace Versio.Web.Api;
 /// serves raw content from another domain and why this list is a narrow allowlist rather than
 /// "any file". Three rules keep it safe here: the content type is OURS, chosen by extension from
 /// this table, never sniffed or taken from the repository (with <c>X-Content-Type-Options:
-/// nosniff</c> site-wide a browser will not second-guess it); nothing is ever served as HTML,
-/// SVG or any other type a browser would execute; and everything except PDF is an attachment,
-/// so it downloads instead of rendering. PDF is the one inline type, because the browser's PDF
-/// viewer renders it out of process and a file lying about being a PDF just fails to draw.
+/// nosniff</c> site-wide a browser will not second-guess it); nothing is served as SVG or any
+/// other type a browser would execute in THIS origin; and everything except PDF and the web
+/// page is an attachment, so it downloads instead of rendering. PDF is inline because the
+/// browser's PDF viewer renders it out of process and a file lying about being a PDF just fails
+/// to draw. <c>.html</c> is inline since Step 9 (the Web page tab), and its one wall is the
+/// <c>Content-Security-Policy: sandbox</c> the middleware puts on exactly those answers: an
+/// opaque origin, no scripts, no forms — pinned by <c>RenderedKindsTests</c>. The middleware
+/// chooses by the request's path and this table by the file's, and the two must agree, which
+/// <c>RawDocumentTests</c> asserts (review, 2026-10-24: this remark said "never HTML" for a
+/// week after it was).
 /// </para>
 /// <para>
 /// Office formats are downloads, deliberately: a browser cannot draw them, and converting them

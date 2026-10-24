@@ -293,8 +293,8 @@ public sealed class GitHubRepoSource(
                     Text(n, "baseRefName"),
                     Text(n, "headRefName"),
                     Text(n, "headRefOid"),
-                    n.TryGetProperty("labels", out var labels) ? labels.GetProperty("nodes").EnumerateArray().Select(l => new PullLabel(Text(l, "name"), HexColor(Text(l, "color")))).ToList() : [],
-                    n.TryGetProperty("assignees", out var assignees) ? assignees.GetProperty("nodes").EnumerateArray().Select(a => (Text(a, "login"), Avatar(a))).ToList() : [],
+                    Nodes(n, "labels").Select(l => new PullLabel(Text(l, "name"), HexColor(Text(l, "color")))).ToList(),
+                    Nodes(n, "assignees").Select(a => (Text(a, "login"), Avatar(a))).ToList(),
                     Text(n, "reviewDecision") is { Length: > 0 } decision ? decision : null,
                     rollup,
                     Int(n, "totalCommentsCount") ?? 0);
@@ -513,9 +513,8 @@ public sealed class GitHubRepoSource(
                 p.GetProperty("headRefOid").GetString() ?? "",
                 p.GetProperty("baseRefName").GetString() ?? "",
                 baseRef.ValueKind == JsonValueKind.Object ? Text(baseRef.GetProperty("target"), "oid") : null,
-                p.GetProperty("labels").GetProperty("nodes").EnumerateArray()
-                    .Select(l => new PullLabel(l.GetProperty("name").GetString() ?? "", HexColor(Text(l, "color")))).ToList(),
-                p.GetProperty("assignees").GetProperty("nodes").EnumerateArray().Select(a => Text(a, "login")).ToList(),
+                Nodes(p, "labels").Select(l => new PullLabel(Text(l, "name"), HexColor(Text(l, "color")))).ToList(),
+                Nodes(p, "assignees").Select(a => Text(a, "login")).ToList(),
                 reviewers)
             {
                 ViewerIsAuthor = Bool(p, "viewerDidAuthor"),
@@ -527,9 +526,12 @@ public sealed class GitHubRepoSource(
                 Title = Text(p, "title"),
                 Body = Text(p, "body"),
                 ViewerCanUpdate = Bool(p, "viewerCanUpdate"),
-                // Every field below is read tolerantly: a server answering an older shape (the tests'
-                // fake, an Enterprise behind on its schema) leaves them at their defaults rather than
-                // failing the read that carries the "this pull request changed" signal.
+                // Every field below is read tolerantly from the ANSWER: a fake or a server that leaves a
+                // field null or absent in its JSON gets the default. That does not cover a server whose
+                // SCHEMA lacks a field: GraphQL refuses the whole query then, and the summary — the
+                // "this pull request changed" signal — fails with it, as the merge-state query's remark
+                // says. An Enterprise behind on its schema is a known cost, not handled (review,
+                // 2026-10-24; the first version of this remark claimed otherwise).
                 Additions = Int(p, "additions") ?? 0,
                 Deletions = Int(p, "deletions") ?? 0,
                 ChangedFiles = Int(p, "changedFiles") ?? 0,
@@ -632,13 +634,44 @@ public sealed class GitHubRepoSource(
         GetJsonAsync<IReadOnlyList<string>>(access, $"repos/{E(owner)}/{E(repo)}/commits/{E(sha)}",
             root => root.GetProperty("parents").EnumerateArray().Select(p => Text(p, "sha")).ToList(), ct);
 
-    public Task<RepoResult<IReadOnlyList<PullLabel>>> GetLabelsAsync(RepoAccess access, string owner, string repo, CancellationToken ct) =>
-        GetJsonAsync<IReadOnlyList<PullLabel>>(access, $"repos/{E(owner)}/{E(repo)}/labels?per_page=100",
-            root => root.EnumerateArray().Select(l => new PullLabel(Text(l, "name"), HexColor(Text(l, "color")))).ToList(), ct);
+    /// <summary>Pages of a hundred read for the label and milestone lists: five, so a repository with hundreds is whole, and one past that is said to be cut.</summary>
+    internal const int ListPages = 5;
 
-    public Task<RepoResult<IReadOnlyList<MilestoneInfo>>> GetMilestonesAsync(RepoAccess access, string owner, string repo, CancellationToken ct) =>
-        GetJsonAsync<IReadOnlyList<MilestoneInfo>>(access, $"repos/{E(owner)}/{E(repo)}/milestones?state=open&per_page=100",
-            root => root.EnumerateArray().Where(m => Int(m, "number") is not null).Select(m => new MilestoneInfo(Int(m, "number")!.Value, Text(m, "title"), Text(m, "state"))).ToList(), ct);
+    public Task<RepoResult<LabelList>> GetLabelsAsync(RepoAccess access, string owner, string repo, CancellationToken ct) =>
+        PagedAsync(access, $"repos/{E(owner)}/{E(repo)}/labels?per_page=100",
+            l => new PullLabel(Text(l, "name"), HexColor(Text(l, "color"))), (items, cut) => new LabelList(items, cut), ct);
+
+    public Task<RepoResult<MilestoneList>> GetMilestonesAsync(RepoAccess access, string owner, string repo, CancellationToken ct) =>
+        PagedAsync(access, $"repos/{E(owner)}/{E(repo)}/milestones?state=open&per_page=100",
+            m => Int(m, "number") is { } number ? new MilestoneInfo(number, Text(m, "title"), Text(m, "state")) : null, (items, cut) => new MilestoneList(items, cut), ct);
+
+    /// <summary>
+    /// A REST list read page by page up to <see cref="ListPages"/>, stopping at a short page; a
+    /// full last page is reported cut. One page was read until the review of 2026-10-24, and the
+    /// hundred-and-first label did not exist as far as the write gate was concerned.
+    /// </summary>
+    private async Task<RepoResult<TList>> PagedAsync<TItem, TList>(RepoAccess access, string relative, Func<JsonElement, TItem?> item, Func<IReadOnlyList<TItem>, bool, TList> list, CancellationToken ct)
+        where TItem : class
+    {
+        var all = new List<TItem>();
+        for (var page = 1; page <= ListPages; page++)
+        {
+            var one = await GetJsonAsync<IReadOnlyList<TItem>>(access, $"{relative}&page={page.ToString(CultureInfo.InvariantCulture)}",
+                root => root.EnumerateArray().Select(item).OfType<TItem>().ToList(), ct).ConfigureAwait(false);
+            if (!one.Ok)
+            {
+                return one.As<TList>();
+            }
+
+            all.AddRange(one.Value!);
+            if (one.Value!.Count < 100)
+            {
+                return RepoResult<TList>.Of(list(all, false));
+            }
+        }
+
+        return RepoResult<TList>.Of(list(all, true));
+    }
 
     public Task<RepoResult<string>> GetCommitMessageAsync(RepoAccess access, string owner, string repo, string sha, CancellationToken ct) =>
         GetJsonAsync<string>(access, $"repos/{E(owner)}/{E(repo)}/commits/{E(sha)}",
@@ -759,7 +792,11 @@ public sealed class GitHubRepoSource(
         }
         """;
 
-    /// <summary>Viewed paths, paged to GitHub's own end of the file list (bounded: 30 pages).</summary>
+    /// <summary>
+    /// Viewed paths, paged to GitHub's own end of the file list (bounded: 30 pages of 100, which is
+    /// GitHub's cap of 3,000 files on a pull request — so the bound is never the thing that cuts it,
+    /// and the list carries no flag; the files list says when GitHub's cap did).
+    /// </summary>
     public async Task<RepoResult<IReadOnlyList<string>>> GetViewedAsync(RepoAccess access, string owner, string repo, int number, CancellationToken ct)
     {
         var viewed = new List<string>();
@@ -1116,9 +1153,11 @@ public sealed class GitHubRepoSource(
 
         static TimelineItem Commit(JsonElement c, string? url)
         {
-            var author = c.GetProperty("author");
-            var user = author.TryGetProperty("user", out var u) && u.ValueKind == JsonValueKind.Object ? Text(u, "login") : "";
-            return new TimelineItem("commit", user.Length > 0 ? user : Text(author, "name"), c.GetProperty("committedDate").GetDateTimeOffset(),
+            // A commit's author is a nullable GitActor in the schema, and a missing or null one must
+            // not throw: one odd node would turn the whole timeline into a 502 (review, 2026-10-24).
+            var author = c.TryGetProperty("author", out var a) && a.ValueKind == JsonValueKind.Object ? a : default;
+            var user = author.ValueKind == JsonValueKind.Object && author.TryGetProperty("user", out var u) && u.ValueKind == JsonValueKind.Object ? Text(u, "login") : "";
+            return new TimelineItem("commit", user.Length > 0 ? user : author.ValueKind == JsonValueKind.Object ? Text(author, "name") : "", Date(c, "committedDate") ?? default,
                 Text(c, "messageHeadline"), null, Text(c, "oid"))
             {
                 AvatarUrl = Avatar(author),
@@ -1314,6 +1353,16 @@ public sealed class GitHubRepoSource(
 
     private static string? Avatar(JsonElement element, string property) =>
         element.TryGetProperty(property, out var who) ? Avatar(who) : null;
+
+    /// <summary>
+    /// A connection's nodes, or none: GitHub declares most connections nullable, and a null or
+    /// missing one must read as empty rather than throw and fail the whole list (review, 2026-10-24).
+    /// </summary>
+    private static IEnumerable<JsonElement> Nodes(JsonElement parent, string connection) =>
+        parent.ValueKind == JsonValueKind.Object && parent.TryGetProperty(connection, out var c) && c.ValueKind == JsonValueKind.Object
+            && c.TryGetProperty("nodes", out var nodes) && nodes.ValueKind == JsonValueKind.Array
+            ? nodes.EnumerateArray().Where(n => n.ValueKind == JsonValueKind.Object)
+            : [];
 
     private static DateTimeOffset? Date(JsonElement element, string property) =>
         element.TryGetProperty(property, out var v) && v.ValueKind == JsonValueKind.String && v.TryGetDateTimeOffset(out var when) ? when : null;
@@ -1681,12 +1730,17 @@ public sealed class GitHubRepoSource(
         }
 
         var exhausted = response.Headers.TryGetValues("x-ratelimit-remaining", out var left) && left.FirstOrDefault() == "0";
+        // GitHub's secondary (abuse) limit is a 403 with Retry-After and a remaining count that is
+        // NOT zero; read as a plain 403 it became "not found", the page said "not visible to you"
+        // and the compare side drew "could not be read" instead of the rate-limit words the
+        // threat model promises. The writer mapped it right from the start (review, 2026-10-24).
+        var secondary = response.Headers.Contains("Retry-After");
         return response.StatusCode switch
         {
             HttpStatusCode.NotFound => RepoFailure.NotFound,
             HttpStatusCode.Unauthorized => RepoFailure.Unauthorized,
             HttpStatusCode.Forbidden when response.Headers.Contains("X-GitHub-SSO") => RepoFailure.SsoRequired,
-            HttpStatusCode.Forbidden or HttpStatusCode.TooManyRequests when exhausted => RepoFailure.RateLimited,
+            HttpStatusCode.Forbidden or HttpStatusCode.TooManyRequests when exhausted || secondary => RepoFailure.RateLimited,
             HttpStatusCode.TooManyRequests => RepoFailure.RateLimited,
             HttpStatusCode.Forbidden => RepoFailure.NotFound,
             _ => RepoFailure.Upstream,

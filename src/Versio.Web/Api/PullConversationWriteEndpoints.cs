@@ -156,7 +156,14 @@ public static partial class PullWriteEndpoints
                 return ApiEndpoints.Refused(milestones.Failure);
             }
 
-            if (milestones.Value!.All(m => m.Number != wanted))
+            if (milestones.Value!.Truncated)
+            {
+                // A cut list cannot say a milestone does not exist: GitHub decides then (review, 2026-10-24).
+                Log.Info(LogCategory.Web, $"open milestones of {s.Owner}/{s.Repo} are more than {GitHubRepoSource.ListPages * 100}: the write is not gated on the list");
+                return null;
+            }
+
+            if (milestones.Value.Milestones.All(m => m.Number != wanted))
             {
                 Log.Info(LogCategory.Web, $"milestone refused: {s.Owner}/{s.Repo} has no open milestone {wanted}");
                 return Results.Json(new { error = "milestone-not-found", message = "This repository has no open milestone by that number." }, statusCode: 422);

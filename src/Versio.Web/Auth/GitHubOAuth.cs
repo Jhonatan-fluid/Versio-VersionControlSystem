@@ -207,10 +207,21 @@ public sealed class AppTokens(IHttpClientFactory clients, IOptions<WebOptions> o
 {
     private readonly System.Collections.Concurrent.ConcurrentDictionary<string, (string Token, DateTimeOffset Expires)> _cache = new(StringComparer.OrdinalIgnoreCase);
 
-    // One gate per repository: concurrent requests for one repository mint once, and nothing
-    // waits on another repository. A single gate, held across GitHub's round trips, made one
-    // slow answer stall every anonymous visitor to every repository (found in review).
-    private readonly System.Collections.Concurrent.ConcurrentDictionary<string, SemaphoreSlim> _gates = new(StringComparer.OrdinalIgnoreCase);
+    // "Not installed here" is remembered for a minute: without it every anonymous request to a
+    // public repository the App is not installed on cost a JWT-signed call against the App's
+    // own limit, and an open server with no repository list could be made to pay it at the
+    // per-address rate (review, 2026-10-24). A minute is short enough that installing the App
+    // shows within one.
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<string, DateTimeOffset> _absent = new(StringComparer.OrdinalIgnoreCase);
+    internal static readonly TimeSpan AbsentFor = TimeSpan.FromMinutes(1);
+
+    // One gate per repository, so concurrent requests for one repository mint once and nothing
+    // waits on another repository: a single gate, held across GitHub's round trips, made one slow
+    // answer stall every anonymous visitor to every repository (found in review). Striped rather
+    // than one per name, because a dictionary of gates grew by one entry per distinct name ever
+    // asked for and never shrank (review, 2026-10-24); 64 stripes keep unrelated repositories
+    // apart in practice and bound the memory in principle.
+    private readonly SemaphoreSlim[] _gates = Enumerable.Range(0, 64).Select(_ => new SemaphoreSlim(1, 1)).ToArray();
 
     private GitHubOptions G => options.Value.GitHub;
 
@@ -228,7 +239,12 @@ public sealed class AppTokens(IHttpClientFactory clients, IOptions<WebOptions> o
             return fresh.Token;
         }
 
-        var gate = _gates.GetOrAdd(key, _ => new SemaphoreSlim(1, 1));
+        if (_absent.TryGetValue(key, out var absentAt) && clock.UtcNow - absentAt < AbsentFor)
+        {
+            return null;
+        }
+
+        var gate = _gates[(uint)StringComparer.OrdinalIgnoreCase.GetHashCode(key) % (uint)_gates.Length];
         await gate.WaitAsync(ct).ConfigureAwait(false);
         try
         {
@@ -237,13 +253,26 @@ public sealed class AppTokens(IHttpClientFactory clients, IOptions<WebOptions> o
                 return held.Token;
             }
 
+            if (_absent.TryGetValue(key, out var absentStill) && clock.UtcNow - absentStill < AbsentFor)
+            {
+                return null;
+            }
+
             var jwt = await JwtAsync(ct).ConfigureAwait(false);
             using var find = App(HttpMethod.Get, $"repos/{E(owner)}/{E(repo)}/installation", jwt);
             using var found = await clients.CreateClient(Sources.GitHubRepoSource.ApiClient).SendAsync(find, ct).ConfigureAwait(false);
             if (!found.IsSuccessStatusCode)
             {
+                // Only "not installed" is remembered: an outage or a limit is tried again next time.
+                if (found.StatusCode == System.Net.HttpStatusCode.NotFound)
+                {
+                    _absent[key] = clock.UtcNow;
+                }
+
                 return null;
             }
+
+            _absent.TryRemove(key, out _);
 
             using var installation = await JsonDocument.ParseAsync(await found.Content.ReadAsStreamAsync(ct).ConfigureAwait(false), cancellationToken: ct).ConfigureAwait(false);
             var id = installation.RootElement.GetProperty("id").GetInt64();

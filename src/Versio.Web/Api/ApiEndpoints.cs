@@ -478,6 +478,13 @@ public static partial class ApiEndpoints
                 return Results.NotFound();
             }
 
+            // GitHub refuses a search over 256 characters; said here as what it is, not as "GitHub
+            // could not be reached" (review, 2026-10-24).
+            if (q is { Length: > Versio.Web.Review.PullQuery.MaxLength })
+            {
+                return Results.Json(new { error = "invalid", field = "q", message = $"A search is at most {Versio.Web.Review.PullQuery.MaxLength} characters." }, statusCode: 400);
+            }
+
             var (query, refused) = Versio.Web.Review.PullQuery.Parse(q, owner, repo);
             if (query is null)
             {
@@ -515,8 +522,11 @@ public static partial class ApiEndpoints
 
             if (who.Value!.Token is not null)
             {
-                var open = query.Search.Replace("is:closed", "is:open", StringComparison.Ordinal).Replace("is:merged", "is:open", StringComparison.Ordinal);
-                var closed = query.Search.Replace("is:open", "is:closed", StringComparison.Ordinal).Replace("is:merged", "is:closed", StringComparison.Ordinal);
+                // The counts' queries: the same search with its state token swapped — by token, since
+                // a quoted value may hold "is:closed" (review, 2026-10-24: a plain Replace counted a
+                // different query than the one listed).
+                var open = Versio.Web.Review.PullQuery.WithState(query.Search, "open");
+                var closed = Versio.Web.Review.PullQuery.WithState(query.Search, "closed");
                 var found = await source.SearchPullsAsync(who.Value, query.Search, open, closed, ListLimit, after, ct).ConfigureAwait(false);
                 return found.Ok
                     ? Results.Ok(new

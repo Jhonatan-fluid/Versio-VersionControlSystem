@@ -395,6 +395,12 @@ public sealed class PullMetaWriteTests
         unknown.AssertStatus(HttpStatusCode.UnprocessableEntity);
         Assert.Contains("label-not-found", await unknown.Body(), StringComparison.Ordinal);
         Assert.Single(writer.Writes);
+
+        // A cut label list cannot say a label does not exist: the write goes to GitHub, which
+        // decides (review, 2026-10-24 — the 101st label of a repository with more was refused by name).
+        w.Repo.ListsCut = true;
+        (await Post(host, alice, token, "/labels", new { opKey = Key(), add = new[] { "made-up" } })).AssertStatus(HttpStatusCode.OK);
+        Assert.Equal(2, writer.Writes.Count);
     }
 
     /// <summary>GitHub answers success while dropping an assignee who cannot be assigned: asked first, so the page is never told it worked.</summary>

@@ -35,6 +35,23 @@ public static partial class PullQuery
         "is", "author", "assignee", "label", "milestone", "review", "reviewed-by", "review-requested", "base", "head", "sort", "no",
     };
 
+    /// <summary>The longest search GitHub takes; the route refuses a longer one by name.</summary>
+    public const int MaxLength = 256;
+
+    /// <summary>
+    /// <paramref name="search"/> with its <c>is:open</c> / <c>is:closed</c> / <c>is:merged</c> token
+    /// replaced by <c>is:<paramref name="state"/></c>, or that token added when there is none —
+    /// by token, never by substring: a quoted value may contain the words (<c>label:"is:closed"</c>).
+    /// </summary>
+    public static string WithState(string search, string state)
+    {
+        ArgumentNullException.ThrowIfNull(search);
+        return StateToken().IsMatch(search) ? StateToken().Replace(search, "is:" + state, 1) : $"{search} is:{state}";
+    }
+
+    [GeneratedRegex(@"(?<=^|\s)is:(?:open|closed|merged)(?=\s|$)", RegexOptions.IgnoreCase)]
+    private static partial Regex StateToken();
+
     /// <summary>The parsed query, or null with the word that was refused.</summary>
     public static (Parsed? Query, string? Refused) Parse(string? q, string owner, string repo)
     {

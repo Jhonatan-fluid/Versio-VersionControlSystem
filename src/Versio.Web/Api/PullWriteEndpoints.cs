@@ -568,6 +568,11 @@ public static partial class PullWriteEndpoints
         {
             var owner = http.GetRouteValue("owner") as string ?? "";
             var repo = http.GetRouteValue("repo") as string ?? "";
+            // The request, for every refusal line below, with the path SPELLED: route values and
+            // Request.Path are both percent-decoded, so a %0A in the URL would otherwise start a
+            // line of its own in the log (review of the review, 2026-10-24 - the first fix named
+            // the valid repository and then printed the same text through the path).
+            var where = $"{http.Request.Method} {CodeHtml.Spelled(http.Request.Path.ToString())}";
 
             // S9 first, as 404: with writes off for this repository, a write route does not exist.
             // Said in the log all the same (Step 10): a 404 the operator did not expect is the first
@@ -576,14 +581,14 @@ public static partial class PullWriteEndpoints
             {
                 // Route values are percent-decoded, so an invalid name is not written into the log
                 // as it came (a %0A would start a line of its own): the valid ones are named.
-                log.Info(LogCategory.Web, $"write refused (S9: writes are off for {(ApiEndpoints.Valid(owner, repo) ? $"{owner}/{repo}" : "an invalid repository name")}) {http.Request.Method} {http.Request.Path}");
+                log.Info(LogCategory.Web, $"write refused (S9: writes are off for {(ApiEndpoints.Valid(owner, repo) ? $"{owner}/{repo}" : "an invalid repository name")}) {where}");
                 return ApiEndpoints.NotFoundJson();
             }
 
             // S11: the merge tier is its own switch on top, and likewise does not exist without it.
             if (http.GetEndpoint()?.Metadata.GetMetadata<MergeEndpoint>() is not null && !options.Value.Writes.Merge)
             {
-                log.Info(LogCategory.Web, $"write refused (S11: the merge tier is off) {http.Request.Method} {http.Request.Path}");
+                log.Info(LogCategory.Web, $"write refused (S11: the merge tier is off) {where}");
                 return ApiEndpoints.NotFoundJson();
             }
 
@@ -595,7 +600,7 @@ public static partial class PullWriteEndpoints
                 || !MediaTypeHeaderValue.TryParse(http.Request.ContentType, out var type) || type.MediaType != "application/json"
                 || !SameOrigin(http, options.Value.GitHub.PublicBaseUrl))
             {
-                log.Warn(LogCategory.Web, $"write refused (S4: request forgery checks) {http.Request.Method} {http.Request.Path}");
+                log.Warn(LogCategory.Web, $"write refused (S4: request forgery checks) {where}");
                 return Results.Json(new { error = "forbidden", message = "This request was refused." }, statusCode: 403);
             }
 
@@ -603,7 +608,7 @@ public static partial class PullWriteEndpoints
             var max = Math.Max(1024, options.Value.Writes.MaxBodyBytes);
             if (http.Request.ContentLength > max)
             {
-                log.Warn(LogCategory.Web, $"write refused (S8: body of {http.Request.ContentLength} bytes over {max}) {http.Request.Method} {http.Request.Path}");
+                log.Warn(LogCategory.Web, $"write refused (S8: body of {http.Request.ContentLength} bytes over {max}) {where}");
                 return Results.Json(new { error = "too-large", message = "That is too long to post." }, statusCode: 413);
             }
 
@@ -621,7 +626,7 @@ public static partial class PullWriteEndpoints
             // no session to count (review, 2026-10-24). With no session there is nobody to write as.
             if (await access.SessionAsync(http, http.RequestAborted).ConfigureAwait(false) is null)
             {
-                log.Info(LogCategory.Web, $"write refused (S1: no session) {http.Request.Method} {http.Request.Path}");
+                log.Info(LogCategory.Web, $"write refused (S1: no session) {where}");
                 return Results.Json(new { error = "sign-in", message = "Sign in with GitHub to comment, so it is in your name." }, statusCode: 401);
             }
 
@@ -633,7 +638,7 @@ public static partial class PullWriteEndpoints
 
             if (who.Value!.Kind != AccessKind.User)
             {
-                log.Info(LogCategory.Web, $"write refused (S1: not a signed-in person) {http.Request.Method} {http.Request.Path}");
+                log.Info(LogCategory.Web, $"write refused (S1: not a signed-in person) {where}");
                 return Results.Json(new { error = "sign-in", message = "Sign in with GitHub to comment, so it is in your name." }, statusCode: 401);
             }
 

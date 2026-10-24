@@ -368,7 +368,7 @@ public static class PullEndpoints
             var labels = await source.GetLabelsAsync(who.Value!, owner, repo, ct).ConfigureAwait(false);
             return labels.Ok
                 // value is the name as GitHub has it, sent back to add or remove; label is what is shown.
-                ? Results.Ok(new { labels = labels.Value!.Select(l => new { value = l.Name, label = CodeHtml.Spelled(l.Name), color = l.Color }) })
+                ? Results.Ok(new { labels = labels.Value!.Labels.Select(l => new { value = l.Name, label = CodeHtml.Spelled(l.Name), color = l.Color }), truncated = labels.Value.Truncated })
                 : ApiEndpoints.Refused(labels.Failure, http);
         });
 
@@ -388,7 +388,7 @@ public static class PullEndpoints
 
             var milestones = await source.GetMilestonesAsync(who.Value!, owner, repo, ct).ConfigureAwait(false);
             return milestones.Ok
-                ? Results.Ok(new { milestones = milestones.Value!.Select(m => new { number = m.Number, title = CodeHtml.Spelled(m.Title) }) })
+                ? Results.Ok(new { milestones = milestones.Value!.Milestones.Select(m => new { number = m.Number, title = CodeHtml.Spelled(m.Title) }), truncated = milestones.Value.Truncated })
                 : ApiEndpoints.Refused(milestones.Failure, http);
         });
     }

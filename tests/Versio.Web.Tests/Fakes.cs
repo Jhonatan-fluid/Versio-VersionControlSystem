@@ -58,6 +58,9 @@ internal sealed class FakeGitHub : IRepoSource
 
         public bool Private { get; init; }
 
+        /// <summary>The label and milestone lists answer as cut past GitHub's pages (review, 2026-10-24).</summary>
+        public bool ListsCut { get; set; }
+
         public string DefaultBranch { get; init; } = "main";
 
         /// <summary>Branch or commit name to commit sha.</summary>
@@ -603,10 +606,10 @@ internal sealed class FakeGitHub : IRepoSource
         }));
     }
 
-    public Task<RepoResult<IReadOnlyList<MilestoneInfo>>> GetMilestonesAsync(RepoAccess access, string owner, string repo, CancellationToken ct)
+    public Task<RepoResult<MilestoneList>> GetMilestonesAsync(RepoAccess access, string owner, string repo, CancellationToken ct)
     {
         var r = See(access, owner, repo, "milestones");
-        return Task.FromResult(r.Ok ? RepoResult<IReadOnlyList<MilestoneInfo>>.Of(r.Value!.Milestones.ToList()) : r.As<IReadOnlyList<MilestoneInfo>>());
+        return Task.FromResult(r.Ok ? RepoResult<MilestoneList>.Of(new MilestoneList(r.Value!.Milestones.ToList(), r.Value.ListsCut)) : r.As<MilestoneList>());
     }
 
     public Task<RepoResult<string>> GetCommitMessageAsync(RepoAccess access, string owner, string repo, string sha, CancellationToken ct)
@@ -697,10 +700,10 @@ internal sealed class FakeGitHub : IRepoSource
             : r.Value!.Parents.TryGetValue(sha, out var parents) ? RepoResult<IReadOnlyList<string>>.Of(parents.ToList()) : RepoResult<IReadOnlyList<string>>.Fail(RepoFailure.NotFound));
     }
 
-    public Task<RepoResult<IReadOnlyList<PullLabel>>> GetLabelsAsync(RepoAccess access, string owner, string repo, CancellationToken ct)
+    public Task<RepoResult<LabelList>> GetLabelsAsync(RepoAccess access, string owner, string repo, CancellationToken ct)
     {
         var r = See(access, owner, repo, "labels");
-        return Task.FromResult(r.Ok ? RepoResult<IReadOnlyList<PullLabel>>.Of(r.Value!.Labels.ToList()) : r.As<IReadOnlyList<PullLabel>>());
+        return Task.FromResult(r.Ok ? RepoResult<LabelList>.Of(new LabelList(r.Value!.Labels.ToList(), r.Value.ListsCut)) : r.As<LabelList>());
     }
 
     public Task<RepoResult<bool>> CanAssignAsync(RepoAccess access, string owner, string repo, string login, CancellationToken ct)

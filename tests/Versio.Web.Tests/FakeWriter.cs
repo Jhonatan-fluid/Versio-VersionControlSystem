@@ -495,7 +495,8 @@ internal sealed class FakeWriter : IRepoWriter
         {
             var people = Repo!.PullPeople.TryGetValue(number, out var known) ? known : ([], []);
             var labels = people.Labels.Where(l => !remove.Contains(l.Name)).ToList();
-            labels.AddRange(add.Where(a => labels.All(l => l.Name != a)).Select(a => Repo.Labels.First(l => l.Name == a)));
+            // As GitHub's issues API does: a label the repository does not have is made on the way.
+            labels.AddRange(add.Where(a => labels.All(l => l.Name != a)).Select(a => Repo.Labels.FirstOrDefault(l => l.Name == a) ?? new PullLabel(a, "ededed")));
             Repo.PullPeople[number] = (labels, people.Reviewers);
             return true;
         });

@@ -175,6 +175,17 @@ public sealed class SecurityTests
             Assert.Equal("no-referrer", response.Headers.GetValues("Referrer-Policy").Single());
             Assert.Equal("noindex, nofollow", response.Headers.GetValues("X-Robots-Tag").Single());
             Assert.Equal("DENY", response.Headers.GetValues("X-Frame-Options").Single());
+            // The isolation and permission headers too (review, 2026-10-24: dropping them left this green).
+            Assert.Equal("same-origin", response.Headers.GetValues("Cross-Origin-Opener-Policy").Single());
+            Assert.Equal("same-origin", response.Headers.GetValues("Cross-Origin-Resource-Policy").Single());
+            Assert.Equal("camera=(), microphone=(), geolocation=(), payment=()", response.Headers.GetValues("Permissions-Policy").Single());
+        }
+
+        // The API and sign-in answers are for one person: no proxy or CDN keeps them.
+        foreach (var path in new[] { "/api/me", "/auth/login" })
+        {
+            var response = await host.GetAsync(path);
+            Assert.True(response.Headers.CacheControl is { NoStore: true, Private: true }, $"{path}: {response.Headers.CacheControl}");
         }
     }
 
@@ -429,9 +440,20 @@ public sealed class SecurityTests
     [InlineData("javascript:alert(1)", "/")]
     [InlineData("/acme/plant/blob/main/README.md", "/acme/plant/blob/main/README.md")]
     [InlineData(null, "/")]
+    // A control character (a header-splitting newline) and a path over the cap: the two branches of SafeReturn nothing watched (review, 2026-10-24).
+    [InlineData("/acme/plant\r\nSet-Cookie: x=y", "/")]
+    [InlineData("/acme/\u0007plant", "/")]
     public void SignIn_returns_only_to_this_sites_own_pages(string? asked, string landed)
     {
         Assert.Equal(landed, AuthEndpoints.SafeReturn(asked));
+    }
+
+    [Fact]
+    public void SignIn_returns_home_for_a_path_over_the_cap()
+    {
+        var long2048 = "/" + new string('a', 2047);
+        Assert.Equal(long2048, AuthEndpoints.SafeReturn(long2048));
+        Assert.Equal("/", AuthEndpoints.SafeReturn(long2048 + "a"));
     }
 
     /// <remarks>
@@ -555,8 +577,14 @@ public sealed class SecurityTests
         Assert.Equal("/acme/secret", callback.Headers.Location!.ToString());
         var session = TestHost.SetCookie(callback, AccessResolver.SessionCookie);
         Assert.NotNull(session);
-        Assert.Contains(callback.Headers.GetValues("Set-Cookie"), c => c.StartsWith(AccessResolver.SessionCookie, StringComparison.Ordinal)
-            && c.Contains("httponly", StringComparison.OrdinalIgnoreCase) && c.Contains("secure", StringComparison.OrdinalIgnoreCase));
+        // Every flag the threat model names: HttpOnly, Secure, Lax, the root path (a __Host- cookie's
+        // condition), and an expiry — asserted in full since the review of 2026-10-24.
+        var sessionCookie = callback.Headers.GetValues("Set-Cookie").Single(c => c.StartsWith(AccessResolver.SessionCookie + "=", StringComparison.Ordinal));
+        Assert.Contains("httponly", sessionCookie, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("secure", sessionCookie, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("samesite=lax", sessionCookie, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("path=/", sessionCookie, StringComparison.OrdinalIgnoreCase);
+        Assert.Matches("(?i)(max-age=|expires=)", sessionCookie);
 
         // The verifier GitHub received hashes to the challenge the browser was sent.
         var exchange = oauth.Exchanges.Last(e => e.GetValueOrDefault("code") == "good");

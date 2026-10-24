@@ -347,6 +347,15 @@ public sealed class GitHubRepoSourceTests : IAsyncLifetime
             return Results.StatusCode(403);
         });
         app.MapGet("/repos/acme/forbidden", () => Results.StatusCode(403));
+        // GitHub's secondary limit: a 403 with Retry-After and a remaining count that is not zero.
+        app.MapGet("/repos/acme/secondary", (HttpContext http) =>
+        {
+            http.Response.Headers["Retry-After"] = "60";
+            http.Response.Headers["x-ratelimit-remaining"] = "4999";
+            return Results.StatusCode(403);
+        });
+        app.MapGet("/repos/acme/busy", () => Results.StatusCode(429));
+        app.MapGet("/repos/acme/unauthorized", () => Results.StatusCode(401));
         app.MapGet("/repos/acme/held/installation", async () =>
         {
             // GitHub slow to answer for one repository.
@@ -535,7 +544,8 @@ public sealed class GitHubRepoSourceTests : IAsyncLifetime
         var message = (await Source().GetCommitMessageAsync(Alice, "acme", "plant", new string('u', 40), CancellationToken.None)).Value;
 
         Assert.Equal((5, "UNSUBSCRIBED", true), (summary.MilestoneNumber, summary.ViewerSubscription, summary.ViewerCanReact));
-        Assert.Equal([new MilestoneInfo(5, "v2", "open"), new MilestoneInfo(6, "v3", "open")], milestones);
+        Assert.Equal([new MilestoneInfo(5, "v2", "open"), new MilestoneInfo(6, "v3", "open")], milestones.Milestones);
+        Assert.False(milestones.Truncated);
         Assert.Equal("Apply suggestions\n\n<!-- versio:op v1 K -->", message);
     }
 
@@ -773,6 +783,10 @@ public sealed class GitHubRepoSourceTests : IAsyncLifetime
     [InlineData("limited", RepoFailure.RateLimited)]
     [InlineData("forbidden", RepoFailure.NotFound)]
     [InlineData("missing", RepoFailure.NotFound)]
+    // The secondary limit was "not found" until the review of 2026-10-24; 429 and 401 had no case.
+    [InlineData("secondary", RepoFailure.RateLimited)]
+    [InlineData("busy", RepoFailure.RateLimited)]
+    [InlineData("unauthorized", RepoFailure.Unauthorized)]
     public async Task GitHubs_refusals_become_what_the_page_can_say(string repo, RepoFailure expected)
     {
         var result = await Source().GetRepoAsync(Alice, "acme", repo, CancellationToken.None);
