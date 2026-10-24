@@ -83,8 +83,8 @@ File refs: `P` = `web/src/pages/PullPage.tsx`, `RB` = `components/ReviewBar.tsx`
   names as links to the tree and a copy-branch button (`P:356` is plain text).~~ Step 2: the line with the picture and the commit count; the branch names are not links yet.
 - ~~**missing** `+N −M` additions/deletions, changed-files and commits counts (server never reads
   `additions`, `deletions`, `changed_files`, `commits`, `comments`, `review_comments` — Src:1070-1078).~~ Step 2: read from the summary; the diffstat beside the tabs, the counts on the tabs and in the meta line.
-- **partial** ~~Lock conversation / locked state~~ (the locked state and reason are shown, Step 2; locking is a write, Step 5); pin; subscribe / notification reason.
-- **partial** Linked issues ("Closes #12", Development sidebar); ~~milestone~~ (shown in the sidebar, Step 2; setting it is Step 5); projects; participants.
+- **partial** ~~Lock conversation / locked state~~ (the locked state and reason are shown, Step 2; locking and unlocking, Step 5); pin; ~~subscribe~~ (Step 5) / notification reason.
+- **partial** Linked issues ("Closes #12", Development sidebar); ~~milestone~~ (shown in the sidebar, Step 2; set from it, Step 5); projects; participants.
 - **partial** Title edit exists (`PM:47-66`) but is a link + input, not GitHub's inline editor.
 - ~~**missing** Per-page `document.title` ("Title by author · Pull Request #3 · owner/repo").~~ `usePageTitle` on every page (Step 1).
 - ~~**missing** Relative times ("2 days ago") with an absolute tooltip; everywhere `toLocaleString`.~~ `RelativeTime` on the pull request page, the lists and the commits (Step 1–2).
@@ -112,7 +112,7 @@ File refs: `P` = `web/src/pages/PullPage.tsx`, `RB` = `components/ReviewBar.tsx`
   icons; force-push shows no "from X to Y" compare link (`Src` reads `afterCommit` only).~~ Step 2: every kind the server reads has its sentence and badge; force-push names both commits. Still: commits are not grouped ("X added 3 commits"), and the force-push's "from X to Y" is text, not a compare link.
 - **partial** ~~Comment card chrome: avatar beside the card, grey header "author commented 2 days
   ago", role badge (Author / Member / Owner / Contributor — `authorAssociation` not read), "edited" marker~~ (Step 2: `CommentCard`). Still missing: the "…" menu (copy link, quote reply, hide with reason, report) and the edit history.
-- **partial** Reactions on the PR body, on comments, on reviews: ~~read~~ (Step 2, drawn as pills); writing them is Step 5.
+- ~~**partial** Reactions on the PR body, on comments, on reviews: ~~read~~ (Step 2, drawn as pills); writing them is Step 5.~~ Step 5: each pill a toggle, GitHub's picker to add one.
 - **partial** Permalinks: ~~`#issuecomment-…`, `#pullrequestreview-…`, `#discussion_r…`~~ each card and comment carries GitHub's own fragment as its id, with a link to it (Step 2); the page does not yet scroll to the hash on load, and `#discussion_r…` on Files changed does not pick the file.
 - **missing** Edit / delete of a *review* summary; reviews have no id (`Src:765-767`).
 - **missing** Hide / minimise a comment (`isMinimized`, `minimizedReason` not read; no mutation).
@@ -182,8 +182,8 @@ line. Raw line comments are checked with `HunkLines.Accepts` and refused `line-n
 
 | Place | Today | Lands on GitHub as | Gap |
 |---|---|---|---|
-| Conversation | yes (`/comments`) | issue comment | reactions, hide, quote, permalink |
-| PR description | edit only | — | reactions |
+| Conversation | yes (`/comments`) | issue comment | ~~reactions, hide~~ (Step 5); quote; ~~permalink~~ (Step 2) |
+| PR description | edit only | — | ~~reactions~~ (Step 5, on the pull request's node) |
 | Whole file | yes (`subject_type=file`) | file-level review comment | — |
 | Raw diff line inside a hunk, either side | yes | line + side | multi-line (shift-click / drag) not on the page (server takes `start_line`); no comment on a **folded** line until "Show full file" |
 | Raw line outside GitHub's hunks (expanded context) | refused | — | GitHub's UI allows it after expanding; **verify at the real-GitHub gate** whether the REST `line` must be in the hunk, then either expand-hunk + allow, or say why not on the line |
@@ -196,13 +196,13 @@ line. Raw line comments are checked with `HunkLines.Accepts` and refused `line-n
 | Rendered Markdown (`.md` in the PR) | no gutter | — | comment per paragraph/line (Markdown has source lines; add `data-file-line` to blocks) or at least Raw |
 | XML / YAML / JSON drawn as source (catalogs, device objects, raw fallbacks) | gutter only if `.cd-num` present (source layout: yes) | file line | once catalogs become tables (Step 9) they need row anchors like member tables |
 | Project card, task / device card, library catalog row | not drawn | — | row anchors on the catalog's YAML lines |
-| Pending (unsubmitted) review drafts | listed by path only (`RB:100-108`) | — | GraphQL `state: PENDING` per comment not read; drafts must draw **in place**, marked Pending, editable and deletable (`updatePullRequestReviewComment` / `deletePullRequestReviewComment` on a pending comment) |
+| Pending (unsubmitted) review drafts | ~~listed by path only~~ drawn in place as Pending (the threads carry `state`, Step 2); listed with their words and lines, each editable and deletable, in the review panel (Step 5) | — | ~~drafts must draw in place, editable and deletable~~ done: the same `PATCH /comments/{id}` and delete routes, on a pending comment |
 | Outdated thread | listed, not placed | — | show with its original hunk (`diffHunk`) and a "view at that commit" link |
 | Split view thread | slot after the row, spanning both columns | — | put it under its side's column (GitHub does) |
 | Commit (commit comment on `/commit/sha`) | no | — | Commits tab / commit page comments (`/commits/{sha}/comments`) |
 | Check annotation | no | — | read `check-runs/{id}/annotations`, draw inline on the Raw and drawn source lines |
-| Suggestion | no | — | B6 |
-| Reply / edit / delete / resolve / unresolve | yes | GraphQL | reactions, minimise, "edited" |
+| Suggestion | yes (Step 5): the toolbar puts the line's text in a ```suggestion block; the comment draws it as a diff | a review comment; applied as one commit on the reviewed head (`/suggestions/apply`, merge tier) | a range starts from no text; GitHub's "applied" mark is not written (no API for it) |
+| Reply / edit / delete / resolve / unresolve | yes | GraphQL | ~~reactions, minimise~~ (Step 5), ~~"edited"~~ (Step 2) |
 
 Correctness guards to keep: a comment is refused (never guessed) when the element is not in this
 revision's drawing (`anchor-not-found`), when the pull request moved (`snapshot-stale`), and when two
@@ -212,16 +212,16 @@ Symbol Set (new file, 780 lines) row comment lands on the row's lines; a `.gvl` 
 built from the `.gvl.xml` layer lands in the `.gvl.st` or `.gvl.xml` file GitHub actually diffs.
 
 ### B7. Review (approve / request changes)
-- **partial** Review dialog is inline (`RB:187-301`), not GitHub's dropdown from a "Review changes ▾"
-  button with a pending-count badge.
-- **partial** Pending review comments listed by path only (`RB:100-108`); GitHub shows each draft
+- ~~**partial** Review dialog is inline (`RB:187-301`), not GitHub's dropdown from a "Review changes ▾"
+  button with a pending-count badge.~~ Step 5: the green button with its count and caret; the dialog opens under it.
+- ~~**partial** Pending review comments listed by path only (`RB:100-108`); GitHub shows each draft
   with its body and lets you edit / delete each (pending comment `line`, `side`, `body` not read —
-  `Src:432`).
-- **missing** Dismiss a review (with reason); re-request review button beside a reviewer.
-- **missing** Review-request of **teams** (`PW:462` regex refuses slugs; `Wr:163` sends `reviewers`
-  only); teams read into the same list as users with no marker (`Src:301-311`).
+  `Src:432`).~~ Step 5: "Show your drafts" lists each with its words and line, Edit and Delete.
+- ~~**missing** Dismiss a review (with reason); re-request review button beside a reviewer.~~ Step 5.
+- ~~**missing** Review-request of **teams** (`PW:462` regex refuses slugs; `Wr:163` sends `reviewers`
+  only); teams read into the same list as users with no marker (`Src:301-311`).~~ Step 5: `addTeams` / `removeTeams` by slug, the slug read from GitHub; "org/team" in the box.
 - **missing** Reviewer suggestions / autocomplete; CODEOWNERS badges.
-- **partial** Reviewer states shown as lowercase words (`RB:330`, `P:457`), not icons.
+- ~~**partial** Reviewer states shown as lowercase words (`RB:330`, `P:457`), not icons.~~ Step 5: GitHub's icons with the words on hover.
 - **missing** The "move pending review to current head" path (deferred; GitHub itself discards).
 
 ### B8. Merge box
@@ -235,7 +235,7 @@ built from the `.gvl.xml` layer lands in the `.gvl.st` or `.gvl.xml` file GitHub
   `deleteBranchOnMerge` repo setting shown), "Update branch ▾" with "Update with rebase"
   (`updatePullRequestBranch(updateMethod: REBASE)` unused), merge-queue enqueue.
 - **missing** For a closed PR: "Reopen" / "Delete branch" in the box (box is empty, `MB:74-76`).
-- **missing** "Close pull request" beside Comment; "Close with comment".
+- ~~**missing** "Close pull request" beside Comment; "Close with comment".~~ Step 5: the comment is posted first, then the state, each its own operation; a refused comment closes nothing; Reopen likewise.
 - **missing** Conflict resolution in the browser (PLAN later, on purpose) — list the conflicting files
   at least.
 - **wrong** Merge-tier gate hides the *state* ("can be merged") when the tier is off; GitHub shows the
@@ -246,8 +246,8 @@ built from the `.gvl.xml` layer lands in the `.gvl.st` or `.gvl.xml` file GitHub
   Files changed (`P:330`).
 - **partial** Reviewers / Labels / Assignees editors exist (`PM`, `RB:307-345`) as inline inputs and
   native `<select>`; GitHub uses gear-button popovers with search and a check list.
-- **missing** Milestone, Projects, Development (linked issues), Notifications (subscribe),
-  Participants, "Lock conversation", "Pin", "Transfer".
+- **partial** ~~Milestone~~, Projects, Development (linked issues), ~~Notifications (subscribe)~~,
+  Participants, ~~"Lock conversation"~~ (the three struck: Step 5), "Pin", "Transfer".
 - **wrong** Label pills are border-only (`app.css:252`); GitHub fills them with the label colour and
   computes contrast text.
 
@@ -263,11 +263,11 @@ built from the `.gvl.xml` layer lands in the `.gvl.st` or `.gvl.xml` file GitHub
   draft" split button (a checkbox today).
 
 ### B11. Writes the server cannot do (one bullet each)
-reactions add/remove · suggestion apply (single and batch commit) · multi-line comment from the
-page · comment on unchanged lines · minimise / unminimise a comment · lock / unlock · milestone ·
-project · team review request · dismiss review · re-request review · edit a submitted review's
-summary · edit / delete one pending draft comment · re-run checks · delete / restore head branch ·
-revert PR · rename branch · merge-queue enqueue / dequeue · update branch by rebase · subscribe ·
+~~reactions add/remove~~ · ~~suggestion apply (single and batch commit)~~ · ~~multi-line comment from the
+page~~ (Step 3) · comment on unchanged lines · ~~minimise / unminimise a comment~~ · ~~lock / unlock~~ · ~~milestone~~ ·
+project · ~~team review request~~ · ~~dismiss review~~ · ~~re-request review~~ · ~~edit a submitted review's
+summary~~ · ~~edit / delete one pending draft comment~~ (every strike here: Step 5, 2026-10-23) · re-run checks · delete / restore head branch ·
+revert PR · rename branch · merge-queue enqueue / dequeue · update branch by rebase · ~~subscribe~~ ·
 open a PR from a fork · reviewers / labels / assignees at creation · create a label.
 
 ### B12. Data the server does not read although GitHub has it
@@ -600,11 +600,23 @@ elements' operands) so ladders can be "complete"; de-duplicate "as it was / as i
 or edited same line. Then the banner is rare, and when it appears it means something. Tests on the
 real-PR dump (FB_Alarm, Symbol Set, MoveHome) plus mutations.
 
-**Step 5 — Review writes to parity.** Review dropdown with pending badge; pending drafts editable
+~~**Step 5 — Review writes to parity.** Review dropdown with pending badge; pending drafts editable
 (read line/side/body; `updatePullRequestReviewComment` / delete on a pending comment); dismiss
 review; re-request; team reviewers; reactions (write); suggestions (toolbar insert, render,
 apply / batch commit under the merge tier); minimise; lock; milestone; edit review summary;
-subscribe; "Close with comment". Each a `MapWrite` route with ledger + audit + test + mutation.
+subscribe; "Close with comment". Each a `MapWrite` route with ledger + audit + test + mutation.~~
+**Done 2026-10-23.** `/reactions`, `/comments/{id}/minimize`, `/lock`, `/milestone`,
+`/subscription` (`PullConversationWriteEndpoints.cs`); `/reviews/{id}/dismiss`, `PATCH
+/reviews/{id}`, teams on `/reviewers` (`PullWriteEndpoints.cs`); `/suggestions/apply`
+(`PullSuggestionEndpoints.cs`, merge tier: one `createCommitOnBranch` with `expectedHeadOid` = the
+reviewed head, the operation tag in the message, a fork refused). The page: reaction pills as
+toggles with the picker, a hidden comment folded behind its reason, Dismiss / Edit on a review
+card, Close / Close with comment beside Comment, the suggestion widget with Apply and the batch
+bar, "Suggest a change" in the comment toolbar, the review dropdown with its count and editable
+drafts, reviewer icons with re-request and teams by slug, Milestone / Notifications / Lock in the
+sidebar. Left: reviewer autocomplete and CODEOWNERS badges; "move pending review to the current
+head" stays deferred (GitHub itself discards); a suggestion on a range starts from no text (only
+the last line's is known).
 
 **Step 6 — Merge box to parity.** Required reviews and checks listed with their state; conflicts
 with file list; blocked reason from `mergeStateStatus` + rulesets; split merge button; update with
