@@ -107,7 +107,7 @@ public static class SafeXml
     /// comment to the element's lines; a closing tag is never what changed.
     /// </para>
     /// <para>
-    /// Text counts since 2026-10-23: a CODESYS declaration is one text node holding thirty lines
+    /// Text counts since 2026-10-23: a vendor's declaration is one text node holding thirty lines
     /// of Structured Text, and a span that ended on its first line left the other twenty-nine
     /// outside the element for review coverage, which then took them for framing between rows.
     /// </para>

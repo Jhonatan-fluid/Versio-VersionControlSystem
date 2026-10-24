@@ -118,7 +118,7 @@ public sealed record RepoModel(
 /// for half an hour after GitHub answered again (found reviewing a review, 2026-10-11).
 /// </para>
 /// <para>
-/// Catalogs (<see cref="ReadCatalogsAsync"/>) and File-Based Storage projects
+/// Catalogs (<see cref="ReadCatalogsAsync"/>) and directory-form projects
 /// (<see cref="SourceProjects"/>) are read. This remark said they were not until 2026-10-11, long
 /// after both were built, and it is the paragraph a later edit would have trusted (found in review).
 /// </para>

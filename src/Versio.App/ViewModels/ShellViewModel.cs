@@ -7646,7 +7646,8 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
             }
         }
 
-        facts.Add(new FactRow("Vendor", (manifest?.Vendor ?? PlcVendor.Codesys).ToString()));
+        // As Cards.Project says it: a project with no manifest is not exported, and its vendor is not guessed.
+        facts.Add(new FactRow("Vendor", manifest is { } m ? m.Vendor.ToString() : "not exported yet"));
         facts.Add(new FactRow("Toolchain",
             Sync.ToolchainAvailable
                 ? "installed — version under Settings → System information"

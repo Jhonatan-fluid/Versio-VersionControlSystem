@@ -744,7 +744,7 @@ export const api = {
   tree: (owner: string, repo: string, ref: string, signal?: AbortSignal, base?: string, changed?: boolean) =>
     get<Tree>(`${repoBase(owner, repo)}/tree${query({ ref, base, changed: changed ? '1' : undefined })}`, signal),
   commit: (owner: string, repo: string, sha: string, signal?: AbortSignal) => get<CommitDetail>(`${repoBase(owner, repo)}/commit${query({ sha })}`, signal),
-  tags: (owner: string, repo: string, signal?: AbortSignal) => get<{ tags: Tag[] }>(`${repoBase(owner, repo)}/tags`, signal),
+  tags: (owner: string, repo: string, signal?: AbortSignal) => get<{ tags: Tag[]; truncated: boolean }>(`${repoBase(owner, repo)}/tags`, signal),
   view: (owner: string, repo: string, ref: string, path: string, view: PaneView, layout: Layout, signal?: AbortSignal) =>
     get<View>(`${repoBase(owner, repo)}/view${query({ ref, path, view, layout })}`, signal),
   usages: (owner: string, repo: string, ref: string, path: string, signal?: AbortSignal) =>
@@ -807,7 +807,7 @@ export const api = {
   },
   /** A commit's comments, and whether the viewer may add one. */
   commitComments: (owner: string, repo: string, sha: string, signal?: AbortSignal) =>
-    get<{ writable: boolean; comments: CommitComment[] }>(`${repoBase(owner, repo)}/commit/comments${query({ sha })}`, signal),
+    get<{ writable: boolean; comments: CommitComment[]; truncated: boolean }>(`${repoBase(owner, repo)}/commit/comments${query({ sha })}`, signal),
   /** A comment on a commit as a whole: a write like any other, with no snapshot because a commit is its own revision. */
   addCommitComment: (owner: string, repo: string, sha: string, body: { opKey: string; body: string }) =>
     send(`${repoBase(owner, repo)}/commits/${e(sha)}/comments`, 'POST', {}, body),

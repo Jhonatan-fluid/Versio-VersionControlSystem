@@ -551,7 +551,8 @@ public sealed class GitHubRepoSourceTests : IAsyncLifetime
             new CommitComment("CC_1", "sam", "https://avatars.githubusercontent.com/u/1", "On the commit", new DateTimeOffset(2026, 10, 24, 9, 0, 0, TimeSpan.Zero), null, null, "https://github.com/acme/plant/commit/u#commitcomment-1"),
             // A line comment names its file and line; a link that is not https is dropped, as every link is.
             new CommitComment("CC_2", "lee", null, "On a line", new DateTimeOffset(2026, 10, 24, 9, 1, 0, TimeSpan.Zero), "src/Pump.st", 2, null),
-        ], comments);
+        ], comments.Comments);
+        Assert.False(comments.Truncated);
         Assert.Equal(
         [
             new CheckAnnotation("src/Pump.st", 2, 2, "failure", "unknown identifier", "C0046"),

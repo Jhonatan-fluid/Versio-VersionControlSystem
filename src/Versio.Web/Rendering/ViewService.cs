@@ -66,7 +66,7 @@ public sealed record ViewResult(
 /// <b>The decision of what is drawn is Core's</b> (<see cref="RenderChoice.Decide"/>), shared with
 /// the desktop pane since 2026-10-23. Until then this class mirrored the desktop's switch by hand,
 /// and the two drifted: no project card, no catalogs, no husk rule, no web page here, and in a
-/// pull request the File-Based Storage objects that hold nothing drew as raw metadata and XML
+/// pull request a directory-form project's container objects, which hold nothing, drew as raw metadata and XML
 /// (FINDINGS 2026-10-23). This class reads the layers, hands Core the reader, and draws what it
 /// chose with the renderers the desktop pane draws with; <c>RenderChoiceParityTests</c> runs both
 /// hosts over every fixture object and asserts the same choice.

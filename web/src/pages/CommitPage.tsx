@@ -113,10 +113,11 @@ function CommitComments({ owner, repo, sha, onOpenPath }: { owner: string; repo:
   if (comments.state === 'error') {
     return <section className="commit-comments" aria-label="Comments"><p className="text-danger">{comments.error.message}</p></section>;
   }
-  const { writable, comments: list } = comments.value;
+  const { writable, comments: list, truncated } = comments.value;
   return (
     <section className="commit-comments" aria-label="Comments">
       <h2 className="panel-title">{list.length} comment{list.length === 1 ? '' : 's'} on this commit</h2>
+      {truncated && <p className="notice" role="note">The first {list.length} are shown; the rest are on GitHub.</p>}
       {list.map((c) => (
         <CommentCard key={c.id} author={c.author} avatar={c.avatar} when={c.when} url={c.url} anchor={anchorOf(c.url)}
           verb={c.path ? <>commented on <Link to={blobUrl(owner, repo, sha, c.path)}>{c.pathLabel}{c.line !== null ? `:L${c.line}` : ''}</Link></> : 'commented'}>

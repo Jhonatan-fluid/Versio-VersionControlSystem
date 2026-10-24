@@ -42,7 +42,7 @@ public sealed record ReviewCoverage(int Changed, IReadOnlyList<CoverageGap> Gaps
 /// <para>
 /// <b>Why the rules loosened (2026-10-23).</b> The first version vouched for a declaration line
 /// only when every token on it was a field the table displays, and for no XML line at all. On the
-/// owner's real pull request (<c>CodesysStandardLibrary#3</c>, 85 files) that made the banner
+/// owner's real pull request (85 files, 2026-10-23) that made the banner
 /// noise: a re-indented interface listed twelve "changed, but not shown" lines, a new 780-line
 /// symbol set drawn as a table with every row marked A said "lines 1–780 not shown", and a method
 /// whose header gained <c>PUBLIC</c> reported the same edit twice, as it was and as it is. Every

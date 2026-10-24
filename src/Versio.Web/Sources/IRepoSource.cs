@@ -107,8 +107,14 @@ public sealed record CommitDetail(string Sha, string Message, string AuthorName,
 /// <summary>A tag, as the tags page lists it.</summary>
 public sealed record TagInfo(string Name, string CommitSha);
 
+/// <summary>The tags read, and whether the list is cut: one page is read, and a cut list never passes for the whole.</summary>
+public sealed record TagList(IReadOnlyList<TagInfo> Tags, bool Truncated);
+
 /// <summary>A comment on a commit (GitHub's commit comments, Step 3b): on the commit as a whole, or on a line of one of its files.</summary>
 public sealed record CommitComment(string Id, string Author, string? AuthorAvatar, string Body, DateTimeOffset When, string? Path, int? Line, string? Url);
+
+/// <summary>A commit's comments, and whether the list is cut (one page of a hundred is read).</summary>
+public sealed record CommitCommentList(IReadOnlyList<CommitComment> Comments, bool Truncated);
 
 /// <summary>One annotation a check run left on the code: a path and lines, a level (notice, warning, failure), its words.</summary>
 public sealed record CheckAnnotation(string Path, int StartLine, int EndLine, string Level, string Message, string? Title);
@@ -553,10 +559,10 @@ public interface IRepoSource
     Task<RepoResult<CommitDetail>> GetCommitAsync(RepoAccess access, string owner, string repo, string sha, CancellationToken ct);
 
     /// <summary>The repository's tags, up to 100, as GitHub lists them (newest first by its own order).</summary>
-    Task<RepoResult<IReadOnlyList<TagInfo>>> GetTagsAsync(RepoAccess access, string owner, string repo, CancellationToken ct);
+    Task<RepoResult<TagList>> GetTagsAsync(RepoAccess access, string owner, string repo, CancellationToken ct);
 
     /// <summary>The comments on a commit, oldest first, up to 100.</summary>
-    Task<RepoResult<IReadOnlyList<CommitComment>>> GetCommitCommentsAsync(RepoAccess access, string owner, string repo, string sha, CancellationToken ct);
+    Task<RepoResult<CommitCommentList>> GetCommitCommentsAsync(RepoAccess access, string owner, string repo, string sha, CancellationToken ct);
 
     /// <summary>The annotations one check run left, up to 100: what GitHub draws inline on the diff.</summary>
     Task<RepoResult<IReadOnlyList<CheckAnnotation>>> GetCheckAnnotationsAsync(RepoAccess access, string owner, string repo, long runId, CancellationToken ct);

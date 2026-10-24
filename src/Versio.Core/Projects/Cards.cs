@@ -141,7 +141,9 @@ public static class Cards
             return sourceFacts;
         }
 
-        var facts = new List<CardFact> { new("Vendor", (manifest?.Vendor ?? PlcVendor.Codesys).ToString()) };
+        // A project with no manifest has not been exported: its vendor is not guessed (the first
+        // version defaulted to one vendor's name here, in Core — review, 2026-10-24).
+        var facts = new List<CardFact> { new("Vendor", manifest is { } m ? m.Vendor.ToString() : "not exported yet") };
         if (manifest?.ToolchainVersion is { Length: > 0 } producedBy)
         {
             facts.Add(new("Exported by", producedBy));

@@ -69,8 +69,8 @@ public enum CodeUnder
 /// <para>
 /// <b>Why this is Core's.</b> The desktop pane and the web viewer each had a copy of this
 /// decision, and the copies drifted: the web had no project card, no catalogs, no husk rule and no
-/// web-page tab, and in a pull request it drew the File-Based Storage objects that hold nothing
-/// (an Application, a Communication Manager, an OPC UA Server) and its <c>Libraries.json</c> as
+/// web-page tab, and in a pull request it drew a directory-form project's container objects, which
+/// hold nothing (an application, a communication manager, a server), and its library list as
 /// raw metadata and XML, where the app drew a note and a table (FINDINGS 2026-10-23, the owner's
 /// library pull request). When two hosts draw one thing, the decision of what is drawn belongs
 /// here and the host only draws. <c>RenderChoiceParityTests</c> runs both hosts over every object
@@ -270,7 +270,7 @@ public sealed record RenderChoice
                     // Members carries them as rows, and a heading over nothing is the same husk.
                     //
                     // EXCEPT a code block's interface, since 2026-10-23: the owner wants a POU
-                    // with no variables (FsLibrary's Main, VAR END_VAR) drawn as every other POU
+                    // with no variables (a library's Main, VAR END_VAR) drawn as every other POU
                     // is, an empty table over its code. The husk's harm was the table standing
                     // where the code should be, and an interface now always carries its code
                     // underneath, so that harm cannot recur. Types and variable lists keep the

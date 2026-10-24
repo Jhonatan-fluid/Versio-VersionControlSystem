@@ -66,6 +66,7 @@ export function TagsPage({ me }: { me: Me | null }) {
       {tags.state === 'ok' && (
         <div className="list-box">
           {tags.value.tags.length === 0 && <Blankslate icon="tag" heading="No tags">Nothing is tagged in this repository.</Blankslate>}
+          {tags.value.truncated && <p className="notice" role="note">The first {tags.value.tags.length} tags are listed; the rest are on GitHub.</p>}
           {tags.value.tags.map((t) => (
             <div key={t.name} className="list-row refs-row">
               <Icon name="tag" className="list-row-icon text-muted" />

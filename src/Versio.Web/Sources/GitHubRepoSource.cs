@@ -190,17 +190,23 @@ public sealed class GitHubRepoSource(
                 Additions = stats.ValueKind == JsonValueKind.Object ? Int(stats, "additions") ?? 0 : 0,
                 Deletions = stats.ValueKind == JsonValueKind.Object ? Int(stats, "deletions") ?? 0 : 0,
                 Files = files,
-                // GitHub returns at most 300 files on a commit; a stats total past the files' own sum says the list is cut.
+                // GitHub returns at most 300 files on a commit, so a list at the cap may be cut (a
+                // commit of exactly 300 is told "cut" too — the honest side of the doubt).
                 FilesTruncated = files.Count >= 300,
                 Verified = commit.TryGetProperty("verification", out var v) && v.ValueKind == JsonValueKind.Object && v.TryGetProperty("verified", out var ver) ? ver.ValueKind == JsonValueKind.True : null,
                 Url = Https(Text(root, "html_url")),
             };
         }, ct);
 
-    public Task<RepoResult<IReadOnlyList<CommitComment>>> GetCommitCommentsAsync(RepoAccess access, string owner, string repo, string sha, CancellationToken ct) =>
-        GetJsonAsync<IReadOnlyList<CommitComment>>(access, $"repos/{E(owner)}/{E(repo)}/commits/{E(sha)}/comments?per_page=100",
-            root => root.EnumerateArray().Select(c => new CommitComment(Text(c, "node_id"), Login(c, "user"), Avatar(c, "user"), Text(c, "body"),
-                Date(c, "created_at") ?? default, Text(c, "path") is { Length: > 0 } p ? p : null, Int(c, "line"), Https(Text(c, "html_url")))).ToList(), ct);
+    /// <remarks>One page of a hundred, and a full page is said to be cut: a 101st comment must not vanish with nothing said (review, 2026-10-24).</remarks>
+    public Task<RepoResult<CommitCommentList>> GetCommitCommentsAsync(RepoAccess access, string owner, string repo, string sha, CancellationToken ct) =>
+        GetJsonAsync<CommitCommentList>(access, $"repos/{E(owner)}/{E(repo)}/commits/{E(sha)}/comments?per_page=100",
+            root =>
+            {
+                var comments = root.EnumerateArray().Select(c => new CommitComment(Text(c, "node_id"), Login(c, "user"), Avatar(c, "user"), Text(c, "body"),
+                    Date(c, "created_at") ?? default, Text(c, "path") is { Length: > 0 } p ? p : null, Int(c, "line"), Https(Text(c, "html_url")))).ToList();
+                return new CommitCommentList(comments, comments.Count >= 100);
+            }, ct);
 
     /// <remarks>One page of a hundred: a run that leaves more annotations than that is a run whose page on GitHub is the place to read them.</remarks>
     public Task<RepoResult<IReadOnlyList<CheckAnnotation>>> GetCheckAnnotationsAsync(RepoAccess access, string owner, string repo, long runId, CancellationToken ct) =>
@@ -208,9 +214,14 @@ public sealed class GitHubRepoSource(
             root => root.EnumerateArray().Select(a => new CheckAnnotation(Text(a, "path"), Int(a, "start_line") ?? 0, Int(a, "end_line") ?? Int(a, "start_line") ?? 0,
                 Text(a, "annotation_level") is { Length: > 0 } level ? level : "notice", Text(a, "message"), Text(a, "title") is { Length: > 0 } t ? t : null)).ToList(), ct);
 
-    public Task<RepoResult<IReadOnlyList<TagInfo>>> GetTagsAsync(RepoAccess access, string owner, string repo, CancellationToken ct) =>
-        GetJsonAsync<IReadOnlyList<TagInfo>>(access, $"repos/{E(owner)}/{E(repo)}/tags?per_page=100",
-            root => root.EnumerateArray().Select(t => new TagInfo(Text(t, "name"), t.TryGetProperty("commit", out var c) ? Text(c, "sha") : "")).ToList(), ct);
+    /// <remarks>One page of a hundred, said to be cut when full, as the commit comments are.</remarks>
+    public Task<RepoResult<TagList>> GetTagsAsync(RepoAccess access, string owner, string repo, CancellationToken ct) =>
+        GetJsonAsync<TagList>(access, $"repos/{E(owner)}/{E(repo)}/tags?per_page=100",
+            root =>
+            {
+                var tags = root.EnumerateArray().Select(t => new TagInfo(Text(t, "name"), t.TryGetProperty("commit", out var c) ? Text(c, "sha") : "")).ToList();
+                return new TagList(tags, tags.Count >= 100);
+            }, ct);
 
     /// <remarks>
     /// Sorted by update, newest first: the list is for "what is waiting for review now". One page

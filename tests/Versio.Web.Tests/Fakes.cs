@@ -386,12 +386,12 @@ internal sealed class FakeGitHub : IRepoSource
         }));
     }
 
-    public Task<RepoResult<IReadOnlyList<CommitComment>>> GetCommitCommentsAsync(RepoAccess access, string owner, string repo, string sha, CancellationToken ct)
+    public Task<RepoResult<CommitCommentList>> GetCommitCommentsAsync(RepoAccess access, string owner, string repo, string sha, CancellationToken ct)
     {
         var r = See(access, owner, repo, "commit-comments " + sha);
         return Task.FromResult(r.Ok
-            ? RepoResult<IReadOnlyList<CommitComment>>.Of(r.Value!.CommitComments.TryGetValue(sha, out var list) ? list.ToList() : [])
-            : r.As<IReadOnlyList<CommitComment>>());
+            ? RepoResult<CommitCommentList>.Of(new CommitCommentList(r.Value!.CommitComments.TryGetValue(sha, out var list) ? list.ToList() : [], false))
+            : r.As<CommitCommentList>());
     }
 
     public Task<RepoResult<IReadOnlyList<CheckAnnotation>>> GetCheckAnnotationsAsync(RepoAccess access, string owner, string repo, long runId, CancellationToken ct)
@@ -402,12 +402,12 @@ internal sealed class FakeGitHub : IRepoSource
             : r.As<IReadOnlyList<CheckAnnotation>>());
     }
 
-    public Task<RepoResult<IReadOnlyList<TagInfo>>> GetTagsAsync(RepoAccess access, string owner, string repo, CancellationToken ct)
+    public Task<RepoResult<TagList>> GetTagsAsync(RepoAccess access, string owner, string repo, CancellationToken ct)
     {
         var r = See(access, owner, repo, "tags");
         return Task.FromResult(r.Ok
-            ? RepoResult<IReadOnlyList<TagInfo>>.Of(r.Value!.Tags.Select(kv => new TagInfo(kv.Key, kv.Value)).ToList())
-            : r.As<IReadOnlyList<TagInfo>>());
+            ? RepoResult<TagList>.Of(new TagList(r.Value!.Tags.Select(kv => new TagInfo(kv.Key, kv.Value)).ToList(), false))
+            : r.As<TagList>());
     }
 
     public Task<RepoResult<IReadOnlyList<PullInfo>>> GetPullsAsync(RepoAccess access, string owner, string repo, int limit, CancellationToken ct)
