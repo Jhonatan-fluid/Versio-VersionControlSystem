@@ -47,7 +47,10 @@ function UsedBy({ usages, onOpenPath }: { usages: Async<Usages>; onOpenPath: (pa
   }
   return (
     <div className="usages">
-      <button type="button" className="link-button text-small" aria-expanded={open} onClick={() => setOpen(!open)}>
+      {/* By name: an object whose source says x.Start() names a method called Start, whichever
+          block's it is, and is listed under every Start (ViewService.Usages says why). */}
+      <button type="button" className="link-button text-small" aria-expanded={open} onClick={() => setOpen(!open)}
+        title="The objects of this project whose source names it, outside comments and strings — by name, so a member's list includes every block's member of that name">
         Used by {u.usedBy.length} object{u.usedBy.length === 1 ? '' : 's'}{u.truncated ? ' at least' : ''}
       </button>
       {open && (
