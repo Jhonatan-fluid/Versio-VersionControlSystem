@@ -90,6 +90,10 @@ public static class SourceHtml
     {
         var hidden = 0;
         var block = new CodeHtml.Blocks(html);
+        // The rows are the file in order, so a block comment's state carries from line to line
+        // (the second line of a (* … *) is a comment, never a link); a fold hides lines, and
+        // after one the state is what the stateless tokenizer assumes: code.
+        var state = new SyntaxTokenizer.TokenState();
         foreach (var row in rows)
         {
             block.Next();
@@ -100,6 +104,7 @@ public static class SourceHtml
                     break;
                 case SourceFold fold:
                     Fold(html, fold);
+                    state.Reset();
                     break;
                 case SourceCodeLine line:
                     html.Append("<div class=\"cd-row").Append(line.Change == SourceChange.Added ? " cd-added" : "")
@@ -121,7 +126,7 @@ public static class SourceHtml
 
                     html.Append("><span class=\"cd-num\">").Append(N(line.Number))
                         .Append("</span><code class=\"cd-code\">");
-                    hidden += CodeHtml.AppendLine(html, line.Text, language, links: links);
+                    hidden += CodeHtml.AppendLine(html, line.Text, language, links: links, state: state);
                     html.Append("</code></div>\n");
                     break;
             }
@@ -135,6 +140,9 @@ public static class SourceHtml
     {
         var hidden = 0;
         var block = new CodeHtml.Blocks(html);
+        // One comment state per side: each column is its own file in order (see UnifiedRows).
+        var left = new SyntaxTokenizer.TokenState();
+        var right = new SyntaxTokenizer.TokenState();
         foreach (var row in rows)
         {
             block.Next();
@@ -147,13 +155,15 @@ public static class SourceHtml
             if (row.Fold is { } fold)
             {
                 Fold(html, fold);
+                left.Reset();
+                right.Reset();
                 continue;
             }
 
             html.Append("<div class=\"cd-split\">");
-            hidden += Cell(html, row.Left, old: true, language, links);
+            hidden += Cell(html, row.Left, old: true, language, links, left);
             html.Append("<span class=\"cd-rule\"></span>");
-            hidden += Cell(html, row.Right, old: false, language, links);
+            hidden += Cell(html, row.Right, old: false, language, links, right);
             html.Append("</div>\n");
         }
 
@@ -161,7 +171,7 @@ public static class SourceHtml
         return hidden;
     }
 
-    private static int Cell(StringBuilder html, SourceSplitCell? cell, bool old, SyntaxLanguage language, Func<string, string?>? links)
+    private static int Cell(StringBuilder html, SourceSplitCell? cell, bool old, SyntaxLanguage language, Func<string, string?>? links, SyntaxTokenizer.TokenState state)
     {
         if (cell is null)
         {
@@ -187,7 +197,7 @@ public static class SourceHtml
         }
 
         html.Append("><span class=\"cd-num\">").Append(N(cell.Number)).Append("</span><code class=\"cd-code\">");
-        var hidden = CodeHtml.AppendLine(html, cell.Text, language, links: links);
+        var hidden = CodeHtml.AppendLine(html, cell.Text, language, links: links, state: state);
         html.Append("</code></div>");
         return hidden;
     }

@@ -86,9 +86,32 @@ public sealed class ObjectLinksTests
         Assert.Equal(1, html.Split("data-link=\"plc/Machine/App/FB_Pump/Start.st\"").Length - 1);
         Assert.Contains("<span class=\"cd-t-link\" data-link=\"plc/Machine/App/GVL.gvl.st\" title=\"Open plc/Machine/App/GVL.gvl.st\">GVL</span>", html, StringComparison.Ordinal);
 
+        // The "used by" search counts the dotted word all the same: pump.Start() is how a method
+        // is used from outside its block, and without it every method's list was empty.
         var candidates = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "Start" };
-        Assert.Empty(ObjectLinks.NamesReferenced("pump.Start();\nGVL.Start := 1;", LanguageCatalog.StructuredText, candidates));
+        Assert.Equal(["Start"], ObjectLinks.NamesReferenced("pump.Start();", LanguageCatalog.StructuredText, candidates));
         Assert.Equal(["Start"], ObjectLinks.NamesReferenced("Start();", LanguageCatalog.StructuredText, candidates));
+    }
+
+    [Fact]
+    public void A_block_comment_stays_a_comment_on_its_second_line_for_the_link_and_for_the_search()
+    {
+        var links = ObjectLinks.Resolver(Index, "plc/Machine/App/FB_Motor.st", files => files.Paths[0]);
+        // A real fixture's shape: commented-out code in a (* … *) that spans lines, naming a method.
+        const string Text = "(*IF cmd THEN\n\tpump.Start();\n\tFB_Pump();\nEND_IF*)\nFB_Pump();\n(* one line *) GVL.x := 1;";
+
+        var html = SourceHtml.Fragment(StSourceLayout.Lay(Text), LanguageCatalog.StructuredText, links: links);
+
+        // One link: the FB_Pump() after the comment closes; none inside it, and the GVL after a
+        // comment that closes on its own line is linked.
+        Assert.Equal(1, html.Split("data-link=\"plc/Machine/App/FB_Pump.st\"").Length - 1);
+        Assert.Equal(1, html.Split("data-link=\"plc/Machine/App/GVL.gvl.st\"").Length - 1);
+
+        var candidates = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "Start", "FB_Pump", "GVL" };
+        var names = ObjectLinks.NamesReferenced(Text, LanguageCatalog.StructuredText, candidates);
+        Assert.Equal(["FB_Pump", "GVL"], names.OrderBy(n => n, StringComparer.OrdinalIgnoreCase));
+        // A comment left open runs to the end of the text: nothing after it is code.
+        Assert.Empty(ObjectLinks.NamesReferenced("(* never closed\nFB_Pump();", LanguageCatalog.StructuredText, candidates));
     }
 
     [Fact]

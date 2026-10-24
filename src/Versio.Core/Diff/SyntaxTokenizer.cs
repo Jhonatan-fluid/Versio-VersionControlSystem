@@ -5,11 +5,18 @@ namespace Versio.Core.Diff;
 /// </summary>
 /// <remarks>
 /// <para>
-/// Line-at-a-time and stateless by design. A diff shows fragments of a file, so there is no
+/// Line-at-a-time and stateless by default. A diff shows fragments of a file, so there is no
 /// reliable way to know whether line 213 sits inside a block comment that opened in a hunk
 /// git never printed. Attempting to carry state across hunks produces confident, wrong
 /// colouring; treating each line independently is occasionally incomplete but never
 /// misleading.
+/// </para>
+/// <para>
+/// <b>A caller that sees the whole file carries the state itself</b> (<see cref="TokenState"/>):
+/// the second line of a <c>(* … *)</c> block is a comment, not code, and once an identifier in
+/// code became a link (docs/web/FINISH.md, Step 3c) the difference mattered — a method named in
+/// commented-out code was linked, and counted as a use, on a real fixture (review, 2026-10-24).
+/// The state is reset wherever lines are hidden (a fold), which is the stateless answer again.
 /// </para>
 /// <para>
 /// <b>Highlighting is decoration; the diff is the information.</b> The spans always cover
@@ -19,7 +26,29 @@ namespace Versio.Core.Diff;
 /// </remarks>
 public static class SyntaxTokenizer
 {
-    public static IReadOnlyList<TokenSpan> Tokenize(string? line, SyntaxLanguage language)
+    /// <summary>
+    /// What one line leaves for the next: the block comment it ended inside, if any. One per
+    /// file side; <see cref="Reset"/> where lines are hidden.
+    /// </summary>
+    public sealed class TokenState
+    {
+        /// <summary>The open comment's delimiters while inside one; null in code.</summary>
+        public (string Open, string Close)? OpenComment { get; internal set; }
+
+        /// <summary>Whether the next line starts inside a block comment.</summary>
+        public bool InComment => OpenComment is not null;
+
+        /// <summary>Back to "in code": what a line after a fold is taken to be.</summary>
+        public void Reset() => OpenComment = null;
+    }
+
+    public static IReadOnlyList<TokenSpan> Tokenize(string? line, SyntaxLanguage language) => Tokenize(line, language, null);
+
+    /// <summary>
+    /// The spans of <paramref name="line"/>, continuing a block comment <paramref name="state"/>
+    /// says the previous line left open, and recording one this line leaves open.
+    /// </summary>
+    public static IReadOnlyList<TokenSpan> Tokenize(string? line, SyntaxLanguage language, TokenState? state)
     {
         if (string.IsNullOrEmpty(line))
         {
@@ -34,9 +63,29 @@ public static class SyntaxTokenizer
         var spans = new List<TokenSpan>();
         var i = 0;
 
+        // Inside a block comment the previous line left open: a comment up to its close, or the
+        // whole line when it does not close here (and the next line starts inside it too). A line
+        // inside a comment is never a directive.
+        if (state?.OpenComment is { } open)
+        {
+            var end = line.IndexOf(open.Close, StringComparison.Ordinal);
+            if (end < 0)
+            {
+                return [new TokenSpan(0, line.Length, TokenKind.Comment)];
+            }
+
+            i = end + open.Close.Length;
+            spans.Add(new TokenSpan(0, i, TokenKind.Comment));
+            state.OpenComment = null;
+            if (i >= line.Length)
+            {
+                return spans;
+            }
+        }
+
         // A directive prefix claims the whole line: a pragma, a preprocessor line or a
         // markdown heading is one unit, not a sequence of keywords.
-        var trimmedStart = 0;
+        var trimmedStart = i;
         while (trimmedStart < line.Length && char.IsWhiteSpace(line[trimmedStart]))
         {
             trimmedStart++;
@@ -47,7 +96,8 @@ public static class SyntaxTokenizer
             if (trimmedStart < line.Length &&
                 line.AsSpan(trimmedStart).StartsWith(prefix, StringComparison.Ordinal))
             {
-                return [new TokenSpan(0, line.Length, TokenKind.Directive)];
+                spans.Add(new TokenSpan(i, line.Length - i, TokenKind.Directive));
+                return spans;
             }
         }
 
@@ -66,6 +116,11 @@ public static class SyntaxTokenizer
             {
                 spans.Add(new TokenSpan(i, block.Length, TokenKind.Comment));
                 i += block.Length;
+                if (state is not null && block.Unclosed is { } unclosed)
+                {
+                    state.OpenComment = unclosed;
+                }
+
                 continue;
             }
 
@@ -148,7 +203,7 @@ public static class SyntaxTokenizer
         return false;
     }
 
-    private static (bool Matched, int Length) MatchBlockComment(
+    private static (bool Matched, int Length, (string Open, string Close)? Unclosed) MatchBlockComment(
         string line, int i, SyntaxLanguage language)
     {
         foreach (var (open, close) in language.BlockComments)
@@ -161,11 +216,12 @@ public static class SyntaxTokenizer
             var end = line.IndexOf(close, i + open.Length, StringComparison.Ordinal);
 
             // An unterminated block runs to end of line. Correct for the fragment we were
-            // given, and it cannot swallow anything that is not on this line.
-            return (true, end < 0 ? line.Length - i : end + close.Length - i);
+            // given, and it cannot swallow anything that is not on this line; a caller carrying
+            // state is told which comment stays open.
+            return end < 0 ? (true, line.Length - i, (open, close)) : (true, end + close.Length - i, null);
         }
 
-        return (false, 0);
+        return (false, 0, null);
     }
 
     private static int ReadString(string line, int start, char delimiter)

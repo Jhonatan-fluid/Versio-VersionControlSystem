@@ -33,7 +33,9 @@ public sealed partial class ViewService
     /// Per commit the answer is fixed, so it is cached by commit and object. The search stops at
     /// <see cref="MaxUsageReads"/> files or the render budget, and the answer says it was cut
     /// rather than reading as "used nowhere else". A file no exported object owns is "not found":
-    /// nothing has a name to look for.
+    /// nothing has a name to look for. The search is by name: an object whose source says
+    /// <c>x.Start()</c> names a method called Start, whichever block's it is, and is listed under
+    /// every Start — the page says "names", and the declaration-aware version is FINISH.md's.
     /// </remarks>
     public async Task<RepoResult<Usages>> UsagesAsync(RepoAccess access, RepoModel model, string path, CancellationToken ct)
     {
@@ -62,8 +64,11 @@ public sealed partial class ViewService
 
             // The object's text layers: source in a language the tokenizer knows words of. A
             // native XML layer beside an .st names the same things and more (GUIDs, attributes),
-            // so the typed source is read where there is one, the XML only where there is none.
-            var typed = files.Paths.Where(p => !ReferenceEquals(LanguageFor(p), SyntaxLanguage.PlainText)).ToList();
+            // and holds the declaration as element text where an ST comment is not a comment to
+            // the XML tokenizer — so the XML is read only where there is nothing else (review,
+            // 2026-10-24: the first version counted .xml as typed and read both layers of every
+            // two-layer object, strings and comments included).
+            var typed = files.Paths.Where(p => LanguageFor(p) is var language && !ReferenceEquals(language, SyntaxLanguage.PlainText) && !ReferenceEquals(language, LanguageCatalog.Xml)).ToList();
             var layers = typed.Count > 0 ? typed : files.Paths.ToList();
             var hit = false;
             foreach (var file in layers.Where(model.Files.ContainsKey))
@@ -102,11 +107,10 @@ public sealed partial class ViewService
 
         var result = new Usages(CodeHtml.Spelled(owner.Name), usedBy, truncated, searched);
         log.Info(LogCategory.Web, $"usages of {owner.Name} at {model.CommitSha[..Math.Min(8, model.CommitSha.Length)]}: {usedBy.Count} object(s) of {searched} file(s) read in {watch.ElapsedMilliseconds} ms{(truncated ? ", cut short" : "")}");
-        if (!truncated)
-        {
-            cache.Set(key, result, new MemoryCacheEntryOptions { Size = 1 + usedBy.Count / 16, SlidingExpiration = TimeSpan.FromMinutes(30) });
-        }
-
+        // A cut answer is cached too, briefly: it is as true in five minutes as now, and a project
+        // over the bound otherwise re-read up to 1,500 blobs on every view of every object
+        // (review, 2026-10-24).
+        cache.Set(key, result, new MemoryCacheEntryOptions { Size = 1 + usedBy.Count / 16, SlidingExpiration = truncated ? TimeSpan.FromMinutes(5) : TimeSpan.FromMinutes(30) });
         return RepoResult<Usages>.Of(result);
     }
 }

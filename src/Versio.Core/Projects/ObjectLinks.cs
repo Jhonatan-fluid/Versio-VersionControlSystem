@@ -21,13 +21,14 @@ namespace Versio.Core.Projects;
 /// stays a remark, and <c>BOOL</c> stays a type.
 /// </para>
 /// <para>
-/// <b>A word after a dot is a member, not an object.</b> <c>pump.Start()</c> calls pump's method
-/// and <c>GVL.Running</c> reads the list's variable; neither names the object called
+/// <b>A word after a dot is a member, not an object — for a link.</b> <c>pump.Start()</c> calls
+/// pump's method and <c>GVL.Running</c> reads the list's variable; neither names the object called
 /// <c>Start</c> or <c>Running</c>, and the index keys methods and properties by their bare name,
 /// so answering would link every instance call to the first FB's method in path order (found in
-/// review, 2026-10-24). What this does not see is a local declared with an object's name: the
-/// resolver has no declarations, so a bare <c>Start</c> links to the method even where a
-/// variable shadows it. FINISH.md carries that.
+/// review, 2026-10-24). The "used by" search counts those words all the same, because they are
+/// how a method is used; see <see cref="NamesReferenced"/>. What neither sees is a local declared
+/// with an object's name: the resolver has no declarations, so a bare <c>Start</c> links to the
+/// method even where a variable shadows it. FINISH.md carries that.
 /// </para>
 /// </remarks>
 public static class ObjectLinks
@@ -55,8 +56,9 @@ public static class ObjectLinks
 
     /// <summary>
     /// The names <paramref name="text"/> refers to, among <paramref name="candidates"/>: every
-    /// identifier the tokenizer leaves plain, outside comments and strings, compared without case
-    /// as IEC names are. The "used by" index is this, asked of every object's source in a project.
+    /// identifier the tokenizer leaves plain, outside comments and strings (block comments across
+    /// lines included), compared without case as IEC names are, a word after a dot among them. The
+    /// "used by" index is this, asked of every object's source in a project.
     /// </summary>
     public static IReadOnlySet<string> NamesReferenced(string text, SyntaxLanguage language, IReadOnlySet<string> candidates)
     {
@@ -68,11 +70,18 @@ public static class ObjectLinks
             return found;
         }
 
+        // The whole file is here, so a block comment's state is carried from line to line: the
+        // body of a (* … *) is not code (review, 2026-10-24, on a real fixture). A word after a dot
+        // IS counted, unlike a link: pump.Start() is the only way a method is ever used from
+        // outside its block, and leaving those out made "used by" empty for every method and
+        // property. The cost is that another block's Start counts too; the pane's words say
+        // "names", and FINISH.md carries the rest.
+        var state = new SyntaxTokenizer.TokenState();
         foreach (var line in text.Split('\n'))
         {
-            foreach (var token in SyntaxTokenizer.Tokenize(line, language))
+            foreach (var token in SyntaxTokenizer.Tokenize(line, language, state))
             {
-                if (token.Kind != TokenKind.Plain || token.Length == 0 || !(char.IsLetter(line[token.Start]) || line[token.Start] == '_') || CodeHtml.IsMember(line, token.Start))
+                if (token.Kind != TokenKind.Plain || token.Length == 0 || !(char.IsLetter(line[token.Start]) || line[token.Start] == '_'))
                 {
                     continue;
                 }
@@ -81,6 +90,10 @@ public static class ObjectLinks
                 if (candidates.Contains(word))
                 {
                     found.Add(word);
+                    if (found.Count == candidates.Count)
+                    {
+                        return found;
+                    }
                 }
             }
         }

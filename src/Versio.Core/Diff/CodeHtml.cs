@@ -49,6 +49,7 @@ public static class CodeHtml
     /// characters it replaced with markers plus how many names it marked as mixing scripts.
     /// </summary>
     /// <param name="emphasis">Changed-word spans (<see cref="IntralineEmphasis"/>), or null.</param>
+    /// <param name="state">The block-comment state carried between the lines of one file, or null for a line on its own.</param>
     /// <param name="links">
     /// What an identifier opens, or null for none (docs/web/FINISH.md, Step 3c): asked for every
     /// plain word — a name the tokenizer did not class as a keyword, a type or a comment — and
@@ -61,7 +62,8 @@ public static class CodeHtml
         string? text,
         SyntaxLanguage language,
         IReadOnlyList<TextSpan>? emphasis = null,
-        Func<string, string?>? links = null)
+        Func<string, string?>? links = null,
+        SyntaxTokenizer.TokenState? state = null)
     {
         ArgumentNullException.ThrowIfNull(html);
         ArgumentNullException.ThrowIfNull(language);
@@ -72,7 +74,10 @@ public static class CodeHtml
         }
 
         var hidden = 0;
-        foreach (var token in SyntaxTokenizer.Tokenize(text, language))
+        // With a state the caller is drawing a whole file in order, and a block comment's body
+        // stays a comment on its second line (no link, no colour of code); without one each line
+        // stands alone, as a diff hunk must.
+        foreach (var token in SyntaxTokenizer.Tokenize(text, language, state))
         {
             // A word after a dot is a member of whatever precedes it — pump.Start names pump's
             // method, GVL.Running the list's variable — never the object of that name. The index
