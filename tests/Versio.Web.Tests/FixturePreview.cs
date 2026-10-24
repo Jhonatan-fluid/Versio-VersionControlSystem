@@ -141,6 +141,8 @@ public sealed class FixturePreview
             new TimelineItem("review", "lee", when.AddMinutes(40), "The interlock reads the old value once more before the step lands.", "CHANGES_REQUESTED", next, "PRR_LEE") { AuthorAssociation = "COLLABORATOR" },
             new TimelineItem("review-dismissed", "sam", when.AddMinutes(50), null, null, null) { Target = "lee", Message = "Addressed in the second commit." },
         ], false);
+        // What GitHub's header counts and marks: the diff's size, and the one check branch protection requires.
+        repo.PullHeader[1] = (4, 4, 3, ["build"]);
         repo.PullCommits[1] = new PullCommitList([new PullCommit(next, "Lower the simulated cooling step", "sam", when) { AuthorLogin = "sam", Body = "The simulation cooled twice as fast as the plant.\n\nMeasured on the soak rig, 2026-10-20.", Verified = true }], false);
         repo.PullPeople[1] = ([new PullLabel("plc", "1a7f37"), new PullLabel("needs-soak", "9a6700")], [new PullReviewer("lee", "CHANGES_REQUESTED"), new PullReviewer("controls", "REQUESTED")]);
         // Slice 5: labels to put on and people who can be assigned. A new pull request can be

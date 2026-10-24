@@ -1,16 +1,17 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router';
-import type { CoverageGap, Layout, Me, PaneView, PendingReviewView, ReviewCommits, ReviewFile, ReviewFileView, ReviewSnapshot, ReviewStatus, ReviewThread, ReviewThreads, ReviewTimeline, ThreadPlacement } from '../api';
+import type { CoverageGap, Layout, Me, PaneView, PendingReviewView, ReviewCheck, ReviewCommits, ReviewFile, ReviewFileView, ReviewSnapshot, ReviewStatus, ReviewThread, ReviewThreads, ReviewTimeline, ThreadPlacement } from '../api';
 import { ApiError, api } from '../api';
 import type { Annotation } from '../components/FragmentHost';
 import { FragmentHost } from '../components/FragmentHost';
+import { CommentCard, CommitRow, EventRow, Reactions, ReviewCard, RoleBadge, anchorOf } from '../components/Conversation';
 import { MergeBox } from '../components/MergeBox';
 import { ErrorPanel } from '../components/Pane';
 import { AssigneesEditor, BaseEditor, LabelsEditor, StateActions, TitleEditor } from '../components/PullMeta';
 import { ReviewBar, ReviewersEditor } from '../components/ReviewBar';
 import { ActionButton, CommentBox, newOpKey } from '../components/ReviewWrite';
 import { RepoLayout } from '../components/RepoLayout';
-import { Blankslate, IssueLabel, Layout as TwoColumn, Loading, SidebarSection, StateBadge, UnderlineNav, pullState, type NavItem } from '../components/ui';
+import { Avatar, Blankslate, Flash, Icon, IssueLabel, Layout as TwoColumn, Loading, RelativeTime, SidebarSection, StateBadge, UnderlineNav, pullState, type NavItem } from '../components/ui';
 import { blobUrl, compareUrl, parsePullTab, pullUrl, type PullTab } from '../routes';
 import { usePageTitle } from '../title';
 import type { Async } from '../useAsync';
@@ -93,6 +94,9 @@ interface Writer {
   slots: string;
   onChanged: () => void;
   onStale: () => void;
+  /** The signed-in person, drawn beside their own comment box as GitHub draws them. */
+  login: string;
+  avatar: string | null;
   /**
    * "Add to review", when a comment may go into the viewer's pending review: there is none yet (the
    * first creates it on the snapshot's head), or there is one on that head. One on an older commit
@@ -248,6 +252,7 @@ function PullReview({ me }: { me: Me | null }) {
   const writer: Writer | null = snap?.writable
     ? {
         owner, repo, snap, slots: `versio:draft:${owner}/${repo}#${n}`, onChanged: () => setChanged((x) => x + 1), onStale: () => setStaleWrite(true),
+        login: me?.login ?? '?', avatar: me?.avatarUrl ?? null,
         review: reviewAlternative(pending.state === 'ok' ? pending.value : null),
       }
     : null;
@@ -286,12 +291,18 @@ function PullReview({ me }: { me: Me | null }) {
   const pullTitle = live?.title ?? snap?.title ?? null;
   usePageTitle(pullTitle && snap ? `${pullTitle} by ${snap.author} · Pull Request #${n}` : `Pull Request #${n}`, `${owner}/${repo}`);
 
+  // The tabs' counts, as GitHub's: the conversation's comments and the branch's commits from the
+  // live summary, the checks from the list read, the files from the inventory.
   const navItems: NavItem[] = tabs.map((t) => ({
     id: t.id,
     label: t.label,
     to: pullUrl(owner, repo, n, t.id, undefined, search),
     icon: t.id === 'conversation' ? 'comment-discussion' : t.id === 'commits' ? 'git-commit' : t.id === 'checks' ? 'check-circle' : 'diff',
-    count: t.id === 'files' && files.state === 'ok' ? files.value.total : t.id === 'checks' && status?.checks ? status.checks.length : null,
+    count: t.id === 'files' && files.state === 'ok' ? files.value.total
+      : t.id === 'checks' && status?.checks ? status.checks.length
+      : t.id === 'commits' && live?.commits !== undefined ? live.commits
+      : t.id === 'conversation' && live?.comments !== undefined ? live.comments
+      : null,
   }));
 
   const fileList = files.state === 'ok' && (
@@ -385,9 +396,13 @@ function PullReview({ me }: { me: Me | null }) {
                 <BaseEditor owner={owner} repo={repo} snap={writer.snap} branches={branches.state === 'ok' ? branches.value.branches.map((b) => b.name) : []}
                   current={snap!.baseRef} head={snap!.headLabel} onChanged={writer.onChanged} onStale={writer.onStale} onDone={() => setEditing(null)} />
               ) : (
-                <span>
-                  <span className="text-bold">{snap!.author}</span> wants to merge into <span className="branch-name" title={snap!.baseLabel}>{snap!.baseLabel}</span> from{' '}
-                  <span className="branch-name" title={snap!.headLabel}>{snap!.headLabel}</span>
+                <span className="pr-meta-line">
+                  <Avatar login={snap!.author} url={live?.authorAvatar} size={20} />
+                  <span className="text-bold">{snap!.author}</span>
+                  {' '}{live?.merged ? 'merged' : 'wants to merge'}{live?.commits !== undefined ? ` ${live.commits} commit${live.commits === 1 ? '' : 's'}` : ''} into{' '}
+                  <span className="branch-name" title={snap!.baseLabel}>{snap!.baseLabel}</span> from{' '}
+                  <span className="branch-name" title={live?.headRepository ? `${live.headRepository}:${snap!.headLabel}` : snap!.headLabel}>{live?.headRepository ? `${live.headRepository}:` : ''}{snap!.headLabel}</span>
+                  {live?.locked && <span className="row-badge" title={live.lockReason ? `Locked as ${live.lockReason.toLowerCase().replace('_', ' ')}` : 'Locked'}><Icon name="lock" size={12} /> Locked</span>}
                   {writer && live?.viewerCanUpdate && live.state === 'OPEN' && (
                     <> <button type="button" className="link-button base-edit" onClick={() => setEditing('base')}>change base</button></>
                   )}
@@ -396,6 +411,9 @@ function PullReview({ me }: { me: Me | null }) {
             </div>
             <div className="pr-tabs">
               <UnderlineNav items={navItems} current={tab} label="Pull request" />
+              {live?.additions !== undefined && live.deletions !== undefined && (
+                <Diffstat additions={live.additions} deletions={live.deletions} files={live.changedFiles} />
+              )}
             </div>
           </div>
           {notices}
@@ -439,12 +457,21 @@ function PullReview({ me }: { me: Me | null }) {
                 <>
                   {revision}
                   {reviewBar}
-                  {tab === 'conversation' && <Conversation snap={snap!} live={live} timeline={timeline} writer={writer} onOpenPath={(p) => navigate(blobUrl(owner, repo, snap!.headSha, p))} />}
-                  {tab === 'conversation' && writer && snap!.canMerge && (
-                    <MergeBox owner={owner} repo={repo} snap={writer.snap} state={mergeState} onChanged={writer.onChanged} onStale={writer.onStale} />
+                  {tab === 'conversation' && (
+                    <Conversation snap={snap!} live={live} timeline={timeline} writer={writer} onOpenPath={(p) => navigate(blobUrl(owner, repo, snap!.headSha, p))}
+                      threads={threads.state === 'ok' ? threads.value.threads : []}
+                      fileLink={(p) => pullUrl(owner, repo, n, 'files', p, search)}
+                      renderThread={(t) => <Thread thread={t} writer={writer} onOpenPath={(p) => navigate(blobUrl(owner, repo, snap!.headSha, p))} />}
+                      // GitHub's order: the merge box closes the timeline, and the comment box comes after it.
+                      mergeBox={
+                        <>
+                          <MergeSummary live={live} status={status} />
+                          {writer && snap!.canMerge && <MergeBox owner={owner} repo={repo} snap={writer.snap} state={mergeState} onChanged={writer.onChanged} onStale={writer.onStale} />}
+                        </>
+                      } />
                   )}
                   {tab === 'commits' && <Commits commits={commits} />}
-                  {tab === 'checks' && <Checks status={status} />}
+                  {tab === 'checks' && <Checks status={status} onOpenPath={(p) => navigate(blobUrl(owner, repo, snap!.headSha, p))} />}
                 </>
               }
               sidebar={<Summary status={status} writer={writer} />}
@@ -506,6 +533,11 @@ function Summary({ status, writer }: { status: ReviewStatus | null; writer: Writ
               <p className="text-muted">None yet</p>
             )}
           </SidebarSection>
+          {s.milestone && (
+            <SidebarSection heading="Milestone">
+              <p>{s.milestone}</p>
+            </SidebarSection>
+          )}
           <SidebarSection heading="Assignees">
             {writer && s.viewerCanUpdate ? (
               <AssigneesEditor owner={writer.owner} repo={writer.repo} snap={writer.snap} summary={s} onChanged={writer.onChanged} onStale={writer.onStale} />
@@ -535,7 +567,87 @@ function Summary({ status, writer }: { status: ReviewStatus | null; writer: Writ
   );
 }
 
-function Conversation({ snap, live, timeline, writer, onOpenPath }: { snap: ReviewSnapshot; live: ReviewStatus['summary']; timeline: Async<ReviewTimeline>; writer: Writer | null; onOpenPath: (p: string) => void }) {
+/** GitHub's "+12 −3" with its five-block bar, beside the tabs. */
+function Diffstat({ additions, deletions, files }: { additions: number; deletions: number; files?: number }) {
+  const total = additions + deletions;
+  const blocks = total === 0 ? 0 : Math.max(1, Math.round((additions / total) * 5));
+  return (
+    <span className="diffstat pr-diffstat" title={`${additions} addition${additions === 1 ? '' : 's'} and ${deletions} deletion${deletions === 1 ? '' : 's'}${files !== undefined ? ` in ${files} file${files === 1 ? '' : 's'}` : ''}`}>
+      <span className="diffstat-add">+{additions}</span>
+      <span className="diffstat-del">−{deletions}</span>
+      <span className="diffstat-bar" aria-hidden="true">
+        {[0, 1, 2, 3, 4].map((k) => <span key={k} className={total === 0 ? '' : k < blocks ? 'is-add' : 'is-del'} />)}
+      </span>
+    </span>
+  );
+}
+
+/**
+ * What GitHub's merge box says to everyone, drawn before any button: the review decision, the
+ * checks' combined state, conflicts. The buttons themselves are the merge tier's (MergeBox).
+ */
+function MergeSummary({ live, status }: { live: ReviewStatus['summary']; status: ReviewStatus | null }) {
+  if (!live) {
+    return null;
+  }
+  const checks = status?.checks ?? [];
+  const failed = checks.filter((c) => c.conclusion && !['success', 'neutral', 'skipped'].includes(c.conclusion)).length;
+  const running = checks.filter((c) => c.status !== 'completed').length;
+  const rows: { tone: 'success' | 'danger' | 'attention' | 'muted'; icon: 'check-circle-fill' | 'x-circle-fill' | 'dot-fill' | 'clock'; text: string; detail?: string }[] = [];
+  if (live.reviewDecision === 'APPROVED') {
+    rows.push({ tone: 'success', icon: 'check-circle-fill', text: 'Changes approved', detail: `${live.reviewers.filter((r) => r.state === 'APPROVED').length} approving review` });
+  } else if (live.reviewDecision === 'CHANGES_REQUESTED') {
+    rows.push({ tone: 'danger', icon: 'x-circle-fill', text: 'Changes requested', detail: `${live.reviewers.filter((r) => r.state === 'CHANGES_REQUESTED').map((r) => r.login).join(', ')} requested changes` });
+  } else if (live.reviewDecision === 'REVIEW_REQUIRED') {
+    rows.push({ tone: 'attention', icon: 'dot-fill', text: 'Review required', detail: 'At least one approving review is required by reviewers with write access.' });
+  }
+  if (checks.length > 0) {
+    const required = checks.filter((c) => c.required);
+    const requiredFailed = required.filter((c) => c.conclusion && !['success', 'neutral', 'skipped'].includes(c.conclusion)).length;
+    rows.push(failed > 0
+      ? { tone: 'danger', icon: 'x-circle-fill', text: requiredFailed > 0 ? 'Some required checks were not successful' : 'Some checks were not successful', detail: `${failed} failing${running > 0 ? `, ${running} in progress` : ''}, ${checks.length - failed - running} successful` }
+      : running > 0
+        ? { tone: 'attention', icon: 'clock', text: "Some checks haven't completed yet", detail: `${running} in progress, ${checks.length - running} successful` }
+        : { tone: 'success', icon: 'check-circle-fill', text: 'All checks have passed', detail: `${checks.length} successful check${checks.length === 1 ? '' : 's'}` });
+  }
+  if (live.mergeable === 'CONFLICTING') {
+    rows.push({ tone: 'danger', icon: 'x-circle-fill', text: 'This branch has conflicts that must be resolved', detail: 'Merge the base branch into this branch, or rebase it, then push.' });
+  } else if (live.state === 'OPEN' && !live.merged) {
+    rows.push({ tone: 'success', icon: 'check-circle-fill', text: 'This branch has no conflicts with the base branch' });
+  }
+  if (rows.length === 0) {
+    return null;
+  }
+  return (
+    <div className="merge-summary box">
+      {rows.map((r) => (
+        <div key={r.text} className={`merge-summary-row tone-${r.tone}`}>
+          <Icon name={r.icon} className="merge-summary-icon" />
+          <div>
+            <div className="text-bold">{r.text}</div>
+            {r.detail && <div className="text-muted text-small">{r.detail}</div>}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+interface ConversationProps {
+  snap: ReviewSnapshot;
+  live: ReviewStatus['summary'];
+  timeline: Async<ReviewTimeline>;
+  writer: Writer | null;
+  onOpenPath: (p: string) => void;
+  /** Every review thread, so a review's own threads can be listed under it. */
+  threads: ReviewThread[];
+  fileLink: (path: string) => string;
+  renderThread: (thread: ReviewThread) => ReactNode;
+  /** The merge box, drawn where GitHub draws it: after the timeline, before the comment box. */
+  mergeBox: ReactNode;
+}
+
+function Conversation({ snap, live, timeline, writer, onOpenPath, threads, fileLink, renderThread, mergeBox }: ConversationProps) {
   const [editing, setEditing] = useState<string | null>(null);
   // The description as it is now, once the live state is read; the snapshot's until then.
   const description = live ? live.html : snap.html;
@@ -564,115 +676,245 @@ function Conversation({ snap, live, timeline, writer, onOpenPath }: { snap: Revi
     }
     setEditing(null);
   }
+  // A review's threads are the ones whose first comment names it; the rest (written on
+  // github.com outside a review, or whose review the server did not name) stay on Files changed.
+  const threadsOf = (reviewId: string | null) => (reviewId ? threads.filter((t) => t.comments[0]?.reviewId === reviewId) : []);
+  const descriptionTools = writer && live?.viewerCanUpdate && editing !== 'description'
+    ? <button type="button" className="link-button" onClick={startEditing}>Edit</button>
+    : undefined;
   return (
     <>
-      <p className="muted">{(live ? live.draft : snap.draft) ? 'Draft, ' : ''}opened by {snap.author}, updated {new Date(snap.when).toLocaleString()}</p>
-      {writer && from !== null && editing === 'description' ? (
-        // It names the text it replaces: someone else's edit meanwhile is refused, never overwritten.
-        <CommentBox owner={writer.owner} repo={writer.repo} snap={writer.snap} slot={`${writer.slots}:description`} path="/edit"
-          payload={{ expectBody: from }} initial={from} submitLabel="Save" placeholder="Describe the change"
-          onCancel={stopEditing} onDone={() => { stopEditing(); writer.onChanged(); }} onStale={writer.onStale} />
-      ) : (
-        <>
-          {description ? <FragmentHost html={description} path="" onOpenPath={onOpenPath} line={null} onLine={() => {}} /> : <p className="muted">No description.</p>}
-          {writer && live?.viewerCanUpdate && <button type="button" className="link-button" onClick={startEditing}>Edit the description</button>}
-        </>
-      )}
-      <h2 className="review-heading">Conversation</h2>
-      {timeline.state === 'loading' && <p className="muted">Loading...</p>}
-      {timeline.state === 'error' && <p className="muted">{timeline.error.message}</p>}
+      {/* GitHub's first card is the description, by the author, with the body's reactions. */}
+      <CommentCard author={snap.author} avatar={live?.authorAvatar} association={live?.authorAssociation} when={live?.createdAt ?? snap.when}
+        verb={live?.draft ?? snap.draft ? 'opened this draft' : 'opened this'} tools={descriptionTools} reactions={live?.reactions}>
+        {writer && from !== null && editing === 'description' ? (
+          // It names the text it replaces: someone else's edit meanwhile is refused, never overwritten.
+          <CommentBox owner={writer.owner} repo={writer.repo} snap={writer.snap} slot={`${writer.slots}:description`} path="/edit"
+            payload={{ expectBody: from }} initial={from} submitLabel="Save" placeholder="Describe the change"
+            onCancel={stopEditing} onDone={() => { stopEditing(); writer.onChanged(); }} onStale={writer.onStale} />
+        ) : description ? (
+          <FragmentHost html={description} path="" onOpenPath={onOpenPath} line={null} onLine={() => {}} />
+        ) : (
+          <p className="text-muted"><em>No description provided.</em></p>
+        )}
+      </CommentCard>
+      {timeline.state === 'loading' && <Loading what="Reading the conversation…" />}
+      {timeline.state === 'error' && <p className="text-muted">{timeline.error.message}</p>}
       {timeline.state === 'ok' && (
         <ol className="timeline">
-          {timeline.value.items.length === 0 && <li className="muted">Nothing yet.</li>}
-          {timeline.value.items.map((item, i) => (
-            <li key={i} className={`timeline-${item.kind}`}>
-              <span className="timeline-meta">
-                <strong>{item.actor}</strong>{' '}
-                {item.kind === 'review' ? ({ APPROVED: 'approved', CHANGES_REQUESTED: 'requested changes', COMMENTED: 'reviewed', DISMISSED: 'review dismissed' } as Record<string, string>)[item.state ?? ''] ?? 'reviewed'
-                  : item.kind === 'commit' ? 'committed'
-                  : item.kind === 'force-push' ? 'force-pushed'
-                  : item.kind === 'comment' ? 'commented'
-                  : item.kind === 'ready' ? 'marked this ready for review'
-                  : item.kind === 'draft' ? 'converted this to a draft'
-                  : item.kind}{' '}
-                <span className="muted">{new Date(item.when).toLocaleString()}</span>
-              </span>
-              {item.text && <span className="timeline-text">{item.text} {item.sha && <code className="muted">{item.sha.slice(0, 8)}</code>}</span>}
-              {writer && item.id && editing === item.id ? (
-                <CommentBox owner={writer.owner} repo={writer.repo} snap={writer.snap} slot={`${writer.slots}:edit:${item.id}`} path={`/comments/${encodeURIComponent(item.id)}`} method="PATCH"
-                  initial={item.markdown ?? ''} submitLabel="Save" onCancel={() => setEditing(null)} onDone={() => { setEditing(null); writer.onChanged(); }} onStale={writer.onStale} />
-              ) : (
-                item.html && <FragmentHost html={item.html} path="" onOpenPath={onOpenPath} line={null} onLine={() => {}} />
-              )}
-              {writer && item.id && editing !== item.id && (item.canEdit || item.canDelete) && (
-                <span className="comment-tools">
+          {timeline.value.items.map((item, i) => {
+            if (item.kind === 'comment') {
+              const tools = writer && item.id && editing !== item.id && (item.canEdit || item.canDelete) ? (
+                <>
                   {item.canEdit && <button type="button" className="link-button" onClick={() => setEditing(item.id)}>Edit</button>}
                   {item.canDelete && <ActionButton owner={writer.owner} repo={writer.repo} snap={writer.snap} path={`/comments/${encodeURIComponent(item.id)}/delete`} label="Delete" confirm="Delete this comment on GitHub?" onDone={writer.onChanged} />}
-                </span>
-              )}
-            </li>
-          ))}
+                </>
+              ) : undefined;
+              return (
+                <li key={item.id ?? i} className="timeline-item timeline-comment">
+                  <CommentCard author={item.actor} avatar={item.avatar} association={item.association} when={item.when} editedAt={item.editedAt} url={item.url} anchor={anchorOf(item.url)} tools={tools} reactions={item.reactions}>
+                    {writer && item.id && editing === item.id ? (
+                      <CommentBox owner={writer.owner} repo={writer.repo} snap={writer.snap} slot={`${writer.slots}:edit:${item.id}`} path={`/comments/${encodeURIComponent(item.id)}`} method="PATCH"
+                        initial={item.markdown ?? ''} submitLabel="Save" onCancel={() => setEditing(null)} onDone={() => { setEditing(null); writer.onChanged(); }} onStale={writer.onStale} />
+                    ) : (
+                      item.html && <FragmentHost html={item.html} path="" onOpenPath={onOpenPath} line={null} onLine={() => {}} />
+                    )}
+                  </CommentCard>
+                </li>
+              );
+            }
+            if (item.kind === 'review') {
+              return <ReviewCard key={item.id ?? i} item={item} threads={threadsOf(item.id)} renderThread={renderThread} onOpenPath={onOpenPath} fileLink={fileLink} />;
+            }
+            if (item.kind === 'commit') {
+              return <CommitRow key={`${item.sha}-${i}`} item={item} />;
+            }
+            return <EventRow key={i} item={item} baseLabel={snap.baseLabel} />;
+          })}
         </ol>
       )}
-      {timeline.state === 'ok' && timeline.value.truncated && <p className="muted">The conversation continues on GitHub.</p>}
+      {timeline.state === 'ok' && timeline.value.truncated && <p className="text-muted">The conversation continues on GitHub.</p>}
+      {mergeBox}
       {writer && (
-        <CommentBox owner={writer.owner} repo={writer.repo} snap={writer.snap} slot={`${writer.slots}:conversation`} path="/comments"
-          submitLabel="Comment" onDone={writer.onChanged} onStale={writer.onStale} />
+        <div className="comment-row comment-row-new">
+          <Avatar login={writer.login} url={writer.avatar} size={40} />
+          <div className="comment comment-new">
+            <div className="comment-head"><span className="text-bold">Add a comment</span></div>
+            <div className="comment-body">
+              <CommentBox owner={writer.owner} repo={writer.repo} snap={writer.snap} slot={`${writer.slots}:conversation`} path="/comments"
+                submitLabel="Comment" onDone={writer.onChanged} onStale={writer.onStale} />
+            </div>
+          </div>
+        </div>
       )}
     </>
   );
+}
+
+/** The duration GitHub prints beside a check: "4m 12s", "38s". */
+function duration(startedAt?: string | null, completedAt?: string | null): string | null {
+  if (!startedAt) {
+    return null;
+  }
+  const end = completedAt ? new Date(completedAt) : new Date();
+  const seconds = Math.round((end.getTime() - new Date(startedAt).getTime()) / 1000);
+  if (!Number.isFinite(seconds) || seconds < 0) {
+    return null;
+  }
+  const m = Math.floor(seconds / 60);
+  return m > 0 ? `${m}m ${seconds % 60}s` : `${seconds}s`;
 }
 
 function Commits({ commits }: { commits: Async<ReviewCommits> }) {
+  const [open, setOpen] = useState<Set<string>>(new Set());
   if (commits.state !== 'ok') {
-    return <p className="muted">{commits.state === 'loading' ? 'Loading...' : commits.error.message}</p>;
+    return commits.state === 'loading' ? <Loading what="Reading the commits…" /> : <p className="text-muted">{commits.error.message}</p>;
   }
   const c = commits.value;
+  const toggle = (sha: string) => setOpen((s) => {
+    const next = new Set(s);
+    if (next.has(sha)) {
+      next.delete(sha);
+    } else {
+      next.add(sha);
+    }
+    return next;
+  });
   return (
     <>
       {!c.headFound && <p className="notice" role="note">The commit you are reviewing is no longer on this branch (it was force-pushed). None of these commits is the one shown.</p>}
-      <ul className="commits">
-        {c.commits.map((x) => (
-          <li key={x.sha} className={x.inSnapshot ? '' : 'commit-new'}>
-            <span className="commit-subject">{x.headline}</span>
-            <span className="muted row-meta">
-              {x.author} · {new Date(x.when).toLocaleString()} · <code>{x.sha.slice(0, 8)}</code>
-              {!x.inSnapshot && c.headFound && <> · <strong>new since you opened this review</strong></>}
-            </span>
-          </li>
-        ))}
-      </ul>
-      {c.truncated && <p className="muted">GitHub lists the first 250 commits; the rest are on GitHub.</p>}
+      {c.commits.length === 0 && <Blankslate icon="git-commit" heading="No commits">This branch has no commits of its own.</Blankslate>}
+      {c.commits.length > 0 && (
+        <ul className="commits commit-group">
+          {c.commits.map((x) => (
+            <li key={x.sha} className={`commit-row${x.inSnapshot ? '' : ' commit-new'}`}>
+              <div className="commit-main">
+                <div className="commit-subject-line">
+                  <span className="commit-subject">{x.headline}</span>
+                  {x.body && (
+                    <button type="button" className="btn btn-small commit-expand" aria-expanded={open.has(x.sha)} onClick={() => toggle(x.sha)} title="The rest of the message">
+                      <Icon name="kebab-horizontal" size={12} />
+                    </button>
+                  )}
+                  {x.verified === true && <span className="verified-badge" title="This commit was signed with a verified signature">Verified</span>}
+                  {(x.parents ?? 1) > 1 && <span className="row-badge" title="A merge commit">Merge</span>}
+                  {!x.inSnapshot && c.headFound && <span className="row-badge commit-new-badge">new since you opened this review</span>}
+                </div>
+                {open.has(x.sha) && x.body && <pre className="commit-body">{x.body}</pre>}
+                <div className="commit-byline">
+                  <Avatar login={x.login ?? x.author} url={x.avatar} size={16} />
+                  <span className="text-bold">{x.login ?? x.author}</span>
+                  {x.committer && <span>authored and <span className="text-bold">{x.committer}</span> committed</span>}
+                  {!x.committer && <span>committed</span>}
+                  <RelativeTime when={x.when} />
+                </div>
+              </div>
+              <div className="commit-side">
+                {x.url ? <a href={x.url} target="_blank" rel="noopener noreferrer" className="commit-sha" title="This commit on GitHub">{x.sha.slice(0, 7)}</a> : <code className="commit-sha" title={x.sha}>{x.sha.slice(0, 7)}</code>}
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
+      {c.truncated && <p className="text-muted">GitHub lists the first 250 commits; the rest are on GitHub.</p>}
     </>
   );
 }
 
-function Checks({ status }: { status: ReviewStatus | null }) {
+/** The icon, colour and word for a check's state, as GitHub's checks page draws them. */
+function checkLook(c: ReviewCheck): { icon: 'check-circle-fill' | 'x-circle-fill' | 'skip' | 'dot-fill' | 'clock' | 'circle-slash' | 'alert'; tone: string; word: string } {
+  if (c.status !== 'completed') {
+    return { icon: c.status === 'queued' || c.status === 'pending' ? 'clock' : 'dot-fill', tone: 'check-running', word: c.status === 'in_progress' ? 'In progress' : c.status === 'queued' ? 'Queued' : 'Pending' };
+  }
+  switch (c.conclusion) {
+    case 'success': return { icon: 'check-circle-fill', tone: 'check-success', word: 'Successful' };
+    case 'neutral': return { icon: 'skip', tone: 'check-neutral', word: 'Neutral' };
+    case 'skipped': return { icon: 'skip', tone: 'check-skipped', word: 'Skipped' };
+    case 'cancelled': return { icon: 'circle-slash', tone: 'check-cancelled', word: 'Cancelled' };
+    case 'timed_out': return { icon: 'x-circle-fill', tone: 'check-timed_out', word: 'Timed out' };
+    case 'action_required': return { icon: 'alert', tone: 'check-action_required', word: 'Action required' };
+    case 'stale': return { icon: 'alert', tone: 'check-neutral', word: 'Stale' };
+    default: return { icon: 'x-circle-fill', tone: 'check-failure', word: c.conclusion === 'failure' ? 'Failing' : c.conclusion === 'error' ? 'Error' : c.conclusion ?? 'Unknown' };
+  }
+}
+
+function Checks({ status, onOpenPath }: { status: ReviewStatus | null; onOpenPath: (p: string) => void }) {
+  const [open, setOpen] = useState<string | null>(null);
   if (!status) {
-    return <p className="muted">Loading...</p>;
+    return <Loading what="Reading the checks…" />;
   }
   if (!status.checks) {
-    return <p className="muted">The checks could not be read.</p>;
+    return <Flash scheme="warning">The checks could not be read{status.checksError === 'sign-in' ? ' without signing in' : ''}.</Flash>;
   }
   if (status.checks.length === 0) {
-    return <p className="muted">No checks ran on the version you are reviewing.</p>;
+    return <Blankslate icon="check-circle" heading="No checks ran on the version you are reviewing">A check run or a commit status posted on the reviewed commit shows here.</Blankslate>;
   }
+  const checks = status.checks;
+  const failed = checks.filter((c) => c.conclusion && !['success', 'neutral', 'skipped'].includes(c.conclusion)).length;
+  const running = checks.filter((c) => c.status !== 'completed').length;
+  const skipped = checks.filter((c) => c.conclusion && ['neutral', 'skipped'].includes(c.conclusion)).length;
+  const successful = checks.length - failed - running - skipped;
+  // Grouped as GitHub groups them: by the app that ran them, the suite within it.
+  const groups = new Map<string, ReviewCheck[]>();
+  for (const c of checks) {
+    const key = c.app ?? (c.source === 'status' ? 'Commit statuses' : 'Checks');
+    groups.set(key, [...(groups.get(key) ?? []), c]);
+  }
+  const key = (c: ReviewCheck, i: number) => `${c.source}-${c.id ?? c.name}-${i}`;
   return (
     <>
-    {status.checksTruncated && (
-      <p className="notice" role="note">GitHub lists more checks than were read here. A failing one may be among those not shown: see them all on GitHub.</p>
-    )}
-    <ul className="row-list checks">
-      {status.checks.map((c, i) => (
-        <li key={`${c.source}-${c.name}-${i}`} className={`check check-${c.conclusion ?? c.status}`}>
-          <span className="check-mark" aria-hidden="true">{c.status !== 'completed' ? '●' : c.conclusion === 'success' ? '✓' : ['neutral', 'skipped'].includes(c.conclusion ?? '') ? '–' : '✗'}</span>
-          <span className="check-name">{c.name}</span>
-          <span className="muted">{c.status !== 'completed' ? c.status.replace('_', ' ') : c.conclusion}</span>
-          {/* https only, checked by the server; opened, never fetched or framed here. */}
-          {c.url && <a href={c.url} target="_blank" rel="noopener noreferrer">Details</a>}
-        </li>
+      {status.checksTruncated && (
+        <p className="notice" role="note">GitHub lists more checks than were read here. A failing one may be among those not shown: see them all on GitHub.</p>
+      )}
+      <div className="checks-summary">
+        {failed > 0 && <span className="text-danger"><Icon name="x-circle-fill" /> {failed} failing</span>}
+        {running > 0 && <span className="text-attention"><Icon name="dot-fill" /> {running} in progress</span>}
+        {skipped > 0 && <span className="text-muted"><Icon name="skip" /> {skipped} skipped</span>}
+        {successful > 0 && <span className="text-success"><Icon name="check-circle-fill" /> {successful} successful</span>}
+        {status.summary?.requiredChecks && status.summary.requiredChecks.length > 0 && (
+          <span className="text-muted">{status.summary.requiredChecks.length} required</span>
+        )}
+      </div>
+      {[...groups.entries()].map(([app, list]) => (
+        <div key={app} className="box checks-group">
+          <div className="box-header"><span className="text-bold">{app}</span><span className="text-muted">{list.length}</span></div>
+          <ul className="row-list checks">
+            {list.map((c, i) => {
+              const { icon, tone, word } = checkLook(c);
+              const id = key(c, i);
+              const took = duration(c.startedAt, c.completedAt);
+              const expandable = !!(c.title || c.summary || c.description || c.annotations);
+              return (
+                <li key={id} className={`check ${tone}`}>
+                  <div className="check-line">
+                    <span className="check-mark" aria-hidden="true"><Icon name={icon} /></span>
+                    <span className="check-name">
+                      {c.name}
+                      {c.required && <span className="row-badge check-required" title="Branch protection requires this check">Required</span>}
+                    </span>
+                    <span className="text-muted text-small">{word}{took ? ` · ${took}` : ''}</span>
+                    {c.annotations ? <span className="text-muted text-small" title="Annotations the run left on the code">{c.annotations} annotation{c.annotations === 1 ? '' : 's'}</span> : null}
+                    {expandable && (
+                      <button type="button" className="btn btn-small" aria-expanded={open === id} onClick={() => setOpen(open === id ? null : id)}>
+                        {open === id ? 'Hide' : 'Show'} output
+                      </button>
+                    )}
+                    {/* https only, checked by the server; opened, never fetched or framed here. */}
+                    {c.url && <a href={c.url} target="_blank" rel="noopener noreferrer" className="btn btn-small">Details</a>}
+                  </div>
+                  {open === id && (
+                    <div className="check-output">
+                      {c.title && <div className="text-bold">{c.title}</div>}
+                      {c.description && <div>{c.description}</div>}
+                      {c.summary && <FragmentHost html={c.summary} path="" onOpenPath={onOpenPath} line={null} onLine={() => {}} />}
+                    </div>
+                  )}
+                </li>
+              );
+            })}
+          </ul>
+        </div>
       ))}
-    </ul>
     </>
   );
 }
@@ -917,9 +1159,13 @@ function Thread({ thread, writer, onOpenPath, moved = false }: { thread: ReviewT
         )}
       </header>
       {thread.comments.map((c) => (
-        <div key={c.id} className="thread-comment">
+        <div key={c.id} className={`thread-comment${c.pending ? ' is-pending' : ''}`} id={anchorOf(c.url) ?? undefined}>
           <span className="thread-meta">
-            <strong>{c.author}</strong> <span className="muted">{new Date(c.when).toLocaleString()}</span>
+            <Avatar login={c.author} url={c.avatar} size={16} />
+            <strong>{c.author}</strong> <RelativeTime when={c.when} />
+            {c.editedAt && <span className="text-muted" title={`Edited ${new Date(c.editedAt).toLocaleString()}`}> · edited</span>}
+            <RoleBadge association={c.association} />
+            {c.pending && <span className="row-badge" title="A draft of your review: nobody else sees it until you submit">Pending</span>}
             {writer && editing !== c.id && (
               <span className="comment-tools">
                 {c.canEdit && <button type="button" className="link-button" onClick={() => setEditing(c.id)}>Edit</button>}
@@ -933,6 +1179,7 @@ function Thread({ thread, writer, onOpenPath, moved = false }: { thread: ReviewT
           ) : (
             <FragmentHost html={c.html} path="" onOpenPath={onOpenPath} line={null} onLine={() => {}} />
           )}
+          <Reactions reactions={c.reactions} />
         </div>
       ))}
       {thread.truncated && <p className="muted">More replies on GitHub.</p>}

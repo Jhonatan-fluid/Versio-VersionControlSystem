@@ -421,6 +421,9 @@ internal sealed class FakeGitHub : IRepoSource
             Author = p.Author,
             CreatedAt = p.Updated,
             CommitCount = r.Value.PullCommits.TryGetValue(number, out var commits) ? commits.Commits.Count : 0,
+            // GitHub's totalCommentsCount: conversation comments and review comments together.
+            CommentCount = (r.Value.Timelines.TryGetValue(number, out var tl) ? tl.Items.Count(i => i.Kind == "comment") : 0)
+                + (r.Value.Threads.TryGetValue(number, out var th) ? th.Threads.Sum(x => x.Comments.Count) : 0),
             Additions = r.Value.PullHeader.TryGetValue(number, out var header) ? header.Additions : 0,
             Deletions = header.Deletions,
             ChangedFiles = header.ChangedFiles,

@@ -563,7 +563,7 @@ public sealed class PullReviewTests
         var later = new string('8', 40);
         w.Repo.PullCommits[12] = new PullCommitList(
         [
-            new PullCommit(w.Head, "Fix the default", "jo", When) { AuthorLogin = "jo", Body = "It was\u202Ewrong.", Verified = true, ParentCount = 2 },
+            new PullCommit(w.Head, "Fix the default", "jo", When) { AuthorLogin = "jo", Body = "It was\u202Ewrong.\nTwice.", Verified = true, ParentCount = 2 },
             new PullCommit(later, "And another", "jo", When.AddMinutes(5)),
         ], false);
         await using var host = await TestHost.StartAsync(w.GitHub);
@@ -576,7 +576,8 @@ public sealed class PullReviewTests
         Assert.True(commits[0].GetProperty("inSnapshot").GetBoolean());
         Assert.False(commits[1].GetProperty("inSnapshot").GetBoolean());
         // What GitHub's commits tab shows of each (FINISH.md, B4); the body is text, spelled like a headline.
-        Assert.Equal(("jo", "It wasU+202Ewrong.", true, 2), (commits[0].GetProperty("login").GetString(), commits[0].GetProperty("body").GetString(), commits[0].GetProperty("verified").GetBoolean(), commits[0].GetProperty("parents").GetInt32()));
+        // Spelled line by line: the hidden character shows, the newline stays a newline.
+        Assert.Equal(("jo", "It wasU+202Ewrong.\nTwice.", true, 2), (commits[0].GetProperty("login").GetString(), commits[0].GetProperty("body").GetString(), commits[0].GetProperty("verified").GetBoolean(), commits[0].GetProperty("parents").GetInt32()));
         Assert.Equal(JsonValueKind.Null, commits[1].GetProperty("verified").ValueKind);
     }
 

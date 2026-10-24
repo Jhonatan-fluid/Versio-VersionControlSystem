@@ -74,6 +74,12 @@ interface Options {
   newer?: boolean;
   /** A second changed file, to move between. */
   twoFiles?: boolean;
+  /** The conversation (Step 2): the timeline's items, the checks, the commits, the header's counts, which review a thread belongs to. */
+  timeline?: unknown[];
+  checks?: unknown[];
+  commits?: unknown[];
+  counts?: Record<string, unknown>;
+  threadReview?: string;
 }
 
 let calls: { url: string; snapshot: string | null; method: string; csrf: string | null; body: Record<string, unknown> | null }[] = [];
@@ -94,8 +100,8 @@ function answer(url: string, o: Options): unknown {
         labels: [{ name: 'plc', value: 'plc', color: '0e8a16' }], assignees: ['sam'],
         reviewers: [{ login: 'kim', state: 'REQUESTED' }], viewerIsAuthor: o.viewerIsAuthor ?? false, viewerLastReviewCommit: o.lastReview ?? null,
         title: o.live?.title ?? 'Fix interlock', titleText: o.live?.title ?? 'Fix interlock', markdown: o.live?.markdown ?? 'The delay was wrong.',
-        html: `<div class="md-page"><p>${o.live?.markdown ?? 'The delay was wrong.'}</p></div>`, viewerCanUpdate: o.canUpdate ?? true },
-      checksError: null, checks: [{ name: 'build', status: 'completed', conclusion: 'failure', url: 'https://ci.example/1', source: 'check-run' }], checksTruncated: o.checksCut ?? false,
+        html: `<div class="md-page"><p>${o.live?.markdown ?? 'The delay was wrong.'}</p></div>`, viewerCanUpdate: o.canUpdate ?? true, ...(o.counts ?? {}) },
+      checksError: null, checks: o.checks ?? [{ name: 'build', status: 'completed', conclusion: 'failure', url: 'https://ci.example/1', source: 'check-run' }], checksTruncated: o.checksCut ?? false,
     };
   }
   if (url.endsWith('/files')) {
@@ -117,7 +123,8 @@ function answer(url: string, o: Options): unknown {
     };
   }
   if (url.endsWith('/threads')) {
-    const comment = (id: string, html: string) => ({ id, author: 'sam', when: '2026-10-17T09:00:00Z', html, markdown: 'text', commit: head, originalCommit: head, canEdit: true, canDelete: true });
+    const comment = (id: string, html: string) => ({ id, author: 'sam', when: '2026-10-17T09:00:00Z', html, markdown: 'text', commit: head, originalCommit: head, canEdit: true, canDelete: true,
+      reviewId: id === 'c1' ? o.threadReview ?? null : null, diffHunk: id === 'c1' ? '@@ -1,3 +1,3 @@\n a\n-b\n+c' : null });
     const may = { canReply: true, canResolve: true, canUnresolve: true };
     return {
       truncated: false,
@@ -141,10 +148,10 @@ function answer(url: string, o: Options): unknown {
     return o.summary ?? { files: [{ path: 'src/Pump.st', coverage: 'partial', gaps: 2 }] };
   }
   if (url.endsWith('/timeline')) {
-    return { truncated: false, items: [{ kind: 'review', actor: 'sam', when: '2026-10-17T09:00:00Z', html: null, text: null, state: 'APPROVED', sha: null }] };
+    return { truncated: false, items: o.timeline ?? [{ kind: 'review', actor: 'sam', when: '2026-10-17T09:00:00Z', html: null, text: null, state: 'APPROVED', sha: null }] };
   }
   if (url.endsWith('/commits')) {
-    return { truncated: false, headFound: true, commits: [
+    return { truncated: false, headFound: true, commits: o.commits ?? [
       { sha: head, headline: 'Fix the default', author: 'jo', when: '2026-10-17T09:00:00Z', inSnapshot: true },
       { sha: 'e'.repeat(40), headline: 'And another', author: 'jo', when: '2026-10-17T09:05:00Z', inSnapshot: false },
     ] };
@@ -1105,7 +1112,8 @@ describe('PullPage metadata', () => {
   it('edits the description from the text it showed, and a draft kept over a reload keeps the text it was written against', async () => {
     const o = { writable: true, live: { title: 'Fix interlock', markdown: 'The delay was wrong.' } };
     const first = await render('/acme/plant/pull/12', o);
-    await click(button(first.host, 'Edit the description')!, first.host);
+    // The description is the first card; its Edit sits in that card's header, as on GitHub.
+    await click(button(first.host.querySelector('.comment-row')!, 'Edit')!, first.host);
     await fill(first.host.querySelector<HTMLTextAreaElement>('.comment-box textarea')!, 'The delay was 5 s; it is 2 s.');
     act(() => first.root.unmount());
     document.body.innerHTML = '';
@@ -1113,7 +1121,7 @@ describe('PullPage metadata', () => {
     // A reload later, someone else has changed the description: the kept draft still names the old text.
     o.live = { title: 'Fix interlock', markdown: 'Jo rewrote this.' };
     const again = await render('/acme/plant/pull/12', o);
-    await click(button(again.host, 'Edit the description')!, again.host);
+    await click(button(again.host.querySelector('.comment-row')!, 'Edit')!, again.host);
     expect(again.host.querySelector<HTMLTextAreaElement>('.comment-box textarea')!.value).toBe('The delay was 5 s; it is 2 s.');
     await click(button(again.host.querySelector('.comment-box')!, 'Save')!, again.host);
 
@@ -1366,5 +1374,155 @@ describe('PullPage merge box', () => {
     const merged = await render('/acme/plant/pull/12', { writable: true, canMerge: true, merge: { ...ready, merged: true, state: 'MERGED', mergeCommit: 'a'.repeat(40) } });
     expect(merged.host.querySelector('.merge-box')?.textContent).toContain('Merged as aaaaaaaa');
     act(() => merged.root.unmount());
+  });
+});
+
+// Step 2 of docs/web/FINISH.md: the conversation as GitHub draws it — every event kind in its
+// words, a review's threads under it, the merge box where GitHub puts it, the header's counts,
+// the commits' and checks' detail.
+describe('PullPage conversation', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    document.body.innerHTML = '';
+    sessionStorage.clear();
+  });
+
+  const at = '2026-10-17T09:00:00Z';
+  const event = (kind: string, more: Record<string, unknown> = {}) => ({ kind, actor: 'sam', when: at, html: null, text: null, state: null, sha: null, id: null, markdown: null, canEdit: false, canDelete: false, ...more });
+
+  async function click(element: Element, host: HTMLElement) {
+    await act(async () => {
+      (element as HTMLElement).click();
+    });
+    await settle(host, () => false);
+  }
+
+  it('draws every event kind in GitHub’s words, and an unknown kind as its words rather than nothing', async () => {
+    const timeline = [
+      event('labeled', { target: 'plc', targetColor: '1a7f37' }),
+      event('review-requested', { target: 'controls' }),
+      event('renamed', { previous: 'fix', target: 'Fix interlock' }),
+      event('force-push', { previous: 'a'.repeat(40), sha: 'b'.repeat(40) }),
+      event('cross-referenced', { actor: 'lee', reference: { number: 3, title: 'Trips late', repository: 'acme/plant', url: 'https://github.com/acme/plant/issues/3', isPull: false, state: 'OPEN' }, message: 'closes' }),
+      event('review-dismissed', { target: 'lee', message: 'stale' }),
+      event('merged', { sha: '9'.repeat(40), target: 'main' }),
+      event('something-newer'),
+    ];
+    const { host, root } = await render('/acme/plant/pull/12', { timeline });
+
+    // The actor, the sentence and the time are separate spans with a flex gap, no space in the text: read them as words.
+    const rows = Array.from(host.querySelectorAll('.timeline-item')).map((li) => Array.from(li.querySelectorAll('.timeline-meta > *')).map((e) => e.textContent?.replace(/\s+/g, ' ').trim()).join(' '));
+    expect(rows[0]).toContain('sam added the plc label');
+    expect(host.querySelector('.timeline-labeled .issue-label')?.getAttribute('style')).toContain('rgb(26, 127, 55)');
+    expect(rows[1]).toContain('requested a review from controls');
+    expect(rows[2]).toContain('changed the title fix Fix interlock');
+    expect(host.querySelector('.timeline-renamed del')?.textContent).toBe('fix');
+    expect(rows[3]).toContain('force-pushed the branch from aaaaaaa to bbbbbbb');
+    expect(rows[4]).toContain('lee will close this in acme/plant#3 Trips late');
+    expect(host.querySelector('.timeline-cross-referenced a')?.getAttribute('href')).toBe('https://github.com/acme/plant/issues/3');
+    expect(rows[5]).toContain('dismissed lee’s review: stale');
+    expect(rows[6]).toContain('merged commit 9999999 into main');
+    expect(rows[7]).toContain('something newer');
+    act(() => root.unmount());
+  });
+
+  it('draws a comment as a card: the picture, the role, the edit mark, the permalink, the reactions', async () => {
+    const timeline = [event('comment', { actor: 'jo', html: '<p>fine</p>', id: 'IC_1', association: 'MEMBER', editedAt: at, url: 'https://github.com/acme/plant/pull/12#issuecomment-9',
+      reactions: [{ content: 'THUMBS_UP', count: 2, viewerHasReacted: true }, { content: 'EYES', count: 1, viewerHasReacted: false }] })];
+    const { host, root } = await render('/acme/plant/pull/12', { timeline });
+
+    const card = host.querySelector('.timeline-comment .comment-row')!;
+    expect(card.getAttribute('id')).toBe('issuecomment-9');
+    expect(card.querySelector('.comment-head')?.textContent).toContain('jo');
+    expect(card.querySelector('.comment-head')?.textContent).toContain('edited');
+    expect(card.querySelector('.role-badge')?.textContent).toBe('Member');
+    expect(card.querySelector('.avatar-letter')?.textContent).toBe('J');
+    expect(card.querySelector('.comment-head a[href="#issuecomment-9"]')).not.toBeNull();
+    const reactions = Array.from(card.querySelectorAll('.reaction'));
+    expect(reactions.map((r) => r.textContent?.trim())).toEqual(['👍 2', '👀 1']);
+    expect(reactions[0]?.classList.contains('is-mine')).toBe(true);
+    act(() => root.unmount());
+  });
+
+  it('lists a review’s own threads under it, hunk first, and leaves the others to Files changed', async () => {
+    const timeline = [event('review', { actor: 'lee', state: 'CHANGES_REQUESTED', id: 'PRR_1', html: '<p>Not yet.</p>', sha: head })];
+    const { host, root } = await render('/acme/plant/pull/12', { timeline, threadReview: 'PRR_1' });
+
+    const review = host.querySelector('.timeline-review')!;
+    expect(review.classList.contains('timeline-review-danger')).toBe(true);
+    expect(review.textContent).toContain('lee requested changes');
+    expect(review.querySelector('.comment-review-summary')?.textContent).toContain('Not yet.');
+    // The thread whose first comment names the review is under it, with GitHub's hunk and a link to the file.
+    const threads = Array.from(review.querySelectorAll('.review-thread'));
+    expect(threads).toHaveLength(1);
+    expect(threads[0]?.querySelector('.diff-hunk')?.textContent).toBe('@@ -1,3 +1,3 @@\n a\n-b\n+c');
+    expect(threads[0]?.querySelector('.review-thread-file a')?.getAttribute('href')).toContain('/acme/plant/pull/12/files?path=src%2FPump.st');
+    expect(threads[0]?.querySelector('[data-thread]')?.getAttribute('data-thread')).toBe('NEW3');
+    act(() => root.unmount());
+  });
+
+  it('puts the merge summary and the merge box after the timeline and before the comment box, as GitHub does', async () => {
+    const ready = { tier: true, state: 'OPEN', merged: false, headSha: head, mergeStateStatus: 'CLEAN', mergeable: true, blocked: null,
+      methods: ['MERGE'], autoMergeAllowed: false, autoMerge: null, canDisableAutoMerge: false, mergeCommit: null };
+    const { host, root } = await render('/acme/plant/pull/12', { writable: true, canMerge: true, merge: ready, counts: { reviewDecision: 'APPROVED', mergeable: 'MERGEABLE' } });
+
+    const order = ['.timeline', '.merge-summary', '.merge-box', '.comment-row-new'].map((s) => host.querySelector(s));
+    expect(order.every((e) => e !== null)).toBe(true);
+    for (let i = 1; i < order.length; i++) {
+      expect(order[i - 1]!.compareDocumentPosition(order[i]!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    }
+    expect(host.querySelector('.merge-summary')?.textContent).toContain('Changes approved');
+    expect(host.querySelector('.merge-summary')?.textContent).toContain('Some checks were not successful');
+    act(() => root.unmount());
+  });
+
+  it('shows the header’s counts: commits in the meta line and on the tab, comments on the tab, the diffstat', async () => {
+    const { host, root } = await render('/acme/plant/pull/12', { counts: { commits: 3, comments: 5, additions: 12, deletions: 3, changedFiles: 2 } });
+
+    expect(host.querySelector('.pr-meta')?.textContent).toContain('wants to merge 3 commits into');
+    const tab = (label: string) => Array.from(host.querySelectorAll('.pr-tabs .underline-nav-item')).find((a) => a.textContent?.includes(label));
+    expect(tab('Commits')?.querySelector('.counter')?.textContent).toBe('3');
+    expect(tab('Conversation')?.querySelector('.counter')?.textContent).toBe('5');
+    expect(host.querySelector('.pr-diffstat')?.textContent).toContain('+12');
+    expect(host.querySelector('.pr-diffstat')?.textContent).toContain('−3');
+    act(() => root.unmount());
+  });
+
+  it('groups the checks by app, marks the required one, and shows a run’s output on demand', async () => {
+    const checks = [
+      { name: 'build', status: 'completed', conclusion: 'success', url: 'https://ci.example/1', source: 'check-run', app: 'GitHub Actions', required: true, startedAt: at, completedAt: '2026-10-17T09:04:00Z', title: 'Built', summary: '<div class="md-page"><p>All <strong>green</strong></p></div>' },
+      { name: 'lint', status: 'in_progress', conclusion: null, url: null, source: 'check-run', app: 'GitHub Actions', required: false },
+      { name: 'ci/jenkins', status: 'completed', conclusion: 'failure', url: 'https://jenkins.example/42', source: 'status', app: 'jenkins-bot', description: 'Build #42 failed' },
+    ];
+    const { host, root } = await render('/acme/plant/pull/12/checks', { checks, counts: { requiredChecks: ['build'] } });
+
+    const groups = Array.from(host.querySelectorAll('.checks-group .box-header')).map((h) => h.textContent);
+    expect(groups).toEqual(['GitHub Actions2', 'jenkins-bot1']);
+    expect(host.querySelector('.checks-summary')?.textContent).toContain('1 failing');
+    expect(host.querySelector('.checks-summary')?.textContent).toContain('1 in progress');
+    expect(host.querySelector('.checks-summary')?.textContent).toContain('1 successful');
+    const build = Array.from(host.querySelectorAll('.check')).find((li) => li.textContent?.includes('build'))!;
+    expect(build.querySelector('.check-required')?.textContent).toBe('Required');
+    expect(build.textContent).toContain('4m 0s');
+    expect(build.querySelector('.check-output')).toBeNull();
+    await click(Array.from(build.querySelectorAll('button')).find((b) => b.textContent?.includes('Show output'))!, host);
+    expect(build.querySelector('.check-output')?.textContent).toContain('All green');
+    act(() => root.unmount());
+  });
+
+  it('badges a verified signature and a merge, and opens a commit’s body on demand', async () => {
+    const commits = [
+      { sha: head, headline: 'Fix the default', author: 'jo', when: at, inSnapshot: true, login: 'jo', body: 'It was wrong.', verified: true, parents: 2, url: 'https://github.com/acme/plant/commit/' + head },
+    ];
+    const { host, root } = await render('/acme/plant/pull/12/commits', { commits });
+
+    const row = host.querySelector('.commit-row')!;
+    expect(row.querySelector('.verified-badge')?.textContent).toBe('Verified');
+    expect(row.textContent).toContain('Merge');
+    expect(row.querySelector('a.commit-sha')?.getAttribute('href')).toBe('https://github.com/acme/plant/commit/' + head);
+    expect(row.querySelector('.commit-body')).toBeNull();
+    await click(row.querySelector('.commit-expand')!, host);
+    expect(row.querySelector('.commit-body')?.textContent).toBe('It was wrong.');
+    act(() => root.unmount());
   });
 });

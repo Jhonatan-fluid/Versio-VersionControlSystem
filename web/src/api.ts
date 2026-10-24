@@ -323,9 +323,32 @@ export interface ReviewStatus {
     /** name is shown; value is the name as GitHub has it, sent back to remove it. */
     labels: { name: string; value: string; color: string }[];
     assignees: string[];
-    reviewers: { login: string; state: string }[];
+    reviewers: { login: string; state: string; isTeam?: boolean; avatar?: string | null }[];
     /** GitHub refuses an author's approval: the page does not offer it. */
     viewerIsAuthor: boolean;
+    /** What GitHub's header and sidebar show (docs/web/FINISH.md, B1): absent from an older server's answer. */
+    additions?: number;
+    deletions?: number;
+    changedFiles?: number;
+    commits?: number;
+    comments?: number;
+    createdAt?: string | null;
+    closedAt?: string | null;
+    mergedAt?: string | null;
+    mergedBy?: string | null;
+    author?: string;
+    authorAvatar?: string | null;
+    authorAssociation?: string;
+    locked?: boolean;
+    lockReason?: string | null;
+    milestone?: string | null;
+    /** The head's repository as owner/name when it is a fork. */
+    headRepository?: string | null;
+    reactions?: Reaction[];
+    /** The live head's combined check state: SUCCESS, FAILURE, PENDING, ERROR, EXPECTED; null when none. */
+    checkRollup?: string | null;
+    /** The checks branch protection requires on this pull request. */
+    requiredChecks?: string[];
     /** The commit the viewer last reviewed, for "changes since your last review". */
     viewerLastReviewCommit: string | null;
     /** The title and description as they are now: shown, and what an edit starts from and names as replaced. */
@@ -339,13 +362,53 @@ export interface ReviewStatus {
   checksError: string | null;
   /** More checks than were read: shown as cut, so a failure past the bound is never hidden behind passes. */
   checksTruncated?: boolean;
-  checks: { name: string; status: string; conclusion: string | null; url: string | null; source: string }[] | null;
+  checks: ReviewCheck[] | null;
+}
+
+/** One kind of reaction and how many gave it; whether the viewer is among them. */
+export interface Reaction {
+  content: string;
+  count: number;
+  viewerHasReacted: boolean;
+}
+
+/** One check on the reviewed commit: a check run or a commit status, with what GitHub's checks tab shows of it. */
+export interface ReviewCheck {
+  name: string;
+  status: string;
+  conclusion: string | null;
+  url: string | null;
+  source: string;
+  id?: number | null;
+  startedAt?: string | null;
+  completedAt?: string | null;
+  /** The GitHub App that ran it, or the status's creator. */
+  app?: string | null;
+  suite?: number | null;
+  title?: string | null;
+  /** The run's summary, Markdown by the CI, rendered by Core; the page sanitises it like any body. */
+  summary?: string | null;
+  annotations?: number;
+  description?: string | null;
+  /** Branch protection requires it, as GitHub marks the live head's checks. */
+  required?: boolean;
 }
 
 export interface ReviewComment {
   id: string;
   author: string;
   when: string;
+  /** The review this comment was written in, so the conversation lists its thread under that review. */
+  reviewId?: string | null;
+  /** GitHub's excerpt of the diff the comment sits on: text, drawn as a code block. */
+  diffHunk?: string | null;
+  association?: string;
+  avatar?: string | null;
+  editedAt?: string | null;
+  url?: string | null;
+  reactions?: Reaction[];
+  /** A draft of the viewer's pending review: nobody else sees it yet. */
+  pending?: boolean;
   /** The text to edit, Versio's tags removed; only when the viewer may edit. */
   markdown: string | null;
   canEdit: boolean;
@@ -380,18 +443,76 @@ export interface ReviewThreads {
   threads: ReviewThread[];
 }
 
+/** An issue or pull request a timeline event points at. */
+export interface TimelineReference {
+  number: number;
+  title: string;
+  repository: string;
+  url: string | null;
+  isPull: boolean;
+  state: string;
+}
+
+/**
+ * One entry of the conversation. `kind` is one of comment, review, commit, force-push, merged,
+ * closed, reopened, ready, draft, labeled, unlabeled, assigned, unassigned, review-requested,
+ * review-request-removed, review-dismissed, renamed, base-changed, base-force-push, head-deleted,
+ * head-restored, cross-referenced, referenced, milestoned, demilestoned, locked, unlocked,
+ * auto-merge-on, auto-merge-off, queued, dequeued, deployed.
+ */
+export interface TimelineItem {
+  kind: string;
+  actor: string;
+  when: string;
+  html: string | null;
+  text: string | null;
+  state: string | null;
+  sha: string | null;
+  /** A comment's or a review's node id. */
+  id: string | null;
+  markdown: string | null;
+  canEdit: boolean;
+  canDelete: boolean;
+  /** What the event named: a label, a person, a title, a branch, a milestone, an environment. */
+  target?: string | null;
+  targetColor?: string | null;
+  /** What was there before: the old title, the old base, the commit before a force-push. */
+  previous?: string | null;
+  reference?: TimelineReference | null;
+  /** A dismissal's words, a lock's reason, "closes" on a cross-reference that will close this. */
+  message?: string | null;
+  association?: string;
+  avatar?: string | null;
+  editedAt?: string | null;
+  url?: string | null;
+  reactions?: Reaction[];
+  verified?: boolean | null;
+}
+
 export interface ReviewTimeline {
   truncated: boolean;
-  items: {
-    kind: string; actor: string; when: string; html: string | null; text: string | null; state: string | null; sha: string | null;
-    id: string | null; markdown: string | null; canEdit: boolean; canDelete: boolean;
-  }[];
+  items: TimelineItem[];
+}
+
+export interface ReviewCommit {
+  sha: string;
+  headline: string;
+  author: string;
+  when: string;
+  inSnapshot: boolean;
+  login?: string | null;
+  avatar?: string | null;
+  committer?: string | null;
+  body?: string;
+  verified?: boolean | null;
+  parents?: number;
+  url?: string | null;
 }
 
 export interface ReviewCommits {
   truncated: boolean;
   headFound: boolean;
-  commits: { sha: string; headline: string; author: string; when: string; inSnapshot: boolean }[];
+  commits: ReviewCommit[];
 }
 
 export type PaneView = 'rendered' | 'raw';

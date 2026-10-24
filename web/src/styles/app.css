@@ -444,6 +444,73 @@ tr.thread-row > td { padding: 4px 8px 8px 32px; background: transparent; }
 .file-review > .pane-head { position: sticky; top: 0; z-index: 2; background: var(--color-canvas-subtle); padding: 8px 12px; margin: 0; border-bottom: 1px solid var(--color-border-default); border-radius: var(--radius) var(--radius) 0 0; }
 .file-review-body { padding: 8px 12px 12px; }
 
+/* The conversation as GitHub draws it (FINISH.md B3): a comment card with the person's picture
+   beside it, rows on the rail for events, a review card with its threads under it, the merge
+   summary and box after the timeline, the comment box last. */
+.pr-meta-line { display: inline-flex; align-items: center; gap: 4px; flex-wrap: wrap; }
+.pr-tabs { display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.pr-diffstat { padding-bottom: 12px; }
+.comment-row { display: flex; gap: 12px; align-items: flex-start; margin: 0 0 16px; }
+.comment-row > .avatar { flex: none; margin-top: 2px; }
+.comment-row > .comment { flex: 1; min-width: 0; }
+.comment-row-success > .comment { border-color: var(--color-success-emphasis); }
+.comment-row-danger > .comment { border-color: var(--color-danger-emphasis); }
+.comment-row-success > .comment > .comment-head { background: var(--color-success-subtle); border-bottom-color: var(--color-success-emphasis); }
+.comment-row-danger > .comment > .comment-head { background: var(--color-danger-subtle); border-bottom-color: var(--color-danger-emphasis); }
+.comment-time { color: var(--color-fg-muted); }
+.comment-time:hover { color: var(--color-accent-fg); text-decoration: underline; }
+.comment-head-tools a { color: var(--color-fg-muted); display: inline-flex; }
+.comment-new .comment-body { padding: 8px 8px 4px; }
+.comment-new .comment-box { margin: 0; }
+.role-badge { font: 500 12px/18px var(--font-ui); color: var(--color-fg-muted); border: 1px solid var(--color-border-default); border-radius: 999px; padding: 0 7px; }
+.reactions { display: flex; gap: 6px; flex-wrap: wrap; padding: 0 16px 12px; }
+.comment-review-summary .reactions, .thread-comment .reactions { padding: 6px 0 0; }
+.reaction { display: inline-flex; align-items: center; gap: 4px; font: 500 12px/18px var(--font-ui); border: 1px solid var(--color-border-default); border-radius: 999px; padding: 2px 8px; color: var(--color-fg-muted); }
+.reaction.is-mine { border-color: var(--color-accent-emphasis); background: var(--color-accent-subtle); color: var(--color-accent-fg); }
+.timeline-item.timeline-comment { padding-left: 0; }
+.timeline-item.timeline-comment .comment-row { margin: 8px 0; }
+.timeline-item.timeline-comment .comment-row > .avatar { width: 40px; height: 40px; position: relative; z-index: 1; }
+.timeline-commit-line { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; min-width: 0; flex-wrap: wrap; }
+.timeline-commit-line code { font-size: 12px; }
+.verified-badge { font: 500 12px/18px var(--font-ui); color: var(--color-success-fg); border: 1px solid var(--color-success-fg); border-radius: 999px; padding: 0 7px; }
+.timeline-review-body { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.timeline-review-body > .timeline-meta { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.comment-review-summary { margin: 0; }
+.review-threads { display: flex; flex-direction: column; gap: 12px; }
+.review-thread { border: 1px solid var(--color-border-default); border-radius: var(--radius); overflow: hidden; }
+.review-thread-file { display: flex; align-items: center; gap: 8px; padding: 8px 12px; background: var(--color-canvas-subtle); border-bottom: 1px solid var(--color-border-default); font-size: 13px; }
+.review-thread-file a { font-family: var(--font-mono); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.review-thread > .thread { border: 0; border-radius: 0; margin: 0; }
+.diff-hunk { margin: 0; padding: 8px 12px; font: 12px/1.5 var(--font-mono); background: var(--color-canvas-default); border-bottom: 1px solid var(--color-border-muted); overflow-x: auto; color: var(--color-fg-muted); white-space: pre; }
+.thread-comment.is-pending { background: var(--color-attention-subtle); margin: 0 -12px; padding: 6px 12px; }
+.thread-meta { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.merge-summary { margin: 16px 0 0; }
+.merge-summary + .merge-box { margin-top: 0; border-top-left-radius: 0; border-top-right-radius: 0; border-top: 0; }
+.merge-summary:has(+ .merge-box) { border-bottom-left-radius: 0; border-bottom-right-radius: 0; }
+.merge-summary-row { display: flex; gap: 12px; align-items: flex-start; padding: 12px 16px; border-top: 1px solid var(--color-border-muted); }
+.merge-summary-row:first-child { border-top: 0; }
+.merge-summary-icon { margin-top: 2px; }
+.tone-success .merge-summary-icon { color: var(--color-success-fg); }
+.tone-danger .merge-summary-icon { color: var(--color-danger-fg); }
+.tone-attention .merge-summary-icon { color: var(--color-attention-fg); }
+.tone-muted .merge-summary-icon { color: var(--color-fg-muted); }
+.merge-box { margin-top: 0; }
+.commit-subject-line { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.commit-expand { padding: 0 6px; line-height: 14px; }
+.commit-body { margin: 6px 0; padding: 8px 12px; font: 12px/1.5 var(--font-mono); background: var(--color-canvas-subtle); border-radius: var(--radius); white-space: pre-wrap; overflow-wrap: anywhere; }
+.commit-new-badge { color: var(--color-attention-fg); border-color: var(--color-attention-fg); }
+.commit-sha { text-decoration: none; }
+a.commit-sha:hover { color: var(--color-accent-fg); }
+.checks-summary { display: flex; gap: 16px; flex-wrap: wrap; margin: 0 0 16px; font-size: 14px; }
+.checks-summary span { display: inline-flex; align-items: center; gap: 4px; }
+.checks-group { margin-bottom: 16px; }
+.checks-group .box-header { justify-content: space-between; }
+.checks li { display: block; padding: 0; }
+.check-line { display: flex; gap: 10px; align-items: center; padding: 8px 16px; flex-wrap: wrap; }
+.check-required { margin-left: 6px; }
+.check-output { padding: 8px 16px 12px 42px; border-top: 1px solid var(--color-border-muted); background: var(--color-canvas-subtle); font-size: 13px; }
+.check-output .md-page { font-size: 13px; }
+
 /* Mermaid diagrams, drawn in sandboxed frames. The frame is born at height 0 and grows to the
    height its diagram reports — never display:none, which would void the frame's layout and make
    the diagram measure itself in a zero-size viewport (FragmentHost has the story). */

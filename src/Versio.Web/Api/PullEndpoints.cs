@@ -559,8 +559,9 @@ public static class PullEndpoints
                         canEdit = c.CanEdit,
                         canDelete = c.CanDelete,
                         reviewId = c.ReviewId,
-                        // The hunk is text the page draws in a code block; spelled, never markup.
-                        diffHunk = c.DiffHunk is { } hunk ? CodeHtml.Spelled(hunk) : null,
+                        // The hunk is text the page draws in a code block: spelled line by line, so a
+                        // hidden character shows while the newlines that make it a hunk stay.
+                        diffHunk = c.DiffHunk is { } hunk ? SpelledLines(hunk) : null,
                         association = c.AuthorAssociation,
                         avatar = c.AvatarUrl,
                         editedAt = c.EditedAt,
@@ -656,7 +657,7 @@ public static class PullEndpoints
                     login = c.AuthorLogin is { } login ? CodeHtml.Spelled(login) : null,
                     avatar = c.AuthorAvatar,
                     committer = c.Committer is { } committer ? CodeHtml.Spelled(committer) : null,
-                    body = CodeHtml.Spelled(c.Body),
+                    body = SpelledLines(c.Body),
                     verified = c.Verified,
                     parents = c.ParentCount,
                     url = c.Url,
@@ -664,6 +665,13 @@ public static class PullEndpoints
             });
         });
     }
+
+    /// <summary>
+    /// Text of several lines, each spelled (security rule 9) with the newlines between them kept:
+    /// a commit body or a diff hunk spelled whole read as one line of <c>U+000A</c> markers (seen
+    /// in the preview, 2026-10-23).
+    /// </summary>
+    internal static string SpelledLines(string text) => string.Join("\n", text.Split('\n').Select(CodeHtml.Spelled));
 
     /// <summary>A reaction group as the page draws it: GitHub's content word, the count, whether the viewer is in it.</summary>
     private static object Reaction(ReactionGroup g) => new { content = g.Content, count = g.Count, viewerHasReacted = g.ViewerHasReacted };
