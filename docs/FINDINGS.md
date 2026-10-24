@@ -46,11 +46,69 @@ store under its own slot, and has CommentBox's "Edit text". Mutation: with the w
 removed, the new `CommitPage` test (post → unknown → reload → "Try again" sends the same key)
 fails.
 
+**Then three independent reads of the whole branch** (server, page, Core and docs), each told to
+report only what it had verified in the code, found more — the list below is what survived a
+check against the code, with the mutation each fix was pinned by:
+
+- **A retry after a lost delete-branch or restore-branch answer was a 500 forever.** A retry
+  reconciles *before* any precondition runs, and both reconciles read the branch the
+  precondition had set (`branch!`). The person was stuck behind "Try again" after one lost
+  answer. The reconcile reads the merge state itself; the original code fails the new retry
+  test with a 500.
+- **Opening a pull request from a fork could never be reconciled.** `FindCreatedPullAsync`
+  prefixed `owner:` onto a head that was already `bob:feature`, asked GitHub for
+  `acme:bob:feature`, and listed nothing — so after a lost answer the form stayed locked while
+  the pull request existed. The fake writer matched on the raw head, which is why the existing
+  reconcile test could not see it.
+- **A suggestion applied to a file that is not UTF-8 would have rewritten the whole file.**
+  `Encoding.UTF8.GetString` puts U+FFFD in place of every bad byte and the commit went to the
+  head branch as is — the exact noise `Suggestions.cs` says it exists to avoid, and a loss of
+  the characters. The bytes must round-trip or the suggestion is refused; a BOM round-trips.
+- **An anonymous probe with the forgery headers cost a GitHub read per request on a write
+  route**, because access was resolved (the repository's visibility, uncached for a private
+  one, under the App's token) before S1 refused the request, and the per-session limiter has no
+  session to count. The session is asked for first; the signed-out test asserts no GitHub read.
+- **`ActionButton` held its key while its payload flipped.** Resolve answered "unknown"; the
+  poll said resolved; the same button offered Unresolve and sent the old key with the opposite
+  payload. A key is held for one path and one payload now, as `MergeBox` already did.
+- **No review-thread permalink ever matched.** `anchorOf` accepted `issuecomment-9` and
+  `pullrequestreview-1` but not `discussion_r7`, GitHub's shape with an underscore; and the move
+  to the comment's file dropped the hash on the way. Found by the first test that used one.
+- **Identifiers in the body of a `(* … *)` comment were linked and counted as uses**: the
+  tokenizer is line-at-a-time and stateless, by design, for diff hunks; whole files are drawn
+  and searched here, and `_M_EvaluateCommands.st` in the fixtures has commented-out code naming
+  a method. A `TokenState` is carried between lines by the callers that see the file in order.
+  And the dot guard above, applied to the search, had made "used by" empty for every method and
+  property — the only way a method is used from outside is `x.Start()`. The search counts the
+  dotted word and says it searches by name.
+- **The "used by" search read the XML layer as typed**, where the embedded ST's comments are not
+  comments, and read both layers of every two-layer object; a cut answer was never cached, so a
+  project over the bound re-read up to 1,500 blobs on every view.
+- **A tab left open past the snapshot's life froze**: `usePolled` swallowed every error. A
+  viewed file's drawing was re-read on every fold. Tags and commit comments were cut at a page
+  with nothing said. `/pulls` counted "closed" as "merged" under an `is:merged` query. A project
+  with no manifest showed "Vendor: Codesys" on both hosts. Two anchors with one id threw instead
+  of refusing. Three write exits had no audit line. Fifteen CSS rules nothing emitted, and one
+  component's marks with no rules.
+- **Not a defect, and kept as a test:** a guard against a nested `FragmentHost` handling a click
+  twice survived its own mutation — the portal's React parent is the host's fragment root, so
+  the drawing's handler never sees the comment's click. The guard came out; the test stays.
+- **The docs:** ARCHITECTURE still said "read-only" and "the viewer only reads", sized the server
+  at 2,700 lines (12,600), counted 375 tests (441) and listed four routes nowhere; STATUS was
+  dated 2026-09-14, sent the next session to item 2, and gave counts that disagreed with its own
+  table; FINISH had §A items 3, 4 and 7, the husk row, nine D-table rows and all of Step 4 open
+  while STATUS said Steps 0–10 had landed.
+
 **Also on the way:** `FragmentHost`'s unfold click handler had been pasted three times over in
 Step 3's commit (dead, harmless, and nothing noticed); one comment still said "merge request".
 
-**The rule:** a box that posts is `CommentBox`, or it is built on `CommentBox`'s store. A key rule
-re-implemented beside the one that has the tests is a key rule without them.
+**What the pass cost and what it was worth:** three agents, about a million tokens between them,
+and most of a day; the four defects at the top of this list are each a person losing a write or
+a file, and none had a test that could see it. **The rule:** a box that posts is `CommentBox`,
+or it is built on `CommentBox`'s store; a reconcile never reads what only a precondition sets;
+a cut list says so; and a review's claim is checked against the code before it is fixed — one
+of the eleven page findings was wrong, and the fix for it would have been dead code with a
+confident comment.
 
 ---
 

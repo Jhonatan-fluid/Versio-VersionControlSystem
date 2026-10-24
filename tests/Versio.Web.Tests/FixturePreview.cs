@@ -175,7 +175,10 @@ public sealed class FixturePreview
             "## Changed\n\n- The alarm defaults\n- The simulation step\n"));
         repo.Releases.Add((new ReleaseInfo("v1.2-rc1", "Next cut", "sam", DateTimeOffset.Now.AddDays(-1), Prerelease: true), ""));
 
-        var settings = new Dictionary<string, string?> { ["urls"] = "http://127.0.0.1:5199" };
+        // 5199 unless VERSIO_WEB_PREVIEW_PORT says otherwise: a second preview beside another
+        // session's (the same reason PullPreview takes one, 2026-10-23).
+        var port = Environment.GetEnvironmentVariable("VERSIO_WEB_PREVIEW_PORT") is { Length: > 0 } chosen ? chosen : "5199";
+        var settings = new Dictionary<string, string?> { ["urls"] = $"http://127.0.0.1:{port}" };
 
         // VERSIO_WEB_PREVIEW_SCOPED=1 besides: the server scoped to the fixtures repository, to
         // look at the home page's repository list and the off-list refusal ("The product shape"

@@ -22,8 +22,8 @@ UX remainder) is built and tested as of 2026-08-25** — UX-6 find boxes, UX-7 `
 Escape, UX-8 copy-a-commit, UX-12 amend-while-unpushed — and its visual half joins the
 eyeball list in item 2. Do not start from `archive/` or a handoff.
 
-**Tests:** 4,045 across twelve projects (plus 181 vitest in `web/`), last counted 2026-10-24
-on `VersioWeb` with the coverage-rules and renderer-choice branches merged (Core 1,900, Web 380) — re-derived by summing the table below; the toolchain-gated
+**Tests:** 4,053 across twelve projects (plus 187 vitest in `web/`), last counted 2026-10-24
+on `VersioWeb` with the coverage-rules and renderer-choice branches merged (Core 1,911, Web 441) — re-derived by summing the table below; the toolchain-gated
 counts (TIA 5, TwinCAT 6, CODESYS 55) are from their last gate runs, not re-run for the count. **The Rendered view of an ST object reads like the IDE (2026-09-20):** no
 `@@` line, one gutter, a Declaration / Implementation divider, and the implementation
 numbered from 1 so a compile error's line number can be found — FINDINGS 2026-09-20. **With TIA Portal open, a commit no longer records a stale mirror**: the
@@ -62,7 +62,7 @@ marking, duplicate-param keys, and the detail-pane lookup. All of them are in
 
 | Project | Tests | Time | Needs |
 |---|---|---|---|
-| `Versio.Core.Tests` | 1,905 | under a second | nothing |
+| `Versio.Core.Tests` | 1,911 | under a second | nothing |
 | `Versio.Integration.Tests` | 176 | ~10 s | real git |
 | `Versio.App.Tests` | 801 (re-counted 2026-10-23) | 10 m 45 s (loaded: mutation checks ran beside it) and 10 m 36 s on 2026-10-23; 12 m 19 s, 10 m 42 s and 9 m 5 s on 2026-10-22; 10 m 46 s on 2026-10-19; 10 m 58 s on 2026-10-16; 6 m 35 s on 2026-10-10; 8 m 38 s on 2026-10-05; ~3.6 min on 2026-09-22 | nothing |
 | `Versio.Arch.Tests` | 36 | instant | nothing |
@@ -72,8 +72,8 @@ marking, duplicate-param keys, and the detail-pane lookup. All of them are in
 | `Versio.Plc.TiaPortal.Tests` | 5 | seconds when skipped; minutes when Portal runs the import gate | **real TIA Portal** — skips without Openness membership or LFS content |
 | `Versio.Plc.TwinCat.Pure.Tests` | 23 | instant | nothing |
 | `Versio.Plc.TwinCat.Tests` | 6 | seconds when skipped; ~5 min when XAE runs the import gate | **real TwinCAT XAE** — skips without `TcXaeShell.DTE.17.0` or the fixture |
-| `Versio.Web.Tests` | 439 | a few seconds | nothing — GitHub is faked |
-| `web/` (vitest) | 181 | ~21 s on 2026-10-24 (the review page waits for its reads, not ticks; it was ~3 min) | the pinned Node in `web/.node` |
+| `Versio.Web.Tests` | 441 | a few seconds | nothing — GitHub is faked |
+| `web/` (vitest) | 187 | ~21 s on 2026-10-24 (the review page waits for its reads, not ticks; it was ~3 min) | the pinned Node in `web/.node` |
 | `Versio.Plc.Codesys.Tests` | 55 | **~30 min**; 41 m 14 s, 55/55, on 2026-10-11 on `WebViewer` | **real CODESYS** |
 
 The first ten are the loop to work in — about thirty seconds plus the UI suite. The last is
