@@ -401,7 +401,7 @@ dotnet test tests/Versio.Core.Tests
 > `%LOCALAPPDATA%\Microsoft\dotnet\dotnet.exe`, or set `DOTNET_ROOT` to it — the same install
 > layout that makes a framework-dependent `Versio.exe` fail to start, noted again below.
 
-**Twelve suites, and they need different things** (plus the web page's own vitest suite in `web/`, 135 tests, which needs the pinned Node):
+**Twelve suites, and they need different things** (plus the web page's own vitest suite in `web/`, 140 tests, which needs the pinned Node):
 
 | Suite | Tests | Needs | Runs in |
 |---|---|---|---|

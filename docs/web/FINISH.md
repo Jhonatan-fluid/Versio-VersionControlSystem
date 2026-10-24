@@ -139,16 +139,14 @@ File refs: `P` = `web/src/pages/PullPage.tsx`, `RB` = `components/ReviewBar.tsx`
   when the branch moved.
 
 ### B6. Files changed
-- **missing** All files on one page, each under a sticky header with: chevron (collapse), `+N −M`,
-  path with copy button, Viewed checkbox, "…" menu (View file, Edit file, Delete file, Open on
-  GitHub). Today one file per `?path=` (`P:421`, `FileReview` at `:677-856`).
-- **missing** A **file tree** sidebar grouped project → folder → object (the owner's words: "organised
-  by vendor platform"), with per-node A/M/D/R marks, a filter box, "jump to file", viewed progress
-  ("12 / 85 files viewed"), and filtering by extension / owner / viewed.
-- **missing** Per-file additions / deletions (not in the inventory, `PE:131-148`).
-- **missing** Expand-hunk arrows (↑ ↓ per hunk, "expand all"); only the whole-file "Show full file".
-- **missing** Multi-line comments (click-drag or shift-click a range); drafts are one line
-  (`P:683`), though the server accepts `start_line` on the same side (`PW:111`).
+- ~~**missing** All files on one page, each under a sticky header with: chevron (collapse), `+N −M`,
+  path with copy button, Viewed checkbox~~ (Step 3, 2026-10-23: `FileSection`, every file stacked and loaded as it comes into view; a viewed file folds). Still missing: a copy-path button and the "…" menu (View file, Edit file, Delete file, Open on GitHub).
+- ~~**missing** A **file tree** sidebar grouped folder → object with per-node A/M/D/R marks, a filter box, "jump to file", viewed progress
+  ("12 / 85 files viewed")~~ (Step 3: `FilesTree`, an object's own files nested under it; `+N −M` and thread counts per file). Still missing: grouping by *project* with the vendor's pill (Step 8/9, from the grown tree node), filtering by extension / owner / viewed.
+- ~~**missing** Per-file additions / deletions (not in the inventory, `PE:131-148`).~~ Step 3: counted from GitHub's patch; null without one.
+- **partial** Expand-hunk arrows (↑ ↓ per hunk, "expand all"): a click on a folded stretch asks for the whole file (Step 3); per-hunk expansion needs Core's fold rows to carry a range.
+- ~~**missing** Multi-line comments (click-drag or shift-click a range); drafts are one line
+  (`P:683`), though the server accepts `start_line` on the same side (`PW:111`).~~ Step 3: shift-click a second line of the same side and file; posted with `startLine`.
 - **missing** Comments on expanded / unchanged lines outside GitHub's hunks (refused
   `line-not-in-diff`, `PW:1034`); GitHub allows them within ±N lines.
 - **missing** Suggested changes: insert a suggestion block from the comment toolbar, render a
@@ -158,20 +156,18 @@ File refs: `P` = `web/src/pages/PullPage.tsx`, `RB` = `components/ReviewBar.tsx`
   show/hide annotations, persisted unified/split preference. Rendered/Raw and Unified/Split exist.
 - **missing** Commit range selection ("changes from all commits" / "since your last review" /
   one commit) inside the tab; today only an external compare link.
-- **missing** "Show resolved" toggle; resolved threads stay expanded and dimmed (`app.css:268`).
+- ~~**missing** "Show resolved" toggle; resolved threads stay expanded and dimmed (`app.css:268`).~~ Step 3: per file, "Show N resolved threads", on by default.
 - **missing** Outdated-thread view with the original hunk; outdated threads are only listed as
   "unplaced" (`P:817-826`).
 - **missing** Resolve-by / resolved-at; thread "collapsed" state.
 - **missing** Find in diff; keyboard shortcuts (`j/k`, `n/p`, `t`, `c`, `?`).
-- **partial** Viewed checkbox exists (`P:321,751`) but collapses nothing and shows no progress.
+- ~~**partial** Viewed checkbox exists (`P:321,751`) but collapses nothing and shows no progress.~~ Step 3: a viewed file folds, the tree counts "N / M files viewed".
 - **partial** In split view a thread slot is inserted after the row, not into its side's column
   (`FragmentHost.tsx:74-95`).
-- **wrong** Rename notice text "The drawing does not yet compare against the old path" (`P:798`) is
-  stale: the server does compare (`PE:153`, `VS:145-185`).
-- **missing** Links to the object in the tree / "where it lives" for each file (the layer chips
-  exist, `P:769-777`, but no link to the object's node in the repository, no breadcrumb project →
-  folder → FB → method).
-- **missing** Type links that stay inside the review when the target is itself a changed file.
+- ~~**wrong** Rename notice text "The drawing does not yet compare against the old path" (`P:798`) is
+  stale: the server does compare (`PE:153`, `VS:145-185`).~~ Step 3: the header says "renamed from …" and nothing claims otherwise.
+- **partial** ~~"where it lives" for each file~~ (Step 3: the header reads object, then folder › folder › block); still no link to the object's node in the repository tree.
+- ~~**missing** Type links that stay inside the review when the target is itself a changed file.~~ Step 3: a link to a changed file goes to its section; to anything else, to the object at the reviewed commit.
 
 ### B6b. Comments — where one can go today, where it cannot, and how it lands on a GitHub line
 
