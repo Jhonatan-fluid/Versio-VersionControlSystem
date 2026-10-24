@@ -307,12 +307,22 @@ public static partial class ApiEndpoints
         // only; one body is fetched and rendered when picked, because fifty rendered Markdown
         // bodies per list load would be paid mostly for rows nobody opens. The view routes render
         // with Core's Markdown, exactly as a README is, so the page places them like any fragment.
-        api.MapGet("/pulls", async (string owner, string repo, HttpContext http, AccessResolver access, IRepoSource source,
+        // GitHub's list (docs/web/FINISH.md, B10): `q` in GitHub's own grammar (the subset PullQuery
+        // takes), the open and closed counts, a page of rows with their labels, people, review and
+        // check state, and the cursor of the next page. A signed-in person gets GitHub's search; a
+        // reader without a token gets REST's list by state, which knows less, and the page says so.
+        api.MapGet("/pulls", async (string owner, string repo, string? q, string? after, int? page, HttpContext http, AccessResolver access, IRepoSource source,
             Microsoft.Extensions.Options.IOptions<WebOptions> options, CancellationToken ct) =>
         {
-            if (!Valid(owner, repo))
+            if (!Valid(owner, repo) || (after is not null && !Cursor(after)) || page is < 1 or > 1000)
             {
                 return Results.NotFound();
+            }
+
+            var (query, refused) = Versio.Web.Review.PullQuery.Parse(q, owner, repo);
+            if (query is null)
+            {
+                return Results.Json(new { error = "invalid", field = "q", message = $"This page does not search by {CodeHtml.Spelled(refused ?? "")}." }, statusCode: 400);
             }
 
             var who = await access.ResolveAsync(http, owner, repo, ct).ConfigureAwait(false);
@@ -321,29 +331,67 @@ public static partial class ApiEndpoints
                 return Refused(who.Failure, http);
             }
 
+            var writable = options.Value.Writable(owner, repo) && who.Value!.Kind == AccessKind.User;
+            object Row(PullRow p) => new
+            {
+                number = p.Number,
+                title = CodeHtml.Spelled(p.Title),
+                author = CodeHtml.Spelled(p.Author),
+                authorAvatar = p.AuthorAvatar,
+                when = p.UpdatedAt,
+                createdAt = p.CreatedAt,
+                state = p.State,
+                @base = p.BaseRef,
+                baseLabel = CodeHtml.Spelled(p.BaseRef),
+                head = p.HeadRef,
+                headLabel = CodeHtml.Spelled(p.HeadRef),
+                headSha = p.HeadSha,
+                draft = p.Draft,
+                labels = p.Labels.Select(l => new { name = CodeHtml.Spelled(l.Name), value = l.Name, color = l.Color }),
+                assignees = p.Assignees.Select(a => new { login = CodeHtml.Spelled(a.Login), avatar = a.Avatar }),
+                reviewDecision = p.ReviewDecision,
+                checkRollup = p.CheckRollup,
+                comments = p.CommentCount,
+            };
+
+            if (who.Value!.Token is not null)
+            {
+                var open = query.Search.Replace("is:closed", "is:open", StringComparison.Ordinal).Replace("is:merged", "is:open", StringComparison.Ordinal);
+                var closed = query.Search.Replace("is:open", "is:closed", StringComparison.Ordinal);
+                var found = await source.SearchPullsAsync(who.Value, query.Search, open, closed, ListLimit, after, ct).ConfigureAwait(false);
+                return found.Ok
+                    ? Results.Ok(new
+                    {
+                        query = query.Normalized,
+                        searched = true,
+                        total = found.Value!.Total,
+                        open = found.Value.OpenCount,
+                        closed = found.Value.ClosedCount,
+                        next = found.Value.NextCursor,
+                        truncated = found.Value.NextCursor is not null,
+                        writable,
+                        pulls = found.Value.Pulls.Select(Row),
+                    })
+                    : Refused(found.Failure, http);
+            }
+
             // One more than shown, the history idiom: the 51st only says the list was cut.
-            var pulls = await source.GetPullsAsync(who.Value!, owner, repo, ListLimit + 1, ct).ConfigureAwait(false);
-            return pulls.Ok
+            var rows = await source.GetPullRowsAsync(who.Value, owner, repo, query.State, query.Sort, query.Direction, ListLimit + 1, page ?? 1, ct).ConfigureAwait(false);
+            return rows.Ok
                 ? Results.Ok(new
                 {
-                    truncated = pulls.Value!.Count > ListLimit,
-                    // Whether to offer "New merge request": writes on here and a signed-in person (S9, S1).
-                    writable = options.Value.Writable(owner, repo) && who.Value!.Kind == AccessKind.User,
-                    pulls = pulls.Value.Take(ListLimit).Select(p => new
-                    {
-                        number = p.Number,
-                        title = CodeHtml.Spelled(p.Title),
-                        author = CodeHtml.Spelled(p.Author),
-                        when = p.Updated,
-                        @base = p.BaseRef,
-                        baseLabel = CodeHtml.Spelled(p.BaseRef),
-                        head = p.HeadRef,
-                        headLabel = CodeHtml.Spelled(p.HeadRef),
-                        headSha = p.HeadSha,
-                        draft = p.Draft,
-                    }),
+                    query = query.Normalized,
+                    // Without a token there is no search: the list is by state, the counts are of what was listed.
+                    searched = false,
+                    total = rows.Value!.Count > ListLimit ? (int?)null : rows.Value.Count,
+                    open = query.State == "open" ? rows.Value.Count : (int?)null,
+                    closed = query.State == "closed" ? rows.Value.Count : (int?)null,
+                    next = rows.Value.Count > ListLimit ? ((page ?? 1) + 1).ToString(System.Globalization.CultureInfo.InvariantCulture) : null,
+                    truncated = rows.Value.Count > ListLimit,
+                    writable,
+                    pulls = rows.Value.Take(ListLimit).Select(Row),
                 })
-                : Refused(pulls.Failure, http);
+                : Refused(rows.Failure, http);
         });
 
         api.MapGet("/pulls/view", async (string owner, string repo, int? number, HttpContext http, AccessResolver access, IRepoSource source, IVersioLogger log, CancellationToken ct) =>
@@ -624,6 +672,9 @@ public static partial class ApiEndpoints
         Results.Json(new { error = "not-found", message = "Not found, or not visible to you." }, statusCode: 404);
 
     internal static bool Valid(string owner, string repo) => Name().IsMatch(owner) && Name().IsMatch(repo) && repo is not ("." or "..");
+
+    /// <summary>A search cursor as GitHub hands them back: opaque, bounded, nothing but the characters a cursor has.</summary>
+    internal static bool Cursor(string cursor) => cursor.Length is >= 1 and <= 256 && cursor.All(c => char.IsAsciiLetterOrDigit(c) || c is '+' or '/' or '=' or '_' or '-');
 
     internal static bool ValidRef(string? reference) =>
         reference is null || (reference.Length is > 0 and <= 250 && RefChars().IsMatch(reference) && !reference.Contains("..", StringComparison.Ordinal));

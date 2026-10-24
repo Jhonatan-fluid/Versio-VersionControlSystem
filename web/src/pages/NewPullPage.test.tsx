@@ -24,8 +24,20 @@ function answer(url: string, o: Options): unknown {
   if (url.includes('/pulls/template')) {
     return { markdown: o.template ?? null, path: o.template ? '.github/pull_request_template.md' : null };
   }
-  if (url.endsWith('/pulls')) {
+  if (url.endsWith('/pulls') || url.includes('/pulls?')) {
     return { truncated: false, writable: o.writable ?? true, pulls: [] };
+  }
+  if (url.endsWith('/snapshot')) {
+    return { token: 'sealed', writable: true, number: 13, title: 'Add the valve', author: 'alice', when: '2026-10-17T09:00:00Z', draft: false, baseRef: 'main', baseLabel: 'main', headLabel: 'feature', baseSha: 'a'.repeat(40), mergeBaseSha: 'a'.repeat(40), headSha: 'b'.repeat(40), issuedAt: '2026-10-17T09:00:00Z', html: '' };
+  }
+  if (url.endsWith('/labels')) {
+    return { labels: [{ value: 'plc', label: 'plc', color: '0e8a16' }] };
+  }
+  if (url.endsWith('/milestones')) {
+    return { milestones: [{ number: 5, title: 'v2' }] };
+  }
+  if (url.includes('/compare?')) {
+    return { base: 'main', head: 'feature', total: 2, truncated: false, files: [{ path: 'src/Pump.st', label: 'src/Pump.st', change: 'modified', object: 'Pump' }, { path: 'src/Valve.st', label: 'src/Valve.st', change: 'added', object: 'Valve' }] };
   }
   if (url.endsWith('/branches')) {
     return { branches: [{ name: 'main', commitSha: 'a' }, { name: 'feature', commitSha: 'b' }], truncated: false };
@@ -225,5 +237,48 @@ describe('NewPullPage', () => {
     const off = await render('/acme/plant/pulls', { writable: false });
     expect(Array.from(off.host.querySelectorAll('a')).some((a) => a.textContent === 'New pull request')).toBe(false);
     act(() => off.root.unmount());
+  });
+
+  // Step 7 (FINISH.md B10): the comparison under the form, the preview, what is set beside the
+  // pull request once it is opened, and a fork's branch as the head.
+  it('shows the comparison under the form, previews the description, and sets reviewers, labels, assignees and milestone after opening', async () => {
+    const { host, root } = await render('/acme/plant/pulls/new?head=feature');
+    expect(host.querySelector('.new-pull-compare')?.textContent).toContain('2 files changed');
+    expect(host.querySelector('.new-pull-files')?.textContent).toContain('src/Valve.st');
+
+    await fill(host.querySelector<HTMLTextAreaElement>('.new-pull-body')!, '**bold**');
+    await click(button(host, 'Preview')!);
+    expect(creates().at(-1)!.url).toBe('/api/repos/acme/plant/markdown');
+    expect(host.querySelector('.new-pull-preview')).not.toBeNull();
+    await click(button(host, 'Write')!);
+
+    await fill(host.querySelector<HTMLInputElement>('.new-pull-title')!, 'Add the valve');
+    await fill(host.querySelector<HTMLInputElement>('input[aria-label="Reviewers"]')!, 'kim, acme/controls');
+    await fill(host.querySelector<HTMLInputElement>('input[aria-label="Assignees"]')!, 'sam');
+    await click(host.querySelector('.new-pull-label input')!);
+    await fill(host.querySelector<HTMLSelectElement>('select[aria-label="Milestone"]')!, '5');
+    await click(button(host, 'Create pull request')!);
+
+    const posted = creates().filter((c) => c.url.endsWith('/pulls') || c.url.includes('/pulls/13/'));
+    expect(posted.map((c) => c.url.slice(c.url.lastIndexOf('/')))).toEqual(['/pulls', '/reviewers', '/labels', '/assignees', '/milestone']);
+    expect(posted[1]!.body).toMatchObject({ add: ['kim'], addTeams: ['controls'] });
+    expect(posted[2]!.body).toMatchObject({ add: ['plc'] });
+    expect(posted[3]!.body).toMatchObject({ add: ['sam'] });
+    expect(posted[4]!.body).toMatchObject({ number: 5 });
+    // Each under the new pull request's snapshot, each its own operation.
+    expect(posted.slice(1).every((c) => c.headers['X-Versio-Snapshot'] === 'sealed')).toBe(true);
+    expect(new Set(posted.map((c) => c.body?.opKey)).size).toBe(5);
+    expect(host.querySelector('[data-testid="where"]')?.textContent).toBe('/acme/plant/pull/13');
+    act(() => root.unmount());
+  });
+
+  it('a fork’s branch typed as owner:branch is the head, sent as it is', async () => {
+    const { host, root } = await render('/acme/plant/pulls/new');
+    await fill(host.querySelector<HTMLInputElement>('input[aria-label="A fork\'s branch, as owner:branch"]')!, 'bob:feature');
+    await fill(host.querySelector<HTMLInputElement>('.new-pull-title')!, 'From a fork');
+    await click(button(host, 'Create pull request')!);
+
+    expect(creates()[0]!.body).toMatchObject({ base: 'main', head: 'bob:feature' });
+    act(() => root.unmount());
   });
 });

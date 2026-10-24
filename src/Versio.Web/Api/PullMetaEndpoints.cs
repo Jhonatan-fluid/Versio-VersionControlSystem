@@ -59,11 +59,17 @@ public static partial class PullWriteEndpoints
     private static void MapCreate(WebApplication app)
     {
         var repos = app.MapGroup("/api/repos/{owner}/{repo}").RequireRateLimiting(WebHost.RatePolicy);
+        // What a comment will look like, for the new pull request's description: the same Core
+        // Markdown as the review page's preview, before there is a pull request to put it under.
+        repos.MapWrite("POST", "/markdown", (PreviewRequest request) =>
+            Results.Ok(new { html = request.Body is { Length: > 0 and <= MaxBodyChars } b ? ApiEndpoints.MarkdownFragment(ReviewTags.Strip(b)) : "" }));
+
         repos.MapWrite("POST", "/pulls", async (string owner, string repo, CreatePullRequest request, HttpContext http, Writes w, CancellationToken ct) =>
         {
-            if (Branch(request.Base) is not { } @base || Branch(request.Head) is not { } head || @base == head)
+            // The head may be a fork's, as GitHub names one (owner:branch) — Step 7; the base is always this repository's.
+            if (Branch(request.Base) is not { } @base || Head(request.Head) is not { } head || @base == head)
             {
-                return Invalid("branches", "Choose two different branches of this repository.");
+                return Invalid("branches", "Choose two different branches: the base one of this repository, the head one of this repository or a fork's as owner:branch.");
             }
 
             if (Title(request.Title) is not { } title)
@@ -202,6 +208,23 @@ public static partial class PullWriteEndpoints
     private static string? Branch(string? name) =>
         name is { Length: > 0 } && ApiEndpoints.ValidRef(name) && !name.Contains(':', StringComparison.Ordinal) && !name.StartsWith('-') ? name : null;
 
+    /// <summary>A head branch: this repository's, or a fork's as <c>owner:branch</c> with a login before the colon.</summary>
+    private static string? Head(string? name)
+    {
+        if (name is null)
+        {
+            return null;
+        }
+
+        var colon = name.IndexOf(':', StringComparison.Ordinal);
+        if (colon < 0)
+        {
+            return Branch(name);
+        }
+
+        return Login().IsMatch(name[..colon]) && Branch(name[(colon + 1)..]) is not null ? name : null;
+    }
+
     private static string? Title(string? title) =>
         title?.Trim() is { Length: > 0 and <= MaxTitleChars } t && !t.Any(char.IsControl) ? t : null;
 
@@ -214,10 +237,13 @@ public static partial class PullWriteEndpoints
 
     public sealed partial class Writes
     {
-        /// <summary>Both branches exist here. GitHub refuses the rest (no commits between them, one already open) in its own words.</summary>
+        /// <summary>
+        /// Both branches exist here — a fork's head cannot be looked up in this repository, so GitHub
+        /// checks that one. GitHub refuses the rest (no commits between them, one already open) in its own words.
+        /// </summary>
         internal async Task<IResult?> CreatePreconditionAsync(RepoAccess who, string owner, string repo, string @base, string head, CancellationToken ct)
         {
-            foreach (var branch in new[] { @base, head })
+            foreach (var branch in head.Contains(':', StringComparison.Ordinal) ? [@base] : new[] { @base, head })
             {
                 var resolved = await Source.ResolveCommitAsync(who, owner, repo, branch, ct).ConfigureAwait(false);
                 if (!resolved.Ok)

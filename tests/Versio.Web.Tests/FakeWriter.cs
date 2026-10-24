@@ -438,7 +438,9 @@ internal sealed class FakeWriter : IRepoWriter
         {
             Created.Enqueue(pull);
             var number = Repo!.Pulls.Count == 0 ? 1 : Repo.Pulls.Max(p => p.Info.Number) + 1;
-            Repo.Pulls.Add((new PullInfo(number, pull.Title, access.Who, Now, pull.Base, pull.Head, Repo.Refs[pull.Head], pull.Draft), pull.Body));
+            // A fork's head (owner:branch) is not a ref of this repository: GitHub knows its commit, this fake makes one up.
+            var sha = Repo.Refs.TryGetValue(pull.Head, out var known) ? known : new string('f', 40);
+            Repo.Pulls.Add((new PullInfo(number, pull.Title, access.Who, Now, pull.Base, pull.Head, sha, pull.Draft), pull.Body));
             return number;
         });
 

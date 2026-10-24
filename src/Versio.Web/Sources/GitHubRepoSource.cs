@@ -180,6 +180,99 @@ public sealed class GitHubRepoSource(
         GetJsonAsync(access, $"repos/{E(owner)}/{E(repo)}/pulls/{number.ToString(CultureInfo.InvariantCulture)}",
             root => new PullDetail(Pull(root), Text(root, "body")), ct);
 
+    private const string SearchQuery = """
+        query($q: String!, $open: String!, $closed: String!, $first: Int!, $after: String) {
+          list: search(query: $q, type: ISSUE, first: $first, after: $after) {
+            issueCount
+            pageInfo { hasNextPage endCursor }
+            nodes {
+              ... on PullRequest {
+                number title state isDraft createdAt updatedAt baseRefName headRefName headRefOid reviewDecision totalCommentsCount
+                author { login avatarUrl }
+                labels(first: 10) { nodes { name color } }
+                assignees(first: 5) { nodes { login avatarUrl } }
+                commits(last: 1) { nodes { commit { statusCheckRollup { state } } } }
+              }
+            }
+          }
+          open: search(query: $open, type: ISSUE, first: 0) { issueCount }
+          closed: search(query: $closed, type: ISSUE, first: 0) { issueCount }
+        }
+        """;
+
+    /// <remarks>
+    /// Three searches in one call: the page asked for, and the open and closed counts of the same
+    /// query, which GitHub's own tabs show. GitHub's search index lags a write by a moment, which
+    /// the page says beside the counts rather than this read pretending otherwise.
+    /// </remarks>
+    public Task<RepoResult<PullSearch>> SearchPullsAsync(RepoAccess access, string search, string open, string closed, int first, string? after, CancellationToken ct) =>
+        GraphAsync(access, SearchQuery, new { q = search, open, closed, first = Math.Clamp(first, 1, 100), after }, data =>
+        {
+            var list = data.GetProperty("list");
+            var info = list.GetProperty("pageInfo");
+            var rows = list.GetProperty("nodes").EnumerateArray().Where(n => n.ValueKind == JsonValueKind.Object && n.TryGetProperty("number", out _)).Select(n =>
+            {
+                string? rollup = null;
+                if (n.TryGetProperty("commits", out var commits) && commits.ValueKind == JsonValueKind.Object)
+                {
+                    foreach (var node in commits.TryGetProperty("nodes", out var cn) && cn.ValueKind == JsonValueKind.Array ? cn.EnumerateArray() : default)
+                    {
+                        if (node.TryGetProperty("commit", out var commit) && commit.TryGetProperty("statusCheckRollup", out var roll) && roll.ValueKind == JsonValueKind.Object)
+                        {
+                            rollup = Text(roll, "state") is { Length: > 0 } st ? st : null;
+                        }
+                    }
+                }
+
+                return new PullRow(
+                    Int(n, "number") ?? 0,
+                    Text(n, "title"),
+                    Login(n, "author"),
+                    Avatar(n, "author"),
+                    Date(n, "createdAt") ?? default,
+                    Date(n, "updatedAt") ?? default,
+                    Text(n, "state"),
+                    Bool(n, "isDraft"),
+                    Text(n, "baseRefName"),
+                    Text(n, "headRefName"),
+                    Text(n, "headRefOid"),
+                    n.TryGetProperty("labels", out var labels) ? labels.GetProperty("nodes").EnumerateArray().Select(l => new PullLabel(Text(l, "name"), HexColor(Text(l, "color")))).ToList() : [],
+                    n.TryGetProperty("assignees", out var assignees) ? assignees.GetProperty("nodes").EnumerateArray().Select(a => (Text(a, "login"), Avatar(a))).ToList() : [],
+                    Text(n, "reviewDecision") is { Length: > 0 } decision ? decision : null,
+                    rollup,
+                    Int(n, "totalCommentsCount") ?? 0);
+            }).ToList();
+            return new PullSearch(rows, Int(list, "issueCount") ?? rows.Count,
+                Int(data.GetProperty("open"), "issueCount") ?? 0, Int(data.GetProperty("closed"), "issueCount") ?? 0,
+                Bool(info, "hasNextPage") ? Text(info, "endCursor") : null);
+        }, ct);
+
+    /// <remarks>REST's list items carry the labels, the assignees and the dates, not the review decision or the checks: those stay null, and the page draws nothing for them.</remarks>
+    public Task<RepoResult<IReadOnlyList<PullRow>>> GetPullRowsAsync(RepoAccess access, string owner, string repo, string state, string sort, string direction, int limit, int page, CancellationToken ct) =>
+        GetJsonAsync<IReadOnlyList<PullRow>>(access,
+            $"repos/{E(owner)}/{E(repo)}/pulls?state={E(state)}&sort={E(sort == "comments" ? "popularity" : sort)}&direction={E(direction)}&per_page={Math.Clamp(limit, 1, 100).ToString(CultureInfo.InvariantCulture)}&page={Math.Clamp(page, 1, 1000).ToString(CultureInfo.InvariantCulture)}",
+            root => root.EnumerateArray().Select(p =>
+            {
+                var merged = p.TryGetProperty("merged_at", out var ma) && ma.ValueKind == JsonValueKind.String;
+                return new PullRow(
+                    Int(p, "number") ?? 0,
+                    Text(p, "title"),
+                    Login(p, "user"),
+                    Avatar(p, "user"),
+                    Date(p, "created_at") ?? default,
+                    Date(p, "updated_at") ?? default,
+                    merged ? "MERGED" : Text(p, "state").ToUpperInvariant() is { Length: > 0 } s ? s : "OPEN",
+                    Bool(p, "draft"),
+                    p.TryGetProperty("base", out var b) ? Text(b, "ref") : "",
+                    p.TryGetProperty("head", out var h) ? Text(h, "ref") : "",
+                    p.TryGetProperty("head", out var h2) ? Text(h2, "sha") : "",
+                    p.TryGetProperty("labels", out var labels) && labels.ValueKind == JsonValueKind.Array ? labels.EnumerateArray().Select(l => new PullLabel(Text(l, "name"), HexColor(Text(l, "color")))).ToList() : [],
+                    p.TryGetProperty("assignees", out var assignees) && assignees.ValueKind == JsonValueKind.Array ? assignees.EnumerateArray().Select(a => (Text(a, "login"), Avatar(a))).ToList() : [],
+                    null,
+                    null,
+                    0);
+            }).ToList(), ct);
+
     /// <remarks>
     /// The compare endpoint is the only REST answer that names the merge-base. It also carries up
     /// to 300 files' patches, which this read discards; <c>per_page=1</c> at least keeps its

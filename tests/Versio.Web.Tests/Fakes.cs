@@ -352,6 +352,79 @@ internal sealed class FakeGitHub : IRepoSource
             : r.As<IReadOnlyList<PullInfo>>());
     }
 
+    /// <summary>A pull request as the list draws it, from the fake's parts: state, labels, assignees, comments, the merge state's decision.</summary>
+    private static PullRow RowOf(FakeRepo r, (PullInfo Info, string Body) p)
+    {
+        var state = r.PullStates.TryGetValue(p.Info.Number, out var s) ? s : "OPEN";
+        var people = r.PullPeople.TryGetValue(p.Info.Number, out var known) ? known : ([], []);
+        var comments = (r.Timelines.TryGetValue(p.Info.Number, out var tl) ? tl.Items.Count(i => i.Kind == "comment") : 0)
+            + (r.Threads.TryGetValue(p.Info.Number, out var th) ? th.Threads.Sum(x => x.Comments.Count) : 0);
+        return new PullRow(p.Info.Number, p.Info.Title, p.Info.Author, null, p.Info.Updated, p.Info.Updated, state, p.Info.Draft, p.Info.BaseRef, p.Info.HeadRef, p.Info.HeadSha,
+            people.Labels, (r.Assignees.TryGetValue(p.Info.Number, out var a) ? a : []).Select(x => (x, (string?)null)).ToList(),
+            people.Reviewers.Any(x => x.State == "CHANGES_REQUESTED") ? "CHANGES_REQUESTED" : people.Reviewers.Any(x => x.State == "APPROVED") ? "APPROVED" : null,
+            r.Checks.TryGetValue(p.Info.HeadSha, out var checks) && checks.Count > 0 ? (checks.Any(c => c.Conclusion is "failure") ? "FAILURE" : checks.All(c => c.Status == "completed") ? "SUCCESS" : "PENDING") : null,
+            comments);
+    }
+
+    /// <summary>
+    /// GitHub's search, as far as the tests need it: the tokens PullQuery writes, matched against the
+    /// fake's rows — is:, author:, label:, assignee:, review:, and words against the title.
+    /// </summary>
+    private static bool Matches(FakeRepo r, PullRow row, string search)
+    {
+        foreach (var token in search.Split(' ', StringSplitOptions.RemoveEmptyEntries))
+        {
+            var colon = token.IndexOf(':', StringComparison.Ordinal);
+            var (key, value) = colon > 0 ? (token[..colon], token[(colon + 1)..].Trim('"')) : ("", token.Trim('"'));
+            var ok = key switch
+            {
+                "repo" or "sort" => true,
+                "is" => value switch { "pr" => true, "open" => row.State == "OPEN", "closed" => row.State != "OPEN", "merged" => row.State == "MERGED", "draft" => row.Draft, _ => false },
+                "author" => row.Author == value,
+                "assignee" => row.Assignees.Any(a => a.Login == value),
+                "label" => row.Labels.Any(l => l.Name == value),
+                "review" => value switch { "approved" => row.ReviewDecision == "APPROVED", "changes_requested" => row.ReviewDecision == "CHANGES_REQUESTED", "none" => row.ReviewDecision is null, _ => true },
+                "" => row.Title.Contains(value, StringComparison.OrdinalIgnoreCase),
+                _ => true,
+            };
+            if (!ok)
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    public Task<RepoResult<PullSearch>> SearchPullsAsync(RepoAccess access, string search, string open, string closed, int first, string? after, CancellationToken ct)
+    {
+        // The repository is named in the query, as GitHub's search names it.
+        var slug = search.Split(' ')[0]["repo:".Length..];
+        var r = SeeGraph(access, slug.Split('/')[0], slug.Split('/')[1], "search " + search);
+        if (!r.Ok)
+        {
+            return Task.FromResult(r.As<PullSearch>());
+        }
+
+        var rows = r.Value!.Pulls.Select(p => RowOf(r.Value, p)).ToList();
+        var matched = rows.Where(row => Matches(r.Value, row, search)).OrderByDescending(row => row.UpdatedAt).ToList();
+        var skip = after is null ? 0 : int.Parse(after, System.Globalization.CultureInfo.InvariantCulture);
+        var page = matched.Skip(skip).Take(first).ToList();
+        return Task.FromResult(RepoResult<PullSearch>.Of(new PullSearch(page, matched.Count,
+            rows.Count(row => Matches(r.Value, row, open)), rows.Count(row => Matches(r.Value, row, closed)),
+            skip + first < matched.Count ? (skip + first).ToString(System.Globalization.CultureInfo.InvariantCulture) : null)));
+    }
+
+    public Task<RepoResult<IReadOnlyList<PullRow>>> GetPullRowsAsync(RepoAccess access, string owner, string repo, string state, string sort, string direction, int limit, int page, CancellationToken ct)
+    {
+        var r = See(access, owner, repo, "pull-rows " + state);
+        return Task.FromResult(r.Ok
+            ? RepoResult<IReadOnlyList<PullRow>>.Of(r.Value!.Pulls.Select(p => RowOf(r.Value, p))
+                .Where(row => state == "all" || (state == "open" ? row.State == "OPEN" : row.State != "OPEN"))
+                .OrderByDescending(row => row.UpdatedAt).Skip((page - 1) * limit).Take(limit).ToList())
+            : r.As<IReadOnlyList<PullRow>>());
+    }
+
     public Task<RepoResult<PullDetail>> GetPullAsync(RepoAccess access, string owner, string repo, int number, CancellationToken ct)
     {
         BeforePullRead?.Invoke(Interlocked.Increment(ref _pullReads));

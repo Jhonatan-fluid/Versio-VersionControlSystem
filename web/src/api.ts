@@ -108,12 +108,17 @@ export interface Commit {
   when: string;
 }
 
-/** An open pull request as the list shows it; names spelled by the server (rule 9). */
+/** A pull request as the list shows it (docs/web/FINISH.md, B10); names spelled by the server (rule 9). */
 export interface Pull {
   number: number;
   title: string;
   author: string;
+  authorAvatar?: string | null;
+  /** Last updated. */
   when: string;
+  createdAt?: string;
+  /** OPEN, CLOSED or MERGED; absent from an older server's answer. */
+  state?: string;
   base: string;
   baseLabel: string;
   head: string;
@@ -121,13 +126,27 @@ export interface Pull {
   /** For comparing: the head COMMIT, reachable here even when the branch lives in a fork. */
   headSha: string;
   draft: boolean;
+  labels?: { name: string; value: string; color: string }[];
+  assignees?: { login: string; avatar?: string | null }[];
+  reviewDecision?: string | null;
+  checkRollup?: string | null;
+  comments?: number;
 }
 
 export interface PullList {
   truncated: boolean;
-  /** Whether "New merge request" is offered: writes on here and a signed-in person. */
+  /** Whether "New pull request" is offered: writes on here and a signed-in person. */
   writable?: boolean;
   pulls: Pull[];
+  /** The query as the server read it, GitHub's grammar normalised. */
+  query?: string;
+  /** Whether GitHub's search answered (a signed-in person), or REST's list by state (anonymous). */
+  searched?: boolean;
+  total?: number | null;
+  open?: number | null;
+  closed?: number | null;
+  /** The next page's cursor (a search) or number (a list), or null at the end. */
+  next?: string | null;
 }
 
 /** A repository label: value is GitHub's own name, sent back to add or remove; label is shown. */
@@ -659,7 +678,13 @@ export const api = {
     get<View>(`${repoBase(owner, repo)}/compare/view${query({ base, head, path, view, layout, full: full ? '1' : undefined })}`, signal),
   history: (owner: string, repo: string, ref: string, path?: string, signal?: AbortSignal) =>
     get<Commit[]>(`${repoBase(owner, repo)}/history${query({ ref, path })}`, signal),
-  pulls: (owner: string, repo: string, signal?: AbortSignal) => get<PullList>(`${repoBase(owner, repo)}/pulls`, signal),
+  pulls: (owner: string, repo: string, signal?: AbortSignal, q?: string, after?: string) =>
+    get<PullList>(`${repoBase(owner, repo)}/pulls${query({ q, after: after && !/^\d+$/.test(after) ? after : undefined, page: after && /^\d+$/.test(after) ? after : undefined })}`, signal),
+  /** The new pull request's description previewed through the server's Markdown (a write-shaped call, as the review page's preview is). */
+  previewMarkdown: async (owner: string, repo: string, body: string): Promise<string> => {
+    const answer = await send(`${repoBase(owner, repo)}/markdown`, 'POST', {}, { body });
+    return (answer as unknown as { html?: string }).html ?? '';
+  },
   pullView: (owner: string, repo: string, number: number, signal?: AbortSignal) =>
     get<PullView>(`${repoBase(owner, repo)}/pulls/view${query({ number: String(number) })}`, signal),
   review: {

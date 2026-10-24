@@ -84,6 +84,31 @@ public sealed record PullInfo(int Number, string Title, string Author, DateTimeO
 /// <summary>One pull request with its description (Markdown, possibly empty).</summary>
 public sealed record PullDetail(PullInfo Pull, string Body);
 
+/// <summary>A pull request as GitHub's list draws it (docs/web/FINISH.md, B10): the row's icons, labels, people and counts.</summary>
+/// <param name="State">OPEN, CLOSED or MERGED.</param>
+/// <param name="ReviewDecision">APPROVED, CHANGES_REQUESTED, REVIEW_REQUIRED or null.</param>
+/// <param name="CheckRollup">The head's combined check state, or null when GitHub has none or did not say.</param>
+public sealed record PullRow(
+    int Number,
+    string Title,
+    string Author,
+    string? AuthorAvatar,
+    DateTimeOffset CreatedAt,
+    DateTimeOffset UpdatedAt,
+    string State,
+    bool Draft,
+    string BaseRef,
+    string HeadRef,
+    string HeadSha,
+    IReadOnlyList<PullLabel> Labels,
+    IReadOnlyList<(string Login, string? Avatar)> Assignees,
+    string? ReviewDecision,
+    string? CheckRollup,
+    int CommentCount);
+
+/// <summary>A page of the list: the rows, how many match in all, the open and closed counts, and the cursor of the next page.</summary>
+public sealed record PullSearch(IReadOnlyList<PullRow> Pulls, int Total, int OpenCount, int ClosedCount, string? NextCursor);
+
 /// <summary>One changed file as GitHub's own diff reports it.</summary>
 /// <param name="Status">GitHub's word: added, removed, modified, renamed, copied, changed, unchanged.</param>
 /// <param name="PreviousPath">Where a renamed or copied file came from.</param>
@@ -490,6 +515,16 @@ public interface IRepoSource
 
     /// <summary>One pull request, open or not, with its description.</summary>
     Task<RepoResult<PullDetail>> GetPullAsync(RepoAccess access, string owner, string repo, int number, CancellationToken ct);
+
+    /// <summary>
+    /// GitHub's pull request search (GraphQL, so a token is needed): <paramref name="search"/> is a
+    /// query <c>PullQuery</c> wrote, <paramref name="open"/> and <paramref name="closed"/> the same
+    /// with the state replaced, for the tabs' counts.
+    /// </summary>
+    Task<RepoResult<PullSearch>> SearchPullsAsync(RepoAccess access, string search, string open, string closed, int first, string? after, CancellationToken ct);
+
+    /// <summary>The pull requests by state (open, closed or all) as REST lists them, for a reader without a token: the row's basics, no review or check state.</summary>
+    Task<RepoResult<IReadOnlyList<PullRow>>> GetPullRowsAsync(RepoAccess access, string owner, string repo, string state, string sort, string direction, int limit, int page, CancellationToken ct);
 
     /// <summary>
     /// The best common ancestor of two commits: what a pull request's changes are measured from.
