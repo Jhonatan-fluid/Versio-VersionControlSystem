@@ -75,6 +75,38 @@ public sealed class ViewServiceTests
         return result.Value!;
     }
 
+    /// <summary>
+    /// A ladder drawn on its own — a TIA organization block has no interface table over it — vouches
+    /// for its networks (Coverage.Ladder, the coverage rewrite of 2026-10-23): a comment given to
+    /// the first network is a change inside that network's span, so the comparison is complete, not
+    /// "no-evidence". The second site, a ladder under a table, is pinned by PullAnchorTests.
+    /// </summary>
+    [Fact]
+    public async Task A_ladder_without_a_table_over_it_vouches_for_its_networks()
+    {
+        const string ob = "fixtures/projects/CleaningStation_V20_V21/CleaningStation_V20_V21/ET 200SP station_2/CleaningStation/Program blocks/01_CyclicBlocks/Main_1.xml";
+        var repo = _github.Add("acme", "tia");
+        var files = FakeGitHub.FromDisk(".versio/repo.json", "fixtures/projects/CleaningStation_V20_V21/CleaningStation_V20_V21");
+        _github.Commit(repo, "main", files);
+        var changed = new Dictionary<string, byte[]>(files, StringComparer.Ordinal);
+        // The first network's (empty) comment, in the first culture: one edit inside one network.
+        var text = Encoding.UTF8.GetString(files[ob]);
+        var network = text.IndexOf("<SW.Blocks.CompileUnit", StringComparison.Ordinal);
+        var empty = text.IndexOf("<Text />", network, StringComparison.Ordinal);
+        Assert.True(network > 0 && empty > network);
+        changed[ob] = Encoding.UTF8.GetBytes(text[..empty] + "<Text>Runs the station once per cycle.</Text>" + text[(empty + "<Text />".Length)..]);
+        _github.Commit(repo, "next", changed);
+
+        var (views, models) = Services();
+        var older = (await models.LoadAsync(RepoAccess.Anonymous, "acme", "tia", repo.Refs["main"], CancellationToken.None)).Value!;
+        var newer = (await models.LoadAsync(RepoAccess.Anonymous, "acme", "tia", repo.Refs["next"], CancellationToken.None)).Value!;
+        var result = await views.CompareAsync(RepoAccess.Anonymous, older, newer, ob, PaneView.Rendered, false, CancellationToken.None);
+
+        Assert.True(result.Ok, result.Failure.ToString());
+        Assert.Equal("ladder", result.Value!.Kind);
+        Assert.True(result.Value.Coverage!.Complete, string.Join("; ", result.Value.Coverage.Gaps.Select(g => $"{g.Path} {g.Side} {g.Start}-{g.End} {g.Reason}")));
+    }
+
     [Fact]
     public async Task The_tree_is_the_desktops_with_each_bound_project_grafted_in()
     {

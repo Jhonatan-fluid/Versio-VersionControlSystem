@@ -121,8 +121,10 @@ page were not touched, and the `gaps` contract is unchanged):
    stays a gap). The CODESYS and TIA tables declare it; the FBS `(* METADATA *)` / `__V3_META__`
    headers and the closing keyword line are framing too.
 6. `Coverage.Ladder`: every network's span on the sides it is drawn on, plus the ladder parser's
-   framing (outside the networks, outside the Interface, which is the table's). **Not yet wired in
-   `ViewService`**, which another session holds; the hand-over note names the two lines.
+   framing (outside the networks, outside the Interface, which is the table's). ~~**Not yet wired in
+   `ViewService`**, which another session holds; the hand-over note names the two lines.~~ Wired
+   on `VersioWeb` when the branch was merged (2026-10-23): the ladder view and the ladder under a
+   table both vouch, and `PullAnchorTests` pins a removed network's file as complete.
 
 Also moved: a row's span now starts at the comment lines above it that became its comment cell
 (a review comment on that line lands on the row), and `SafeXml.LinesOf` counts the newlines in a

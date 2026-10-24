@@ -355,10 +355,12 @@ public sealed partial class PullAnchorTests
 
     /// <summary>
     /// The struct's one change is a value the table names on a row it marks modified: complete. The
-    /// ladder has no field evidence yet, so its drawing is partial and its changed lines are named.
+    /// ladder's change is a network removed: its span on the old side is the network's own evidence,
+    /// and the list that shrank around it is the parser's framing — complete too, since the coverage
+    /// rewrite of 2026-10-23 (it was "partial, no evidence", the whole drawing a gap).
     /// </summary>
     [Fact]
-    public async Task A_drawing_is_complete_only_with_evidence_and_partial_says_where()
+    public async Task A_drawing_is_complete_only_with_evidence_and_a_ladder_vouches_for_its_networks()
     {
         var w = Build();
         var (host, _, alice, token) = await StartAsync(w);
@@ -369,12 +371,8 @@ public sealed partial class PullAnchorTests
 
         Assert.Equal("complete", table.GetProperty("coverage").GetString());
         Assert.Equal(0, table.GetProperty("gaps").GetArrayLength());
-        Assert.Equal("partial", ladder.GetProperty("coverage").GetString());
-        var gaps = ladder.GetProperty("gaps").EnumerateArray().ToList();
-        Assert.NotEmpty(gaps);
-        // Signals draws an interface table from its own XML: table evidence exists for the file, but
-        // never vouches for an XML line, so every changed line is "not shown" (and the ladder adds none).
-        Assert.All(gaps, g => Assert.Equal((Signals, "not-shown"), (g.GetProperty("path").GetString(), g.GetProperty("reason").GetString())));
+        Assert.Equal("complete", ladder.GetProperty("coverage").GetString());
+        Assert.Equal(0, ladder.GetProperty("gaps").GetArrayLength());
     }
 
     /// <summary>
@@ -401,10 +399,20 @@ public sealed partial class PullAnchorTests
         Assert.Contains(view.GetProperty("gaps").EnumerateArray(), g => g.GetProperty("path").GetString() == xml && g.GetProperty("reason").GetString() == "not-drawn");
     }
 
+    /// <summary>
+    /// The struct and the ladder are complete (their changes are rows and networks); the variable
+    /// list whose undrawn layer was touched is partial. The ladder was the partial example until
+    /// its evidence landed (2026-10-23), so the undrawn layer now stands for "partial" here.
+    /// </summary>
     [Fact]
     public async Task The_summary_says_per_file_whether_its_drawing_covers_every_change()
     {
-        var w = Build();
+        const string xml = Root + "Glob_Var.gvl.xml";
+        var w = Build(files =>
+        {
+            files[xml] = Encoding.UTF8.GetBytes(Encoding.UTF8.GetString(files[xml]) + "\n<!-- touched -->\n");
+            return files;
+        });
         var (host, _, alice, token) = await StartAsync(w);
         await using var _ = host;
 
@@ -414,6 +422,8 @@ public sealed partial class PullAnchorTests
         var files = JsonDocument.Parse(await response.Body()).RootElement.GetProperty("files").EnumerateArray()
             .ToDictionary(f => f.GetProperty("path").GetString()!, f => f.GetProperty("coverage").GetString());
         Assert.Equal("complete", files[Struct]);
-        Assert.Equal("partial", files[Signals]);
+        Assert.Equal("complete", files[Signals]);
+        // The summary is per changed file: the touched layer is the entry, and it is partial because nothing draws it.
+        Assert.Equal("partial", files[xml]);
     }
 }

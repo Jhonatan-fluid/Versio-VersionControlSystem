@@ -604,7 +604,7 @@ public sealed class ViewService(
                 // own changes said "the type changed" and "nothing this view draws did" together
                 // (found in review).
                 var tableChanged = compared.Members.Any(m => m.Change != MemberChange.None || m.ReferenceChanged);
-                var codeChanged = AppendInterfaceCode(html, choice, after, before, sideBySide, anchors, Vouch, p => drawn.Add(p), fullFile);
+                var codeChanged = AppendInterfaceCode(html, choice, after, before, sideBySide, anchors, Vouch, fullFile);
                 if (changedFiles && !tableChanged && !codeChanged)
                 {
                     notices.Add(NothingDrawnChanged);
@@ -627,8 +627,11 @@ public sealed class ViewService(
                     notices.Add(NothingDrawnChanged);
                 }
 
-                // A ladder has no field evidence: drawn, and reported whole, so the view stays partial.
-                drawn.Add(path);
+                // The ladder's evidence (Coverage.Ladder): every network vouches for its span on the sides
+                // it is drawn on, and the parser's framing outside the networks is vouched for too. It
+                // was "drawn, no evidence" until the coverage rewrite of 2026-10-23 (FINDINGS, "the
+                // coverage banner on real code"), which left these two lines to this file.
+                Vouch(path, Versio.Core.Review.Coverage.Ladder(comparison, oldLadder?.Structural ?? [], newLadder?.Structural ?? []));
                 return Result("ladder", node, shown,
                     LadderHtml.Fragment(comparison, (newLadder ?? oldLadder!).Style, sideBySide ? LadderView.SideBySide : LadderView.Merged, CompareWording, path), notices)
                     with { Anchors = LadderHtml.Anchors(comparison, path), Coverage = Covered() };
@@ -721,13 +724,12 @@ public sealed class ViewService(
     /// </summary>
     /// <param name="anchors">Where a comparison's review anchors go: the code's ladder adds its networks.</param>
     /// <param name="vouch">Where a comparison's coverage evidence goes: a drawn code body vouches for its marked lines.</param>
-    /// <param name="drawnWithoutEvidence">Says a file was drawn though nothing vouches for its lines (the code's ladder).</param>
     private static bool AppendInterfaceCode(
         StringBuilder html, RenderChoice choice,
         IReadOnlyDictionary<string, Layer> newer, IReadOnlyDictionary<string, Layer>? older, bool sideBySide = false,
         List<Versio.Core.Review.RenderedAnchor>? anchors = null,
         Action<string, Versio.Core.Review.Coverage.Evidence>? vouch = null,
-        Action<string>? drawnWithoutEvidence = null, bool fullFile = false)
+        bool fullFile = false)
     {
         if (choice.Code == CodeUnder.None || choice.CodeFile is not { } code || choice.Format is not { } format)
         {
@@ -752,7 +754,7 @@ public sealed class ViewService(
                     : LadderDiff.Compare(ladderOld?.Body, ladderNew.Body);
             html.Append(LadderHtml.Fragment(comparison, (ladderNew ?? ladderOld!).Style, sideBySide ? LadderView.SideBySide : LadderView.Merged, older is null ? SingleWording : CompareWording, code));
             anchors?.AddRange(LadderHtml.Anchors(comparison, code));
-            drawnWithoutEvidence?.Invoke(code);
+            vouch?.Invoke(code, Versio.Core.Review.Coverage.Ladder(comparison, ladderOld?.Structural ?? [], ladderNew?.Structural ?? []));
             return older is not null && comparison.HasChanges;
         }
 
