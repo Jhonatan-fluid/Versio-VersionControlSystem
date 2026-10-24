@@ -165,7 +165,7 @@ the project file, the IL and every vendor reference (section 7).
 | `tests/Versio.Core.Tests/` | `SourceHtmlTests`, `TextDiffHtmlTests`, `UnifiedDiffWriterTests`, `MemberTableHtmlTests`, `CatalogHtmlTests`, `CardsTests`, `RenderChoiceTests` (every arm with a stand-in format), `SafeXmlTests`, `SyntaxTokenizerCoverageTests`, `RendererAllowlistTests` (the catalogs and cards included), `PrimaryFileTests`, and the wording test in `LadderHtmlTests` |
 | `tests/Versio.App.Tests/RenderChoiceParityTests.cs` | **Both hosts over every fixture row.** The real shell on a temp repository holding the fixtures, the web's `ViewService` on a fake GitHub holding the same files; every row selected on both, what each drew mapped to a kind, the two compared, and the desktop's drawing checked against the choice it recorded. References `Versio.Web.Tests` for its fake GitHub |
 | `tests/Versio.Arch.Tests/` | `ProjectReferenceTests.Versio_Web_references_only_the_pure_packs`; `PurityRuleTests`: no process or file access in the server, vendors named only in `RegisterFormats`, XML only through `SafeXml` in Core and the packs |
-| `web/src/` vitest (195 on 2026-10-24) | The page: its pure modules, the ladder script as Core writes it, and every page rendered against a stubbed server — the pull request page's file is the largest, and waits for the page to be at rest rather than for ticks |
+| `web/src/` vitest (200 on 2026-10-24) | The page: its pure modules, the ladder script as Core writes it, and every page rendered against a stubbed server — the pull request page's file is the largest, and waits for the page to be at rest rather than for ticks |
 
 ---
 

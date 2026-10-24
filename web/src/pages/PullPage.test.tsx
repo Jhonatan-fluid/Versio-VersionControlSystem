@@ -2,7 +2,7 @@ import { act } from 'react';
 import { createRoot } from 'react-dom/client';
 import { MemoryRouter, Route, Routes, useLocation, useNavigate } from 'react-router';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import type { CoverageGap, CoverageSummary, PendingReviewView, ThreadPlacement } from '../api';
+import type { CoverageGap, CoverageSummary, Me, PendingReviewView, ThreadPlacement } from '../api';
 import { PullPage, placementSelector, threadSelector } from './PullPage';
 
 // The review page (docs/web/PLAN.md, *Pull request review*, slice 1): everything read against one
@@ -49,6 +49,8 @@ interface Reply {
 }
 
 interface Options {
+  /** Who is looking, as /api/me answered the app; null while it has not. */
+  me?: Me | null;
   stale?: boolean;
   /** The status poll answers 409 snapshot-expired: a tab left open past the snapshot's life. */
   statusExpired?: boolean;
@@ -247,8 +249,8 @@ async function render(path: string, o: Options = {}) {
       <MemoryRouter initialEntries={[path]}>
         <Jumper />
         <Routes>
-          <Route path="/:owner/:repo/pull/:number" element={<PullPage me={null} />} />
-          <Route path="/:owner/:repo/pull/:number/:tab" element={<PullPage me={null} />} />
+          <Route path="/:owner/:repo/pull/:number" element={<PullPage me={o.me ?? null} />} />
+          <Route path="/:owner/:repo/pull/:number/:tab" element={<PullPage me={o.me ?? null} />} />
         </Routes>
       </MemoryRouter>,
     );
@@ -2118,6 +2120,47 @@ describe('PullPage comments everywhere', () => {
     }
     expect(slots.some((s) => s.querySelector('.check-note')?.textContent?.includes('unknown identifier'))).toBe(true);
     expect(host.querySelectorAll('.check-note').length).toBe(1);
+    act(() => root.unmount());
+  });
+});
+
+// A reader who cannot write is told why, where the comment box would be (2026-10-24: a preview
+// with a stale session cookie showed a page with no comment box and nothing saying so).
+describe('PullPage, read-only', () => {
+  const nobody: Me = { signedIn: false, login: null, name: null, avatarUrl: null, signInAvailable: false, anonymousAccess: true, installUrl: null };
+
+  it('says nothing about writing while who the reader is has not come back', async () => {
+    const { host, root } = await render('/acme/plant/pull/12', { me: null });
+    expect(host.querySelector('.comment-read-only')).toBeNull();
+    expect(host.querySelector('.comment-new')).toBeNull();
+    act(() => root.unmount());
+  });
+
+  it('offers sign-in where the comment box would be when the server has it', async () => {
+    const { host, root } = await render('/acme/plant/pull/12', { me: { ...nobody, signInAvailable: true } });
+    const note = host.querySelector('.comment-read-only');
+    expect(note?.textContent).toContain('Sign in to comment, review or merge.');
+    expect(note?.querySelector('a')?.getAttribute('href')).toContain('/auth/');
+    act(() => root.unmount());
+  });
+
+  it('says the server has no sign-in when it has none', async () => {
+    const { host, root } = await render('/acme/plant/pull/12', { me: nobody });
+    expect(host.querySelector('.comment-read-only')?.textContent).toContain('This server has no sign-in');
+    expect(host.querySelector('.comment-read-only a')).toBeNull();
+    act(() => root.unmount());
+  });
+
+  it('says writes are off for the repository when the signed-in reader still cannot write', async () => {
+    const { host, root } = await render('/acme/plant/pull/12', { me: { ...nobody, signedIn: true, login: 'sam', name: 'Sam' } });
+    expect(host.querySelector('.comment-read-only')?.textContent).toContain('Writes are not turned on for this repository');
+    act(() => root.unmount());
+  });
+
+  it('draws the comment box and no note for a writer', async () => {
+    const { host, root } = await render('/acme/plant/pull/12', { me: { ...nobody, signedIn: true, login: 'sam' }, writable: true });
+    expect(host.querySelector('.comment-read-only')).toBeNull();
+    expect(host.querySelector('.comment-new')).not.toBeNull();
     act(() => root.unmount());
   });
 });

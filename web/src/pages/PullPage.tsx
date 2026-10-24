@@ -324,6 +324,14 @@ function PullReview({ me }: { me: Me | null }) {
   }, [tab, path, opened, openedSlot]);
 
   const signIn = me?.signInAvailable && !me.signedIn ? api.signInUrl(location.pathname + location.search) : null;
+  // The owner's first look at a preview (2026-10-24) found a page with no comment box, no reply
+  // buttons and nothing saying why: the session cookie had gone stale, and a reader who cannot
+  // write was simply shown less. The three ways that happens each get their sentence, where
+  // GitHub puts its "Sign in to comment"; while who the reader is has not come back yet, nothing.
+  const readOnlyNote: ReactNode = snap?.writable || me === null ? null
+    : signIn ? <><a href={signIn}>Sign in</a> to comment, review or merge.</>
+    : !me.signedIn ? 'This server has no sign-in, so the pull request is read-only here: comments, reviews and the merge box need a signed-in session.'
+    : 'Writes are not turned on for this repository on this server, so the pull request is read-only here.';
   const reload = () => {
     setStaleWrite(false);
     setLoads((x) => x + 1);
@@ -586,7 +594,7 @@ function PullReview({ me }: { me: Me | null }) {
                   {revision}
                   {reviewBar}
                   {tab === 'conversation' && (
-                    <Conversation snap={snap!} live={live} timeline={timeline} writer={writer} onOpenPath={open}
+                    <Conversation snap={snap!} live={live} timeline={timeline} writer={writer} onOpenPath={open} readOnly={readOnlyNote}
                       threads={threads.state === 'ok' ? threads.value.threads : []}
                       fileLink={(p) => pullUrl(owner, repo, n, 'files', p, search)}
                       renderThread={(t) => <Thread thread={t} writer={writer} onOpenPath={open} />}
@@ -804,9 +812,15 @@ interface ConversationProps {
   renderThread: (thread: ReviewThread) => ReactNode;
   /** The merge box, drawn where GitHub draws it: after the timeline, before the comment box. */
   mergeBox: ReactNode;
+  /**
+   * Why there is no comment box, for a reader who cannot write — drawn where the box would be,
+   * as GitHub draws "Sign in to comment" there. Nothing while the writer is there, and nothing
+   * while who the reader is has not been answered yet.
+   */
+  readOnly?: ReactNode;
 }
 
-function Conversation({ snap, live, timeline, writer, onOpenPath, threads, fileLink, renderThread, mergeBox }: ConversationProps) {
+function Conversation({ snap, live, timeline, writer, onOpenPath, threads, fileLink, renderThread, mergeBox, readOnly }: ConversationProps) {
   const [editing, setEditing] = useState<string | null>(null);
   // The description as it is now, once the live state is read; the snapshot's until then.
   const description = live ? live.html : snap.html;
@@ -946,6 +960,13 @@ function Conversation({ snap, live, timeline, writer, onOpenPath, threads, fileL
       )}
       {timeline.state === 'ok' && timeline.value.truncated && <p className="text-muted">The conversation continues on GitHub.</p>}
       {mergeBox}
+      {!writer && readOnly && (
+        <div className="comment-row comment-row-new">
+          <div className="comment comment-read-only" role="note">
+            <div className="comment-body text-muted">{readOnly}</div>
+          </div>
+        </div>
+      )}
       {writer && (
         <div className="comment-row comment-row-new">
           <Avatar login={writer.login} url={writer.avatar} size={40} />

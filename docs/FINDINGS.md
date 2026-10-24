@@ -19,6 +19,54 @@ produce a diff touching everything else.
 
 ---
 
+### The owner's first look at the page: GitHub's mark where Versio's belonged, and a review that went read-only without a word
+
+**2026-10-24, the owner looked at the finished shape and said two things.** First: "looks so
+much better, just make sure you don't use the GitHub icon, it should be the Versio icon, and
+Versio colour and style." The header drew GitHub's octocat and `tokens.css` carried Primer's own
+values, which the plan (`web/FINISH.md`, D *Theme*) had decided on as "the owner's ask" — the ask
+was GitHub's *shape*, and a page in GitHub's colours under GitHub's mark does not look like
+github.com, it claims to be it. The decision is reversed there: Primer's names, the desktop
+palette's values (`Palette.Light/Dark.xaml`, pinned colour for colour by `tokens.test.ts`), the
+primary button in the accent blue as the desktop's `AccentButton` is, and `VersioMark` in the
+header, the reference drawing of `assets/versio.svg` without its tile, held to the SVG's numbers
+by its test. Commit `9bd4387`.
+
+Second, after looking for a while: **"why can't I still add any comments, or reply to any
+comments?"** Three things lined up to produce a page that simply showed less:
+
+- The fixture preview serves for 25 minutes and then ends. The owner's look outlived two of
+  them, and the preview was restarted under the look — three times, the last in a loop.
+- Every restart mints a new signed-in session and writes its id to the session file. The cookie
+  the owner had pasted was the first run's; from the second run on, the server saw an unknown
+  session and answered `/api/me` with "signed out", which it was.
+- A signed-out reader of a pull request got **no comment box, no reply buttons, and nothing
+  saying why**. `PullPage` built its `writer` only when the snapshot said `writable`, and every
+  write affordance hung off the writer; the one sentence about signing in was the status
+  panel's "cannot tell whether the pull request has changed", shown only when sign-in is
+  configured, which the preview's is not. GitHub draws "Sign in to comment" where the box would
+  be. Versio drew the timeline and stopped.
+
+The browser pane confirmed it: the cookie it held was the first run's id, `/api/me` said
+`signedIn: false`, the page had no `textarea` and no button matching reply, resolve or review.
+
+**Fixed, three ways.** `VERSIO_WEB_PREVIEW_MINUTES` gives the preview a lifetime (25 stays the
+default, so a forgotten one still ends) — commit `989cc33`. The conversation ends with a note
+where GitHub puts its own when the reader cannot write, one sentence per reason: *Sign in to
+comment, review or merge* with the link when the server has sign-in; *this server has no
+sign-in* when it has none; *writes are not turned on for this repository* when a signed-in
+reader still cannot write. Nothing while `/api/me` has not answered, so the note cannot flash
+before a signed-in page settles — a mutant without that guard fails the first of five new
+tests. Looked at live both ways: signed out, the note; with the current session's cookie, the
+box and five reply and resolve buttons.
+
+**What it says in general.** A capability the page does not have must be *named* on the page,
+not implied by absence. "Show less" is how a stale session, a repository outside the writes
+list and a server with no App all look identical to the person, and only one of those is
+theirs to fix. The same rule the coverage banner learned the day before: silence is a claim.
+
+---
+
 ### A third read: the coverage banner said "complete" four ways while hiding a change, and the first pass's own fixes had five holes
 
 **2026-10-24, the owner asked for "one more review, fix all your bugs".** Four fresh readers
