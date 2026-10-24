@@ -103,8 +103,8 @@ public static class CodeHtml
 
     /// <summary>
     /// Whether the word at <paramref name="start"/> follows a dot: a member access, which no
-    /// object name is. Shared with the "used by" search (<c>ObjectLinks.NamesReferenced</c>), so
-    /// what one side links the other side counts, and nothing else.
+    /// object name is, so no link. The "used by" search (<c>ObjectLinks.NamesReferenced</c>) does
+    /// NOT use it: <c>x.Start()</c> is how a method is used, and the search counts it by name.
     /// </summary>
     public static bool IsMember(string text, int start)
     {

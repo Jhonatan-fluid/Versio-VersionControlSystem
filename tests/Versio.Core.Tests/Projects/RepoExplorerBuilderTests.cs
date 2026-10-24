@@ -80,6 +80,19 @@ public sealed class RepoExplorerBuilderTests
         Assert.Equal(["docs/New.md", "src/Old.st", "src/Pump.st"], Flatten(changedOnly).Where(n => n.Kind == ProjectNodeKind.File).Select(n => n.Path).Order());
     }
 
+    /// <summary>A rename across folders is listed at both places: struck where it was, marked where it is (review, 2026-10-24).</summary>
+    [Fact]
+    public void A_rename_is_struck_at_its_old_path_and_marked_at_its_new_one()
+    {
+        var files = new[] { "src/New.st", "src/Pump.st" };
+        var moved = new FileChange { Path = "src/New.st", Staged = ChangeKind.Renamed, Unstaged = ChangeKind.Unmodified, OriginalPath = "lib/Old.st" };
+
+        var marked = RepoExplorerBuilder.Build(files, [], new ProjectTreeOptions { ChangedOnly = false, HideUnchangedProjects = false }, changes: [moved]);
+
+        Assert.Equal(ChangeKind.Renamed, Flatten(marked).Single(n => n.Path == "src/New.st").Status);
+        Assert.Equal(ChangeKind.Deleted, Flatten(marked).Single(n => n.Path == "lib/Old.st").Status);
+    }
+
     [Fact]
     public void A_bound_project_is_a_project_node_not_a_file_named_project()
     {

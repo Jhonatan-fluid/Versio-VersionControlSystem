@@ -59,6 +59,26 @@ public sealed class SyntaxTokenizerStateTests
     }
 
     [Fact]
+    public void A_block_comment_opened_after_a_directive_is_still_open_on_the_next_line()
+    {
+        // The directive claims the line; the comment it opened runs on (review of the review, 2026-10-24).
+        var state = new SyntaxTokenizer.TokenState();
+        Assert.Equal("Directive:{attribute 'qualified_only'} (* why:", Kinds("{attribute 'qualified_only'} (* why:", state));
+        Assert.True(state.InComment);
+        Assert.Equal("Comment:pump.Start();", Kinds("pump.Start();", state));
+        Kinds("*)", state);
+        Assert.False(state.InComment);
+        // A comment that closes on the directive's line, and a string holding an opener, leave nothing open.
+        Kinds("{attribute 'x'} (* one *)", state);
+        Assert.False(state.InComment);
+        Kinds("{attribute 'a (* b'}", state);
+        Assert.False(state.InComment);
+        // Closed and opened again on one line: the second one is what stays open.
+        Kinds("x := 1; (* a *) y := 2; (* b", state);
+        Assert.True(state.InComment);
+    }
+
+    [Fact]
     public void The_spans_still_cover_every_line_exactly_once_with_a_state()
     {
         var state = new SyntaxTokenizer.TokenState();

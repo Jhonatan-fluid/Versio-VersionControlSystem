@@ -97,6 +97,14 @@ public static class SyntaxTokenizer
                 line.AsSpan(trimmedStart).StartsWith(prefix, StringComparison.Ordinal))
             {
                 spans.Add(new TokenSpan(i, line.Length - i, TokenKind.Directive));
+                // The directive claims the line's colour, but a block comment opened after it
+                // ({attribute 'x'} (* why: …) still runs on: a caller carrying state is told, or
+                // the next line was code again — the defect of 2026-10-24 through the other door.
+                if (state is not null)
+                {
+                    state.OpenComment = TrailingOpenComment(line, trimmedStart, language);
+                }
+
                 return spans;
             }
         }
@@ -201,6 +209,45 @@ public static class SyntaxTokenizer
         }
 
         return false;
+    }
+
+    /// <summary>
+    /// The block comment still open at the end of <paramref name="line"/> from <paramref name="from"/>,
+    /// walking strings and comments as the tokenizer would, for a line whose colour something else
+    /// claimed (a directive). Null when the line ends in code.
+    /// </summary>
+    private static (string Open, string Close)? TrailingOpenComment(string line, int from, SyntaxLanguage language)
+    {
+        var i = from;
+        while (i < line.Length)
+        {
+            if (MatchLineComment(line, i, language))
+            {
+                return null;
+            }
+
+            var block = MatchBlockComment(line, i, language);
+            if (block.Matched)
+            {
+                if (block.Unclosed is { } unclosed)
+                {
+                    return unclosed;
+                }
+
+                i += block.Length;
+                continue;
+            }
+
+            if (language.StringDelimiters.Contains(line[i]))
+            {
+                i += ReadString(line, i, line[i]);
+                continue;
+            }
+
+            i++;
+        }
+
+        return null;
     }
 
     private static (bool Matched, int Length, (string Open, string Close)? Unclosed) MatchBlockComment(

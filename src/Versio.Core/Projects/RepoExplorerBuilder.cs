@@ -48,6 +48,13 @@ public static class RepoExplorerBuilder
         foreach (var change in changes ?? [])
         {
             marks[Normalize(change.Path)] = change.Effective;
+            // A rename's old place is listed struck, as a deletion is: a file moved across folders
+            // otherwise read as a modified file at its new path and nothing at the old (review,
+            // 2026-10-24). The new path keeps the rename mark.
+            if (change.OriginalPath is { Length: > 0 } from && !string.Equals(Normalize(from), Normalize(change.Path), StringComparison.OrdinalIgnoreCase))
+            {
+                marks.TryAdd(Normalize(from), ChangeKind.Deleted);
+            }
         }
 
         // A deleted path is not among the files any more, and must still be listed, struck.
