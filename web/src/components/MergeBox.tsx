@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { MergeStateView, ReviewSnapshot } from '../api';
 import { api } from '../api';
 import type { Async } from '../useAsync';
@@ -54,6 +54,12 @@ export function MergeBox({ owner, repo, snap, state, onChanged, onStale }: Merge
   const [title, setTitle] = useState('');
   const [message, setMessage] = useState('');
   const [pending, setPending] = useState<Pending | null>(null);
+  const confirmBox = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (pending) {
+      confirmBox.current?.focus();
+    }
+  }, [pending]);
   const [busy, setBusy] = useState(false);
   // Auto-merge's own yes: that it may merge commits pushed after this review.
   const [accepts, setAccepts] = useState(false);
@@ -198,7 +204,7 @@ export function MergeBox({ owner, repo, snap, state, onChanged, onStale }: Merge
                     )}
                   </span>
                   {menu === 'merge' && (
-                    <div className="merge-method-menu" role="menu">
+                    <div className="merge-method-menu" role="group" aria-label="How to merge">
                       {m.methods.map((x) => (
                         <label key={x} className="merge-method-option">
                           <input type="radio" name="merge-method" value={x} checked={chosen === x} onChange={() => { setMethod(x); setMenu(null); }} />
@@ -223,7 +229,7 @@ export function MergeBox({ owner, repo, snap, state, onChanged, onStale }: Merge
                 </button>
               </span>
               {menu === 'update' && (
-                <div className="merge-method-menu" role="menu">
+                <div className="merge-method-menu" role="group" aria-label="How to update">
                   <button type="button" className="merge-method-option link-button" onClick={() => { setMenu(null); setPending({ kind: 'update', method: 'MERGE' }); }}>
                     <span><span className="text-bold">Update with merge commit</span><br /><span className="muted">A merge of {snap.baseLabel} into {snap.headLabel}.</span></span>
                   </button>
@@ -247,7 +253,10 @@ export function MergeBox({ owner, repo, snap, state, onChanged, onStale }: Merge
         </>
       )}
       {pending && question && (
-        <div className="merge-confirm" role="alertdialog" aria-label="Confirm">
+        // Focus moves into the confirmation and Escape cancels it: a keyboard user who pressed
+        // Merge otherwise had no sign that a question had appeared (review, 2026-10-24).
+        <div className="merge-confirm" role="alertdialog" aria-label="Confirm" tabIndex={-1} ref={confirmBox}
+          onKeyDown={(e) => { if (e.key === 'Escape' && !busy) { setPending(null); setAccepts(false); } }}>
           <p>{question}</p>
           {pending.kind === 'merge' && pending.method !== 'REBASE' && (
             <div className="merge-fields">

@@ -116,7 +116,6 @@ code, kbd, pre { font-family: var(--font-mono); }
 .button-quiet:disabled:hover { background: var(--color-btn-bg); }
 .link-button { background: none; border: 0; color: var(--color-accent-fg); cursor: pointer; padding: 0; font: inherit; }
 .link-button:hover { text-decoration: underline; }
-.icon-button { background: none; border: 1px solid var(--color-btn-border); border-radius: var(--radius); padding: 3px 8px; cursor: pointer; display: inline-flex; align-items: center; }
 
 /* Counters, labels, badges, avatars. */
 .counter { display: inline-block; min-width: 20px; padding: 0 6px; font: 500 12px/18px var(--font-ui); text-align: center; border-radius: 999px; background: var(--color-neutral-muted); color: var(--color-fg-default); }
@@ -132,14 +131,10 @@ code, kbd, pre { font-family: var(--font-mono); }
 .state-closed { background: var(--color-danger-emphasis); }
 .avatar { border-radius: 50%; flex: none; vertical-align: middle; }
 .avatar-letter { display: inline-flex; align-items: center; justify-content: center; background: var(--color-neutral-emphasis); color: var(--color-fg-on-emphasis); font-weight: 600; }
-.avatar-stack { display: inline-flex; }
-.avatar-stack .avatar + .avatar { margin-left: -6px; }
 
 /* Boxes, blank slates, flashes, loading. */
 .box { border: 1px solid var(--color-border-default); border-radius: var(--radius); background: var(--color-canvas-default); }
 .box-header { padding: 12px 16px; background: var(--color-canvas-subtle); border-bottom: 1px solid var(--color-border-default); border-radius: var(--radius) var(--radius) 0 0; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-.box-row { padding: 8px 16px; border-top: 1px solid var(--color-border-muted); }
-.box-row:first-child { border-top: 0; }
 .box-body { padding: 16px; }
 .blankslate { text-align: center; padding: 32px 24px; }
 .blankslate-spacious { padding: 80px 40px; }
@@ -191,8 +186,6 @@ code, kbd, pre { font-family: var(--font-mono); }
 .tree-row:hover { background: var(--color-neutral-muted); }
 .tree-row.is-selected { background: var(--color-accent-subtle); font-weight: 600; }
 .tree-caret { width: 14px; color: var(--color-fg-muted); flex: none; display: inline-flex; }
-.tree-kind { font: 600 10px var(--font-mono); border: 1px solid var(--color-border-default); border-radius: 3px; padding: 0 3px; color: var(--color-fg-muted); flex: none; }
-.tree-kind.kind-project { color: var(--color-accent-fg); border-color: var(--color-accent-fg); }
 .tree-icon { color: var(--color-fg-muted); }
 .tree-icon-folder { color: #54aeff; }
 .tree-name { overflow: hidden; text-overflow: ellipsis; }
@@ -259,9 +252,6 @@ code, kbd, pre { font-family: var(--font-mono); }
 .fragment .cd-page, .fragment .mt-page, .fragment .ld-page { margin-bottom: 16px; }
 
 /* Lists: commits, pulls, releases, documents. */
-.row-pick { display: block; width: 100%; text-align: left; background: none; border: 0; border-bottom: 1px solid var(--color-border-muted); padding: 10px 16px; cursor: pointer; color: var(--color-fg-default); }
-.row-pick:hover { background: var(--color-canvas-subtle); }
-.row-pick.is-selected { background: var(--color-accent-subtle); }
 .row-title { display: block; font-weight: 600; overflow-wrap: anywhere; }
 .row-meta { display: block; margin-top: 2px; font-size: 12px; overflow-wrap: anywhere; color: var(--color-fg-muted); }
 .row-badge { font: 500 12px var(--font-ui); color: var(--color-fg-muted); border: 1px solid var(--color-border-default); border-radius: 999px; padding: 0 7px; margin-right: 6px; }
@@ -319,7 +309,6 @@ code, kbd, pre { font-family: var(--font-mono); }
 .commit-sha { font: 12px var(--font-mono); color: var(--color-fg-muted); border: 1px solid var(--color-border-default); border-radius: var(--radius) 0 0 var(--radius); padding: 3px 8px; background: var(--color-canvas-default); }
 .commit-side .btn-small { border-radius: 0 var(--radius) var(--radius) 0; margin-left: -1px; }
 .commit-new { background: var(--color-attention-subtle); }
-.commit-links { display: flex; gap: 16px; margin-top: 4px; flex-wrap: wrap; font-size: 12px; }
 
 /* The Documentation list. */
 .doc-folder { font: 600 12px var(--font-ui); color: var(--color-fg-muted); padding: 10px 16px 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -331,7 +320,6 @@ code, kbd, pre { font-family: var(--font-mono); }
 
 /* The Compare page's two pickers. */
 .compare-pick { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 8px 12px; }
-.compare-count { margin: 0; padding-top: 0; }
 
 /* Home. */
 .home { max-width: 760px; margin: 0 auto; padding: 32px 16px; width: 100%; }
@@ -399,7 +387,6 @@ code, kbd, pre { font-family: var(--font-mono); }
    folder's list beside its button (seen 2026-10-23). */
 .changes li:has(> .review-viewed) { display: flex; align-items: center; }
 .reviewers-editor .row-list button { margin-left: 6px; font-size: 12px; }
-.title-edit { margin-left: 8px; font: 12px var(--font-ui); vertical-align: middle; }
 .base-edit { font-size: 12px; white-space: nowrap; flex: none; }
 .title-editor, .base-editor { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; margin: 2px 0; flex: 1; }
 .title-editor input { flex: 1; min-width: 0; font: 600 20px var(--font-ui); }
@@ -455,7 +442,6 @@ tr.thread-row > td { padding: 4px 8px 8px 32px; background: transparent; }
 
 .review-summary p { margin: 0 0 6px; }
 .review-revision { font-size: 12px; margin: 0 0 8px; color: var(--color-fg-muted); }
-.review-heading { font: 600 16px var(--font-ui); margin: 24px 0 8px; }
 .review-file { font: 600 14px var(--font-ui); margin: 0; overflow-wrap: anywhere; }
 .review-labels { display: flex; flex-wrap: wrap; gap: 4px; }
 .label { display: inline-flex; align-items: center; gap: 4px; border: 1px solid var(--color-border-default); border-radius: 999px; padding: 0 7px; font: 500 12px/18px var(--font-ui); }
@@ -470,7 +456,6 @@ tr.thread-row > td { padding: 4px 8px 8px 32px; background: transparent; }
 .timeline-badge.is-success { background: var(--color-success-emphasis); color: #fff; }
 .timeline-badge.is-danger { background: var(--color-danger-emphasis); color: #fff; }
 .timeline-badge.is-done { background: var(--color-done-emphasis); color: #fff; }
-.timeline-badge.is-avatar { background: transparent; border: 0; top: 8px; }
 .timeline-meta { font-size: 14px; color: var(--color-fg-muted); display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .timeline-meta .text-bold { color: var(--color-fg-default); }
 .timeline-text { overflow-wrap: anywhere; }

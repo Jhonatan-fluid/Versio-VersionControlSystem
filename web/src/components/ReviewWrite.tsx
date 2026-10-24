@@ -231,6 +231,7 @@ function DraftBox({ owner, repo, snap, slot, path, method = 'POST', payload, ini
         <textarea
           value={draft.body}
           placeholder={placeholder ?? 'Leave a comment'}
+          aria-label={placeholder ?? 'Leave a comment'}
           readOnly={locked}
           onChange={(e) => setDraft({ body: e.target.value, opKey: null })}
           rows={4}
@@ -369,8 +370,15 @@ export function ReasonAction({ owner, repo, snap, path, label, kind, options, pa
  * after an unknown outcome is the same operation, reconciled by the server, not a second one.
  */
 export function ActionButton({ owner, repo, snap, path, payload, label, confirm, onDone, button = false, onStale }: ActionProps) {
-  const [opKey, setOpKey] = useState<string | null>(null);
-  const [sentWith, setSentWith] = useState<string | null>(null);
+  // The held key is the key of ONE write: this path with this payload. The callers derive the
+  // payload from polled state and invert it (Resolve becomes Unresolve, Close becomes Reopen),
+  // and a write whose answer was lost may well have happened — so when the poll flips the
+  // payload while a key is held, the key is for the other write and is let go, rather than
+  // sent again with the opposite payload (found in review, 2026-10-24; MergeBox keys its held
+  // key the same way).
+  const signature = JSON.stringify([path, payload ?? null]);
+  const [held, setHeld] = useState<{ key: string; sentWith: string | null; for: string } | null>(null);
+  const holding = held !== null && held.for === signature ? held : null;
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState<string | null>(null);
 
@@ -378,15 +386,14 @@ export function ActionButton({ owner, repo, snap, path, payload, label, confirm,
     if (busy || (confirm && !window.confirm(confirm))) {
       return;
     }
-    const key = opKey ?? newOpKey();
-    const under = sentUnder(snap, opKey !== null ? sentWith : null);
-    setOpKey(key);
-    setSentWith(under.token);
+    const key = holding?.key ?? newOpKey();
+    const under = sentUnder(snap, holding?.sentWith ?? null);
+    setHeld({ key, sentWith: under.token, for: signature });
     setBusy(true);
     const answer = await api.review.write(owner, repo, under, path, 'POST', { ...payload, opKey: key });
     setBusy(false);
     if (answer.outcome === 'done') {
-      setOpKey(null);
+      setHeld(null);
       setNote(null);
       onDone();
       return;
@@ -394,8 +401,8 @@ export function ActionButton({ owner, repo, snap, path, payload, label, confirm,
     if (answer.error === 'snapshot-stale' || answer.error === 'snapshot-expired') {
       onStale?.();
     }
-    if (releasesKey(answer, opKey !== null)) {
-      setOpKey(null);
+    if (releasesKey(answer, holding !== null)) {
+      setHeld(null);
     }
     setNote(describe(answer));
   }

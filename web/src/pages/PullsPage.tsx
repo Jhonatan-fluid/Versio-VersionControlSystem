@@ -176,7 +176,9 @@ export function PullsPage({ me }: { me: Me | null }) {
           })}
           {list && (list.next || after) && (
             <div className="list-foot list-paging">
-              {after && <button type="button" className="btn btn-small" onClick={() => navigate(-1)}>Previous</button>}
+              {/* Back through this site's own history when there is one; on a pasted ?after= link
+                  there is none, and "Previous" would have left the site — so it goes to the first page. */}
+              {after && <button type="button" className="btn btn-small" onClick={() => ((window.history.state as { idx?: number } | null)?.idx ? navigate(-1) : go(q))}>Previous</button>}
               {list.next && <button type="button" className="btn btn-small" onClick={() => go(q, list.next!)}>Next</button>}
               {list.truncated && !list.next && <span>The rest are on GitHub.</span>}
             </div>

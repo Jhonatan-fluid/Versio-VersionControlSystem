@@ -255,7 +255,7 @@ function NewPullForm({ me }: { me: Me | null }) {
                 </div>
                 <ul className="row-list new-pull-files">
                   {comparison.value.files.slice(0, 20).map((f) => (
-                    <li key={f.path}><span className={`change-mark mark-${f.change}`}>{f.change[0]?.toUpperCase()}</span> <code>{f.label}</code>{f.object && <span className="text-muted"> {f.object}</span>}</li>
+                    <li key={f.path}><span className={`change change-${f.change}`} title={f.change}>{f.change[0]?.toUpperCase()}</span> <code>{f.label}</code>{f.object && <span className="text-muted"> {f.object}</span>}</li>
                   ))}
                   {comparison.value.files.length > 20 && <li className="text-muted">and {comparison.value.files.length - 20} more</li>}
                 </ul>

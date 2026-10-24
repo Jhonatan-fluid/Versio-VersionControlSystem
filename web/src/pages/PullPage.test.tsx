@@ -1,6 +1,6 @@
 import { act } from 'react';
 import { createRoot } from 'react-dom/client';
-import { MemoryRouter, Route, Routes, useNavigate } from 'react-router';
+import { MemoryRouter, Route, Routes, useLocation, useNavigate } from 'react-router';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { CoverageGap, CoverageSummary, PendingReviewView, ThreadPlacement } from '../api';
 import { PullPage, placementSelector, threadSelector } from './PullPage';
@@ -50,6 +50,8 @@ interface Reply {
 
 interface Options {
   stale?: boolean;
+  /** The status poll answers 409 snapshot-expired: a tab left open past the snapshot's life. */
+  statusExpired?: boolean;
   writable?: boolean;
   /** What a run's /annotations answers (Step 3b); none by default. */
   annotations?: unknown[];
@@ -146,6 +148,7 @@ function answer(url: string, o: Options): unknown {
   }
   if (url.endsWith('/threads')) {
     const comment = (id: string, html: string) => ({ id, author: 'sam', when: '2026-10-17T09:00:00Z', html, markdown: 'text', commit: head, originalCommit: head, canEdit: true, canDelete: true,
+      url: `https://github.com/acme/plant/pull/12#discussion_r${id}`,
       reviewId: id === 'c1' ? o.threadReview ?? null : null, diffHunk: id === 'c1' ? '@@ -1,3 +1,3 @@\n a\n-b\n+c' : id === 'c3' ? '@@ -8,2 +8,2 @@\n old\n-x\n+y' : null,
       suggestion: id === 'c1' ? o.suggestion ?? null : null, reactions: id === 'c1' ? [{ content: 'HEART', count: 2, viewerHasReacted: false }] : [] });
     const may = { canReply: true, canResolve: true, canUnresolve: true };
@@ -194,9 +197,13 @@ function answer(url: string, o: Options): unknown {
 
 /** Lets a test move the router as a link click would, without leaving the page under test. */
 let jump: (to: string) => void = () => {};
+/** Where the router is now, for a test that asserts on the URL the page navigated to. */
+let where = '';
 function Jumper() {
   const navigate = useNavigate();
+  const location = useLocation();
   jump = navigate;
+  where = location.pathname + location.search + location.hash;
   return null;
 }
 
@@ -226,6 +233,9 @@ async function render(path: string, o: Options = {}) {
         headers['X-Versio-Settled'] = '1';
       }
       return new Response(typeof reply.body === 'string' ? reply.body : JSON.stringify(reply.body), { status: reply.status, headers });
+    }
+    if (o.statusExpired && url.endsWith('/status')) {
+      return new Response(JSON.stringify({ error: 'snapshot-expired', message: 'This review was loaded too long ago. Reload the pull request.' }), { status: 409, headers: { 'Content-Type': 'application/json' } });
     }
     return new Response(JSON.stringify(answer(url, o)), { status: 200, headers: { 'Content-Type': 'application/json' } });
   }
@@ -1684,6 +1694,17 @@ describe('PullPage files changed', () => {
     expect(host.querySelector('.files-progress')?.textContent).toContain('1 / 2 files viewed');
     await click(pump.querySelector('.file-chevron')!, host);
     expect(pump.querySelector('.file-review-body')).not.toBeNull();
+
+    // Opened once, the drawing is kept: folding and opening again reads nothing (review,
+    // 2026-10-24 — every toggle re-read the most expensive thing on the page).
+    const reads = () => calls.filter((c) => c.url.includes('/files/view') && c.url.includes('Pump')).length;
+    const once = reads();
+    expect(once).toBeGreaterThan(0);
+    await click(pump.querySelector('.file-chevron')!, host);
+    expect(pump.querySelector('.file-review-body')).toBeNull();
+    await click(pump.querySelector('.file-chevron')!, host);
+    expect(pump.querySelector('.file-review-body')).not.toBeNull();
+    expect(reads()).toBe(once);
     act(() => root.unmount());
   });
 
@@ -1720,7 +1741,31 @@ describe('PullPage files changed', () => {
     act(() => root.unmount());
   });
 
-  it('a link to another file of the pull request goes to that file’s section; to anything else, to the object at the head', async () => {
+  // GitHub's own permalink shape, /pull/12/files#discussion_r…, names no path: the page finds the
+  // file holding the comment and goes to it WITH the hash, so the thread is scrolled to once placed
+  // (review, 2026-10-24: the hash was dropped on the way).
+  it('a GitHub-shaped comment permalink opens the file that holds the comment and keeps the hash', async () => {
+    // Opened on another file than the comment's, so the page has to move to the comment's file.
+    const { host, root } = await render('/acme/plant/pull/12/files?path=src%2FValve.st#discussion_rc1', { twoFiles: true });
+    await settle(host);
+    expect(where).toContain('/acme/plant/pull/12/files');
+    expect(where).toContain('path=src%2FPump.st');
+    expect(where.endsWith('#discussion_rc1')).toBe(true);
+    act(() => root.unmount());
+  });
+
+  // A tab left open past the snapshot's life: the status poll is refused as expired, and the page
+  // says so rather than freezing at its last answer (review, 2026-10-24).
+  it('an expired snapshot found by the poll shows the reload banner', async () => {
+    const { host, root } = await render('/acme/plant/pull/12', { statusExpired: true });
+    await settle(host);
+    expect(host.querySelector('.review-stale')?.textContent).toContain('loaded too long ago');
+    act(() => root.unmount());
+  });
+
+  // The link's own behaviour (a changed file's section, else a peek) is the peek test's; this one
+  // is the tree following the URL to the file.
+  it('the files tree selects the file the URL names', async () => {
     const { host, root } = await render('/acme/plant/pull/12/files?path=src%2FPump.st', { twoFiles: true });
     await act(async () => {
       jump('/acme/plant/pull/12/files?path=src%2FValve.st');

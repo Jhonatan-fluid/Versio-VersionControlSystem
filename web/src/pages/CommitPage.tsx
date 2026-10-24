@@ -168,7 +168,7 @@ function CommitCommentBox({ owner, repo, sha, onDone }: { owner: string; repo: s
     <div className="commit-comment-new comment-box">
       {/* Once submitted the text is the key's payload: a retry with other words is another write,
           which the server refuses. "Edit text" starts over with a new key, as CommentBox's does. */}
-      <textarea value={draft.body} placeholder="Leave a comment on this commit" readOnly={locked} rows={4} onChange={(e) => setDraft({ body: e.target.value, opKey: null })} />
+      <textarea value={draft.body} placeholder="Leave a comment on this commit" aria-label="Leave a comment on this commit" readOnly={locked} rows={4} onChange={(e) => setDraft({ body: e.target.value, opKey: null })} />
       {note && <p className="notice comment-note" role="status">{note}</p>}
       <div className="comment-actions">
         {locked && !busy && (

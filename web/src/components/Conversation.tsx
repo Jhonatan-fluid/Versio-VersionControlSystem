@@ -126,7 +126,10 @@ interface CardProps {
 /** The permalink fragment GitHub uses, from a comment's URL ("#issuecomment-123"), so the page can target it. */
 export function anchorOf(url?: string | null): string | null {
   const hash = url ? url.slice(url.indexOf('#') + 1) : '';
-  return url && url.includes('#') && /^[a-z]+-[a-z0-9]+$/i.test(hash) ? hash : null;
+  // GitHub's three shapes: issuecomment-9 and pullrequestreview-1 with a hyphen, discussion_r7
+  // with an underscore — which the first version did not accept, so no review-thread permalink
+  // ever matched (review, 2026-10-24; found by the first test that used one).
+  return url && url.includes('#') && /^[a-z]+[-_][a-z0-9]+$/i.test(hash) ? hash : null;
 }
 
 export function CommentCard({ author, avatar, association, when, editedAt, url, anchor, verb = 'commented', tools, badge, tone = 'default', reactions, onReact, minimized, minimizedReason, children }: CardProps) {

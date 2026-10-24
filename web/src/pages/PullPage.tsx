@@ -51,9 +51,11 @@ function needsReload(error: Error): boolean {
  * (another snapshot) starts empty; a new <paramref>refresh</paramref> (a write just landed) reads
  * again at once but keeps showing the last answer meanwhile, so an edit does not blank the panel.
  */
-function usePolled<T>(load: ((signal: AbortSignal) => Promise<T>) | null, key: string, refresh = 0): T | null {
+function usePolled<T>(load: ((signal: AbortSignal) => Promise<T>) | null, key: string, refresh = 0, onExpired?: () => void): T | null {
   const [value, setValue] = useState<T | null>(null);
   const shown = useRef(key);
+  const expired = useRef(onExpired);
+  expired.current = onExpired;
   useEffect(() => {
     if (shown.current !== key) {
       shown.current = key;
@@ -65,7 +67,14 @@ function usePolled<T>(load: ((signal: AbortSignal) => Promise<T>) | null, key: s
     const controller = new AbortController();
     const poll = () => {
       if (document.visibilityState !== 'hidden') {
-        load(controller.signal).then((v) => !controller.signal.aborted && setValue(v), () => {});
+        // A blip keeps the last answer; a snapshot the server no longer accepts is said, or a tab
+        // left open past the snapshot's life froze at its last answer with no banner until the
+        // first write was refused (review, 2026-10-24).
+        load(controller.signal).then((v) => !controller.signal.aborted && setValue(v), (error: Error) => {
+          if (!controller.signal.aborted && needsReload(error)) {
+            expired.current?.();
+          }
+        });
       }
     };
     poll();
@@ -249,7 +258,9 @@ function PullReview({ me }: { me: Me | null }) {
   const token = snap?.token ?? '';
 
   // Read again after every write: a title, a label or a close shows at once, not at the next poll.
-  const status = usePolled(snap ? (s) => api.review.status(owner, repo, snap, s) : null, token, changed);
+  const [pollExpired, setPollExpired] = useState(false);
+  useEffect(() => setPollExpired(false), [token]);
+  const status = usePolled(snap ? (s) => api.review.status(owner, repo, snap, s) : null, token, changed, () => setPollExpired(true));
   // The annotations the checks left (Step 3b): read once per run that has any, for the Checks tab's
   // list and for the file sections, which draw each on its line as GitHub does. A run's id comes
   // from the status; the same ids read again say nothing new, so the key is the ids themselves.
@@ -360,10 +371,10 @@ function PullReview({ me }: { me: Me | null }) {
       }
     });
   }
-  const expired = [files, threads, timeline, commits].some((a) => a.state === 'error' && needsReload(a.error));
+  const expired = pollExpired || [files, threads, timeline, commits].some((a) => a.state === 'error' && needsReload(a.error));
 
-  function go(nextTab: Tab, nextPath?: string) {
-    navigate(pullUrl(owner, repo, n, nextTab === 'conversation' ? undefined : nextTab, nextPath, search));
+  function go(nextTab: Tab, nextPath?: string, hash = '') {
+    navigate(pullUrl(owner, repo, n, nextTab === 'conversation' ? undefined : nextTab, nextPath, search) + hash);
   }
 
   const fileThreads = (p: string) => (threads.state === 'ok' ? threads.value.threads.filter((t) => t.path === p) : []);
@@ -392,7 +403,10 @@ function PullReview({ me }: { me: Me | null }) {
     : null;
   useEffect(() => {
     if (tab === 'files' && hashPath && hashPath !== path) {
-      go('files', hashPath);
+      // The hash goes with it: a GitHub-shaped permalink (/pull/12/files#discussion_r…) names no
+      // path, and navigating to the file without the hash lost the comment to scroll to
+      // (review, 2026-10-24).
+      go('files', hashPath, location.hash);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [hashPath, tab]);
@@ -536,7 +550,8 @@ function PullReview({ me }: { me: Me | null }) {
                     initialView={view}
                     initialLayout={layout}
                     initialFull={full}
-                    onLayer={(layer) => (inPull(layer) ? go('files', layer) : navigate(blobUrl(owner, repo, snap.headSha, layer)))}
+                    // A layer the pull request does not change (the .xml beside a changed .st) peeks, as a type link does: nothing leaves the review.
+                    onLayer={open}
                     onOpenPath={open}
                     signInUrl={signIn}
                     viewed={viewed.has(f.path)}
@@ -1233,9 +1248,19 @@ function FileSection({ writer, snap, owner, repo, file, active, threads, threads
     }
   }, [active]);
 
+  // Read once it is near AND open, and kept from then on: folding (ticking Viewed) and opening
+  // again must not ask for the drawing again — with `open` a dependency and the loader answering
+  // never() while folded, every toggle re-read the most expensive thing on the page (review,
+  // 2026-10-24).
+  const [wanted, setWanted] = useState(false);
+  useEffect(() => {
+    if (near && open) {
+      setWanted(true);
+    }
+  }, [near, open]);
   const result = useAsync(
-    (s) => (near && open ? api.review.fileView(owner, repo, snap, path, view, layout, file.previousPath ?? undefined, s, full) : never()),
-    [snap.token, path, view, layout, full, near, open],
+    (s) => (wanted ? api.review.fileView(owner, repo, snap, path, view, layout, file.previousPath ?? undefined, s, full) : never()),
+    [snap.token, path, view, layout, full, wanted],
   );
 
   const segments = file.label.split('/');

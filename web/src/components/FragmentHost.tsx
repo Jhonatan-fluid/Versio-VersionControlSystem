@@ -2,6 +2,7 @@ import type { ReactNode } from 'react';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { hasLadder, linkTarget, mermaidBlocks, objectLink, sanitize } from '../fragment';
+import { effectiveColorMode } from '../theme';
 
 let ladderRun = 0;
 
@@ -189,7 +190,9 @@ export function FragmentHost({ html, path, onOpenPath, line, onLine, annotations
     if (!root) {
       return;
     }
-    const dark = window.matchMedia?.('(prefers-color-scheme: dark)').matches ?? false;
+    // The page's own colour mode (the header's switch, else the OS): a diagram drawn for the OS's
+    // mode inside a page the person switched was the one dark thing on a light page.
+    const dark = effectiveColorMode() === 'dark';
     const frames = new Map<Window, { frame: HTMLIFrameElement; pre: HTMLElement; id: number; source: string }>();
     mermaidBlocks(root).forEach(({ element, source }, id) => {
       const frame = document.createElement('iframe');
@@ -251,6 +254,12 @@ export function FragmentHost({ html, path, onOpenPath, line, onLine, annotations
 
   function onClick(event: React.MouseEvent<HTMLDivElement>) {
     const element = event.target as HTMLElement;
+    // A click inside a NESTED host — a review thread's comment drawn in a slot between this
+    // drawing's rows — reaches only that host: the slot is a DOM descendant of this div, but the
+    // portal's React parent is this component's fragment root, not the div, so React's bubbling
+    // never brings it here. Suspected in review (2026-10-24) and pinned by FragmentHost.test.tsx
+    // rather than guarded against, because a guard for a path that cannot happen would be
+    // read as if it could.
     const link = element.closest<HTMLElement>('[data-href]');
     if (link) {
       event.preventDefault();
