@@ -446,7 +446,9 @@ One list. Reorder it; do not copy it into another file.
    right after the GraphQL-errors change; three runs after it were green (340/340 each). Still not
    investigated; the resolution-cache race stays the suspect. **A third sighting the same day**,
    once in a full run; four runs after it green (348/348). Three in a day is no longer rare enough to
-   leave: it is the next loose end to take up.
+   leave: it is the next loose end to take up. **A fourth, 2026-10-23**, once in a full Web run on
+   the coverage-rules branch while an integration run shared the machine; alone and in a second full
+   run, green (364/364). Still the resolution-cache suspect, still not investigated.
    **Left, all needing the owner or a deployment:**
    - **register the GitHub App** (on GitHub: read-only Contents and Metadata, a callback at
      `/auth/callback`) and run sign-in against real GitHub; until then the server runs
