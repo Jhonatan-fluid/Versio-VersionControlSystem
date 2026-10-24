@@ -20,4 +20,10 @@
     <ProjectReference Include="..\..\src\Versio.Web\Versio.Web.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- The desktop suite's parity test runs the web viewer over the same fixtures through this
+         project's fake GitHub, so both hosts are asked the same question in one place. -->
+    <InternalsVisibleTo Include="Versio.App.Tests" />
+  </ItemGroup>
+
 </Project>
