@@ -21,8 +21,8 @@ UX remainder) is built and tested as of 2026-08-25** — UX-6 find boxes, UX-7 `
 Escape, UX-8 copy-a-commit, UX-12 amend-while-unpushed — and its visual half joins the
 eyeball list in item 2. Do not start from `archive/` or a handoff.
 
-**Tests:** 3,896 across twelve projects (plus 128 vitest in `web/`), last counted 2026-10-23
-on `PrReview` — re-derived by summing the table below, which the old total no longer matched; the toolchain-gated
+**Tests:** 3,938 across twelve projects (plus 128 vitest in `web/`), last counted 2026-10-23
+on `claude/sleepy-hofstadter-fa6499` (the renderer choice moved into Core) — re-derived by summing the table below; the toolchain-gated
 counts (TIA 5, TwinCAT 6, CODESYS 55) are from their last gate runs, not re-run for the count. **The Rendered view of an ST object reads like the IDE (2026-09-20):** no
 `@@` line, one gutter, a Declaration / Implementation divider, and the implementation
 numbered from 1 so a compile error's line number can be found — FINDINGS 2026-09-20. **With TIA Portal open, a commit no longer records a stale mirror**: the
@@ -61,9 +61,9 @@ marking, duplicate-param keys, and the detail-pane lookup. All of them are in
 
 | Project | Tests | Time | Needs |
 |---|---|---|---|
-| `Versio.Core.Tests` | 1,837 | under a second | nothing |
+| `Versio.Core.Tests` | 1,867 | under a second | nothing |
 | `Versio.Integration.Tests` | 176 | ~10 s | real git |
-| `Versio.App.Tests` | 800 (re-counted 2026-10-23) | 10 m 36 s on 2026-10-23; 12 m 19 s, 10 m 42 s and 9 m 5 s on 2026-10-22; 10 m 46 s on 2026-10-19; 10 m 58 s on 2026-10-16; 6 m 35 s on 2026-10-10; 8 m 38 s on 2026-10-05; ~3.6 min on 2026-09-22 | nothing |
+| `Versio.App.Tests` | 801 (re-counted 2026-10-23) | 10 m 45 s (loaded: mutation checks ran beside it) and 10 m 36 s on 2026-10-23; 12 m 19 s, 10 m 42 s and 9 m 5 s on 2026-10-22; 10 m 46 s on 2026-10-19; 10 m 58 s on 2026-10-16; 6 m 35 s on 2026-10-10; 8 m 38 s on 2026-10-05; ~3.6 min on 2026-09-22 | nothing |
 | `Versio.Arch.Tests` | 36 | instant | nothing |
 | `Versio.Plc.Codesys.Pure.Tests` | 396 | under a second | nothing |
 | `Versio.Plc.Codesys.Parity.Tests` | 100 | ~15 s | `python` on PATH — skips cleanly without it, so check the count |
@@ -71,7 +71,7 @@ marking, duplicate-param keys, and the detail-pane lookup. All of them are in
 | `Versio.Plc.TiaPortal.Tests` | 5 | seconds when skipped; minutes when Portal runs the import gate | **real TIA Portal** — skips without Openness membership or LFS content |
 | `Versio.Plc.TwinCat.Pure.Tests` | 23 | instant | nothing |
 | `Versio.Plc.TwinCat.Tests` | 6 | seconds when skipped; ~5 min when XAE runs the import gate | **real TwinCAT XAE** — skips without `TcXaeShell.DTE.17.0` or the fixture |
-| `Versio.Web.Tests` | 364 | a few seconds | nothing — GitHub is faked |
+| `Versio.Web.Tests` | 375 | a few seconds | nothing — GitHub is faked |
 | `web/` (vitest) | 128 | ~20 s | the pinned Node in `web/.node` |
 | `Versio.Plc.Codesys.Tests` | 55 | **~30 min**; 41 m 14 s, 55/55, on 2026-10-11 on `WebViewer` | **real CODESYS** |
 
@@ -460,8 +460,17 @@ One list. Reorder it; do not copy it into another file.
      ~~and at the Docs tab's embedded PDF~~ — **seen drawing in the owner's Chrome 2026-10-16**,
      after its first look found the viewer's own frame lock blocking it (FINDINGS 2026-10-16);
    - the external penetration test and a cost alarm, once it is deployed;
-   - later, on purpose: the desktop drawing with the shared HTML renderers, and the choice of
-     renderer moved into Core for both (today mirrored, pinned by a test).
+   - later, on purpose: the desktop drawing with the shared HTML renderers; ~~and the choice of
+     renderer moved into Core for both (today mirrored, pinned by a test)~~ — **moved 2026-10-23**.
+   **2026-10-23: the choice of what a row draws is Core's** (`RenderChoice.Decide`), called by
+   the desktop pane and by `ViewService`, after the owner's FBS library pull request drew its
+   catalogs and empty objects as raw metadata on the web (FINDINGS 2026-10-23): the web now draws
+   the project card, the three catalogs (Versio's YAML and the vendor's own files), the task and
+   device cards, the empty-object note in a pull request, the whole file under a table whose
+   format knows no body, a `.html` as `kind: "webpage"` served sandboxed by `/raw`, and a notice
+   over any native file no model draws. `RenderChoiceParityTests` runs both hosts over every
+   fixture row; `/tree` nodes carry the desktop's row whole. The page's side (framing the web
+   page, drawing the new kinds and the tree fields) is the `web/` rebuild's.
 7. **Wait for a specimen, not a build.** C5 (`DELETE_UNREADABLE`) and `native_partial` close when
    reality produces an object nobody has observed. They cannot be manufactured. See
    [`phase1/IMPORT-PLAN.md`](phase1/IMPORT-PLAN.md).

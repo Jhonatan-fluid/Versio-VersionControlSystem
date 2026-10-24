@@ -212,7 +212,9 @@ server calls `PlcFormats.Register` with each pure format in `WebHost.RegisterFor
 `RepoConfigStore.Parse`, so the server reuses both answers rather than copying them. The
 endpoints are `/tree`, `/view`, `/compare`, `/compare/view`, `/history`, `/branches`. The
 desktop's choice of renderer (table, ladder, Markdown, source) is mirrored in `ViewService`,
-not shared, and says so; moving it into Core is later.
+not shared, and says so; ~~moving it into Core is later~~ — **moved 2026-10-23**:
+`RenderChoice.Decide` in Core is the one switch for both hosts, pinned by
+`RenderChoiceParityTests` over every fixture row (ARCHITECTURE.md, *Shared since 2026-10-23*).
 
 - References Core and the three **pure** vendor packs, never `*.Infrastructure`. ~~It is a
   composition root like `Versio.App`, so it calls the same `CodesysPack.Register()`,

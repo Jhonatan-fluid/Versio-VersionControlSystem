@@ -30,14 +30,15 @@ places that HTML.
      Auth/       who is asking, and with which GitHub credential  (AccessResolver)
      Api/        routes: credential → commit → model → view, in that order
      Repo/       a commit as the desktop's tree     (RepoExplorerBuilder)
-     Rendering/  an object as HTML, the desktop's order (ViewService)
+     Rendering/  an object as HTML, as Core chose it     (ViewService)
      Sources/    GitHub REST + Git LFS, no clone    (IRepoSource)
          │                                │
          ▼                                ▼
    Versio.Core  (shared with desktop)   Versio.Plc.Codesys / .TiaPortal / .TwinCat  (pure packs)
-     the HTML renderers                    parse a vendor's files into Core's neutral models:
-     the diff, layout, tree, tables        TryParseMemberTable, TryParseLadder, CodeBody,
-     SafeXml                                SectionsFor, SyntaxFor
+     RenderChoice: what a row draws        parse a vendor's files into Core's neutral models:
+     the HTML renderers                    TryParseMemberTable, TryParseLadder, CodeBody,
+     the diff, layout, tree, tables,       TryParseLibraryCatalog, TryParseTask,
+     catalogs, cards; SafeXml              TryParseDeviceCatalog, HoldsNoSettings, SectionsFor
    Versio.Infrastructure (vendor-neutral)
      RollingFileSink, SystemClock, RepoConfigStore.Parse
          │
@@ -91,7 +92,7 @@ the project file, the IL and every vendor reference (section 7).
 | `GitHub/ThreadPlacement.cs` | Where each review thread goes on a drawing: by its anchor tag (Core's `AnchorMatcher`), else by the element holding GitHub's current line, else a hint for a drawn source line, else listed with the reason. A tag that disagrees with the current line places nothing |
 | `PullReview.cs` | Resolves a pull request to a snapshot, re-reading the head and base until three reads agree; builds the file inventory from Versio's own tree diff, with GitHub's patches (for this revision only) deciding where a line comment may go, and renames only as GitHub reports them |
 | **`Rendering/`** | |
-| `ViewService.cs` | **Turns an object into the fragment the page shows**, for one commit or two. Reads every layer of the object, picks the renderer in the desktop's order, applies the size limits and the time budget, adds notices, caches by content |
+| `ViewService.cs` | **Turns an object into the fragment the page shows**, for one commit or two. Reads every layer of the object (and each child's first file, for a configuration saved as one file per task), hands Core's `RenderChoice.Decide` the reader and draws what it chose — card, catalog, table with its code, ladder, note, Markdown, web page, source — applies the size limits and the time budget, adds notices (a native file no model draws says so), caches by content, commit, row and file |
 | **`Http/`** | |
 | `Middleware.cs` | `SecurityHeaders` (CSP, nosniff, no-referrer, noindex, no-store on the API; the diagram frame's own narrower policy), `RequestLog` (one line per API request under an operation id, path only), `ConsoleLogSink` |
 
@@ -130,7 +131,7 @@ the project file, the IL and every vendor reference (section 7).
 | File | What it does |
 |---|---|
 | `src/Versio.Core/Diff/CodeHtml.cs` | One line of code as HTML: syntax classes, changed words, one escaping rule, hidden characters shown as `U+XXXX` markers; `A()` for attributes; the notice; 256-row blocks |
-| `src/Versio.Core/Diff/CodePageAssets.cs` | The stylesheet for all code renderers; default colours are the desktop palette's |
+| `src/Versio.Core/Diff/CodePageAssets.cs` | The stylesheet for all code renderers (`cd-*`, `mt-*`, `ct-*`, `pc-*`); default colours are the desktop palette's |
 | `src/Versio.Core/Iec/SourceHtml.cs` | The Rendered tab: `StSourceLayout` rows as HTML, unified or side by side, **the rows the desktop's `DiffView` draws**: a comparison folds with `StSourceLayout.Fold` unless `fullFile` (the pane's *Show full file*, `full=1`), and unified draws `StSourceLayout.Unified` (no removed lines; a pure deletion marked on the line after it). Decide what is drawn in Core, never here (FINDINGS 2026-10-23); every row names its file line on each side it exists on (`data-file-line`, `data-old-file-line`) and the block names its file (`data-src-path`), for review comments |
 | `src/Versio.Core/Review/Anchors.cs` | Review anchors (PLAN.md, *Pull request review*, C3): `RenderedAnchor` (what a renderer drew that a comment can sit on, with its source layer, container, key, fingerprint and lines), `SemanticAnchor` (what a comment was written on), and `AnchorMatcher` — Exact, Moved, Ambiguous or Gone, refusing whenever it could be wrong. Host-neutral: GitHub's lines and tags are in `Versio.Web` |
 | `src/Versio.Core/Review/Coverage.cs` | Review coverage (C4): `Coverage.Check` takes every changed line of every file of the object and asks the renderers' evidence — `Coverage.Source` (the lines a source layout draws added or struck) and `Coverage.Table` (a line inside one row, drawn as changed, every token a whole token of a shown field). A line nothing vouches for is a `CoverageGap` with its reason; `ReviewCoverage.Complete` only with none |
@@ -138,6 +139,9 @@ the project file, the IL and every vendor reference (section 7).
 | `src/Versio.Core/Diff/UnifiedDiffWriter.cs` | Two texts to unified-diff text via `LineDiff`, so the existing diff pipeline runs unchanged |
 | `src/Versio.Core/Diff/TextDiffHtml.cs` | The Raw tab: a parsed diff as HTML, unified or side by side |
 | `src/Versio.Core/Projects/MemberTableHtml.cs` | A member table as HTML, old then new in changed cells |
+| `src/Versio.Core/Projects/RenderChoice.cs` (2026-10-23) | **The one decision of what a tree row's Rendered view draws**, for both hosts: `RenderChoice.Decide(node, reader, primary, formats)` returns the kind (project card, library / task / device catalog, task or device card, member table with what sits under it, ladder, empty-object note, Markdown, web page, source, nothing), the layer it came from, the parsed model, a `Reparse` for the committed or older copy, and the notice over a native file no model draws. The desktop's order, with the husk rule once. Pure: the host reads files. `ShellViewModel.BuildRenderedContent` and `ViewService` both call it; `RenderChoiceParityTests` (desktop suite) runs both hosts over every fixture row |
+| `src/Versio.Core/Projects/Cards.cs` (2026-10-23) | The rows of the task card, the device card (slot / value / connector) and the project card (vendor, exported by, mirror, objects, libraries, tasks, coverage, warnings; a source project's own rows), decided once; `CardHtml.Fragment` draws a card as `pc-*` markup with `data-fact` rows |
+| `src/Versio.Core/Projects/CatalogHtml.cs` (2026-10-23) | The library, task and device catalogs as HTML (`ct-*`): the desktop's columns, A / M / D marks, old then new in moved cells, empty slots under the connectors, `data-key` and `data-anchors` per row, `data-src-path` on the page; `Anchors` for review comments (no line spans: the catalog readers record none) |
 | `src/Versio.Core/Text/SafeXml.cs` | The one XML parser every pure pack uses: no DTD, no resolver, a size cap |
 | `src/Versio.Core/Iec/Ladder/LadderHtml.cs` (changed) | Takes an optional `LadderWording`; the desktop's text by default |
 | `src/Versio.Core/Projects/ProjectTreeBuilder.cs` (changed) | `ProjectTreeNode.PrimaryFile`, moved from the desktop's `TreeRow`; which layer is code comes from `PlcFormats.LanguageFor`, never a list of extensions (the list held Siemens' `.scl` and `.udt` until a review found them) |
@@ -149,8 +153,9 @@ the project file, the IL and every vendor reference (section 7).
 
 | Where | What |
 |---|---|
-| `tests/Versio.Web.Tests/` (142) | `ViewServiceTests` (the desktop's choices over the real fixtures), `SecurityTests` (the rules against the real host on a free port, sign-in end to end, two instances sharing sessions, the real executable's startup), `GitHubRepoSourceTests` (the real client against a local server shaped like GitHub), `PerformanceTests` (each thing fetched once, compression, cache headers), `LfsGuardTests`. `Fakes.cs` is a GitHub in memory serving this repository's own fixtures; `TestHost.cs` runs the real host; `FixturePreview.cs` serves the fixtures on port 5199 to look at (opt-in) |
-| `tests/Versio.Core.Tests/` | `SourceHtmlTests`, `TextDiffHtmlTests`, `UnifiedDiffWriterTests`, `MemberTableHtmlTests`, `SafeXmlTests`, `SyntaxTokenizerCoverageTests`, `RendererAllowlistTests`, `PrimaryFileTests`, and the wording test in `LadderHtmlTests` |
+| `tests/Versio.Web.Tests/` (375) | `ViewServiceTests` (tables, ladders, code under an interface, comparisons over the real fixtures), `RenderedKindsTests` (the project card, catalogs and cards from YAML and from the vendor's own files, the note, the web page and its sandboxed `/raw`, the native-file notice, the tree's grown node), `SecurityTests` (the rules against the real host on a free port, sign-in end to end, two instances sharing sessions, the real executable's startup), `GitHubRepoSourceTests` (the real client against a local server shaped like GitHub), `PerformanceTests` (each thing fetched once, compression, cache headers), `LfsGuardTests`. `Fakes.cs` is a GitHub in memory serving this repository's own fixtures; `TestHost.cs` runs the real host; `FixturePreview.cs` serves the fixtures on port 5199 to look at (opt-in) |
+| `tests/Versio.Core.Tests/` | `SourceHtmlTests`, `TextDiffHtmlTests`, `UnifiedDiffWriterTests`, `MemberTableHtmlTests`, `CatalogHtmlTests`, `CardsTests`, `RenderChoiceTests` (every arm with a stand-in format), `SafeXmlTests`, `SyntaxTokenizerCoverageTests`, `RendererAllowlistTests` (the catalogs and cards included), `PrimaryFileTests`, and the wording test in `LadderHtmlTests` |
+| `tests/Versio.App.Tests/RenderChoiceParityTests.cs` | **Both hosts over every fixture row.** The real shell on a temp repository holding the fixtures, the web's `ViewService` on a fake GitHub holding the same files; every row selected on both, what each drew mapped to a kind, the two compared, and the desktop's drawing checked against the choice it recorded. References `Versio.Web.Tests` for its fake GitHub |
 | `tests/Versio.Arch.Tests/` | `ProjectReferenceTests.Versio_Web_references_only_the_pure_packs`; `PurityRuleTests`: no process or file access in the server, vendors named only in `RegisterFormats`, XML only through `SafeXml` in Core and the packs |
 | `web/src/` vitest (22) | The page: its pure modules, the ladder script as Core writes it, and History rendered |
 
@@ -177,18 +182,22 @@ Opening `/acme/plant/blob/main/Device/Plc%20Logic/Application/Signals.xml`:
    `repo.json` → manifests → `RepoExplorerBuilder.Build`. The same call builds the tree the
    page shows.
 6. **View.** `ViewService.ViewAsync`: `NodeFor(path)` finds the `Signals` object and its
-   layers; every layer's blob is read (cached by hash); each registered format is asked
-   `TryParseMemberTable` over each layer. Signals is an interface, so its ladder is parsed with
-   `TryParseLadder` and drawn underneath. The HTML comes from `MemberTableHtml.Fragment` and
-   `LadderHtml.Fragment`; the result is cached by the renderer version and every blob hash.
+   layers; every layer's blob is read (cached by hash); Core's `RenderChoice.Decide` is handed
+   the reader and asks each registered format `TryParseMemberTable` over each layer. Signals
+   is an interface, so the choice says its ladder (parsed with `TryParseLadder`) sits
+   underneath. The HTML comes from `MemberTableHtml.Fragment` and `LadderHtml.Fragment`; the
+   result is cached by the renderer version, the row, the file shown and every blob hash.
 7. **Answer.** JSON with `kind`, `title`, `html`, `notices` and `layers`; an audit line naming
    who viewed what at which commit; `Cache-Control: private, no-store`.
 8. **Placing.** `FragmentHost` runs DOMPurify over the HTML, sets it, re-runs
    `/assets/ladder.js` for the ladder's navigation, and scrolls to `#L…` if there is one.
 
-A comparison (`/compare/view?base=…&head=…`) is the same with two models: member tables
-through `MemberTableDiff`, ladders through `LadderDiff`, source through `StSourceLayout.Mark`,
-Raw through `UnifiedDiffWriter` → `UnifiedDiffParser` → `TextDiffHtml`.
+A comparison (`/compare/view?base=…&head=…`) is the same with two models: the choice is made
+from the newer copy of each layer (the older where the newer is gone), then member tables
+through `MemberTableDiff`, catalogs through `CatalogDiff` (both sides read by the choice's
+`Reparse`), ladders through `LadderDiff`, source through `StSourceLayout.Mark`; a card, a note
+or a document draws one version and a notice says when its file changed. Raw goes through
+`UnifiedDiffWriter` → `UnifiedDiffParser` → `TextDiffHtml`.
 
 ---
 
@@ -229,12 +238,24 @@ draws in WPF; moving it onto these is "later" in both plans, and would leave one
 every product, as `LadderHtml` already is. `SafeXml` is already used by the desktop, because it
 sits under the packs' parsers.
 
+### Shared since 2026-10-23: the choice of what a row draws
+
+`RenderChoice.Decide` in Core is the one switch. `ShellViewModel.BuildRenderedContent` hands it
+a disk reader and draws the pane's records from its answer; `ViewService` hands it the fetched
+layers and draws HTML. Until then each host had its own copy and they drifted — the web had no
+project card, no catalogs, no husk rule and no web page, and drew the File-Based Storage
+objects that hold nothing as raw metadata in a pull request (FINDINGS 2026-10-23).
+`RenderChoiceParityTests` runs both hosts over every fixture row; it found four more
+web-only differences on its first run (device objects and grafted rows that 404'd, a task
+configuration whose children were never read, a cache key that confused a task row with its
+configuration), each fixed under it.
+
 ### Mirrored, not shared (and why)
 
 | What | Desktop | Web | Why not shared yet |
 |---|---|---|---|
-| Choosing a renderer for an object (table, ladder, Markdown, source) | `ShellViewModel`'s rendered-content switch | `ViewService.Rendered` / `RenderedCompare` | The desktop's version is tied to its tree rows, the disk and its pending marks. Same order, pinned by `ViewServiceTests`; moving it into Core is listed as later |
-| Wording of comparisons | "since the last commit" | "since the older version" | Different questions; `LadderWording`, `MemberTable.Note` and `ViewService.Reword` carry the web's words, and a test fails if Core's phrases change |
+| Wording of comparisons | "since the last commit" | "since the older version" | Different questions; `LadderWording`, `MemberTable.Note`, `ViewService.Reword` and `ViewService.RewordCatalog` carry the web's words, and a test fails if Core's phrases change |
+| The project card's host rows | file size and save time, last export, toolchain installed | — | Only a disk and a machine can answer them; the shared rows are `Cards.Project` |
 
 ### Not used by the web, on purpose
 
