@@ -79,16 +79,16 @@ File refs: `P` = `web/src/pages/PullPage.tsx`, `RB` = `components/ReviewBar.tsx`
 ### B1. Header and state
 - ~~**missing** State badge (Open / Draft / Merged / Closed, with icon) beside the title; it is a pill in
   the side panel (`P:443`).~~ `StateBadge` under the title (Step 1).
-- **missing** "`author` wants to merge N commits into `base` from `head`" line, with avatar, branch
-  names as links to the tree and a copy-branch button (`P:356` is plain text).
-- **missing** `+N −M` additions/deletions, changed-files and commits counts (server never reads
-  `additions`, `deletions`, `changed_files`, `commits`, `comments`, `review_comments` — Src:1070-1078).
-- **missing** Lock conversation / locked state; pin; subscribe / notification reason.
-- **missing** Linked issues ("Closes #12", Development sidebar); milestone; projects; participants.
+- ~~**missing** "`author` wants to merge N commits into `base` from `head`" line, with avatar, branch
+  names as links to the tree and a copy-branch button (`P:356` is plain text).~~ Step 2: the line with the picture and the commit count; the branch names are not links yet.
+- ~~**missing** `+N −M` additions/deletions, changed-files and commits counts (server never reads
+  `additions`, `deletions`, `changed_files`, `commits`, `comments`, `review_comments` — Src:1070-1078).~~ Step 2: read from the summary; the diffstat beside the tabs, the counts on the tabs and in the meta line.
+- **partial** ~~Lock conversation / locked state~~ (the locked state and reason are shown, Step 2; locking is a write, Step 5); pin; subscribe / notification reason.
+- **partial** Linked issues ("Closes #12", Development sidebar); ~~milestone~~ (shown in the sidebar, Step 2; setting it is Step 5); projects; participants.
 - **partial** Title edit exists (`PM:47-66`) but is a link + input, not GitHub's inline editor.
 - ~~**missing** Per-page `document.title` ("Title by author · Pull Request #3 · owner/repo").~~ `usePageTitle` on every page (Step 1).
-- **missing** Relative times ("2 days ago") with an absolute tooltip; everywhere `toLocaleString`.
-- **missing** Avatars anywhere except the signed-in user.
+- ~~**missing** Relative times ("2 days ago") with an absolute tooltip; everywhere `toLocaleString`.~~ `RelativeTime` on the pull request page, the lists and the commits (Step 1–2).
+- ~~**missing** Avatars anywhere except the signed-in user.~~ Step 2: the author, every comment, review and commit, the signed-in person beside their box; a letter where GitHub gave no picture.
 - ~~**wrong** The top bar's branch `<select>` on a PR page (`P:288-292`).~~ Gone with the shell (Step 1, 2026-10-23); the picker lives in the code and commits views.
 - ~~**wrong** "Merge request" wording throughout (`Workbench.tsx:102`, `P:294,342,365`,
   `PullsPage.tsx:50,54`, `NewPullPage.tsx:132,149,193`, `PM:105`).~~ "Pull request" everywhere (Step 1).
@@ -100,51 +100,39 @@ File refs: `P` = `web/src/pages/PullPage.tsx`, `RB` = `components/ReviewBar.tsx`
   GitHub-shaped URL lands on Home — `main.tsx:33` falls to Home, there is no 404 page).~~ Step 1: the three routes, `?tab=` redirects, a 404 page.
 
 ### B3. Conversation
-- **missing** Review-comment threads inside the timeline under their review, with the diff hunk
-  excerpt (GitHub shows them; here only on Files changed).
+- ~~**missing** Review-comment threads inside the timeline under their review, with the diff hunk
+  excerpt (GitHub shows them; here only on Files changed).~~ Step 2: a review's threads (those whose first comment names it) under its card, hunk first.
 - **partial** Timeline event kinds: the server asks only ISSUE_COMMENT, PULL_REQUEST_REVIEW,
   PULL_REQUEST_COMMIT, HEAD_REF_FORCE_PUSHED, MERGED, CLOSED, REOPENED, READY_FOR_REVIEW,
   CONVERT_TO_DRAFT (`Src:705-706`). Missing: LABELED/UNLABELED, ASSIGNED/UNASSIGNED,
   REVIEW_REQUESTED/REMOVED, REVIEW_DISMISSED, RENAMED_TITLE, BASE_REF_CHANGED/FORCE_PUSHED,
   HEAD_REF_DELETED/RESTORED, CROSS_REFERENCED/REFERENCED/MENTIONED, MILESTONED, LOCKED/UNLOCKED,
   AUTO_MERGE_ENABLED/DISABLED, merge-queue, DEPLOYED, CONNECTED, COMMENT_DELETED.
-- **wrong** Unknown kinds print their raw word ("jo merged …" from `: item.kind`, `P:557`); no
-  icons; commits are not grouped ("X added 3 commits"); force-push shows no "from X to Y" compare link
-  (`Src` reads `afterCommit` only).
-- **missing** Comment card chrome: avatar beside the card, grey header "author commented 2 days
-  ago", role badge (Author / Member / Owner / Contributor — `authorAssociation` not read), "…" menu
-  (copy link, quote reply, edit, hide with reason, delete, report), "edited" marker with history
-  (`lastEditedAt` not read).
-- **missing** Reactions on the PR body, on comments, on reviews (nothing read, nothing written).
-- **missing** Permalinks `#issuecomment-…`, `#pullrequestreview-…`, `#discussion_r…` (threads carry
-  `data-thread` but no hash is read or written; `onLine` is a no-op on the PR page).
+- ~~**wrong** Unknown kinds print their raw word ("jo merged …" from `: item.kind`, `P:557`); no
+  icons; force-push shows no "from X to Y" compare link (`Src` reads `afterCommit` only).~~ Step 2: every kind the server reads has its sentence and badge; force-push names both commits. Still: commits are not grouped ("X added 3 commits"), and the force-push's "from X to Y" is text, not a compare link.
+- **partial** ~~Comment card chrome: avatar beside the card, grey header "author commented 2 days
+  ago", role badge (Author / Member / Owner / Contributor — `authorAssociation` not read), "edited" marker~~ (Step 2: `CommentCard`). Still missing: the "…" menu (copy link, quote reply, hide with reason, report) and the edit history.
+- **partial** Reactions on the PR body, on comments, on reviews: ~~read~~ (Step 2, drawn as pills); writing them is Step 5.
+- **partial** Permalinks: ~~`#issuecomment-…`, `#pullrequestreview-…`, `#discussion_r…`~~ each card and comment carries GitHub's own fragment as its id, with a link to it (Step 2); the page does not yet scroll to the hash on load, and `#discussion_r…` on Files changed does not pick the file.
 - **missing** Edit / delete of a *review* summary; reviews have no id (`Src:765-767`).
 - **missing** Hide / minimise a comment (`isMinimized`, `minimizedReason` not read; no mutation).
 - **missing** Mention autocomplete (@user), issue autocomplete (#123), emoji (:smile:), Markdown
   toolbar (bold, italic, code, link, list, task list, quote, mention, reference, saved reply),
   drag-and-drop / paste attachments, Ctrl+Enter to submit. The box is a bare textarea with a Preview
   toggle (`ReviewWrite.tsx:171-193`).
-- **wrong** The merge box sits under the new-comment box (`P:393-396`); GitHub puts the merge box
-  *above* the comment box at the end of the timeline, and "Close pull request" / "Close with
-  comment" beside "Comment".
+- ~~**wrong** The merge box sits under the new-comment box (`P:393-396`); GitHub puts the merge box
+  *above* the comment box at the end of the timeline~~ (Step 2, with a merge summary — reviews, checks, conflicts — for every reader). Still: "Close pull request" / "Close with comment" beside "Comment".
 
 ### B4. Commits
 - **missing** Links: to the commit page (`/commit/<sha>` does not exist), to "review this commit
   only" (`/pull/N/commits/<sha>`), to a range (`/pull/N/files/<a>..<b>`).
-- **missing** Avatar, author/committer distinction, verified-signature badge, message body on
-  expand, co-authors, copy SHA, per-commit check status, grouping by day (`Src:790-822` reads
-  headline, login, date only).
+- **partial** ~~Avatar, author/committer distinction, verified-signature badge, message body on
+  expand~~ (Step 2), co-authors, copy SHA, per-commit check status, grouping by day. The sha links to the commit on GitHub until `/commit/<sha>` exists (Step 8).
 
 ### B5. Checks
 - **partial** Rows carry name, status/conclusion word, glyph and an external "Details" link
   (`P:610-638`). Check data is name, status, conclusion, url, source (`Src:846-913`).
-- **missing** Grouping by check suite / workflow / app, app avatar and name, duration and timestamps
-  (`started_at`, `completed_at` not read), `output.title/summary/text`, annotations (and their
-  inline display in the diff), "Required" badge (branch protection / rulesets never read), spinner
-  for in-progress (static ●), neutral vs skipped vs cancelled vs timed-out distinct icons and colours
-  (only success/failure coloured — `app.css:264-265`), "N successful, M failing, K in progress"
-  summary header, re-run / re-run failed (PLAN "later, on purpose"), link to the run's log page
-  inside Versio, deployments / environments, merge-queue state.
+- **partial** ~~Grouping by app, app name, duration and timestamps, `output.title/summary`, the annotation count, "Required" badge (from the live head's `statusCheckRollup`), distinct icons per conclusion, the "N successful, M failing, K in progress" summary~~ (Step 2). Still missing: the annotations themselves (and inline in the diff), the app's avatar, re-run / re-run failed, a log page inside Versio, deployments / environments, merge-queue state.
 - **partial** Classic commit statuses are read and merged into the same list (`source` unused on the
   page); `description`, `creator`, times not read.
 - **wrong** Checks are read for the snapshot head only; GitHub shows the live head's checks and says
