@@ -216,7 +216,13 @@ public sealed class FixturePreview
             await File.WriteAllTextAsync(Path.Combine(Path.GetTempPath(), "versio-web-preview-session.txt"), session.Id);
         }
 
-        await Task.Delay(TimeSpan.FromMinutes(25));
+        // 25 minutes unless VERSIO_WEB_PREVIEW_MINUTES says otherwise. The owner's first look at the
+        // page (2026-10-24) outlived two 25-minute previews, and every restart minted a new signed-in
+        // session, so the cookie pasted from the file above went stale under them and the page fell
+        // silently to read-only: no comment box, no reply buttons, nothing saying why. A day-long
+        // preview keeps one session for one look; the session itself is good for eight hours.
+        var minutes = int.TryParse(Environment.GetEnvironmentVariable("VERSIO_WEB_PREVIEW_MINUTES"), out var m) && m > 0 ? m : 25;
+        await Task.Delay(TimeSpan.FromMinutes(minutes));
     }
 
     /// <summary>The anchor a comment written on Signals' network 2, at the older commit, would carry.</summary>
