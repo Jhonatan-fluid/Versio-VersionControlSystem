@@ -254,14 +254,20 @@ built from the `.gvl.xml` layer lands in the `.gvl.st` or `.gvl.xml` file GitHub
   computes contrast text.
 
 ### B10. Pull request list and creation
-- **missing** Open / Closed tabs with counts (server reads `state=open` only, `Src:176`), filters
+- ~~**missing** Open / Closed tabs with counts (server reads `state=open` only, `Src:176`), filters
   (author, label, milestone, reviewer, assignee, sort), a search box with GitHub's `is:pr is:open`
-  grammar, pagination.
-- **missing** Row content: state icon, labels, check-status icon, review-decision icon, comment count,
-  assignee avatars, "#3 opened 2 days ago by author" (API `Pull` has none: `api.ts:112-124`).
-- **wrong** Master-detail pane; a row should go straight to `/pull/N`.
-- **missing** On "New pull request": the comparison's diff and commit list inline; Markdown preview;
-  reviewers / labels / assignees / milestone at creation; fork heads (refused `PM:202`); "Create
+  grammar, pagination.~~ Step 7: `?q=` in GitHub's grammar (the subset `PullQuery` takes, every
+  token checked), GitHub's search for a signed-in person with the counts, REST by state for an
+  anonymous reader (said on the page), the menus editing one token each, cursor paging. The
+  milestone filter is in the grammar, not yet a menu.
+- ~~**missing** Row content: state icon, labels, check-status icon, review-decision icon, comment count,
+  assignee avatars, "#3 opened 2 days ago by author" (API `Pull` has none: `api.ts:112-124`).~~ Step 7.
+- ~~**wrong** Master-detail pane; a row should go straight to `/pull/N`.~~ Step 1.
+- **partial** On "New pull request": ~~the comparison's diff~~ (the changed files under the form, with
+  the way to the full comparison; Step 7) and commit list inline; ~~Markdown preview~~ (Step 7);
+  ~~reviewers / labels / assignees / milestone at creation~~ (Step 7: each applied after the pull
+  request is opened, as its own write under its snapshot; a refused one is said with the link);
+  ~~fork heads (refused `PM:202`)~~ (Step 7: `owner:branch`, checked by GitHub); "Create
   draft" split button (a checkbox today).
 
 ### B11. Writes the server cannot do (one bullet each)
@@ -631,10 +637,13 @@ closed-PR actions; merge queue (read + enqueue when the repo uses it).~~ **Done 
 API does not name them) and the blocking rule's name (needs `Administration: read`; the words come
 from `mergeStateStatus`).
 
-**Step 7 — Pull request list and creation.** `/pulls` with open/closed counts, filters, search
+~~**Step 7 — Pull request list and creation.** `/pulls` with open/closed counts, filters, search
 grammar subset (`is:`, `author:`, `label:`, `review:`, `assignee:`, `sort:`), paging; rows with
 icons/labels/counts/avatars; `/compare/base...head?expand=1` creation with inline diff + commits,
-preview, reviewers / labels / assignees / milestone, fork heads.
+preview, reviewers / labels / assignees / milestone, fork heads.~~ **Done 2026-10-23**
+(`PullQuery.cs`, `SearchPullsAsync` / `GetPullRowsAsync`, `PullsPage.tsx`, `NewPullPage.tsx`).
+Left: the commit list under the form (the compare read carries files only) and the
+"Create draft" split button.
 
 **Step 8 — Repository browsing to desktop parity in GitHub's shape.** `/tree`, `/blob`, `/commits`,
 `/commit/<sha>` (the desktop commit card: byline, stats, body, objects, per-file diffs),
