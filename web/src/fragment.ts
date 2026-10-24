@@ -59,6 +59,23 @@ export function linkTarget(href: string, currentPath: string): { kind: 'internal
   if (/^https?:\/\//i.test(value)) {
     return { kind: 'external', url: value };
   }
+  const path = repoPath(value, currentPath);
+  return path !== null && /\.(md|markdown)$/i.test(path) ? { kind: 'internal', path } : null;
+}
+
+/**
+ * A member's type or an identifier linked by the server (data-link): the repository path of the
+ * object it names, which the viewer opens whatever its extension is. The same path rule as a
+ * Markdown link, without the Markdown-only condition: that condition, added for documents on
+ * 2026-10-24, also went on type links for a while and silenced every one of them, which no test
+ * caught until the peek's did (FINDINGS 2026-10-24).
+ */
+export function objectLink(href: string): string | null {
+  return repoPath(href.trim(), '');
+}
+
+/** A relative or root-relative path resolved against the current file, inside the repository, or null. */
+function repoPath(value: string, currentPath: string): string | null {
   if (/^[a-z][a-z0-9+.-]*:/i.test(value) || value.startsWith('//')) {
     return null;
   }
@@ -81,6 +98,5 @@ export function linkTarget(href: string, currentPath: string): { kind: 'internal
     }
     parts.push(part);
   }
-  const path = parts.join('/');
-  return parts.length && /\.(md|markdown)$/i.test(path) ? { kind: 'internal', path } : null;
+  return parts.length ? parts.join('/') : null;
 }

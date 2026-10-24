@@ -19,6 +19,31 @@ produce a diff touching everything else.
 
 ---
 
+### A Markdown link rule silenced every type link on the web page, and no page test clicked one
+
+**2026-10-24, writing Step 3c's peek test (docs/web/FINISH.md).** The first test that clicked a
+member table's type link on the review page found it did nothing. `FragmentHost` sends both a
+Markdown link (`data-href`) and a type link (`data-link`) through one `linkTarget`; Step 9 (the
+same day) gave that function the desktop's Markdown rule — a relative link stays in the viewer
+only when it names a `.md` — and from then on a type link to `FB_Pump.st` resolved to nothing.
+Every type link on every drawing, the feature the owner had followed through the MTP types on
+2026-10-05, was dead for a few hours of commits.
+
+**Cause: one function, two rules, and the second rule's test covered only the first caller.**
+`fragment.test.ts` pinned `linkTarget('/src/a.st', …)` to null as the Markdown rule — right for a
+document, wrong for a type link — and nothing on the page clicked a `data-link`. The rule was
+"tested" and the regression was invisible.
+
+**Fix:** the path resolution is one private function; `linkTarget` applies the Markdown rule
+over it, and `objectLink` applies none. `FragmentHost` uses `objectLink` for `data-link`;
+`fragment.test.ts` pins both; the peek test clicks a type link on the review page.
+
+**The rule it restates:** a change that narrows a shared function needs a test per caller, not
+per function. The AGENTS.md double pass asks "what did I change that nothing is watching?"; the
+answer here was every caller but the one the change was for.
+
+---
+
 ### The web drew a library's catalogs and empty objects as raw metadata: the renderer choice was two copies, and the second had lost half its arms
 
 **2026-10-23, the owner's FBS library pull request, on the web review page.** `Communication

@@ -1,11 +1,13 @@
+import { useEffect, useState } from 'react';
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router';
 import type { Layout, Me, PaneView, TreeNode } from '../api';
 import { api } from '../api';
 import { ErrorPanel, Pane } from '../components/Pane';
+import { PeekPane } from '../components/PeekPane';
 import { RepoLayout } from '../components/RepoLayout';
 import { TreePanel } from '../components/TreePanel';
 import { Blankslate, Icon, Loading } from '../components/ui';
-import { blobUrl, compareUrl, newPullUrl, parseRange } from '../routes';
+import { compareUrl, newPullUrl, parseRange } from '../routes';
 import { usePageTitle } from '../title';
 import { useAsync } from '../useAsync';
 import { lineFromHash } from './RepoPage';
@@ -43,6 +45,11 @@ export function ComparePage({ me }: { me: Me | null }) {
   );
 
   const signIn = me?.signInAvailable && !me.signedIn ? api.signInUrl(location.pathname + location.search) : null;
+  // A link to something outside the comparison opens a peek at the newer version beside it
+  // (FINISH.md C2, "stay in context"); one to a changed file opens that file's comparison.
+  const [peek, setPeek] = useState<string | null>(null);
+  useEffect(() => setPeek(null), [base, head, path]);
+  const inComparison = (p: string) => comparison.state === 'ok' && comparison.value.files.some((f) => f.path === p);
   const names = branches.state === 'ok' ? branches.value.branches.map((b) => b.name) : [];
   const bothBranches = names.includes(base) && names.includes(head);
   const writable = pulls.state === 'ok' && pulls.value.writable;
@@ -119,7 +126,7 @@ export function ComparePage({ me }: { me: Me | null }) {
                 full={full}
                 onFull={(on) => setParam('full', on ? '1' : '0', '0')}
                 onLayer={(layer) => go(base, head, layer)}
-                onOpenPath={(p) => navigate(blobUrl(owner, repo, head, p))}
+                onOpenPath={(p) => (inComparison(p) ? go(base, head, p) : setPeek(p))}
                 line={lineFromHash(location.hash)}
                 onLine={(n) => navigate({ hash: `L${n}`, search: search.toString() }, { replace: true })}
                 comparing
@@ -131,6 +138,7 @@ export function ComparePage({ me }: { me: Me | null }) {
           </div>
         </div>
       )}
+      {peek && <PeekPane owner={owner} repo={repo} refName={head} path={peek} onClose={() => setPeek(null)} signInUrl={signIn} />}
     </RepoLayout>
   );
 }

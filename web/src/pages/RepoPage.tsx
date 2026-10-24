@@ -71,6 +71,12 @@ export function RepoPage({ me }: { me: Me | null }) {
     (s) => (ref && path ? api.view(owner, repo, ref, path, view, layout, s) : new Promise<never>(() => {})),
     [owner, repo, ref, path, view, layout],
   );
+  // "Used by" (FINISH.md Step 3c), read beside the drawing: the objects naming this one at this
+  // version. Its own request, so a slow search never holds the drawing back.
+  const usages = useAsync(
+    (s) => (ref && path ? api.usages(owner, repo, ref, path, s) : new Promise<never>(() => {})),
+    [owner, repo, ref, path],
+  );
 
   const signIn = me?.signInAvailable && !me.signedIn ? api.signInUrl(location.pathname + location.search) : null;
 
@@ -168,6 +174,7 @@ export function RepoPage({ me }: { me: Me | null }) {
               comparing={false}
               signInUrl={signIn}
               pageUrl={ref && path ? rawUrl(owner, repo, ref, path) : null}
+              usages={usages}
             />
           ) : tree.state === 'ok' ? (
             <Blankslate icon="file" heading="Pick an object in the tree">Every POU, data type, variable list, network and document opens here, drawn as the desktop draws it.</Blankslate>

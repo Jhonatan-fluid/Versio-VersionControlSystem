@@ -35,7 +35,7 @@ const splitDiff = `<div class="cd-page cd-diff">
 // is a block of ANOTHER file, the .st — exactly why every block names its own file.
 const renderedSource =
   '<div class="mt-page" data-src-path="src/Pump.xml"><table class="mt-table"><tbody>' +
-  '<tr class="mt-row mt-modified" data-path="run" data-change="modified" data-anchors="r-new-0 r-old-0"><td class="mt-mark">M</td><td class="mt-name">run</td><td class="mt-type">BOOL</td></tr>' +
+  '<tr class="mt-row mt-modified" data-path="run" data-change="modified" data-anchors="r-new-0 r-old-0"><td class="mt-mark">M</td><td class="mt-name">run</td><td class="mt-type"><span data-link="src/Other.st">ST_Other</span></td></tr>' +
   '</tbody></table></div>' +
   '<div class="cd-page" data-src-path="src/Pump.st"><div class="cd-row" data-line="3" data-file-line="9"><span class="cd-num">3</span>run := TRUE;</div></div>';
 
@@ -133,6 +133,10 @@ function answer(url: string, o: Options): unknown {
       placements: raw ? [] : o.placements ?? [],
       view: { kind: raw ? 'diff' : 'table', title: 'Pump', path: 'src/Pump.st', html, notices: [], layers: ['src/Pump.st'], layerLabels: ['src/Pump.st'] },
     };
+  }
+  if (url.includes('/view?')) {
+    // An object outside the pull request, read at the head for the peek (Step 3c).
+    return { kind: 'table', title: 'ST_Other', path: 'src/Other.st', html: '<div class="mt-page">other drawn</div>', notices: [], layers: ['src/Other.st'], layerLabels: ['src/Other.st'] };
   }
   if (url.includes('/annotations')) {
     // Run 7's; any other run left none.
@@ -1996,6 +2000,29 @@ describe('PullPage comments everywhere', () => {
     expect(note.querySelector('a')?.getAttribute('href')).toContain('src%2FPump.st');
     expect(note.querySelector('a')?.textContent).toBe('src/Pump.st:L3');
     expect(calls.some((c) => c.url.endsWith('/checks/7/annotations') && c.snapshot === token)).toBe(true);
+    act(() => root.unmount());
+  });
+
+  // Step 3c, "stay in context": a link to something the pull request does not change opens a
+  // peek at the reviewed head beside the review; the review stays where it was.
+  it('opens a type link to an unchanged object in a peek at the reviewed head, and the review stays', async () => {
+    const { host, root } = await render('/acme/plant/pull/12?tab=files&path=src%2FPump.st');
+
+    await click(host.querySelector('[data-link="src/Other.st"]')!, host);
+
+    const peek = host.querySelector('.peek')!;
+    expect(peek).not.toBeNull();
+    expect(peek.querySelector('.peek-title')?.textContent).toBe('ST_Other');
+    expect(peek.querySelector('.mt-page')?.textContent).toBe('other drawn');
+    expect(peek.querySelector(`a[href="/acme/plant/blob/${head}/src/Other.st"]`)?.textContent).toBe('Open');
+    // The object's own view at the head, not a file section's /files/view.
+    const read = calls.find((c) => c.url.includes('/view?') && !c.url.includes('/files/view'))!;
+    expect(read.url).toContain(`ref=${head}`);
+    expect(read.url).toContain('path=src%2FOther.st');
+    // The review is still drawn behind it.
+    expect(host.querySelector('.file-review[data-file="src/Pump.st"]')).not.toBeNull();
+    await click(peek.querySelector('button[aria-label="Close the peek"]')!, host);
+    expect(host.querySelector('.peek')).toBeNull();
     act(() => root.unmount());
   });
 

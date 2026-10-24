@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { hasLadder, linkTarget, mermaidBlocks, sanitize } from '../fragment';
+import { hasLadder, linkTarget, mermaidBlocks, objectLink, sanitize } from '../fragment';
 
 let ladderRun = 0;
 
@@ -143,6 +143,30 @@ export function FragmentHost({ html, path, onOpenPath, line, onLine, annotations
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [clean, wantedKey]);
 
+  // Where a drawn line lives (FINISH.md, C2 "origin"): the gutter's tooltip names the layer file
+  // and the file line the renderer recorded, so a line under a table says which file it is of —
+  // a code body under a table is another file than the table's. Read from the renderers' own
+  // markers, never from text; a block naming no file gets no tooltip.
+  useEffect(() => {
+    const root = host.current;
+    if (!root) {
+      return;
+    }
+    for (const block of root.querySelectorAll<HTMLElement>('[data-src-path]')) {
+      const file = block.dataset.srcPath;
+      if (!file) {
+        continue;
+      }
+      for (const cell of block.querySelectorAll<HTMLElement>('[data-file-line], [data-old-file-line]')) {
+        const line = cell.dataset.fileLine ?? cell.dataset.oldFileLine;
+        const gutter = cell.querySelector<HTMLElement>('.cd-num');
+        if (gutter && line) {
+          gutter.title = `${file}:${line}${cell.dataset.fileLine ? '' : ' (as it was)'}`;
+        }
+      }
+    }
+  }, [clean]);
+
   // The ladder's navigation script works over the .ld-page it finds when it runs, and a page
   // like this places fragments long after load. It is re-run per fragment, from this origin, as
   // the CSP allows; the diagram reads without it, so a failure only loses the buttons.
@@ -245,9 +269,9 @@ export function FragmentHost({ html, path, onOpenPath, line, onLine, annotations
     const typeLink = element.closest<HTMLElement>('[data-link]');
     if (typeLink) {
       event.preventDefault();
-      const target = linkTarget(typeLink.dataset.link ?? '', '');
-      if (target?.kind === 'internal') {
-        onOpenPath(target.path);
+      const target = objectLink(typeLink.dataset.link ?? '');
+      if (target !== null) {
+        onOpenPath(target);
       }
       return;
     }

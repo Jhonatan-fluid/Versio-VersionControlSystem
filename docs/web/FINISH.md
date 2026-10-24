@@ -350,14 +350,14 @@ collapsed when the page rendered stays collapsed when the selection changes; the
 `scrollIntoView`; a type link from Compare leaves the comparison; from the PR page it leaves the
 review (`P:393,415`).
 
-To build:
-- **Reveal in tree**: an effect that expands every ancestor of the selected path and scrolls the row
+To build (Step 3c, 2026-10-24: struck where it landed):
+- ~~**Reveal in tree**: an effect that expands every ancestor of the selected path and scrolls the row
   into view, on every selection change; highlight the row; the same in the Files-changed tree (a link
-  to a file in the PR scrolls both the tree and the stacked diff to it).
-- **Stay in context**: in Compare, a link to a changed file opens *that comparison* of the target; in
+  to a file in the PR scrolls both the tree and the stacked diff to it).~~ `TreePanel` since 2026-10-23; the Files-changed tree scrolls its section.
+- ~~**Stay in context**: in Compare, a link to a changed file opens *that comparison* of the target; in
   a review, a link to a changed file opens it inside the review; a link to an unchanged file opens the
-  object at the head commit in a **peek panel** (or new tab), never dropping the review.
-- **Links everywhere a structure is named**: member-table types (exist); **ST source identifiers**
+  object at the head commit in a **peek panel** (or new tab), never dropping the review.~~ `PeekPane`, Step 3c.
+- **Links everywhere a structure is named**: member-table types (exist); ~~**ST source identifiers**~~ (Step 3c, in Core, drawn on the web)
   (tokenizer already classes identifiers; resolve against the object index in Core: types, FB
   instances' types, called POUs, GVL members as `GVL.Member`); **ladder boxes and operands** (FB
   type on a box, instance variable, operands to their declaration row); catalog rows (a library
@@ -365,12 +365,14 @@ To build:
   resolved in Core by name against `ObjectIndex` so both hosts get them; the desktop gets ST and
   ladder links for free.
 - **Origin of a structure** ("where that actually lives"): every drawn row / network / line carries
-  `data-src-path` and lines (anchors). Show it: a hover/“…” on a row with `layer file : line`, "Open
-  in Raw at this line" (`/blob/<ref>/<layer>#L<n>`), and a breadcrumb project → folder → object →
-  layer above the pane. Also "declared in" for a member of a nested struct.
-- **Reverse links**: "Used by" for a type / FB / GVL member (a cross-reference index built once per
+  `data-src-path` and lines (anchors). Show it: ~~a hover/“…” on a row with `layer file : line`~~ (the
+  gutter's tooltip, Step 3c), "Open in Raw at this line" (`/blob/<ref>/<layer>#L<n>`), and a
+  breadcrumb project → folder → object → layer above the pane. Also "declared in" for a member of a
+  nested struct.
+- ~~**Reverse links**: "Used by" for a type / FB / GVL member (a cross-reference index built once per
   commit in Core from the declarations and ST bodies; ladder operands when element parsing lands).
-  Neither host has it; the web gets it first, the desktop panel second.
+  Neither host has it; the web gets it first, the desktop panel second.~~ Step 3c: `ObjectLinks`
+  in Core, `/usages` and the pane's list on the web; the desktop panel is still to come.
 
 ---
 
@@ -609,14 +611,30 @@ anchors — each is a Core anchor kind with its own placement rule and tests, an
 of them lands on the whole file today, which is honest rather than wrong; they stay in B6b's table
 as open rows.
 
-**Step 3c — Links, origin and reveal (C2).** Tree reveal on selection change (expand ancestors,
+~~**Step 3c — Links, origin and reveal (C2).** Tree reveal on selection change (expand ancestors,
 scroll, highlight) in the project tree and the Files-changed tree; links stay inside Compare and
 inside a review, peek for unchanged targets; Core name resolution against `ObjectIndex` for ST
 identifiers, ladder boxes / operands and catalog rows (both hosts); the origin affordance (layer
 file : line, open Raw at the line, breadcrumb); the "Used by" cross-reference index per commit. Tests:
 a link in a collapsed folder reveals and selects the row; a link from the review stays in the review;
 the desktop's `OpenObjectAsync` and the web's reveal pinned to the same object for the same click
-on the fixtures.
+on the fixtures.~~
+**Done 2026-10-24, with the scope cut said here.** Landed: the tree reveal (already in, from
+2026-10-23); stay in context — a link to a changed file opens its comparison or its review
+section, a link to anything else opens a **peek** at the newer version beside the page
+(`PeekPane`, its own trail, "Open" to the object's page), on Compare and on the pull request;
+**ST identifier links** resolved in Core (`ObjectLinks.Resolver` over `ObjectIndex`, same project,
+never itself, never a keyword, a comment or a string; `CodeHtml.AppendLine` writes `data-link` on
+the word), drawn by the web; the **origin** as the gutter's tooltip, `layer file : line`, on every
+drawn line (`FragmentHost`); **"Used by"** (`ObjectLinks.NamesReferenced`, `ObjectIndex.ObjectsIn`,
+`ViewService.UsagesAsync` reading each object's typed source once per commit, `/usages`, drawn
+under the layer chips with its cut-short note). Found on the way: Step 9's Markdown-only link rule
+had silenced every member-table type link, which no page test clicked (FINDINGS 2026-10-24). **Not
+done, on purpose:** ladder boxes and operands as links (the same per-element parsing the ladder
+anchors wait for), catalog rows as links, the breadcrumb above the pane (the pane's title already
+says folder and object), "declared in" for nested members; and the desktop draws ST with its own
+`DiffView`, so it gets the resolver but not the drawn links until that control reads `ObjectLinks`
+— listed under *Future renderers and anchors*.
 
 **Step 4 — Coverage that tells the truth.** In Core `Coverage`: a whole-file add/delete is shown by a
 drawing that draws every row A/D; a table row drawn A/D/M vouches for every source line the row
@@ -714,7 +732,10 @@ and TIA parsers — vendor code, so the CODESYS gate runs — then a Core anchor
 network, the SVG's mark and the thread beside the network naming the element); section headings
 and the table caption; attribute-chip lines; Markdown blocks by their source lines; catalog and
 card rows. Each is a Core anchor kind with its own placement rule and tests; until then a comment
-on one lands on the whole file, which the page says.
+on one lands on the whole file, which the page says. And the links Step 3c left open: ladder
+boxes and operands (the same per-element spans), catalog rows (a task's program, a library's
+version, a device's entry), and the desktop's `DiffView` drawing the ST identifier links its
+`ObjectLinks` resolver already answers; a "used by" panel on the desktop beside the web's list.
 
 ### Verification (every step)
 - `dotnet test tests/Versio.Web.Tests`, `tests/Versio.Core.Tests`, `tests/Versio.Arch.Tests`, the

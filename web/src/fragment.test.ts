@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { hasLadder, linkTarget, mermaidBlocks, sanitize } from './fragment';
+import { hasLadder, linkTarget, mermaidBlocks, objectLink, sanitize } from './fragment';
 import { blobUrl, compareUrl, parseRange, parseRepoInput } from './routes';
 import { query } from './api';
 
@@ -65,6 +65,16 @@ describe('Markdown links', () => {
     expect(linkTarget('/docs/Guide.MARKDOWN', 'docs/x.md')).toEqual({ kind: 'internal', path: 'docs/Guide.MARKDOWN' });
     // The desktop's rule (FINISH.md D2): a source file has its own row to click, so a link to one goes nowhere.
     expect(linkTarget('/src/a.st', 'docs/x.md')).toBeNull();
+  });
+
+  // A type or identifier link names an object's file, whatever its extension: the Markdown-only
+  // rule above silenced every type link for a while (FINDINGS 2026-10-24), so this is its own rule.
+  it('an object link opens any repository path, and nothing outside the repository or with a scheme', () => {
+    expect(objectLink('src/a.st')).toBe('src/a.st');
+    expect(objectLink('/plc/App/GVL.gvl.xml')).toBe('plc/App/GVL.gvl.xml');
+    expect(objectLink('../x.st')).toBeNull();
+    expect(objectLink('javascript:alert(1)')).toBeNull();
+    expect(objectLink('')).toBeNull();
   });
 
   it('open http(s) elsewhere and refuse every other scheme', () => {

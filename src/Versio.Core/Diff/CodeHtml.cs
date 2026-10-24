@@ -49,11 +49,19 @@ public static class CodeHtml
     /// characters it replaced with markers plus how many names it marked as mixing scripts.
     /// </summary>
     /// <param name="emphasis">Changed-word spans (<see cref="IntralineEmphasis"/>), or null.</param>
+    /// <param name="links">
+    /// What an identifier opens, or null for none (docs/web/FINISH.md, Step 3c): asked for every
+    /// plain word — a name the tokenizer did not class as a keyword, a type or a comment — and
+    /// answered with the target the host understands (a repository path on the web, a guid on the
+    /// desktop), carried as <c>data-link</c> like a member table's type link. Only words: a name
+    /// inside a comment or a string is prose, and linking it would make a remark read as code.
+    /// </param>
     public static int AppendLine(
         StringBuilder html,
         string? text,
         SyntaxLanguage language,
-        IReadOnlyList<TextSpan>? emphasis = null)
+        IReadOnlyList<TextSpan>? emphasis = null,
+        Func<string, string?>? links = null)
     {
         ArgumentNullException.ThrowIfNull(html);
         ArgumentNullException.ThrowIfNull(language);
@@ -66,10 +74,41 @@ public static class CodeHtml
         var hidden = 0;
         foreach (var token in SyntaxTokenizer.Tokenize(text, language))
         {
+            var link = links is not null && token.Kind == TokenKind.Plain && IsWord(text, token.Start, token.Length)
+                ? links(text.Substring(token.Start, token.Length))
+                : null;
+            if (link is not null)
+            {
+                html.Append("<span class=\"cd-t-link\" data-link=\"").Append(A(link)).Append("\" title=\"Open ").Append(A(link)).Append("\">");
+            }
+
             hidden += AppendToken(html, text, token.Start, token.Length, token.Kind, emphasis);
+            if (link is not null)
+            {
+                html.Append("</span>");
+            }
         }
 
         return hidden;
+    }
+
+    /// <summary>A plain token that is one identifier: letters, digits and underscores, starting with a letter or underscore.</summary>
+    private static bool IsWord(string text, int start, int length)
+    {
+        if (length == 0 || !(char.IsLetter(text[start]) || text[start] == '_'))
+        {
+            return false;
+        }
+
+        for (var i = start + 1; i < start + length; i++)
+        {
+            if (!(char.IsLetterOrDigit(text[i]) || text[i] == '_'))
+            {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     /// <summary>Rows per <c>.cd-block</c>, the unit the browser may skip laying out.</summary>

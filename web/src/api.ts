@@ -109,6 +109,15 @@ export interface Tag {
   commit: string;
 }
 
+/** "Used by" (Step 3c): the objects of the same project whose source names this one, at this commit. */
+export interface Usages {
+  name: string;
+  usedBy: { path: string; label: string; name: string; type: string }[];
+  /** The search stopped at its bound: the list is what was read, not everything. */
+  truncated: boolean;
+  searched: number;
+}
+
 /** A comment on a commit (Step 3b): on the commit as a whole, or one GitHub placed on a line of a file. */
 export interface CommitComment {
   id: string;
@@ -735,6 +744,8 @@ export const api = {
   tags: (owner: string, repo: string, signal?: AbortSignal) => get<{ tags: Tag[] }>(`${repoBase(owner, repo)}/tags`, signal),
   view: (owner: string, repo: string, ref: string, path: string, view: PaneView, layout: Layout, signal?: AbortSignal) =>
     get<View>(`${repoBase(owner, repo)}/view${query({ ref, path, view, layout })}`, signal),
+  usages: (owner: string, repo: string, ref: string, path: string, signal?: AbortSignal) =>
+    get<Usages>(`${repoBase(owner, repo)}/usages${query({ ref, path })}`, signal),
   compare: (owner: string, repo: string, base: string, head: string, signal?: AbortSignal) =>
     get<Comparison>(`${repoBase(owner, repo)}/compare${query({ base, head })}`, signal),
   /** `full`: the desktop pane's Show full file; without it a comparison is folded to its changes, as the desktop opens. */

@@ -98,14 +98,14 @@ public sealed record ViewResult(
 /// this person's credential before anything here runs (security rule 2).
 /// </para>
 /// </remarks>
-public sealed class ViewService(
+public sealed partial class ViewService(
     IRepoSource source,
     IMemoryCache cache,
     IOptions<WebOptions> options,
     IVersioLogger log)
 {
     /// <summary>Bumped whenever any renderer's output changes, so no stale fragment is served.</summary>
-    public const int RendererVersion = 6;
+    public const int RendererVersion = 7;
 
     private WebOptions O => options.Value;
 
@@ -314,7 +314,7 @@ public sealed class ViewService(
             case RenderKind.MemberTable:
             {
                 var html = new StringBuilder(MemberTableHtml.Fragment(WebNote(LinkTypes((MemberTable)choice.Model!, choice.File!, model, null))));
-                AppendInterfaceCode(html, choice, files, older: null);
+                AppendInterfaceCode(html, choice, files, older: null, links: choice.CodeFile is { } codeFile ? Links(model, codeFile) : null);
                 return Result("table", node, shown, html.ToString(), notices);
             }
 
@@ -340,7 +340,7 @@ public sealed class ViewService(
                 }
 
                 return Result(choice.Kind == RenderKind.WebPage ? "webpage" : "source", node, shown,
-                    SourceHtml.Fragment(StSourceLayout.Lay(text, PlcFormats.SectionsFor(shown, text)), LanguageFor(shown)), notices);
+                    SourceHtml.Fragment(StSourceLayout.Lay(text, PlcFormats.SectionsFor(shown, text)), LanguageFor(shown), links: Links(model, shown)), notices);
             }
 
             default:
@@ -604,7 +604,7 @@ public sealed class ViewService(
                 // own changes said "the type changed" and "nothing this view draws did" together
                 // (found in review).
                 var tableChanged = compared.Members.Any(m => m.Change != MemberChange.None || m.ReferenceChanged);
-                var codeChanged = AppendInterfaceCode(html, choice, after, before, sideBySide, anchors, Vouch, fullFile);
+                var codeChanged = AppendInterfaceCode(html, choice, after, before, sideBySide, anchors, Vouch, fullFile, choice.CodeFile is { } codeFile ? Links(newerModel, codeFile) : null);
                 if (changedFiles && !tableChanged && !codeChanged)
                 {
                     notices.Add(NothingDrawnChanged);
@@ -658,7 +658,7 @@ public sealed class ViewService(
 
                 Vouch(shown, Versio.Core.Review.Coverage.Source(rows));
                 return Result(choice.Kind == RenderKind.WebPage ? "webpage" : "source", node, shown,
-                    SourceHtml.Fragment(rows, LanguageFor(shown), sideBySide ? SourceView.SideBySide : SourceView.Unified, shown, fullFile), notices)
+                    SourceHtml.Fragment(rows, LanguageFor(shown), sideBySide ? SourceView.SideBySide : SourceView.Unified, shown, fullFile, Links(newerModel, shown)), notices)
                     with { Coverage = Covered() };
             }
 
@@ -729,7 +729,8 @@ public sealed class ViewService(
         IReadOnlyDictionary<string, Layer> newer, IReadOnlyDictionary<string, Layer>? older, bool sideBySide = false,
         List<Versio.Core.Review.RenderedAnchor>? anchors = null,
         Action<string, Versio.Core.Review.Coverage.Evidence>? vouch = null,
-        bool fullFile = false)
+        bool fullFile = false,
+        Func<string, string?>? links = null)
     {
         if (choice.Code == CodeUnder.None || choice.CodeFile is not { } code || choice.Format is not { } format)
         {
@@ -789,7 +790,7 @@ public sealed class ViewService(
             vouch?.Invoke(code, Versio.Core.Review.Coverage.Source(rows));
         }
 
-        html.Append(SourceHtml.Fragment(rows, LanguageFor(code), sideBySide ? SourceView.SideBySide : SourceView.Unified, code, older is null || fullFile));
+        html.Append(SourceHtml.Fragment(rows, LanguageFor(code), sideBySide ? SourceView.SideBySide : SourceView.Unified, code, older is null || fullFile, links));
         return older is not null && rows.Any(r => r is SourceRemovedLine or SourceCodeLine { Change: SourceChange.Added });
     }
 
@@ -1031,6 +1032,14 @@ public sealed class ViewService(
 
     /// <summary>A vendor names its own extensions (a variable list's is Structured Text); the catalog the rest, as the desktop does.</summary>
     private static SyntaxLanguage LanguageFor(string path) => PlcFormats.LanguageFor(path);
+
+    /// <summary>
+    /// What an identifier in <paramref name="sourceFile"/> opens (Step 3c): the object of that name
+    /// in the same project, as the file the page shows for it — the same target a member table's
+    /// type link has, through Core's <see cref="ObjectLinks"/>. Null for a file no object owns.
+    /// </summary>
+    private static Func<string, string?>? Links(RepoModel model, string sourceFile) =>
+        ObjectLinks.Resolver(model.Objects, sourceFile, files => files.Paths.Select(p => model.NodeFor(p)?.PrimaryFile).FirstOrDefault(p => p is not null) ?? files.Paths[0]);
 
     /// <summary>The file as itself: every line, numbered as the file numbers it.</summary>
     internal static IReadOnlyList<SourceRow> FileRows(string text)

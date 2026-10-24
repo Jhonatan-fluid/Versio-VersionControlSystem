@@ -53,4 +53,25 @@ describe('Pane', () => {
     expect(Array.from(noUrl.host.querySelectorAll('[role="tab"]')).map((b) => b.textContent)).toEqual(['Rendered', 'Raw']);
     act(() => noUrl.root.unmount());
   });
+
+  // "Used by" (Step 3c): the objects naming this one, each a link; a cut-short search says so.
+  it('lists what uses the object, opens one on a click, and says when the search stopped early', async () => {
+    const opened: string[] = [];
+    const host = document.createElement('div');
+    document.body.appendChild(host);
+    const root = createRoot(host);
+    const usages = { state: 'ok' as const, value: { name: 'GVL', usedBy: [{ path: 'src/Pump.st', label: 'src/Pump.st', name: 'Pump', type: 'Program' }], truncated: true, searched: 1500 } };
+    await act(async () => {
+      root.render(<Pane result={{ state: 'ok', value: view('table') }} view="rendered" layout="unified" onView={() => {}} onLayout={() => {}} onLayer={() => {}} onOpenPath={(p) => opened.push(p)} line={null} onLine={() => {}} comparing={false} signInUrl={null} usages={usages} />);
+    });
+
+    const toggle = host.querySelector<HTMLButtonElement>('.usages button')!;
+    expect(toggle.textContent).toBe('Used by 1 object at least');
+    await act(async () => toggle.click());
+    expect(host.querySelector('.usages-list')?.textContent).toContain('Pump');
+    expect(host.querySelector('.usages-list')?.textContent).toContain('stopped after 1500 files');
+    await act(async () => host.querySelector<HTMLButtonElement>('.usages-list button')!.click());
+    expect(opened).toEqual(['src/Pump.st']);
+    act(() => root.unmount());
+  });
 });

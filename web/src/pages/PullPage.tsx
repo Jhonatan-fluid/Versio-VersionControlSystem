@@ -8,6 +8,7 @@ import { FilesTree } from '../components/FilesTree';
 import { CommentCard, CommitRow, EventRow, Minimized, Reactions, ReviewCard, RoleBadge, anchorOf } from '../components/Conversation';
 import { MergeBox } from '../components/MergeBox';
 import { ErrorPanel } from '../components/Pane';
+import { PeekPane } from '../components/PeekPane';
 import { AssigneesEditor, BaseEditor, LabelsEditor, LockAction, MilestoneEditor, StateActions, SubscriptionAction, TitleEditor } from '../components/PullMeta';
 import { ReviewBar, ReviewersEditor } from '../components/ReviewBar';
 import { ActionButton, CommentBox, ReasonAction, carryDraft, describe, newOpKey } from '../components/ReviewWrite';
@@ -396,6 +397,12 @@ function PullReview({ me }: { me: Me | null }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [hashPath, tab]);
   const inPull = (p: string) => files.state === 'ok' && files.value.files.some((f) => f.path === p);
+  // A link to something this pull request does not change — a type, an identifier — opens a
+  // peek at the reviewed head beside the review (FINISH.md C2, "stay in context"), never the
+  // object's own page in place of the review; a link to a changed file goes to its section.
+  const [peek, setPeek] = useState<string | null>(null);
+  useEffect(() => setPeek(null), [tab, token]);
+  const open = (p: string) => (inPull(p) ? go('files', p) : setPeek(p));
 
   const notices = snap && (
     <>
@@ -480,6 +487,7 @@ function PullReview({ me }: { me: Me | null }) {
                 </span>
               )}
             </div>
+            {peek && snap && <PeekPane owner={owner} repo={repo} refName={snap.headSha} path={peek} onClose={() => setPeek(null)} signInUrl={signIn} />}
             <div className="pr-tabs">
               <UnderlineNav items={navItems} current={tab} label="Pull request" />
               {live?.additions !== undefined && live.deletions !== undefined && (
@@ -529,7 +537,7 @@ function PullReview({ me }: { me: Me | null }) {
                     initialLayout={layout}
                     initialFull={full}
                     onLayer={(layer) => (inPull(layer) ? go('files', layer) : navigate(blobUrl(owner, repo, snap.headSha, layer)))}
-                    onOpenPath={(p) => (inPull(p) ? go('files', p) : navigate(blobUrl(owner, repo, snap.headSha, p)))}
+                    onOpenPath={open}
                     signInUrl={signIn}
                     viewed={viewed.has(f.path)}
                     onViewed={(on) => markViewed(f.path, on)}
@@ -547,10 +555,10 @@ function PullReview({ me }: { me: Me | null }) {
                   {revision}
                   {reviewBar}
                   {tab === 'conversation' && (
-                    <Conversation snap={snap!} live={live} timeline={timeline} writer={writer} onOpenPath={(p) => navigate(blobUrl(owner, repo, snap!.headSha, p))}
+                    <Conversation snap={snap!} live={live} timeline={timeline} writer={writer} onOpenPath={open}
                       threads={threads.state === 'ok' ? threads.value.threads : []}
                       fileLink={(p) => pullUrl(owner, repo, n, 'files', p, search)}
-                      renderThread={(t) => <Thread thread={t} writer={writer} onOpenPath={(p) => navigate(blobUrl(owner, repo, snap!.headSha, p))} />}
+                      renderThread={(t) => <Thread thread={t} writer={writer} onOpenPath={open} />}
                       // GitHub's order: the merge box closes the timeline, and the comment box comes after it.
                       mergeBox={
                         <>
@@ -560,7 +568,7 @@ function PullReview({ me }: { me: Me | null }) {
                       } />
                   )}
                   {tab === 'commits' && <Commits commits={commits} />}
-                  {tab === 'checks' && <Checks status={status} onOpenPath={(p) => navigate(blobUrl(owner, repo, snap!.headSha, p))} notes={notes} fileLink={(p) => pullUrl(owner, repo, n, 'files', p, search)} />}
+                  {tab === 'checks' && <Checks status={status} onOpenPath={open} notes={notes} fileLink={(p) => pullUrl(owner, repo, n, 'files', p, search)} />}
                 </>
               }
               sidebar={<Summary status={status} writer={writer} />}

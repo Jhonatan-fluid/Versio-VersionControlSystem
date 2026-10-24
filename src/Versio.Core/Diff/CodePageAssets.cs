@@ -169,6 +169,8 @@ public static class CodePageAssets
           background: var(--cd-hidden-bg); border-radius: 3px; }
         .cd-t-keyword { color: var(--cd-t-keyword); }
         .cd-t-type { color: var(--cd-t-type); }
+        .cd-t-link { text-decoration: underline dotted; text-underline-offset: 2px; cursor: pointer; }
+        .cd-t-link:hover { text-decoration-style: solid; }
         .cd-t-comment { color: var(--cd-t-comment); }
         .cd-t-string { color: var(--cd-t-string); }
         .cd-t-number { color: var(--cd-t-number); }

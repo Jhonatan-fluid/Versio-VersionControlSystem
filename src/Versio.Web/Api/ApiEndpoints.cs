@@ -304,6 +304,35 @@ public static partial class ApiEndpoints
             return result.Ok ? Results.Ok(result.Value) : Refused(result.Failure, http);
         });
 
+        // "Used by" (Step 3c): the objects of the same project whose source names this one, read
+        // at this commit. Cut short at a bound, and says so, rather than answering "nowhere".
+        api.MapGet("/usages", async (string owner, string repo, string? @ref, string? path, HttpContext http, Loader load, ViewService views, IVersioLogger log, CancellationToken ct) =>
+        {
+            if (!ValidPath(path))
+            {
+                return Results.NotFound();
+            }
+
+            var model = await load.ModelAsync(http, owner, repo, @ref, ct).ConfigureAwait(false);
+            if (!model.Ok)
+            {
+                return Refused(model.Failure, http);
+            }
+
+            var (access, m) = model.Value!;
+            var result = await views.UsagesAsync(access, m, path!, ct).ConfigureAwait(false);
+            Audit(log, access, m, path!, "usages");
+            return result.Ok
+                ? Results.Ok(new
+                {
+                    name = result.Value!.Name,
+                    usedBy = result.Value.UsedBy.Select(u => new { path = u.Path, label = u.Label, name = u.Name, type = u.Type }),
+                    truncated = result.Value.Truncated,
+                    searched = result.Value.Searched,
+                })
+                : Refused(result.Failure, http);
+        });
+
         api.MapGet("/compare", async (string owner, string repo, string? @base, string? head, HttpContext http, Loader load, CancellationToken ct) =>
         {
             var older = await load.ModelAsync(http, owner, repo, @base, ct).ConfigureAwait(false);

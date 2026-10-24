@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import type { Async } from '../useAsync';
-import type { Layout, PaneView, View } from '../api';
+import type { Layout, PaneView, Usages, View } from '../api';
 import { ApiError } from '../api';
 import { FragmentHost } from './FragmentHost';
 
@@ -26,6 +26,42 @@ interface Props {
    * raw route's own sandbox policy behind the frame's attribute.
    */
   pageUrl?: string | null;
+  /**
+   * "Used by" (FINISH.md Step 3c): the objects whose source names this one, read at this
+   * version; drawn under the layer chips, each a link. Absent where nobody asked (a comparison).
+   */
+  usages?: Async<Usages> | null;
+}
+
+/** The "used by" list: the objects naming this one, or that the search was cut short, or nothing. */
+function UsedBy({ usages, onOpenPath }: { usages: Async<Usages>; onOpenPath: (path: string) => void }) {
+  const [open, setOpen] = useState(false);
+  if (usages.state !== 'ok') {
+    // A file no object owns is "not found": nothing has a name to look for, and nothing is said.
+    return null;
+  }
+  const u = usages.value;
+  if (u.usedBy.length === 0 && !u.truncated) {
+    return <p className="usages text-muted text-small">Used by no other object of its project.</p>;
+  }
+  return (
+    <div className="usages">
+      <button type="button" className="link-button text-small" aria-expanded={open} onClick={() => setOpen(!open)}>
+        Used by {u.usedBy.length} object{u.usedBy.length === 1 ? '' : 's'}{u.truncated ? ' at least' : ''}
+      </button>
+      {open && (
+        <ul className="usages-list">
+          {u.usedBy.map((o) => (
+            <li key={o.path}>
+              <button type="button" className="link-button" onClick={() => onOpenPath(o.path)} title={o.label}>{o.name}</button>
+              <span className="text-muted text-small"> {o.type}</span>
+            </li>
+          ))}
+          {u.truncated && <li className="text-muted text-small">The search stopped after {u.searched} files; the rest of the project was not read.</li>}
+        </ul>
+      )}
+    </div>
+  );
 }
 
 const kinds: Record<string, string> = {
@@ -46,7 +82,7 @@ function folderOf(path: string): string {
 }
 
 /** The object pane: what the desktop's Rendered and Raw tabs show, placed from the server's HTML. */
-export function Pane({ result, view, layout, onView, onLayout, onLayer, onOpenPath, line, onLine, comparing, signInUrl, full = false, onFull, pageUrl }: Props) {
+export function Pane({ result, view, layout, onView, onLayout, onLayer, onOpenPath, line, onLine, comparing, signInUrl, full = false, onFull, pageUrl, usages }: Props) {
   // The web page tab is the pane's own: not in the URL, since a pasted link should open on the
   // drawing, and gone the moment another file opens.
   const [page, setPage] = useState(false);
@@ -107,6 +143,7 @@ export function Pane({ result, view, layout, onView, onLayout, onLayer, onOpenPa
           })}
         </div>
       )}
+      {usages && <UsedBy usages={usages} onOpenPath={onOpenPath} />}
       {v.notices.map((n) => (
         <p key={n} className="notice" role="note">{n}</p>
       ))}
