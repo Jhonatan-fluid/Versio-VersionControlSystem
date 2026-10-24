@@ -205,7 +205,7 @@ Versio.sln
 │  ├─ Versio.Plc.TwinCat.Infrastructure/
 │  │                            ONE VENDOR, driven. Locator, runner, TwinCatPack.
 │  ├─ Versio.Plc.TwinCat.Host/   ONE VENDOR, net9 x64 exe. COM into TcXaeShell.DTE.17.0.
-│  └─ Versio.Web/               The read-only web viewer's server (docs/web/PLAN.md): reads a
+│  └─ Versio.Web/               The web viewer's server (docs/web/PLAN.md; reviews too, writes on): reads a
 │                               repository from GitHub, renders with Core and the three PURE
 │                               packs, signs in through a GitHub App. Never an Infrastructure
 │                               pack, never a process; Arch tests hold it to that.

@@ -1,6 +1,6 @@
 # Versio — status and what is next
 
-**Date:** 2026-09-14 · **This is the live page.** Where the project is, and what is next, live
+**Date:** 2026-10-24 · **This is the live page.** Where the project is, and what is next, live
 here and only here. Search [`FINDINGS.md`](FINDINGS.md) for defects. Completed plans and session
 handoffs are records in [`phase1/`](phase1/) and [`archive/`](archive/) — read them for why,
 never for state.
@@ -11,7 +11,8 @@ log file; the diff parser read a removed `--` line as a file header). Everything
 the working loop is green; the visual half is item 2's first bullet. FINDINGS 2026-09-21 has
 the list.
 
-**Continue from here — item 2 of *What is next*: the owner eyeballs.** Item 1 is done:
+**Continue from here — item 10 of *What is next*: the web viewer's real-GitHub gates (2026-10-24),
+then item 2, the owner's eyeballing of the desktop.** Item 1 is done:
 `Versio.Plc.Codesys.Tests` ran on `Siemens2` on 2026-08-19 evening — **54/54 green in
 39 m 33 s, zero skips**, on an idle machine with the IDE closed, over the Core seam
 changes (`ExportHeldViaCopy`, the held-wait, occupancy-then-hash, the locked-pointer

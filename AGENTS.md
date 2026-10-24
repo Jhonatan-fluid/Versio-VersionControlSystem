@@ -20,7 +20,7 @@ distinction is the project's central architectural rule rather than an aspiratio
 | `Versio.Plc.TwinCat` | **One vendor, pure.** `.tsproj` conventions, directory payload, import planner, ST header |
 | `Versio.Plc.TwinCat.Infrastructure` | **One vendor, driven.** TcXaeShell locator, net9 host spawn, Automation Interface session |
 | `Versio.Plc.TwinCat.Host` | **One vendor, net9 x64 exe.** COM into `TcXaeShell.DTE.17.0`; never shipped as Beckhoff DLLs |
-| `Versio.Web` + `web/` | **The read-only web viewer** (`docs/web/PLAN.md`). A composition root like `Versio.App`, but references only the *pure* packs and names vendors only in `WebHost.RegisterFormats`; the React page draws no code. Arch tests enforce both |
+| `Versio.Web` + `web/` | **The web viewer** (`docs/web/PLAN.md`; read-only at first, and a pull request reviewer with writes on since 2026-10). A composition root like `Versio.App`, but references only the *pure* packs and names vendors only in `WebHost.RegisterFormats`; the React page draws no code. Arch tests enforce both |
 | everything else | Vendor-neutral: git, diff, sync, locking, watching, logging, bindings |
 
 Adding a vendor means a new project implementing `IPlcRunner`, `IPlcProjectFormat` and

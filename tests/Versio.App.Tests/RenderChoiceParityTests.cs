@@ -20,6 +20,13 @@ namespace Versio.App.Tests;
 /// </summary>
 /// <remarks>
 /// <para>
+/// <b>What this cannot see</b> (review, 2026-10-24): it compares the <i>kind</i> chosen, not the
+/// files, the code-under-table choice or the notice beside it; it runs a clean repository, so the
+/// pull request path (<c>ViewService.RenderedCompare</c>, the one that was wrong on 2026-10-23) is
+/// never compared; and the fixtures are small, so a layer the web refuses as too large (and the
+/// desktop reads) never arises. Each is a divergence this test would stay green through.
+/// </para>
+/// <para>
 /// <c>ViewServiceTests</c> claimed to pin "the desktop's order" and could not: it ran one host.
 /// The two orders drifted for a year of commits — no project card, no catalogs, no husk rule and
 /// no web page on the web, and the File-Based Storage objects that hold nothing drawn as raw

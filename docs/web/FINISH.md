@@ -29,22 +29,25 @@ commit, say the window remains, honour the repository's auto-delete setting).
    appear twice; nothing says which FB they belong to without hovering.
 2. (seen) **One file at a time.** The pane says "Pick a changed file." GitHub stacks every diff on
    one scrolling page with sticky per-file headers.
-3. (seen) **The coverage banner is noise on real code.** FB_Alarm lists 12 "changed, but not shown as
+3. ~~(seen) **The coverage banner is noise on real code.** FB_Alarm lists 12 "changed, but not shown as
    changed" lines; Symbol Set (a *new* file, every row drawn with an A mark) says "lines 1–780:
    changed, but not shown as changed"; the review dialog says "55 files with changes the drawing may
    not show" out of 85. The rule (C4: XML tables never vouch for a line) is working as written and
    reads as "the drawing is wrong". A whole-file add/delete, a rename, and a row drawn A/D/M whose
-   whole source line is that row must count as shown.
-4. (seen) A method whose header changed (`METHOD` → `METHOD PUBLIC`) reports the same gap twice ("as
+   whole source line is that row must count as shown.~~ **Step 4, 2026-10-23:** the six rules in
+   Core's `Coverage`; FINDINGS 2026-10-23 has the measurement on the real pull request.
+4. ~~(seen) A method whose header changed (`METHOD` → `METHOD PUBLIC`) reports the same gap twice ("as
    it was", "as it is"), and the empty member table above the code carries "1 declaration change is
-   not shown in this table" — the header line is *the* declaration, and nothing draws it.
+   not shown in this table" — the header line is *the* declaration, and nothing draws it.~~ **Step 4:**
+   the code block vouches for the header it draws, and one line is one gap.
 5. (seen) **Long lines are clipped at the pane edge** on Raw and Rendered source (no horizontal
    scroll). Member tables get a scrollbar but DEFAULT VALUE / COMMENT run off the pane; the TYPE
    column overflows into the next on wide types (`E_AlarmState := E_AlarmState.Off`).
 6. (seen) **Member tables have large empty gaps between rows** (every row reserves an attribute /
    comment line even when empty) — see `MemberTableHtml`.
-7. (seen) **`Communication Manager`, `OPC UA Server`** (device/application objects) draw as raw
-   `__V3_META__` JSON + XML, under the note "Every change in this object is shown in the drawing".
+7. ~~(seen) **`Communication Manager`, `OPC UA Server`** (device/application objects) draw as raw
+   `__V3_META__` JSON + XML, under the note "Every change in this object is shown in the drawing".~~
+   **Step 9:** `RenderChoice` gives them the "stores no settings" note on both hosts.
 8. (seen) The project tree says **"This repository is not set up for Versio, so it is shown as plain
    folders"** while drawing an FBS library with Devices / POUs panes. The notice is keyed on
    `.versio/repo.json`; an FBS project is a Versio project without one.
@@ -324,11 +327,12 @@ external_id; status description, creator, times; deployments; required checks; C
 - **missing** Explorer (files-as-on-disk) view (PLAN phase 5, deferred).
 - **missing** Shared theme tokens generated from the desktop palette (PLAN phase 4, never built);
   success green, merged purple, modified amber are hard-coded in `app.css:107,254,255,264`.
-- **wrong** The "husk" rule differs: desktop sends an empty non-interface table to source
+- ~~**wrong** The "husk" rule differs: desktop sends an empty non-interface table to source
   (`ShellViewModel.cs:7605`), the web takes any valid table (`ViewService.cs:284,428`). Nothing pins
   the two switches to each other (no "mirror" test exists in `ViewServiceTests.cs`; `VS:66-73`
   calls moving the switch into Core "later"). FINDINGS 2026-10-23 already states the rule: *the
-  decision of what is drawn belongs in Core*.
+  decision of what is drawn belongs in Core*.~~ **Step 9:** `RenderChoice` in Core, pinned by
+  `RenderChoiceParityTests` over every fixture row on both hosts.
 - ~~**missing** `/commit/<sha>` page, `/commits/<ref>` (today `/history`), `/branches`, `/tags`,
   `/tree/<ref>/<path>`, `/releases/tag/<tag>`, a 404 page.~~ Steps 1 and 8.
 - **missing** "Where it lives": a breadcrumb from a drawn element back to project → folder → object
@@ -387,33 +391,33 @@ table, ladder (LAD/FBD), SCL body (`TiaPortalProjectFormat.cs:242-288`); TwinCAT
 
 | Vendor | Object kind | Desktop | Web | Gap |
 |---|---|---|---|---|
-| All | Project row (`.project`, `.apXX`, `.tsproj`, FBS folder) | Project card + coverage, Raw explanation (`:7845-7968`, `:8113-8172`) | Row only expands; nothing opens (`TreePanel.tsx:72`) | **Card missing** |
+| All | Project row (`.project`, `.apXX`, `.tsproj`, FBS folder) | Project card + coverage, Raw explanation (`:7845-7968`, `:8113-8172`) | Row only expands; nothing opens (`TreePanel.tsx:72`) | ~~**Card missing**~~ Step 9, `Cards.Project` |
 | All | `.html` | Rendered / Raw / **Web page** tab (`:3100-3111`) | ~~Highlighted source~~ Rendered / Raw / Web page (Step 9: the raw route framed with every sandbox flag off, the route's own sandbox policy behind it) | ~~Web-page tab missing~~ |
 | All | `.md` | Markdown, follows `.md` links only | ~~Markdown, follows any repo path~~ follows `.md` links only (Step 9) | ~~Link rule differs~~ |
 | CODESYS | POU / method / interface (ST) | Table + code | Same | — |
 | CODESYS | POU in LD/FBD (`.xml`, FBS `.pou.xml.v3`) | Table + networks | Same | — |
 | CODESYS | CFC, SFC, IL | Raw XML as source | Same | Neither draws (future renderer) |
-| CODESYS | DUT / enum / GVL / persistent list | Table (empty non-interface → source) | Table always | **Husk rule differs** |
+| CODESYS | DUT / enum / GVL / persistent list | Table (empty non-interface → source) | Table always | ~~**Husk rule differs**~~ Step 9, `RenderChoice` |
 | CODESYS | Property + Get/Set, action, transition | Table + source / ladder | Same | — |
 | CODESYS | Global text list; project settings; symbol config; OPC UA symbol set | Tables (`CodesysCatalogs.cs:306,346,398,478`) | Same | — |
 | CODESYS | Plain text list, image pool, EVC, project info, visualisation, external file | Raw XML | Same | Neither draws (visualisation: future) |
-| CODESYS | Plc Logic / Application / Communication Manager | "stores no settings" note | Same (seen: raw `__V3_META__` for the FBS form) | **FBS form falls through to raw** |
-| CODESYS | Library manager (`.libraries.yaml`, FBS `Libraries.json`) | Library catalog table with marks | YAML/JSON source | **Missing** |
-| CODESYS | Task configuration (`.tasks.yaml`, `.task.xml.v3`, `.taskconfig`), task row | Task table; task facts card | Source / raw | **Missing** |
-| CODESYS | Devices (`.devices.yaml`, `.device.xml.v3`), slot / connector / parameter rows | Device table + detail card | Source / raw | **Missing** |
+| CODESYS | Plc Logic / Application / Communication Manager | "stores no settings" note | Same (seen: raw `__V3_META__` for the FBS form) | ~~**FBS form falls through to raw**~~ Step 9, the note |
+| CODESYS | Library manager (`.libraries.yaml`, FBS `Libraries.json`) | Library catalog table with marks | YAML/JSON source | ~~**Missing**~~ Step 9, `CatalogHtml` |
+| CODESYS | Task configuration (`.tasks.yaml`, `.task.xml.v3`, `.taskconfig`), task row | Task table; task facts card | Source / raw | ~~**Missing**~~ Step 9, `CatalogHtml` and `Cards.Task` |
+| CODESYS | Devices (`.devices.yaml`, `.device.xml.v3`), slot / connector / parameter rows | Device table + detail card | Source / raw | ~~**Missing**~~ Step 9, `CatalogHtml` and `Cards.Device` |
 | CODESYS | FBS POUs / Devices panes | Shared builder | Same | — (catalog readers not called on the web) |
 | TIA | FB/FC SCL (`.scl` + `.xml`) | Table + SCL body | Same | — |
 | TIA | FB/FC LAD/FBD | Table + networks | Same | — |
-| TIA | FB/FC STL / GRAPH (`.xml` only) | Table + the whole XML as source under it | Table only (`AppendInterfaceCode:577-580`) | **Code missing under table** |
+| TIA | FB/FC STL / GRAPH (`.xml` only) | Table + the whole XML as source under it | Table only (`AppendInterfaceCode:577-580`) | ~~**Code missing under table**~~ Step 9, `CodeUnder.WholeFile` |
 | TIA | OB LAD/FBD · OB SCL/STL | Networks · source | Same | — |
 | TIA | Global / instance DB, UDT | Table | Same | — |
 | TIA | Tag table | Raw XML (no parser) | Same | Future parser |
-| TIA | Hardware (`*.devices.yaml`) | Device table + detail | YAML source | **Missing** |
+| TIA | Hardware (`*.devices.yaml`) | Device table + detail | YAML source | ~~**Missing**~~ Step 9, `CatalogHtml` |
 | TIA | HMI, safety, technology | Not exported | Same | Out of scope (export) |
 | TwinCAT | POU / method / property / action / interface | Table + body | Same | — |
-| TwinCAT | Graphical POU (declaration-only `.st`) | Table + whole file | Table only | **Code missing** |
-| TwinCAT | DUT, GVL | Table (empty → source) | Table always | **Husk rule differs** |
-| TwinCAT | I/O tree (`*.devices.yaml`) | Device table | YAML source | **Missing** |
+| TwinCAT | Graphical POU (declaration-only `.st`) | Table + whole file | Table only | ~~**Code missing**~~ Step 9, `CodeUnder.WholeFile` |
+| TwinCAT | DUT, GVL | Table (empty → source) | Table always | ~~**Husk rule differs**~~ Step 9, `RenderChoice` |
+| TwinCAT | I/O tree (`*.devices.yaml`) | Device table | YAML source | ~~**Missing**~~ Step 9, `CatalogHtml` |
 | TwinCAT | NC / CAM, safety, C++, visualisation | Not exported | Same | Out of scope (export) |
 | TwinCAT | Native `.TcPOU`, `.xti`, `.plcproj` beside the export | Plain text | Same | Future parser |
 | All | Deleted ladder block | Committed copy drawn removed | Compare draws removed | — |
@@ -463,13 +467,13 @@ Also from the map:
 
 - **wrong** (seen) Member table row spacing and column overflow; code lines clipped; the empty
   table's "declaration change not shown" note on a method header change.
-- **wrong** (seen) Coverage: XML tables and ladders never vouch; whole-file adds/deletes are gaps;
+- ~~**wrong** (seen) Coverage: XML tables and ladders never vouch; whole-file adds/deletes are gaps;
   a row drawn as changed whose line *is* the row is a gap when the table hides a pragma. Needs
   `Coverage.Table` to vouch for A/D rows, for a file that is entirely new/deleted, and for
-  attribute-only lines when the table draws the attribute chip (it does since 2026-10-22).
-- **missing** Ladder/FBD field evidence (`no-evidence`), so every ladder stays "partial".
+  attribute-only lines when the table draws the attribute chip (it does since 2026-10-22).~~ Step 4.
+- ~~**missing** Ladder/FBD field evidence (`no-evidence`), so every ladder stays "partial".~~ `Coverage.Ladder`, 2026-10-23: every network vouches for its span.
 - **missing** Element-level anchors in ladders (deferred; a thread lands on the network).
-- **missing** The same renderer choice for both hosts (`RenderChoice` in Core).
+- ~~**missing** The same renderer choice for both hosts (`RenderChoice` in Core).~~ Step 9.
 
 ---
 
@@ -636,13 +640,16 @@ says folder and object), "declared in" for nested members; and the desktop draws
 `DiffView`, so it gets the resolver but not the drawn links until that control reads `ObjectLinks`
 — listed under *Future renderers and anchors*.
 
-**Step 4 — Coverage that tells the truth.** In Core `Coverage`: a whole-file add/delete is shown by a
+~~**Step 4 — Coverage that tells the truth.** In Core `Coverage`: a whole-file add/delete is shown by a
 drawing that draws every row A/D; a table row drawn A/D/M vouches for every source line the row
 spans; an attribute chip vouches for its pragma line; a `METHOD` header line is vouched for by the
 code block that draws the header (or draw the header); ladder field evidence (network title, rung
 elements' operands) so ladders can be "complete"; de-duplicate "as it was / as it is" for a renamed
 or edited same line. Then the banner is rare, and when it appears it means something. Tests on the
-real-PR dump (FB_Alarm, Symbol Set, MoveHome) plus mutations.
+real-PR dump (FB_Alarm, Symbol Set, MoveHome) plus mutations.~~ **Done 2026-10-23** (commits
+`ca9489a`, `d52c8c7`, `04f91ae`, `0d595e4`): six rules in `Coverage`, the parsers' framing, the
+ladder's evidence; FINDINGS 2026-10-23 has the before/after on the real pull request. This
+paragraph went unstruck until the review of 2026-10-24, while STATUS said Steps 0–10 had landed.
 
 ~~**Step 5 — Review writes to parity.** Review dropdown with pending badge; pending drafts editable
 (read line/side/body; `updatePullRequestReviewComment` / delete on a pending comment); dismiss
