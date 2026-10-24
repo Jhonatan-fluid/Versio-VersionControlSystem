@@ -11,6 +11,8 @@ import { RepoPage } from './pages/RepoPage';
 import { ComparePage } from './pages/ComparePage';
 import { DocsPage } from './pages/DocsPage';
 import { CommitsPage } from './pages/CommitsPage';
+import { CommitPage } from './pages/CommitPage';
+import { BranchesPage, TagsPage } from './pages/RefsPage';
 import { PullPage } from './pages/PullPage';
 import { NewPullPage } from './pages/NewPullPage';
 import { PullsPage } from './pages/PullsPage';
@@ -34,6 +36,9 @@ function App() {
       <Route path="/:owner/:repo/blob/:ref/*" element={<RepoPage me={who} />} />
       <Route path="/:owner/:repo/compare/:range" element={<ComparePage me={who} />} />
       <Route path="/:owner/:repo/commits/:ref/*" element={<CommitsPage me={who} />} />
+      <Route path="/:owner/:repo/commit/:sha" element={<CommitPage me={who} />} />
+      <Route path="/:owner/:repo/branches" element={<BranchesPage me={who} />} />
+      <Route path="/:owner/:repo/tags" element={<TagsPage me={who} />} />
       <Route path="/:owner/:repo/history/:ref/*" element={<HistoryRedirect />} />
       <Route path="/:owner/:repo/docs/:ref" element={<DocsPage me={who} />} />
       <Route path="/:owner/:repo/pulls" element={<PullsRedirectOrList me={who} />} />

@@ -6,7 +6,7 @@ import { ErrorPanel, Pane } from '../components/Pane';
 import { RepoLayout } from '../components/RepoLayout';
 import { TreePanel } from '../components/TreePanel';
 import { Blankslate, Button, Icon, Loading } from '../components/ui';
-import { blobUrl, commitsUrl, compareUrl, treeUrl } from '../routes';
+import { blobUrl, branchesUrl, commitUrl, commitsUrl, compareUrl, tagsUrl, treeUrl } from '../routes';
 import { usePageTitle } from '../title';
 import { useAsync } from '../useAsync';
 
@@ -122,6 +122,11 @@ export function RepoPage({ me }: { me: Me | null }) {
           <Icon name="history" className="btn-icon" />
           <span className="btn-text">Commits</span>
         </Link>
+        {/* GitHub's "N Branches · Tags" beside the picker (Step 8). */}
+        <Link to={branchesUrl(owner, repo)} className="code-refs-link" title="All branches">
+          <Icon name="git-branch" /> {branches.state === 'ok' ? `${branches.value.branches.length}${branches.value.truncated ? '+' : ''} ` : ''}Branches
+        </Link>
+        <Link to={tagsUrl(owner, repo)} className="code-refs-link" title="All tags"><Icon name="tag" /> Tags</Link>
         {refName !== defaultBranch && (
           <Link to={compareUrl(owner, repo, defaultBranch, refName)} className="btn btn-small" title={`What this branch changes against ${defaultBranch}`}>
             <Icon name="diff" className="btn-icon" />
@@ -132,7 +137,7 @@ export function RepoPage({ me }: { me: Me | null }) {
           // GitHub's latest-commit line over the file list: who changed this branch last and what they said.
           <span className="text-muted text-small" style={{ marginLeft: 'auto', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
             <span className="text-bold">{head.author}</span> {head.message.split('\n')[0]}{' '}
-            <Link to={commitsUrl(owner, repo, refName)}><code>{head.sha.slice(0, 7)}</code></Link>
+            <Link to={commitUrl(owner, repo, head.sha)}><code>{head.sha.slice(0, 7)}</code></Link>
           </span>
         )}
       </div>

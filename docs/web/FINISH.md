@@ -296,18 +296,19 @@ external_id; status description, creator, times; deployments; required checks; C
 
 ## C. Repository browsing (the "Code" view) — desktop parity and GitHub shape
 
-- **missing** GitHub's repository header and nav (Code · Pull requests · Releases · Docs …), the
-  branch/tag switcher with search, the latest-commit bar ("author · message · time · N commits"),
-  README below the tree, "Go to file" search, breadcrumb path.
-- **wrong** "This repository is not set up for Versio" shown on an FBS project (seen).
-- **missing** Change marks in the tree (`RepoExplorerBuilder.Build` is called with **no changes**,
+- **partial** ~~GitHub's repository header and nav (Code · Pull requests · Releases · Docs …)~~ (Step 1), the
+  branch/tag switcher ~~with search~~ (a select; search is not built), ~~the latest-commit bar ("author · message · time · N commits")~~ (Step 1; the commit links to its page since Step 8),
+  ~~README below the tree~~ (opened by default in the pane), ~~"Go to file" search~~ (the tree's filter), ~~breadcrumb path~~ (Step 1); "N Branches · Tags" beside the picker (Step 8).
+- ~~**wrong** "This repository is not set up for Versio" shown on an FBS project (seen).~~ Step 8: a source project is a Versio project; the notice is for a repository with nothing to draw.
+- ~~**missing** Change marks in the tree (`RepoExplorerBuilder.Build` is called with **no changes**,
   `RepoModel.cs:158-257`); the desktop draws A/M/D glyphs, struck deleted names, changed-descendant
   roll-ups (`MainWindow.xaml:106-183`, `ShellViewModel.cs:8156`). `/compare` returns a flat list
   (`ApiEndpoints.cs:169-202`), and PLAN's restructure phase 3 ("compare as marks on the tree") was
-  never built.
-- **missing** `TreeNodeDto` drops `Toolchain`, `Detail`, `Type`, `Guid`, `Status`, `RollUp`,
+  never built.~~ Step 8: `RepoExplorerBuilder.Build(…, changes)` marks the listing; `/tree?base=&changed=1`
+  is the marked tree, which the compare and commit pages draw beside the files.
+- ~~**missing** `TreeNodeDto` drops `Toolchain`, `Detail`, `Type`, `Guid`, `Status`, `RollUp`,
   `ChangedDescendants` (`ApiEndpoints.cs:19`), so the page cannot show the vendor pill, the object
-  type, or a status.
+  type, or a status.~~ Sent since the RenderChoice merge; drawn since Step 8 (`TreePanel.tsx`).
 - **missing** The desktop's **Project summary** card (project file, vendor, toolchain, sync state,
   mirror, last export, object counts, libraries, tasks, coverage, warnings —
   `ShellViewModel.cs:7852-7948`), the **task** detail and task-catalog table (`:7527-7555`), the
@@ -316,9 +317,10 @@ external_id; status description, creator, times; deployments; required checks; C
   Project / Library / Task / Device rows; it draws their YAML as source or "missing".
   `TryParseLibraryCatalog`, `TryParseTask`, `TryParseDeviceCatalog` exist in the CODESYS pack and are
   never called from the web.
-- **missing** The desktop's **Devices pane** for FBS projects and the commit card in History
+- **partial** The desktop's **Devices pane** for FBS projects (Step 9) and ~~the commit card in History
   (byline, stats, body, objects touched, per-file diffs — PLAN restructure phase 2, never built;
-  `/history` returns sha, message, author, when only).
+  `/history` returns sha, message, author, when only)~~ (Step 8: `/commit/<sha>` with the card, the
+  marked tree of what it touched, every file drawn from the first parent).
 - **missing** Explorer (files-as-on-disk) view (PLAN phase 5, deferred).
 - **missing** Shared theme tokens generated from the desktop palette (PLAN phase 4, never built);
   success green, merged purple, modified amber are hard-coded in `app.css:107,254,255,264`.
@@ -327,8 +329,8 @@ external_id; status description, creator, times; deployments; required checks; C
   the two switches to each other (no "mirror" test exists in `ViewServiceTests.cs`; `VS:66-73`
   calls moving the switch into Core "later"). FINDINGS 2026-10-23 already states the rule: *the
   decision of what is drawn belongs in Core*.
-- **missing** `/commit/<sha>` page, `/commits/<ref>` (today `/history`), `/branches`, `/tags`,
-  `/tree/<ref>/<path>`, `/releases/tag/<tag>`, a 404 page.
+- ~~**missing** `/commit/<sha>` page, `/commits/<ref>` (today `/history`), `/branches`, `/tags`,
+  `/tree/<ref>/<path>`, `/releases/tag/<tag>`, a 404 page.~~ Steps 1 and 8.
 - **missing** "Where it lives": a breadcrumb from a drawn element back to project → folder → object
   → layer file, and a "Find usages" / cross-reference (neither side has it; the desktop resolves
   type links only, `OpenObjectAsync`). The web has `data-src-path` on every block already.
@@ -415,14 +417,14 @@ table, ladder (LAD/FBD), SCL body (`TiaPortalProjectFormat.cs:242-288`); TwinCAT
 | All | Deleted ladder block | Committed copy drawn removed | Compare draws removed | — |
 
 Also from the map:
-- **Tree rows** (desktop `TreeRow.cs`): the web lacks the A/M/D/R/?/! letter (`:283`), roll-up colour
+- **Tree rows** (desktop `TreeRow.cs`): ~~the web lacks the A/M/D/R/?/! letter (`:283`), roll-up colour
   and changed-below count (`:301-306`), struck deleted names (`:179`), the annotation (type "FB" /
-  "Method", library version, task schedule, export state, `:231`), the toolchain label (`:216`),
+  "Method", library version, task schedule, export state, `:231`), the toolchain label (`:216`)~~ (Step 8),
   kind icons (`:191`; the web draws a letter, `TreePanel.tsx:10`), and the panel summaries (tree,
   coverage, findings, staleness, in-sync list).
 - **History** (`HistoryPage.tsx:45-60` vs `CommitHeading.cs`, `HistoryViewModel.cs`): the web lacks
-  the body, "N files · +x −y", the objects sentence, branch/tag labels, expanding a commit into its
-  files with marks and rename origin, the filter, and "load older" (stops at 50).
+  ~~the body, "N files · +x −y", the objects sentence~~ (Step 8, on the commit's page), branch/tag labels, ~~expanding a commit into its
+  files with marks and rename origin~~ (Step 8: the commit page), the filter, and "load older" (stops at 50).
 - **Links**: the desktop's type link selects and expands the target in the tree (`OpenObjectAsync`
   `:6852-6904`); the web navigates to the path and never selects it in the tree. `data-src-path` is
   used only for comment placement, never for navigation. Neither side has find-usages,
@@ -645,12 +647,15 @@ preview, reviewers / labels / assignees / milestone, fork heads.~~ **Done 2026-1
 Left: the commit list under the form (the compare read carries files only) and the
 "Create draft" split button.
 
-**Step 8 — Repository browsing to desktop parity in GitHub's shape.** `/tree`, `/blob`, `/commits`,
+~~**Step 8 — Repository browsing to desktop parity in GitHub's shape.** `/tree`, `/blob`, `/commits`,
 `/commit/<sha>` (the desktop commit card: byline, stats, body, objects, per-file diffs),
 `/branches`, `/tags`, `/releases/tag`; the project tree with vendor pill, object type, change marks
 (`RepoExplorerBuilder.Build(files, projects, changes)` from `/compare`), struck deleted names,
 roll-ups; the "not set up for Versio" notice only when there is no Versio project at all; README
-under the tree; "Go to file".
+under the tree; "Go to file".~~ **Done 2026-10-24** (`RepoExplorerBuilder.Build(…, changes)` in
+Core; `/tree?base=&changed=1`, `/commit`, `/tags`; `TreePanel.tsx`, `CommitPage.tsx`,
+`RefsPage.tsx`; the compare page's sidebar is the marked tree). Left: the branch picker's search,
+the tree's kind icons, "load older" on the commits page.
 
 **Step 9 — Every object kind, every vendor, one renderer choice (D, D2).** Move the renderer switch
 into Core (`RenderChoice`: project card → catalog row → catalogs → table (+ladder / code, incl. the

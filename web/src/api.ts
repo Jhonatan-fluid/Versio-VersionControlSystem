@@ -62,14 +62,51 @@ export interface TreeNode {
   primary: string | null;
   files: string[];
   children: TreeNode[];
+  /** The desktop's row (FINISH.md Step 8): the vendor's pill, the object's type, the detail phrase, the change marks. */
+  toolchain?: string;
+  type?: string | null;
+  typeName?: string | null;
+  detail?: string;
+  /** unmodified, added, modified, deleted, renamed, copied, untracked, conflicted. */
+  status?: string;
+  rollUp?: string;
+  changedDescendants?: number;
 }
 
 export interface Tree {
   commit: string;
+  /** The commit the marks are against, when the tree is a comparison. */
+  base?: string | null;
   isVersio: boolean;
   truncated: boolean;
   problems: string[];
   nodes: TreeNode[];
+}
+
+/** One commit as GitHub's /commit/sha shows it (Step 8). */
+export interface CommitDetail {
+  sha: string;
+  headline: string;
+  body: string;
+  author: string;
+  login: string | null;
+  avatar: string | null;
+  when: string;
+  committer: string | null;
+  committed: string | null;
+  parents: string[];
+  additions: number;
+  deletions: number;
+  verified: boolean | null;
+  url: string | null;
+  filesTruncated: boolean;
+  files: { path: string; label: string; status: string; additions: number; deletions: number; previousPath: string | null; previousLabel: string | null }[];
+}
+
+export interface Tag {
+  name: string;
+  label: string;
+  commit: string;
 }
 
 export interface View {
@@ -667,8 +704,11 @@ export const api = {
   repos: (signal?: AbortSignal) => get<RepoList>('/api/repos', signal),
   repo: (owner: string, repo: string, signal?: AbortSignal) => get<RepoInfo>(repoBase(owner, repo), signal),
   branches: (owner: string, repo: string, signal?: AbortSignal) => get<BranchList>(`${repoBase(owner, repo)}/branches`, signal),
-  tree: (owner: string, repo: string, ref: string, signal?: AbortSignal) =>
-    get<Tree>(`${repoBase(owner, repo)}/tree${query({ ref })}`, signal),
+  /** The tree at `ref`; with `base`, marked with what changed since it, and with `changed` only what changed. */
+  tree: (owner: string, repo: string, ref: string, signal?: AbortSignal, base?: string, changed?: boolean) =>
+    get<Tree>(`${repoBase(owner, repo)}/tree${query({ ref, base, changed: changed ? '1' : undefined })}`, signal),
+  commit: (owner: string, repo: string, sha: string, signal?: AbortSignal) => get<CommitDetail>(`${repoBase(owner, repo)}/commit${query({ sha })}`, signal),
+  tags: (owner: string, repo: string, signal?: AbortSignal) => get<{ tags: Tag[] }>(`${repoBase(owner, repo)}/tags`, signal),
   view: (owner: string, repo: string, ref: string, path: string, view: PaneView, layout: Layout, signal?: AbortSignal) =>
     get<View>(`${repoBase(owner, repo)}/view${query({ ref, path, view, layout })}`, signal),
   compare: (owner: string, repo: string, base: string, head: string, signal?: AbortSignal) =>

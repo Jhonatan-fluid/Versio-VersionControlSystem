@@ -136,7 +136,11 @@ public static partial class ApiEndpoints
                 : Refused(branches.Failure, http);
         });
 
-        api.MapGet("/tree", async (string owner, string repo, string? @ref, HttpContext http, Loader load, CancellationToken ct) =>
+        // The project tree at one commit; with `base`, the same tree marked with what changed
+        // since that commit, as the desktop's Project panel marks a working-tree diff (FINISH.md
+        // Step 8): A/M/D on each row, roll-ups on folders, deleted objects struck. `changed=1`
+        // keeps only what changed and the folders that hold it.
+        api.MapGet("/tree", async (string owner, string repo, string? @ref, string? @base, string? changed, HttpContext http, Loader load, CancellationToken ct) =>
         {
             var model = await load.ModelAsync(http, owner, repo, @ref, ct).ConfigureAwait(false);
             if (!model.Ok)
@@ -145,14 +149,102 @@ public static partial class ApiEndpoints
             }
 
             var m = model.Value!.Model;
+            var nodes = m.Nodes;
+            string? baseSha = null;
+            if (@base is not null)
+            {
+                var older = await load.ModelAsync(http, owner, repo, @base, ct).ConfigureAwait(false);
+                if (!older.Ok)
+                {
+                    return Refused(older.Failure, http);
+                }
+
+                baseSha = older.Value!.Model.CommitSha;
+                var changes = ViewService.ChangedPaths(older.Value!.Model, m)
+                    .Select(c => new Versio.Core.Git.FileChange
+                    {
+                        Path = c.Path,
+                        Staged = c.Change switch { "added" => Versio.Core.Git.ChangeKind.Added, "deleted" => Versio.Core.Git.ChangeKind.Deleted, _ => Versio.Core.Git.ChangeKind.Modified },
+                        Unstaged = Versio.Core.Git.ChangeKind.Unmodified,
+                    })
+                    .ToList();
+                nodes = RepoExplorerBuilder.Build(m.Files.Keys.OrderBy(p => p, StringComparer.Ordinal).ToList(), m.Projects,
+                    new ProjectTreeOptions { ChangedOnly = changed == "1", HideUnchangedProjects = changed == "1" }, changes: changes);
+            }
+
             return Results.Ok(new
             {
                 commit = m.CommitSha,
+                @base = baseSha,
                 isVersio = m.IsVersio,
                 truncated = m.Truncated,
                 problems = m.Problems.Select(CodeHtml.Spelled),
-                nodes = m.Nodes.Select(Dto),
+                nodes = nodes.Select(Dto),
             });
+        });
+
+        // One commit, as GitHub's /commit/sha shows it (Step 8): the message, both people, the
+        // parents, the stats and the files; the drawing of each file is the compare view's, from
+        // the first parent.
+        api.MapGet("/commit", async (string owner, string repo, string? sha, HttpContext http, AccessResolver access, IRepoSource source, CancellationToken ct) =>
+        {
+            if (!Valid(owner, repo) || sha is not { Length: >= 7 and <= 40 } || !sha.All(Uri.IsHexDigit))
+            {
+                return Results.NotFound();
+            }
+
+            var who = await access.ResolveAsync(http, owner, repo, ct).ConfigureAwait(false);
+            if (!who.Ok)
+            {
+                return Refused(who.Failure, http);
+            }
+
+            var commit = await source.GetCommitAsync(who.Value!, owner, repo, sha, ct).ConfigureAwait(false);
+            if (!commit.Ok)
+            {
+                return Refused(commit.Failure, http);
+            }
+
+            var c = commit.Value!;
+            var newline = c.Message.IndexOf('\n', StringComparison.Ordinal);
+            return Results.Ok(new
+            {
+                sha = c.Sha,
+                headline = CodeHtml.Spelled(newline < 0 ? c.Message : c.Message[..newline]),
+                body = newline < 0 ? "" : PullEndpoints.SpelledLines(c.Message[(newline + 1)..].Trim('\n')),
+                author = CodeHtml.Spelled(c.AuthorName),
+                login = c.AuthorLogin is { } login ? CodeHtml.Spelled(login) : null,
+                avatar = c.AuthorAvatar,
+                when = c.AuthorDate,
+                committer = c.Committer is { } committer ? CodeHtml.Spelled(committer) : null,
+                committed = c.CommitDate,
+                parents = c.Parents,
+                additions = c.Additions,
+                deletions = c.Deletions,
+                verified = c.Verified,
+                url = c.Url,
+                filesTruncated = c.FilesTruncated,
+                files = c.Files.Select(f => new { path = f.Path, label = CodeHtml.Spelled(f.Path), status = f.Status, additions = f.Additions, deletions = f.Deletions, previousPath = f.PreviousPath, previousLabel = f.PreviousPath is { } prev ? CodeHtml.Spelled(prev) : null }),
+            });
+        });
+
+        api.MapGet("/tags", async (string owner, string repo, HttpContext http, AccessResolver access, IRepoSource source, CancellationToken ct) =>
+        {
+            if (!Valid(owner, repo))
+            {
+                return Results.NotFound();
+            }
+
+            var who = await access.ResolveAsync(http, owner, repo, ct).ConfigureAwait(false);
+            if (!who.Ok)
+            {
+                return Refused(who.Failure, http);
+            }
+
+            var tags = await source.GetTagsAsync(who.Value!, owner, repo, ct).ConfigureAwait(false);
+            return tags.Ok
+                ? Results.Ok(new { tags = tags.Value!.Select(t => new { name = t.Name, label = CodeHtml.Spelled(t.Name), commit = t.CommitSha }) })
+                : Refused(tags.Failure, http);
         });
 
         api.MapGet("/view", async (string owner, string repo, string? @ref, string? path, string? view, string? layout,

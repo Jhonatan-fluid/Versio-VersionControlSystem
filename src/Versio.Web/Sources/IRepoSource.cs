@@ -74,6 +74,39 @@ public sealed record TreeSnapshot(string CommitSha, IReadOnlyList<TreeEntry> Fil
 
 public sealed record CommitInfo(string Sha, string Message, string Author, DateTimeOffset When);
 
+/// <summary>One file of a commit as GitHub's commit page lists it.</summary>
+/// <param name="Status">added, modified, removed, renamed, copied, changed.</param>
+public sealed record CommitFile(string Path, string Status, int Additions, int Deletions, string? PreviousPath);
+
+/// <summary>One commit as GitHub's commit page shows it (FINISH.md Step 8): the message, both people, the parents, the stats, the files.</summary>
+public sealed record CommitDetail(string Sha, string Message, string AuthorName, DateTimeOffset AuthorDate, IReadOnlyList<string> Parents)
+{
+    public string? AuthorLogin { get; init; }
+
+    public string? AuthorAvatar { get; init; }
+
+    /// <summary>The committer's name when it is not the author's.</summary>
+    public string? Committer { get; init; }
+
+    public DateTimeOffset? CommitDate { get; init; }
+
+    public int Additions { get; init; }
+
+    public int Deletions { get; init; }
+
+    public IReadOnlyList<CommitFile> Files { get; init; } = [];
+
+    /// <summary>GitHub listed more files than it returns (300): the page says so.</summary>
+    public bool FilesTruncated { get; init; }
+
+    public bool? Verified { get; init; }
+
+    public string? Url { get; init; }
+}
+
+/// <summary>A tag, as the tags page lists it.</summary>
+public sealed record TagInfo(string Name, string CommitSha);
+
 /// <summary>
 /// An open pull request as the list shows it. <paramref name="HeadSha"/> rather than a head ref
 /// for comparing: the head branch may live in a fork, where its NAME means nothing in this
@@ -509,6 +542,12 @@ public interface IRepoSource
     Task<RepoResult<byte[]>> GetBlobAsync(RepoAccess access, string owner, string repo, string blobSha, long maxBytes, CancellationToken ct);
 
     Task<RepoResult<IReadOnlyList<CommitInfo>>> GetCommitsAsync(RepoAccess access, string owner, string repo, string reference, string? path, int limit, CancellationToken ct);
+
+    /// <summary>One commit with its people, parents, stats and files, for the commit page.</summary>
+    Task<RepoResult<CommitDetail>> GetCommitAsync(RepoAccess access, string owner, string repo, string sha, CancellationToken ct);
+
+    /// <summary>The repository's tags, up to 100, as GitHub lists them (newest first by its own order).</summary>
+    Task<RepoResult<IReadOnlyList<TagInfo>>> GetTagsAsync(RepoAccess access, string owner, string repo, CancellationToken ct);
 
     /// <summary>The open pull requests, most recently updated first, up to <paramref name="limit"/>.</summary>
     Task<RepoResult<IReadOnlyList<PullInfo>>> GetPullsAsync(RepoAccess access, string owner, string repo, int limit, CancellationToken ct);

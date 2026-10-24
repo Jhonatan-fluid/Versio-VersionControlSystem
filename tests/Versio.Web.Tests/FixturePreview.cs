@@ -86,6 +86,9 @@ public sealed class FixturePreview
         var simulation = "fixtures/projects/MachineWithMembers/Device/Plc Logic/Application/Simulation.st";
         var alarm = "fixtures/projects/RefrigeratorControl/Device/Plc Logic/Application/Library/Alarm/DUTs/ST_AlarmSettings.st";
         repo.MergeBases[(repo.Refs["main"], next)] = repo.Refs["main"];
+        // The commit page (Step 8) needs a parent to compare from and a message to show.
+        repo.Parents[next] = [repo.Refs["main"]];
+        repo.CommitMessages[next] = "Lower the simulated cooling step\n\nThe simulation cooled twice as fast as the plant, so every soak test passed that should not have.\n";
         repo.PullFiles[1] = new PullFileList(
         [
             new PullFile(alarm, "modified", null, "@@ -9 +9 @@\n-\tEnable\t\t\t\t: BOOL := TRUE;\n+\tEnable\t\t\t\t: BOOL := FALSE;"),

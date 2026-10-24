@@ -180,6 +180,9 @@ internal sealed class FakeGitHub : IRepoSource
 
         /// <summary>Pull requests whose head lives in a fork.</summary>
         public HashSet<int> CrossRepository { get; } = [];
+
+        /// <summary>Tag name to commit sha.</summary>
+        public Dictionary<string, string> Tags { get; } = new(StringComparer.Ordinal);
     }
 
     private readonly Dictionary<string, FakeRepo> _repos = new(StringComparer.OrdinalIgnoreCase);
@@ -342,6 +345,47 @@ internal sealed class FakeGitHub : IRepoSource
         return Task.FromResult(r.Ok
             ? RepoResult<IReadOnlyList<CommitInfo>>.Of(r.Value!.Refs.Select(kv => new CommitInfo(kv.Value, "commit " + kv.Key, "Tester", DateTimeOffset.UnixEpoch)).ToList())
             : r.As<IReadOnlyList<CommitInfo>>());
+    }
+
+    /// <summary>A commit's page, from what the fake knows: its message, its parents, and the files that differ from its first parent.</summary>
+    public Task<RepoResult<CommitDetail>> GetCommitAsync(RepoAccess access, string owner, string repo, string sha, CancellationToken ct)
+    {
+        var r = See(access, owner, repo, "commit " + sha);
+        if (!r.Ok)
+        {
+            return Task.FromResult(r.As<CommitDetail>());
+        }
+
+        if (!r.Value!.Commits.TryGetValue(sha, out var files))
+        {
+            return Task.FromResult(RepoResult<CommitDetail>.Fail(RepoFailure.NotFound));
+        }
+
+        var parents = r.Value.Parents.TryGetValue(sha, out var p) ? p.ToList() : [];
+        var changed = new List<CommitFile>();
+        if (parents.Count > 0 && r.Value.Commits.TryGetValue(parents[0], out var before))
+        {
+            changed.AddRange(files.Where(f => !before.ContainsKey(f.Key)).Select(f => new CommitFile(f.Key, "added", 1, 0, null)));
+            changed.AddRange(files.Where(f => before.TryGetValue(f.Key, out var was) && !was.AsSpan().SequenceEqual(f.Value)).Select(f => new CommitFile(f.Key, "modified", 1, 1, null)));
+            changed.AddRange(before.Where(f => !files.ContainsKey(f.Key)).Select(f => new CommitFile(f.Key, "removed", 0, 1, null)));
+        }
+
+        var branch = r.Value.Refs.FirstOrDefault(kv => kv.Value == sha).Key;
+        return Task.FromResult(RepoResult<CommitDetail>.Of(new CommitDetail(sha, r.Value.CommitMessages.TryGetValue(sha, out var m) ? m : "commit " + (branch ?? sha[..7]), "Tester", DateTimeOffset.UnixEpoch, parents)
+        {
+            AuthorLogin = "tester",
+            Additions = changed.Sum(c => c.Additions),
+            Deletions = changed.Sum(c => c.Deletions),
+            Files = changed.OrderBy(c => c.Path, StringComparer.Ordinal).ToList(),
+        }));
+    }
+
+    public Task<RepoResult<IReadOnlyList<TagInfo>>> GetTagsAsync(RepoAccess access, string owner, string repo, CancellationToken ct)
+    {
+        var r = See(access, owner, repo, "tags");
+        return Task.FromResult(r.Ok
+            ? RepoResult<IReadOnlyList<TagInfo>>.Of(r.Value!.Tags.Select(kv => new TagInfo(kv.Key, kv.Value)).ToList())
+            : r.As<IReadOnlyList<TagInfo>>());
     }
 
     public Task<RepoResult<IReadOnlyList<PullInfo>>> GetPullsAsync(RepoAccess access, string owner, string repo, int limit, CancellationToken ct)

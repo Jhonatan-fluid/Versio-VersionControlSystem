@@ -4,7 +4,7 @@ import { api } from '../api';
 import { ErrorPanel } from '../components/Pane';
 import { RepoLayout } from '../components/RepoLayout';
 import { Avatar, Blankslate, Icon, Loading, RelativeTime } from '../components/ui';
-import { blobUrl, commitsUrl, compareUrl, treeUrl } from '../routes';
+import { blobUrl, commitUrl, commitsUrl, compareUrl, treeUrl } from '../routes';
 import { usePageTitle } from '../title';
 import { useAsync } from '../useAsync';
 import { BranchPicker } from './RepoPage';
@@ -73,13 +73,12 @@ export function CommitsPage({ me }: { me: Me | null }) {
               </div>
               <ul className="commit-group" style={{ listStyle: 'none', margin: 0, padding: 0 }}>
                 {group.commits.map((c) => {
-                  const all = commits.value;
-                  const older = all[all.indexOf(c) + 1];
                   const [subject] = c.message.split('\n');
                   return (
                     <li key={c.sha} className="commit-row">
                       <div className="commit-main">
-                        <Link className="commit-subject" to={older ? compareUrl(owner, repo, older.sha, c.sha, path || undefined) : treeUrl(owner, repo, c.sha)} title={older ? 'What this commit changed' : 'The repository at this commit'}>
+                        {/* GitHub's /commit/sha: the commit's own page, with its message, people, stats and every file drawn (Step 8). */}
+                        <Link className="commit-subject" to={commitUrl(owner, repo, c.sha)} title="This commit's page">
                           {subject}
                         </Link>
                         <div className="commit-byline">
@@ -89,7 +88,7 @@ export function CommitsPage({ me }: { me: Me | null }) {
                         </div>
                       </div>
                       <div className="commit-side">
-                        <code className="commit-sha" title={c.sha}>{c.sha.slice(0, 7)}</code>
+                        <Link className="commit-sha" to={commitUrl(owner, repo, c.sha)} title={c.sha}><code>{c.sha.slice(0, 7)}</code></Link>
                         <Link className="btn btn-small" to={path ? blobUrl(owner, repo, c.sha, path) : treeUrl(owner, repo, c.sha)} title="The repository as it was at this commit">
                           <Icon name="code" className="btn-icon" />
                         </Link>

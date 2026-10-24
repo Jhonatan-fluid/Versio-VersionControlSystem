@@ -252,7 +252,10 @@ public sealed class RepoModelLoader(IRepoSource source, IMemoryCache cache, IVer
         projects.AddRange(SourceProjects(files));
 
         var nodes = RepoExplorerBuilder.Build(files.Keys.OrderBy(p => p, StringComparer.Ordinal).ToList(), projects);
-        var model = new RepoModel(owner, repo, commitSha, files, nodes, isVersio, tree.Value.Truncated, problems) { Projects = projects, Partial = partial };
+        // "Set up for Versio" is having a PLC project to draw, not only a repo.json: a source
+        // project (an FBS export) with no repo.json drew its Devices and POUs under a notice that
+        // the repository was not set up (seen on the real pull request, FINISH.md A.8).
+        var model = new RepoModel(owner, repo, commitSha, files, nodes, isVersio || projects.Count > 0, tree.Value.Truncated, problems) { Projects = projects, Partial = partial };
         if (!partial)
         {
             cache.Set(key, model, new MemoryCacheEntryOptions { Size = Math.Max(1, files.Count / 100), SlidingExpiration = TimeSpan.FromMinutes(30) });

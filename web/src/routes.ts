@@ -42,6 +42,14 @@ export function commitUrl(owner: string, repo: string, sha: string): string {
   return `${repoUrl(owner, repo)}/commit/${seg(sha)}`;
 }
 
+export function branchesUrl(owner: string, repo: string): string {
+  return `${repoUrl(owner, repo)}/branches`;
+}
+
+export function tagsUrl(owner: string, repo: string): string {
+  return `${repoUrl(owner, repo)}/tags`;
+}
+
 /** The Documentation tab, at one version of the repository; ?path= selects a document. */
 export function docsUrl(owner: string, repo: string, ref: string, path?: string, params?: URLSearchParams): string {
   const p = new URLSearchParams(params);

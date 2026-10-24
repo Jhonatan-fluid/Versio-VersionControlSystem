@@ -166,6 +166,41 @@ public sealed class GitHubRepoSource(
         }).ToList(), ct).ConfigureAwait(false);
     }
 
+    /// <remarks>GitHub's commit answer carries the files with their patches (up to 300); the patches are discarded here, the viewer draws its own.</remarks>
+    public Task<RepoResult<CommitDetail>> GetCommitAsync(RepoAccess access, string owner, string repo, string sha, CancellationToken ct) =>
+        GetJsonAsync(access, $"repos/{E(owner)}/{E(repo)}/commits/{E(sha)}", root =>
+        {
+            var commit = root.GetProperty("commit");
+            var author = commit.TryGetProperty("author", out var a) && a.ValueKind == JsonValueKind.Object ? a : default;
+            var committer = commit.TryGetProperty("committer", out var c) && c.ValueKind == JsonValueKind.Object ? c : default;
+            var stats = root.TryGetProperty("stats", out var s) && s.ValueKind == JsonValueKind.Object ? s : default;
+            var files = root.TryGetProperty("files", out var f) && f.ValueKind == JsonValueKind.Array
+                ? f.EnumerateArray().Select(x => new CommitFile(Text(x, "filename"), Text(x, "status"), Int(x, "additions") ?? 0, Int(x, "deletions") ?? 0, Text(x, "previous_filename") is { Length: > 0 } prev ? prev : null)).ToList()
+                : [];
+            var authorName = author.ValueKind == JsonValueKind.Object ? Text(author, "name") : "";
+            var committerName = committer.ValueKind == JsonValueKind.Object ? Text(committer, "name") : "";
+            return new CommitDetail(Text(root, "sha"), Text(commit, "message"), authorName,
+                (author.ValueKind == JsonValueKind.Object ? Date(author, "date") : null) ?? default,
+                root.TryGetProperty("parents", out var parents) && parents.ValueKind == JsonValueKind.Array ? parents.EnumerateArray().Select(p => Text(p, "sha")).ToList() : [])
+            {
+                AuthorLogin = root.TryGetProperty("author", out var who) && who.ValueKind == JsonValueKind.Object ? Text(who, "login") is { Length: > 0 } login ? login : null : null,
+                AuthorAvatar = Avatar(root, "author"),
+                Committer = committerName.Length > 0 && committerName != authorName ? committerName : null,
+                CommitDate = committer.ValueKind == JsonValueKind.Object ? Date(committer, "date") : null,
+                Additions = stats.ValueKind == JsonValueKind.Object ? Int(stats, "additions") ?? 0 : 0,
+                Deletions = stats.ValueKind == JsonValueKind.Object ? Int(stats, "deletions") ?? 0 : 0,
+                Files = files,
+                // GitHub returns at most 300 files on a commit; a stats total past the files' own sum says the list is cut.
+                FilesTruncated = files.Count >= 300,
+                Verified = commit.TryGetProperty("verification", out var v) && v.ValueKind == JsonValueKind.Object && v.TryGetProperty("verified", out var ver) ? ver.ValueKind == JsonValueKind.True : null,
+                Url = Https(Text(root, "html_url")),
+            };
+        }, ct);
+
+    public Task<RepoResult<IReadOnlyList<TagInfo>>> GetTagsAsync(RepoAccess access, string owner, string repo, CancellationToken ct) =>
+        GetJsonAsync<IReadOnlyList<TagInfo>>(access, $"repos/{E(owner)}/{E(repo)}/tags?per_page=100",
+            root => root.EnumerateArray().Select(t => new TagInfo(Text(t, "name"), t.TryGetProperty("commit", out var c) ? Text(c, "sha") : "")).ToList(), ct);
+
     /// <remarks>
     /// Sorted by update, newest first: the list is for "what is waiting for review now". One page
     /// (the API's cap is 100); a repository with more open pull requests than that shows the

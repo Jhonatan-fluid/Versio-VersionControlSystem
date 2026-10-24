@@ -1,20 +1,21 @@
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router';
-import type { ChangedFile, Layout, Me, PaneView } from '../api';
+import type { Layout, Me, PaneView, TreeNode } from '../api';
 import { api } from '../api';
 import { ErrorPanel, Pane } from '../components/Pane';
 import { RepoLayout } from '../components/RepoLayout';
+import { TreePanel } from '../components/TreePanel';
 import { Blankslate, Icon, Loading } from '../components/ui';
 import { blobUrl, compareUrl, newPullUrl, parseRange } from '../routes';
 import { usePageTitle } from '../title';
 import { useAsync } from '../useAsync';
 import { lineFromHash } from './RepoPage';
 
-const mark: Record<ChangedFile['change'], string> = { added: 'A', modified: 'M', deleted: 'D' };
-
 /**
  * /owner/repo/compare/base...head: GitHub's compare page — the two refs over the changed
  * files, a way to open a pull request between them — with every file drawn as the desktop
- * compares it. The changed files are a sidebar beside the drawing, as on the review page.
+ * compares it. What changed is the project tree marked as the desktop's Project panel marks a
+ * diff (FINISH.md Step 8): A/M/D on each object, roll-ups on the folders, deleted objects struck,
+ * only the changed ones listed; a sidebar beside the drawing, as on the review page.
  */
 export function ComparePage({ me }: { me: Me | null }) {
   const { owner = '', repo = '', range = '' } = useParams();
@@ -35,6 +36,7 @@ export function ComparePage({ me }: { me: Me | null }) {
   const branches = useAsync((s) => api.branches(owner, repo, s), [owner, repo]);
   const pulls = useAsync((s) => api.pulls(owner, repo, s), [owner, repo]);
   const comparison = useAsync((s) => (parsed ? api.compare(owner, repo, base, head, s) : Promise.reject(new Error('Pick two versions to compare.'))), [owner, repo, base, head]);
+  const tree = useAsync((s) => (parsed ? api.tree(owner, repo, head, s, base, true) : new Promise<never>(() => {})), [owner, repo, base, head]);
   const pane = useAsync(
     (s) => (parsed && path ? api.compareView(owner, repo, base, head, path, view, layout, s, full) : new Promise<never>(() => {})),
     [owner, repo, base, head, path, view, layout, full],
@@ -99,20 +101,12 @@ export function ComparePage({ me }: { me: Me | null }) {
       ) : (
         <div className="files-view">
           <aside className="files-tree">
-            {comparison.state === 'loading' && <Loading what="Comparing…" />}
-            {comparison.state === 'ok' && (
-              <ul className="changes">
-                {comparison.value.files.length === 0 && <li className="text-muted pad">These two versions are the same.</li>}
-                {comparison.value.files.map((f) => (
-                  <li key={f.path}>
-                    <button type="button" className={`tree-row${f.path === path ? ' is-selected' : ''}`} onClick={() => go(base, head, f.path)} title={f.label}>
-                      <span className={`change change-${f.change}`}>{mark[f.change]}</span>
-                      <span className="tree-name">{f.object ?? f.label.slice(f.label.lastIndexOf('/') + 1)}</span>
-                    </button>
-                  </li>
-                ))}
-              </ul>
+            {(comparison.state === 'loading' || tree.state === 'loading') && <Loading what="Comparing…" />}
+            {comparison.state === 'ok' && comparison.value.files.length === 0 && <p className="text-muted pad">These two versions are the same.</p>}
+            {tree.state === 'ok' && comparison.state === 'ok' && comparison.value.files.length > 0 && (
+              <TreePanel tree={tree.value} selected={path} onSelect={(node: TreeNode) => go(base, head, node.primary ?? node.files[0] ?? node.path)} placeholder="Filter changed objects" comparing />
             )}
+            {tree.state === 'error' && <p className="text-danger pad">{tree.error.message}</p>}
           </aside>
           <div className="files-main">
             {path ? (

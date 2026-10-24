@@ -67,8 +67,8 @@ describe('History', () => {
     expect(host.textContent).toContain('The latest 50 commits');
     const rows = host.querySelectorAll('.commit-row');
     expect(rows).toHaveLength(50);
-    // The 51st is the older side of the 50th's comparison: the subject opens what that commit changed.
-    expect(rows[49]?.querySelector('a.commit-subject')?.getAttribute('href')).toBe(compareUrl('acme', 'plant', '50'.padStart(40, '0'), '49'.padStart(40, '0')));
+    // The subject opens the commit's own page (Step 8), which draws what it changed from its parent.
+    expect(rows[49]?.querySelector('a.commit-subject')?.getAttribute('href')).toBe(`/acme/plant/commit/${'49'.padStart(40, '0')}`);
     act(() => root.unmount());
   });
 
