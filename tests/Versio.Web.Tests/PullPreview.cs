@@ -353,16 +353,136 @@ public sealed class PullPreview
 
         public Task<WriteResult<bool>> DeletePendingReviewAsync(RepoAccess access, string reviewId, CancellationToken ct) => inner.DeletePendingReviewAsync(access, reviewId, ct);
 
-        public async Task<WriteResult<bool>> SetReviewersAsync(RepoAccess access, string owner, string repo, int number, IReadOnlyList<string> add, IReadOnlyList<string> remove, CancellationToken ct)
+        public async Task<WriteResult<bool>> SetReviewersAsync(RepoAccess access, string owner, string repo, int number, ReviewerChange change, CancellationToken ct)
         {
-            var r = await inner.SetReviewersAsync(access, owner, repo, number, add, remove, ct);
+            var r = await inner.SetReviewersAsync(access, owner, repo, number, change, ct);
             if (r.Outcome == WriteOutcome.Done)
             {
                 lock (_gate)
                 {
                     var people = store.PullPeople.TryGetValue(number, out var p) ? p : ([], []);
                     store.PullPeople[number] = (people.Labels,
-                        [.. people.Reviewers.Where(x => !remove.Contains(x.Login) && !add.Contains(x.Login)), .. add.Select(a => new PullReviewer(a, "REQUESTED"))]);
+                    [
+                        .. people.Reviewers.Where(x => !change.Remove.Contains(x.Login) && !change.Add.Contains(x.Login) && !(x.Slug is { } s && (change.RemoveTeams.Contains(s) || change.AddTeams.Contains(s)))),
+                        .. change.Add.Select(a => new PullReviewer(a, "REQUESTED")),
+                        .. change.AddTeams.Select(t => new PullReviewer(t, "REQUESTED", true) { Slug = t }),
+                    ]);
+                }
+            }
+
+            return r;
+        }
+
+        public async Task<WriteResult<bool>> DismissReviewAsync(RepoAccess access, string reviewId, string message, CancellationToken ct)
+        {
+            var r = await inner.DismissReviewAsync(access, reviewId, message, ct);
+            if (r.Outcome == WriteOutcome.Done)
+            {
+                var node = inner.ReviewNodes[reviewId];
+                Timeline(node.Number, t => [.. t.Select(x => x.Id == reviewId ? x with { State = "DISMISSED" } : x), new TimelineItem("review-dismissed", access.Who, Now, null, null, null) { Target = node.Author, Message = message }]);
+                lock (_gate)
+                {
+                    var people = store.PullPeople.TryGetValue(node.Number, out var p) ? p : ([], []);
+                    store.PullPeople[node.Number] = (people.Labels, people.Reviewers.Select(x => x.Login == node.Author ? x with { State = "DISMISSED" } : x).ToList());
+                }
+            }
+
+            return r;
+        }
+
+        public async Task<WriteResult<bool>> EditReviewAsync(RepoAccess access, string reviewId, string body, CancellationToken ct)
+        {
+            var r = await inner.EditReviewAsync(access, reviewId, body, ct);
+            if (r.Outcome == WriteOutcome.Done)
+            {
+                foreach (var number in store.Pulls.Select(p => p.Info.Number).ToList())
+                {
+                    Timeline(number, t => t.Select(x => x.Id == reviewId ? x with { Body = body, EditedAt = Now } : x).ToList());
+                }
+            }
+
+            return r;
+        }
+
+        /// <summary>A reaction filed onto whatever carries the subject id: the description, a comment, a review, a line comment.</summary>
+        public async Task<WriteResult<bool>> SetReactionAsync(RepoAccess access, string subjectId, string content, bool on, CancellationToken ct)
+        {
+            var r = await inner.SetReactionAsync(access, subjectId, content, on, ct);
+            if (r.Outcome == WriteOutcome.Done)
+            {
+                IReadOnlyList<ReactionGroup> Changed(IReadOnlyList<ReactionGroup> groups)
+                {
+                    var rest = groups.Where(g => g.Content != content).ToList();
+                    var was = groups.FirstOrDefault(g => g.Content == content);
+                    var count = (was?.Count ?? 0) + (on ? (was?.ViewerHasReacted == true ? 0 : 1) : (was?.ViewerHasReacted == true ? -1 : 0));
+                    return count > 0 ? [.. rest, new ReactionGroup(content, count, on)] : rest;
+                }
+
+                foreach (var number in store.Pulls.Select(p => p.Info.Number).ToList())
+                {
+                    Timeline(number, t => t.Select(x => x.Id == subjectId ? x with { Reactions = Changed(x.Reactions) } : x).ToList());
+                    Threads(number, t => t.Select(x => x with { Comments = x.Comments.Select(c => c.Id == subjectId ? c with { Reactions = Changed(c.Reactions) } : c).ToList() }).ToList());
+                }
+            }
+
+            return r;
+        }
+
+        public async Task<WriteResult<bool>> SetMinimizedAsync(RepoAccess access, string commentId, string? classifier, CancellationToken ct)
+        {
+            var r = await inner.SetMinimizedAsync(access, commentId, classifier, ct);
+            if (r.Outcome == WriteOutcome.Done)
+            {
+                foreach (var number in store.Pulls.Select(p => p.Info.Number).ToList())
+                {
+                    Timeline(number, t => t.Select(x => x.Id == commentId ? x with { Minimized = classifier is not null, MinimizedReason = classifier } : x).ToList());
+                    Threads(number, t => t.Select(x => x with { Comments = x.Comments.Select(c => c.Id == commentId ? c with { Minimized = classifier is not null, MinimizedReason = classifier } : c).ToList() }).ToList());
+                }
+            }
+
+            return r;
+        }
+
+        public async Task<WriteResult<bool>> SetLockedAsync(RepoAccess access, string pullNodeId, bool locked, string? reason, CancellationToken ct)
+        {
+            var r = await inner.SetLockedAsync(access, pullNodeId, locked, reason, ct);
+            if (r.Outcome == WriteOutcome.Done)
+            {
+                var number = int.Parse(pullNodeId["PR_".Length..], System.Globalization.CultureInfo.InvariantCulture);
+                Timeline(number, t => [.. t, new TimelineItem(locked ? "locked" : "unlocked", access.Who, Now, null, null, null) { Message = reason }]);
+            }
+
+            return r;
+        }
+
+        public async Task<WriteResult<bool>> SetMilestoneAsync(RepoAccess access, string owner, string repo, int number, int? milestone, CancellationToken ct)
+        {
+            var before = store.PullMilestone.TryGetValue(number, out var was) ? store.Milestones.FirstOrDefault(m => m.Number == was)?.Title : null;
+            var r = await inner.SetMilestoneAsync(access, owner, repo, number, milestone, ct);
+            if (r.Outcome == WriteOutcome.Done)
+            {
+                var after = milestone is { } m ? store.Milestones.FirstOrDefault(x => x.Number == m)?.Title : null;
+                Timeline(number, t =>
+                [
+                    .. t,
+                    .. before is null ? Array.Empty<TimelineItem>() : [new TimelineItem("demilestoned", access.Who, Now, null, null, null) { Target = before }],
+                    .. after is null ? Array.Empty<TimelineItem>() : [new TimelineItem("milestoned", access.Who, Now, null, null, null) { Target = after }],
+                ]);
+            }
+
+            return r;
+        }
+
+        public Task<WriteResult<bool>> SetSubscriptionAsync(RepoAccess access, string pullNodeId, string state, CancellationToken ct) => inner.SetSubscriptionAsync(access, pullNodeId, state, ct);
+
+        public async Task<WriteResult<string>> CommitFilesAsync(RepoAccess access, string owner, string repo, string branch, string expectedHeadOid, string message, IReadOnlyList<FileChange> files, CancellationToken ct)
+        {
+            var r = await inner.CommitFilesAsync(access, owner, repo, branch, expectedHeadOid, message, files, ct);
+            if (r.Outcome == WriteOutcome.Done)
+            {
+                foreach (var number in store.Pulls.Where(p => p.Info.HeadRef == branch).Select(p => p.Info.Number).ToList())
+                {
+                    Timeline(number, t => [.. t, new TimelineItem("commit", access.Who, Now, message.Split('\n')[0], null, r.Value)]);
                 }
             }
 
@@ -428,5 +548,11 @@ public sealed class PullPreview
         public Task<RepoResult<string>> CommentBodyAsync(RepoAccess access, string commentId, CancellationToken ct) => inner.CommentBodyAsync(access, commentId, ct);
 
         public Task<RepoResult<bool>> ThreadResolvedAsync(RepoAccess access, string threadId, CancellationToken ct) => inner.ThreadResolvedAsync(access, threadId, ct);
+
+        public Task<RepoResult<string>> ReviewBodyAsync(RepoAccess access, string reviewId, CancellationToken ct) => inner.ReviewBodyAsync(access, reviewId, ct);
+
+        public Task<RepoResult<bool>> ViewerReactedAsync(RepoAccess access, string subjectId, string content, CancellationToken ct) => inner.ViewerReactedAsync(access, subjectId, content, ct);
+
+        public Task<RepoResult<bool>> CommentMinimizedAsync(RepoAccess access, string commentId, CancellationToken ct) => inner.CommentMinimizedAsync(access, commentId, ct);
     }
 }

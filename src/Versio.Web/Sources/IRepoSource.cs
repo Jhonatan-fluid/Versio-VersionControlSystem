@@ -97,8 +97,15 @@ public sealed record PullFileList(IReadOnlyList<PullFile> Files, bool Truncated)
 public sealed record PullLabel(string Name, string Color);
 
 /// <summary>A reviewer's standing: REQUESTED, or their latest APPROVED, CHANGES_REQUESTED, COMMENTED or DISMISSED review.</summary>
-/// <param name="IsTeam">A requested team rather than a person; teams cannot be withdrawn by login.</param>
-public sealed record PullReviewer(string Login, string State, bool IsTeam = false, string? AvatarUrl = null);
+/// <param name="IsTeam">A requested team rather than a person; teams are asked and withdrawn by slug, never by login.</param>
+public sealed record PullReviewer(string Login, string State, bool IsTeam = false, string? AvatarUrl = null)
+{
+    /// <summary>A team's slug, what GitHub's REST names it by; null for a person.</summary>
+    public string? Slug { get; init; }
+}
+
+/// <summary>A repository milestone, as the sidebar offers it: GitHub's number is what a write names.</summary>
+public sealed record MilestoneInfo(int Number, string Title, string State);
 
 /// <summary>One kind of reaction on a body, a comment or a review: GitHub's content word, how many, and whether the viewer is among them.</summary>
 public sealed record ReactionGroup(string Content, int Count, bool ViewerHasReacted);
@@ -182,6 +189,15 @@ public sealed record PullSummary(
 
     public string? Milestone { get; init; }
 
+    /// <summary>The milestone's number, which a write names; null without one.</summary>
+    public int? MilestoneNumber { get; init; }
+
+    /// <summary>The viewer's notifications for this pull request: SUBSCRIBED, UNSUBSCRIBED, IGNORED; null when GitHub did not say.</summary>
+    public string? ViewerSubscription { get; init; }
+
+    /// <summary>Whether the viewer may react to the pull request's body (GitHub's viewerCanReact).</summary>
+    public bool ViewerCanReact { get; init; }
+
     /// <summary>The head's repository as owner/name when it is a fork; null when the branch is this repository's.</summary>
     public string? HeadRepository { get; init; }
 
@@ -213,7 +229,13 @@ public sealed record MergeState(
     string? MergeCommit);
 
 /// <summary>One comment of a pending review, as its author sees it. <paramref name="Body"/> is Markdown: untrusted.</summary>
-public sealed record PendingComment(string Id, string Path, string Body);
+public sealed record PendingComment(string Id, string Path, string Body)
+{
+    /// <summary>The line the draft is on, and where its range starts; null on a whole-file draft.</summary>
+    public int? Line { get; init; }
+
+    public int? StartLine { get; init; }
+}
 
 /// <summary>
 /// The viewer's own pending review on a pull request: started, not submitted, visible only to them.
@@ -256,6 +278,11 @@ public sealed record ReviewComment(string Id, string Author, string Body, DateTi
 
     /// <summary>A draft in the viewer's pending review, not yet visible to anyone else.</summary>
     public bool Pending { get; init; }
+
+    /// <summary>Hidden on GitHub, and why (SPAM, ABUSE, OFF_TOPIC, OUTDATED, DUPLICATE, RESOLVED): shown folded, never dropped.</summary>
+    public bool Minimized { get; init; }
+
+    public string? MinimizedReason { get; init; }
 }
 
 /// <summary>A review thread on a file, as GitHub anchors it.</summary>
@@ -334,6 +361,11 @@ public sealed record TimelineItem(string Kind, string Actor, DateTimeOffset When
 
     /// <summary>A commit's signature: true verified, false unverified, null when GitHub did not say.</summary>
     public bool? Verified { get; init; }
+
+    /// <summary>A comment hidden on GitHub, and why: drawn folded with the reason, as github.com draws it.</summary>
+    public bool Minimized { get; init; }
+
+    public string? MinimizedReason { get; init; }
 }
 
 /// <summary>A pull request's conversation in order, and whether it was cut.</summary>
@@ -487,6 +519,12 @@ public interface IRepoSource
 
     /// <summary>The repository's labels, by name, up to 100: what may be put on a pull request (labels are not created here).</summary>
     Task<RepoResult<IReadOnlyList<PullLabel>>> GetLabelsAsync(RepoAccess access, string owner, string repo, CancellationToken ct);
+
+    /// <summary>The repository's open milestones, up to 100: what a pull request may be put in (none is created here).</summary>
+    Task<RepoResult<IReadOnlyList<MilestoneInfo>>> GetMilestonesAsync(RepoAccess access, string owner, string repo, CancellationToken ct);
+
+    /// <summary>A commit's whole message: what tells a commit Versio made (it carries the operation tag) from anyone else's.</summary>
+    Task<RepoResult<string>> GetCommitMessageAsync(RepoAccess access, string owner, string repo, string sha, CancellationToken ct);
 
     /// <summary>
     /// Whether <paramref name="login"/> can be assigned in this repository. GitHub silently drops an

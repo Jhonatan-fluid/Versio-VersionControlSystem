@@ -62,6 +62,8 @@ public sealed class GitHubWriterTests : IAsyncLifetime
             Results.Json(Enumerable.Range(0, 100).Select(i => new { node_id = $"PRR_x{i}", user = new { login = "jo" }, body = "" }).ToArray()));
         app.MapPost("/repos/acme/plant/pulls", () => Results.Json(new { number = 13, node_id = "PR_13" }, statusCode: 201));
         app.MapPatch("/repos/acme/plant/pulls/12", () => Results.Json(new { number = 12 }));
+        app.MapPatch("/repos/acme/plant/issues/12", () => Results.Json(new { number = 12 }));
+        app.MapPost("/repos/acme/plant/pulls/12/requested_reviewers", () => Results.Json(new { number = 12 }, statusCode: 201));
         app.MapDelete("/repos/acme/plant/issues/12/labels/gone", () => Results.Json(new { message = "Label does not exist" }, statusCode: 404));
         app.MapDelete("/repos/acme/plant/issues/12/labels/{name}", () => Results.Json(Array.Empty<object>()));
         app.MapGet("/repos/acme/plant/pulls", () => Results.Json(new object[]
@@ -106,6 +108,16 @@ public sealed class GitHubWriterTests : IAsyncLifetime
             if (query.Contains("addPullRequestReview(", StringComparison.Ordinal))
             {
                 return Results.Json(new { data = new { addPullRequestReview = new { pullRequestReview = new { id = "PRR_pending" } } } });
+            }
+
+            if (query.Contains("createCommitOnBranch(", StringComparison.Ordinal))
+            {
+                return Results.Json(new { data = new { createCommitOnBranch = new { commit = new { oid = new string('s', 40) } } } });
+            }
+
+            if (query.Contains("on Reactable", StringComparison.Ordinal))
+            {
+                return Results.Json(new { data = new { node = new { reactionGroups = new object[] { new { content = "HEART", viewerHasReacted = true }, new { content = "EYES", viewerHasReacted = false } } } } });
             }
 
             return query.Contains("resolveReviewThread", StringComparison.Ordinal)
@@ -326,6 +338,37 @@ public sealed class GitHubWriterTests : IAsyncLifetime
         Assert.Equal(WriteOutcome.Unknown, untyped.Outcome);
         Assert.Equal(WriteOutcome.Refused, invalid.Outcome);
         Assert.Equal(WriteOutcome.Refused, refused.Outcome);
+    }
+
+    /// <summary>
+    /// Step 5's writes, in GitHub's shapes: teams ride beside people in the reviewers call; a commit
+    /// carries the expected head and base64 contents; a reaction, a lock and a milestone name what
+    /// they change; the viewer's reaction is read back from the subject's groups.
+    /// </summary>
+    [Fact]
+    public async Task Reviewers_commits_reactions_locks_and_milestones_are_sent_in_GitHubs_shapes()
+    {
+        var head = new string('d', 40);
+        var reviewers = await Writer().SetReviewersAsync(Alice, "acme", "plant", 12, new ReviewerChange(["sam"], [], ["plc-controls"], []), CancellationToken.None);
+        var commit = await Writer().CommitFilesAsync(Alice, "acme", "plant", "fix", head, "Apply suggestion from code review\n\n<!-- versio:op v1 K -->", [new FileChange("src/Pump.st", "x\n"u8.ToArray())], CancellationToken.None);
+        var reaction = await Writer().SetReactionAsync(Alice, "IC_1", "HEART", true, CancellationToken.None);
+        var locked = await Writer().SetLockedAsync(Alice, "PR_12", true, "RESOLVED", CancellationToken.None);
+        var milestone = await Writer().SetMilestoneAsync(Alice, "acme", "plant", 12, null, CancellationToken.None);
+        var reacted = await Writer().ViewerReactedAsync(Alice, "IC_1", "HEART", CancellationToken.None);
+        var notReacted = await Writer().ViewerReactedAsync(Alice, "IC_1", "EYES", CancellationToken.None);
+
+        Assert.Equal((WriteOutcome.Done, WriteOutcome.Done, WriteOutcome.Done, WriteOutcome.Done, WriteOutcome.Done), (reviewers.Outcome, commit.Outcome, reaction.Outcome, locked.Outcome, milestone.Outcome));
+        Assert.Equal(new string('s', 40), commit.Value);
+        Assert.Contains("\"team_reviewers\":[\"plc-controls\"]", _requests.Single(r => r.Path.EndsWith("/requested_reviewers", StringComparison.Ordinal)).Body, StringComparison.Ordinal);
+        var made = _requests.Single(r => r.Body.Contains("createCommitOnBranch", StringComparison.Ordinal)).Body;
+        Assert.Contains($"\"head\":\"{head}\"", made, StringComparison.Ordinal);
+        Assert.Contains("\"headline\":\"Apply suggestion from code review\"", made, StringComparison.Ordinal);
+        Assert.Contains($"\"contents\":\"{Convert.ToBase64String("x\n"u8.ToArray())}\"", made, StringComparison.Ordinal);
+        Assert.Contains("\"content\":\"HEART\"", _requests.Single(r => r.Body.Contains("addReaction", StringComparison.Ordinal)).Body, StringComparison.Ordinal);
+        Assert.Contains("\"reason\":\"RESOLVED\"", _requests.Single(r => r.Body.Contains("lockLockable", StringComparison.Ordinal)).Body, StringComparison.Ordinal);
+        // The field is sent even when null: that is how a milestone is cleared.
+        Assert.Equal("{\"milestone\":null}", _requests.Single(r => r.Path.EndsWith("/issues/12", StringComparison.Ordinal)).Body);
+        Assert.Equal((true, false), (reacted.Value, notReacted.Value));
     }
 
     /// <summary>

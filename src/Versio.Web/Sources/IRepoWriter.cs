@@ -88,8 +88,40 @@ public interface IRepoWriter
 
     Task<WriteResult<bool>> DeletePendingReviewAsync(RepoAccess access, string reviewId, CancellationToken ct);
 
-    /// <summary>Requests reviews from <paramref name="add"/> and withdraws them from <paramref name="remove"/> (people, by login).</summary>
-    Task<WriteResult<bool>> SetReviewersAsync(RepoAccess access, string owner, string repo, int number, IReadOnlyList<string> add, IReadOnlyList<string> remove, CancellationToken ct);
+    /// <summary>
+    /// Requests reviews from <paramref name="add"/> and withdraws them from <paramref name="remove"/>
+    /// (people, by login), and likewise from teams by slug. Asking someone who already reviewed is
+    /// GitHub's "re-request review".
+    /// </summary>
+    Task<WriteResult<bool>> SetReviewersAsync(RepoAccess access, string owner, string repo, int number, ReviewerChange change, CancellationToken ct);
+
+    /// <summary>Dismisses a submitted review (APPROVED or CHANGES_REQUESTED) with the reason GitHub requires.</summary>
+    Task<WriteResult<bool>> DismissReviewAsync(RepoAccess access, string reviewId, string message, CancellationToken ct);
+
+    /// <summary>Rewrites a submitted review's summary: the viewer's own, never a pending one (its submission writes that).</summary>
+    Task<WriteResult<bool>> EditReviewAsync(RepoAccess access, string reviewId, string body, CancellationToken ct);
+
+    /// <summary>Adds (<paramref name="on"/>) or removes the viewer's reaction on a comment, a review or the pull request's body.</summary>
+    /// <param name="content">THUMBS_UP, THUMBS_DOWN, LAUGH, HOORAY, CONFUSED, HEART, ROCKET or EYES.</param>
+    Task<WriteResult<bool>> SetReactionAsync(RepoAccess access, string subjectId, string content, bool on, CancellationToken ct);
+
+    /// <summary>Hides a comment as <paramref name="classifier"/> (SPAM, ABUSE, OFF_TOPIC, OUTDATED, DUPLICATE, RESOLVED), or shows it again when null.</summary>
+    Task<WriteResult<bool>> SetMinimizedAsync(RepoAccess access, string commentId, string? classifier, CancellationToken ct);
+
+    /// <summary>Locks the conversation with a reason (OFF_TOPIC, TOO_HEATED, RESOLVED, SPAM, or none), or unlocks it.</summary>
+    Task<WriteResult<bool>> SetLockedAsync(RepoAccess access, string pullNodeId, bool locked, string? reason, CancellationToken ct);
+
+    /// <summary>Sets the milestone by number, or clears it with null.</summary>
+    Task<WriteResult<bool>> SetMilestoneAsync(RepoAccess access, string owner, string repo, int number, int? milestone, CancellationToken ct);
+
+    /// <summary>The viewer's own notifications for the pull request: SUBSCRIBED, UNSUBSCRIBED or IGNORED.</summary>
+    Task<WriteResult<bool>> SetSubscriptionAsync(RepoAccess access, string pullNodeId, string state, CancellationToken ct);
+
+    /// <summary>
+    /// One commit on <paramref name="branch"/> replacing the given files, only if the branch is still at
+    /// <paramref name="expectedHeadOid"/> (GitHub's own atomic precondition); the value is the new commit.
+    /// </summary>
+    Task<WriteResult<string>> CommitFilesAsync(RepoAccess access, string owner, string repo, string branch, string expectedHeadOid, string message, IReadOnlyList<FileChange> files, CancellationToken ct);
 
     Task<WriteResult<bool>> SetViewedAsync(RepoAccess access, string pullNodeId, string path, bool viewed, CancellationToken ct);
 
@@ -147,4 +179,24 @@ public interface IRepoWriter
     Task<RepoResult<string>> CommentBodyAsync(RepoAccess access, string commentId, CancellationToken ct);
 
     Task<RepoResult<bool>> ThreadResolvedAsync(RepoAccess access, string threadId, CancellationToken ct);
+
+    /// <summary>A submitted review's current summary, or empty when the review no longer exists.</summary>
+    Task<RepoResult<string>> ReviewBodyAsync(RepoAccess access, string reviewId, CancellationToken ct);
+
+    /// <summary>Whether the viewer's reaction of this kind is on the subject now.</summary>
+    Task<RepoResult<bool>> ViewerReactedAsync(RepoAccess access, string subjectId, string content, CancellationToken ct);
+
+    /// <summary>Whether a comment is hidden now.</summary>
+    Task<RepoResult<bool>> CommentMinimizedAsync(RepoAccess access, string commentId, CancellationToken ct);
 }
+
+/// <summary>Who to ask for a review, and who to stop asking: people by login, teams by slug.</summary>
+public sealed record ReviewerChange(IReadOnlyList<string> Add, IReadOnlyList<string> Remove, IReadOnlyList<string> AddTeams, IReadOnlyList<string> RemoveTeams)
+{
+    public static ReviewerChange People(IReadOnlyList<string> add, IReadOnlyList<string> remove) => new(add, remove, [], []);
+
+    public int Count => Add.Count + Remove.Count + AddTeams.Count + RemoveTeams.Count;
+}
+
+/// <summary>A file as it will be after a commit: the whole content, never a patch.</summary>
+public sealed record FileChange(string Path, byte[] Content);

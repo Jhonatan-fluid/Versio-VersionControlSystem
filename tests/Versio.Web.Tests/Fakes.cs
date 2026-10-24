@@ -153,6 +153,21 @@ internal sealed class FakeGitHub : IRepoSource
 
         /// <summary>When set, the merge-state read fails with this: what GitHub refusing the preview field looks like.</summary>
         public RepoFailure? MergeStateFailure { get; set; }
+
+        /// <summary>The repository's open milestones.</summary>
+        public List<MilestoneInfo> Milestones { get; } = [];
+
+        /// <summary>Each pull request's milestone number, when it has one.</summary>
+        public Dictionary<int, int> PullMilestone { get; } = [];
+
+        /// <summary>Locked conversations, with their reason.</summary>
+        public Dictionary<int, string?> Locked { get; } = [];
+
+        /// <summary>Each person's notifications per pull request, by user token; SUBSCRIBED when unset.</summary>
+        public Dictionary<(int Number, string Token), string> Subscriptions { get; } = [];
+
+        /// <summary>Each commit's message, for the commits a writer made here.</summary>
+        public Dictionary<string, string> CommitMessages { get; } = new(StringComparer.Ordinal);
     }
 
     private readonly Dictionary<string, FakeRepo> _repos = new(StringComparer.OrdinalIgnoreCase);
@@ -428,7 +443,26 @@ internal sealed class FakeGitHub : IRepoSource
             Deletions = header.Deletions,
             ChangedFiles = header.ChangedFiles,
             RequiredChecks = header.Required ?? [],
+            Locked = r.Value.Locked.ContainsKey(number),
+            LockReason = r.Value.Locked.TryGetValue(number, out var why) ? why : null,
+            MilestoneNumber = r.Value.PullMilestone.TryGetValue(number, out var milestone) ? milestone : null,
+            Milestone = r.Value.PullMilestone.TryGetValue(number, out var m2) ? r.Value.Milestones.FirstOrDefault(x => x.Number == m2)?.Title : null,
+            ViewerSubscription = access.Token is { } st ? r.Value.Subscriptions.TryGetValue((number, st), out var sub) ? sub : "SUBSCRIBED" : null,
+            ViewerCanReact = access.Kind == AccessKind.User,
         }));
+    }
+
+    public Task<RepoResult<IReadOnlyList<MilestoneInfo>>> GetMilestonesAsync(RepoAccess access, string owner, string repo, CancellationToken ct)
+    {
+        var r = See(access, owner, repo, "milestones");
+        return Task.FromResult(r.Ok ? RepoResult<IReadOnlyList<MilestoneInfo>>.Of(r.Value!.Milestones.ToList()) : r.As<IReadOnlyList<MilestoneInfo>>());
+    }
+
+    public Task<RepoResult<string>> GetCommitMessageAsync(RepoAccess access, string owner, string repo, string sha, CancellationToken ct)
+    {
+        var r = See(access, owner, repo, "message " + sha);
+        return Task.FromResult(!r.Ok ? r.As<string>()
+            : r.Value!.CommitMessages.TryGetValue(sha, out var message) ? RepoResult<string>.Of(message) : RepoResult<string>.Fail(RepoFailure.NotFound));
     }
 
     public Task<RepoResult<PendingReviewRead>> GetPendingReviewAsync(RepoAccess access, string owner, string repo, int number, CancellationToken ct)

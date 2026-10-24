@@ -154,22 +154,113 @@ public sealed class GitHubWriter(IHttpClientFactory clients, IOptions<WebOptions
     public Task<WriteResult<bool>> DeletePendingReviewAsync(RepoAccess access, string reviewId, CancellationToken ct) =>
         MutateAsync(access, DeletePendingMutation, new { review = reviewId }, _ => true, ct);
 
-    /// <remarks>Two calls when both lists are set: the additions first. Each is safe to repeat, so a reconciliation simply runs both again.</remarks>
-    public async Task<WriteResult<bool>> SetReviewersAsync(RepoAccess access, string owner, string repo, int number, IReadOnlyList<string> add, IReadOnlyList<string> remove, CancellationToken ct)
+    /// <remarks>
+    /// Two calls when both halves are set: the additions first. Each is safe to repeat, so a
+    /// reconciliation simply runs both again. People and teams travel in the same call, as REST takes
+    /// them (<c>reviewers</c> and <c>team_reviewers</c>); a person who already reviewed is re-requested by
+    /// the same POST, which is GitHub's "re-request review".
+    /// </remarks>
+    public async Task<WriteResult<bool>> SetReviewersAsync(RepoAccess access, string owner, string repo, int number, ReviewerChange change, CancellationToken ct)
     {
         var path = $"repos/{E(owner)}/{E(repo)}/pulls/{N(number)}/requested_reviewers";
-        if (add.Count > 0)
+        if (change.Add.Count + change.AddTeams.Count > 0)
         {
-            var added = await RestAsync(access, HttpMethod.Post, path, new { reviewers = add }, _ => true, ct).ConfigureAwait(false);
+            var added = await RestAsync(access, HttpMethod.Post, path, new { reviewers = change.Add, team_reviewers = change.AddTeams }, _ => true, ct).ConfigureAwait(false);
             if (added.Outcome != WriteOutcome.Done)
             {
                 return added;
             }
         }
 
-        return remove.Count > 0
-            ? await RestAsync(access, HttpMethod.Delete, path, new { reviewers = remove }, _ => true, ct).ConfigureAwait(false)
+        return change.Remove.Count + change.RemoveTeams.Count > 0
+            ? await RestAsync(access, HttpMethod.Delete, path, new { reviewers = change.Remove, team_reviewers = change.RemoveTeams }, _ => true, ct).ConfigureAwait(false)
             : WriteResult<bool>.Done(true);
+    }
+
+    private const string DismissReviewMutation = """
+        mutation($review: ID!, $message: String!) { dismissPullRequestReview(input: { pullRequestReviewId: $review, message: $message }) { pullRequestReview { id state } } }
+        """;
+
+    public Task<WriteResult<bool>> DismissReviewAsync(RepoAccess access, string reviewId, string message, CancellationToken ct) =>
+        MutateAsync(access, DismissReviewMutation, new { review = reviewId, message }, _ => true, ct);
+
+    private const string EditReviewMutation = """
+        mutation($review: ID!, $body: String!) { updatePullRequestReview(input: { pullRequestReviewId: $review, body: $body }) { pullRequestReview { id } } }
+        """;
+
+    public Task<WriteResult<bool>> EditReviewAsync(RepoAccess access, string reviewId, string body, CancellationToken ct) =>
+        MutateAsync(access, EditReviewMutation, new { review = reviewId, body }, _ => true, ct);
+
+    private const string AddReactionMutation = """
+        mutation($subject: ID!, $content: ReactionContent!) { addReaction(input: { subjectId: $subject, content: $content }) { reaction { id } } }
+        """;
+
+    private const string RemoveReactionMutation = """
+        mutation($subject: ID!, $content: ReactionContent!) { removeReaction(input: { subjectId: $subject, content: $content }) { reaction { id } } }
+        """;
+
+    public Task<WriteResult<bool>> SetReactionAsync(RepoAccess access, string subjectId, string content, bool on, CancellationToken ct) =>
+        MutateAsync(access, on ? AddReactionMutation : RemoveReactionMutation, new { subject = subjectId, content }, _ => true, ct);
+
+    private const string MinimizeMutation = """
+        mutation($id: ID!, $classifier: ReportedContentClassifiers!) { minimizeComment(input: { subjectId: $id, classifier: $classifier }) { minimizedComment { isMinimized } } }
+        """;
+
+    private const string UnminimizeMutation = """
+        mutation($id: ID!) { unminimizeComment(input: { subjectId: $id }) { unminimizedComment { isMinimized } } }
+        """;
+
+    public Task<WriteResult<bool>> SetMinimizedAsync(RepoAccess access, string commentId, string? classifier, CancellationToken ct) =>
+        classifier is null
+            ? MutateAsync(access, UnminimizeMutation, new { id = commentId }, _ => true, ct)
+            : MutateAsync(access, MinimizeMutation, new { id = commentId, classifier }, _ => true, ct);
+
+    private const string LockMutation = """
+        mutation($id: ID!, $reason: LockReason) { lockLockable(input: { lockableId: $id, lockReason: $reason }) { lockedRecord { locked } } }
+        """;
+
+    private const string UnlockMutation = """
+        mutation($id: ID!) { unlockLockable(input: { lockableId: $id }) { unlockedRecord { locked } } }
+        """;
+
+    public Task<WriteResult<bool>> SetLockedAsync(RepoAccess access, string pullNodeId, bool locked, string? reason, CancellationToken ct) =>
+        locked
+            ? MutateAsync(access, LockMutation, new { id = pullNodeId, reason }, _ => true, ct)
+            : MutateAsync(access, UnlockMutation, new { id = pullNodeId }, _ => true, ct);
+
+    /// <remarks>A pull request is an issue to this endpoint; <c>milestone: null</c> clears it, so the field is always sent.</remarks>
+    public Task<WriteResult<bool>> SetMilestoneAsync(RepoAccess access, string owner, string repo, int number, int? milestone, CancellationToken ct) =>
+        RestAsync(access, HttpMethod.Patch, $"repos/{E(owner)}/{E(repo)}/issues/{N(number)}", new { milestone }, _ => true, ct);
+
+    private const string SubscriptionMutation = """
+        mutation($id: ID!, $state: SubscriptionState!) { updateSubscription(input: { subscribableId: $id, state: $state }) { subscribable { viewerSubscription } } }
+        """;
+
+    public Task<WriteResult<bool>> SetSubscriptionAsync(RepoAccess access, string pullNodeId, string state, CancellationToken ct) =>
+        MutateAsync(access, SubscriptionMutation, new { id = pullNodeId, state }, _ => true, ct);
+
+    private const string CommitMutation = """
+        mutation($repo: String!, $branch: String!, $head: GitObjectID!, $headline: String!, $body: String, $additions: [FileAddition!]!) {
+          createCommitOnBranch(input: {
+            branch: { repositoryNameWithOwner: $repo, branchName: $branch }, expectedHeadOid: $head,
+            message: { headline: $headline, body: $body }, fileChanges: { additions: $additions }
+          }) { commit { oid } }
+        }
+        """;
+
+    /// <remarks>
+    /// <c>expectedHeadOid</c> is GitHub's atomic precondition, as <c>sha</c> is for a merge: the commit
+    /// lands only if the branch is still at the reviewed head, so a suggestion is never applied over a
+    /// push that changed the lines it was written for. The commit is signed by GitHub as the person's.
+    /// </remarks>
+    public Task<WriteResult<string>> CommitFilesAsync(RepoAccess access, string owner, string repo, string branch, string expectedHeadOid, string message, IReadOnlyList<FileChange> files, CancellationToken ct)
+    {
+        var newline = message.IndexOf('\n', StringComparison.Ordinal);
+        var headline = newline < 0 ? message : message[..newline];
+        var body = newline < 0 ? null : message[(newline + 1)..].Trim('\n');
+        var additions = files.Select(f => new { path = f.Path, contents = Convert.ToBase64String(f.Content) }).ToArray();
+        return MutateAsync(access, CommitMutation, new { repo = $"{owner}/{repo}", branch, head = expectedHeadOid, headline, body, additions },
+            data => data.GetProperty("createCommitOnBranch").GetProperty("commit").GetProperty("oid").GetString() ?? "", ct);
     }
 
     private const string MarkViewedMutation = """
@@ -394,6 +485,7 @@ public sealed class GitHubWriter(IHttpClientFactory clients, IOptions<WebOptions
             ... on PullRequestReviewComment { author { login } pullRequest { number repository { nameWithOwner } } }
             ... on IssueComment { author { login } issue { number } repository { nameWithOwner } }
             ... on PullRequestReview { author { login } state commit { oid } pullRequest { number repository { nameWithOwner } } }
+            ... on PullRequest { number author { login } repository { nameWithOwner } }
           }
         }
         """;
@@ -423,6 +515,10 @@ public sealed class GitHubWriter(IHttpClientFactory clients, IOptions<WebOptions
                 "IssueComment" => new NodeOwner(type,
                     node.GetProperty("repository").GetProperty("nameWithOwner").GetString() ?? "",
                     node.GetProperty("issue").GetProperty("number").GetInt32(), author),
+                // The pull request itself is a reaction's subject (its description), and belongs to itself.
+                "PullRequest" => new NodeOwner(type,
+                    node.GetProperty("repository").GetProperty("nameWithOwner").GetString() ?? "",
+                    node.GetProperty("number").GetInt32(), author),
                 _ => new NodeOwner(type, "", 0, author),
             };
         }, ct).ConfigureAwait(false);
@@ -467,6 +563,35 @@ public sealed class GitHubWriter(IHttpClientFactory clients, IOptions<WebOptions
 
     public Task<RepoResult<bool>> ThreadResolvedAsync(RepoAccess access, string threadId, CancellationToken ct) =>
         QueryAsync(access, ResolvedQuery, new { id = threadId }, data => data.GetProperty("node").GetProperty("isResolved").GetBoolean(), ct);
+
+    private const string ReviewBodyQuery = """
+        query($id: ID!) { node(id: $id) { ... on PullRequestReview { body } } }
+        """;
+
+    public async Task<RepoResult<string>> ReviewBodyAsync(RepoAccess access, string reviewId, CancellationToken ct)
+    {
+        var result = await QueryAsync(access, ReviewBodyQuery, new { id = reviewId }, data =>
+            data.GetProperty("node") is { ValueKind: JsonValueKind.Object } n && n.TryGetProperty("body", out var b) ? b.GetString() ?? "" : "", ct).ConfigureAwait(false);
+        return result.Failure == RepoFailure.NotFound ? RepoResult<string>.Of("") : result;
+    }
+
+    private const string ReactedQuery = """
+        query($id: ID!) { node(id: $id) {
+          ... on Reactable { reactionGroups { content viewerHasReacted } }
+        } }
+        """;
+
+    public Task<RepoResult<bool>> ViewerReactedAsync(RepoAccess access, string subjectId, string content, CancellationToken ct) =>
+        QueryAsync(access, ReactedQuery, new { id = subjectId }, data =>
+            data.GetProperty("node") is { ValueKind: JsonValueKind.Object } n && n.TryGetProperty("reactionGroups", out var groups) && groups.ValueKind == JsonValueKind.Array
+            && groups.EnumerateArray().Any(g => g.TryGetProperty("content", out var c) && c.GetString() == content && g.TryGetProperty("viewerHasReacted", out var v) && v.ValueKind == JsonValueKind.True), ct);
+
+    private const string MinimizedQuery = """
+        query($id: ID!) { node(id: $id) { ... on Minimizable { isMinimized } } }
+        """;
+
+    public Task<RepoResult<bool>> CommentMinimizedAsync(RepoAccess access, string commentId, CancellationToken ct) =>
+        QueryAsync(access, MinimizedQuery, new { id = commentId }, data => data.GetProperty("node").GetProperty("isMinimized").GetBoolean(), ct);
 
     // ---- transport ------------------------------------------------------------------------------
 

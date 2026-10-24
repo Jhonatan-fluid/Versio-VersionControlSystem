@@ -38,7 +38,8 @@ public sealed record HistoricalReviewRequest(string? OpKey, string? Event, strin
 /// <summary>A draft comment for the viewer's pending review: on a drawn element (Dom), a line, or the whole file.</summary>
 public sealed record PendingThreadRequest(string? OpKey, string? Body, string? Path, int? Line, string? Side, int? StartLine, string? From, string? Dom) : WriteRequest(OpKey);
 
-public sealed record ReviewersRequest(string? OpKey, string[]? Add, string[]? Remove) : WriteRequest(OpKey);
+/// <param name="AddTeams">Teams by slug, asked for a review; <paramref name="RemoveTeams"/> likewise withdrawn.</param>
+public sealed record ReviewersRequest(string? OpKey, string[]? Add, string[]? Remove, string[]? AddTeams = null, string[]? RemoveTeams = null) : WriteRequest(OpKey);
 
 public sealed record ViewedRequest(string? OpKey, string? Path, bool Viewed) : WriteRequest(OpKey);
 
@@ -164,6 +165,8 @@ public static partial class PullWriteEndpoints
         MapReviews(pulls);
         MapMeta(pulls);
         MapMerge(pulls);
+        MapConversation(pulls);
+        MapSuggestions(pulls);
         MapCreate(app);
 
         pulls.MapWrite("POST", "/threads/{threadId}/replies", async (string owner, string repo, int number, string threadId, CommentRequest request, HttpContext http, Writes w, CancellationToken ct) =>
@@ -405,18 +408,76 @@ public static partial class PullWriteEndpoints
 
         pulls.MapWrite("POST", "/reviewers", async (string owner, string repo, int number, ReviewersRequest request, HttpContext http, Writes w, CancellationToken ct) =>
         {
-            var add = request.Add ?? [];
-            var remove = request.Remove ?? [];
-            if (add.Length + remove.Length is 0 or > 15 || add.Concat(remove).Any(l => !Login().IsMatch(l)))
+            // People by login, teams by slug (FINISH.md, B7): both the same shape, both bounded. Asking
+            // someone who already reviewed is GitHub's "re-request review", the same call.
+            var change = new ReviewerChange(request.Add ?? [], request.Remove ?? [], request.AddTeams ?? [], request.RemoveTeams ?? []);
+            if (change.Count is 0 or > 15 || change.Add.Concat(change.Remove).Concat(change.AddTeams).Concat(change.RemoveTeams).Any(l => !Login().IsMatch(l)))
             {
-                return Invalid("reviewers", "Name up to fifteen people by their GitHub login.");
+                return Invalid("reviewers", "Name up to fifteen people by their GitHub login, or teams by their slug.");
             }
 
-            return await w.RunAsync(http, owner, repo, number, request, "reviewers", ReviewTags.PayloadHash(string.Join(',', add), "|", string.Join(',', remove)),
+            return await w.RunAsync(http, owner, repo, number, request, "reviewers",
+                ReviewTags.PayloadHash(string.Join(',', change.Add), "|", string.Join(',', change.Remove), "|", string.Join(',', change.AddTeams), "|", string.Join(',', change.RemoveTeams)),
                 precondition: null,
-                async (who, s, key) => Done(await w.Writer.SetReviewersAsync(who, owner, repo, number, add, remove, CancellationToken.None).ConfigureAwait(false), "reviewers"),
+                async (who, s, key) => Done(await w.Writer.SetReviewersAsync(who, owner, repo, number, change, CancellationToken.None).ConfigureAwait(false), "reviewers"),
                 // Safe to repeat: an uncertain change is simply made again.
                 (who, s, key, since) => Task.FromResult(RepoResult<string>.Of("")),
+                idempotent: true, ct).ConfigureAwait(false);
+        });
+
+        // Dismissing a review takes it out of the merge requirements with a reason everyone reads
+        // (FINISH.md, B7). GitHub decides who may (write access); here only that it is a submitted
+        // review of THIS pull request, and that the reason is said.
+        pulls.MapWrite("POST", "/reviews/{reviewId}/dismiss", async (string owner, string repo, int number, string reviewId, CommentRequest request, HttpContext http, Writes w, CancellationToken ct) =>
+        {
+            if (Body(request.Body) is not { } message)
+            {
+                return Invalid("body", "Say why the review is dismissed.");
+            }
+
+            return await w.RunAsync(http, owner, repo, number, request, "dismiss", ReviewTags.PayloadHash(reviewId, message),
+                precondition: async (who, s) =>
+                {
+                    var (refusal, node) = await w.OwnerOfAsync(who, s, reviewId, ["PullRequestReview"], ct).ConfigureAwait(false);
+                    return refusal ?? (node!.State is "APPROVED" or "CHANGES_REQUESTED"
+                        ? null
+                        : Results.Json(new { error = "not-dismissable", message = "Only an approval or a request for changes can be dismissed." }, statusCode: 409));
+                },
+                async (who, s, key) => Done(await w.Writer.DismissReviewAsync(who, reviewId, message, CancellationToken.None).ConfigureAwait(false), reviewId),
+                // Dismissed is a state: read back, it answers definitively.
+                async (who, s, key, since) =>
+                {
+                    var node = await w.Writer.NodeOwnerAsync(who, reviewId, ct).ConfigureAwait(false);
+                    return node.Ok ? RepoResult<string>.Of(node.Value!.State == "DISMISSED" ? reviewId : "") : node.As<string>();
+                },
+                idempotent: true, ct).ConfigureAwait(false);
+        });
+
+        // A submitted review's summary, rewritten by its author: the words only, never the state or
+        // the commit. A pending review is not edited here — its submission is what writes its words.
+        pulls.MapWrite("PATCH", "/reviews/{reviewId}", async (string owner, string repo, int number, string reviewId, CommentRequest request, HttpContext http, Writes w, CancellationToken ct) =>
+        {
+            if (request.Body is null || request.Body.Length > MaxBodyChars)
+            {
+                return Invalid("body", "That is too long to post.");
+            }
+
+            var body = request.Body;
+            return await w.RunAsync(http, owner, repo, number, request, "edit-review", ReviewTags.PayloadHash(reviewId, body),
+                precondition: async (who, s) =>
+                {
+                    var (refusal, node) = await w.OwnerOfAsync(who, s, reviewId, ["PullRequestReview"], ct).ConfigureAwait(false);
+                    if (refusal is not null)
+                    {
+                        return refusal;
+                    }
+
+                    return node!.Author == who.Who && node.State != "PENDING"
+                        ? null
+                        : Results.Json(new { error = "not-your-review", message = "Only your own submitted review can be edited here." }, statusCode: 409);
+                },
+                async (who, s, key) => Done(await w.Writer.EditReviewAsync(who, reviewId, ReviewTags.WithOperation(body, key), CancellationToken.None).ConfigureAwait(false), reviewId),
+                async (who, s, key, since) => Reconciled(await w.Writer.ReviewBodyAsync(who, reviewId, ct).ConfigureAwait(false), b => ReviewTags.Carries(b, key), reviewId),
                 idempotent: true, ct).ConfigureAwait(false);
         });
 
@@ -595,8 +656,12 @@ public static partial class PullWriteEndpoints
 
         public IRepoSource Source => source;
 
-        /// <summary>For the other part of this class: a primary constructor's parameters are seen only by the part that declares them.</summary>
+        /// <summary>For the other parts of this class: a primary constructor's parameters are seen only by the part that declares them.</summary>
         private IVersioLogger Log => log;
+
+        private PullReview Review => review;
+
+        private ApiEndpoints.Loader Load => load;
 
         /// <summary>A one-shot review's preconditions: the snapshot still the pull request's, and no pending review in the way.</summary>
         /// <remarks>GitHub keeps one pending review per person per pull request; a one-shot review beside it is refused there, and said here first.</remarks>

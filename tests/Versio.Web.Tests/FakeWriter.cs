@@ -173,12 +173,145 @@ internal sealed class FakeWriter : IRepoWriter
             return true;
         });
 
-    public Task<WriteResult<bool>> SetReviewersAsync(RepoAccess access, string owner, string repo, int number, IReadOnlyList<string> add, IReadOnlyList<string> remove, CancellationToken ct) =>
-        Run("reviewers", access, string.Join(',', add) + "|" + string.Join(',', remove), () =>
+    public Task<WriteResult<bool>> SetReviewersAsync(RepoAccess access, string owner, string repo, int number, ReviewerChange change, CancellationToken ct) =>
+        Run("reviewers", access, string.Join(',', change.Add) + "|" + string.Join(',', change.Remove) + "|" + string.Join(',', change.AddTeams) + "|" + string.Join(',', change.RemoveTeams), () =>
         {
-            ReviewerChanges.Enqueue((string.Join(',', add), string.Join(',', remove)));
+            ReviewerChanges.Enqueue((string.Join(',', change.Add.Concat(change.AddTeams.Select(t => "team:" + t))), string.Join(',', change.Remove.Concat(change.RemoveTeams.Select(t => "team:" + t)))));
             return true;
         });
+
+    /// <summary>Submitted reviews' bodies, as edited.</summary>
+    public ConcurrentDictionary<string, string> ReviewBodies { get; } = new(StringComparer.Ordinal);
+
+    public Task<WriteResult<bool>> DismissReviewAsync(RepoAccess access, string reviewId, string message, CancellationToken ct) =>
+        Run("dismiss", access, $"{reviewId} {message}", () =>
+        {
+            ReviewNodes[reviewId] = ReviewNodes[reviewId] with { State = "DISMISSED" };
+            return true;
+        });
+
+    public Task<WriteResult<bool>> EditReviewAsync(RepoAccess access, string reviewId, string body, CancellationToken ct) =>
+        Run("edit-review", access, reviewId, () =>
+        {
+            ReviewBodies[reviewId] = body;
+            return true;
+        });
+
+    /// <summary>The viewer's reactions: (subject, who, content) present means on.</summary>
+    public ConcurrentDictionary<(string Subject, string Who, string Content), bool> Reactions { get; } = new();
+
+    public Task<WriteResult<bool>> SetReactionAsync(RepoAccess access, string subjectId, string content, bool on, CancellationToken ct) =>
+        Run(on ? "react" : "unreact", access, $"{subjectId} {content}", () =>
+        {
+            if (on)
+            {
+                Reactions[(subjectId, access.Who, content)] = true;
+            }
+            else
+            {
+                Reactions.TryRemove((subjectId, access.Who, content), out _);
+            }
+
+            return true;
+        });
+
+    /// <summary>Hidden comments and why.</summary>
+    public ConcurrentDictionary<string, string> Minimized { get; } = new(StringComparer.Ordinal);
+
+    public Task<WriteResult<bool>> SetMinimizedAsync(RepoAccess access, string commentId, string? classifier, CancellationToken ct) =>
+        Run(classifier is null ? "unminimize" : "minimize", access, $"{commentId} {classifier}", () =>
+        {
+            if (classifier is null)
+            {
+                Minimized.TryRemove(commentId, out _);
+            }
+            else
+            {
+                Minimized[commentId] = classifier;
+            }
+
+            return true;
+        });
+
+    public Task<WriteResult<bool>> SetLockedAsync(RepoAccess access, string pullNodeId, bool locked, string? reason, CancellationToken ct) =>
+        Run(locked ? "lock" : "unlock", access, $"{pullNodeId} {reason}", () =>
+        {
+            if (locked)
+            {
+                Repo!.Locked[NumberOf(pullNodeId)] = reason;
+            }
+            else
+            {
+                Repo!.Locked.Remove(NumberOf(pullNodeId));
+            }
+
+            return true;
+        });
+
+    public Task<WriteResult<bool>> SetMilestoneAsync(RepoAccess access, string owner, string repo, int number, int? milestone, CancellationToken ct) =>
+        Run("milestone", access, $"{number} {milestone}", () =>
+        {
+            if (milestone is { } m)
+            {
+                Repo!.PullMilestone[number] = m;
+            }
+            else
+            {
+                Repo!.PullMilestone.Remove(number);
+            }
+
+            return true;
+        });
+
+    public Task<WriteResult<bool>> SetSubscriptionAsync(RepoAccess access, string pullNodeId, string state, CancellationToken ct) =>
+        Run("subscription", access, $"{pullNodeId} {state}", () =>
+        {
+            Repo!.Subscriptions[(NumberOf(pullNodeId), access.Token!)] = state;
+            return true;
+        });
+
+    /// <summary>Commits made on a branch: the branch, the head expected, the message, the files.</summary>
+    public ConcurrentQueue<(string Branch, string Expected, string Message, IReadOnlyList<FileChange> Files)> Commits { get; } = new();
+
+    /// <summary>
+    /// GitHub's atomic precondition, faithfully: a commit naming any head but the branch's live one
+    /// is refused in GitHub's words, and nothing lands.
+    /// </summary>
+    public Task<WriteResult<string>> CommitFilesAsync(RepoAccess access, string owner, string repo, string branch, string expectedHeadOid, string message, IReadOnlyList<FileChange> files, CancellationToken ct)
+    {
+        Calls.Enqueue(("commit", access, $"{branch} {expectedHeadOid}"));
+        BeforeEffect?.Invoke();
+        if (!Repo!.Refs.TryGetValue(branch, out var live) || live != expectedHeadOid)
+        {
+            return Task.FromResult(WriteResult<string>.Refused(RepoFailure.Upstream, "Expected branch to point to a different commit."));
+        }
+
+        var mode = Next.TryDequeue(out var m) ? m : Mode.Done;
+        if (mode is Mode.Refused or Mode.LostBefore)
+        {
+            return Task.FromResult(mode == Mode.Refused ? WriteResult<string>.Refused(RepoFailure.Upstream, "Validation Failed") : WriteResult<string>.Unknown());
+        }
+
+        Commits.Enqueue((branch, expectedHeadOid, message, files));
+        var content = new Dictionary<string, byte[]>(Repo.Commits[live], StringComparer.Ordinal);
+        foreach (var file in files)
+        {
+            content[file.Path] = file.Content;
+        }
+
+        var sha = Convert.ToHexString(System.Security.Cryptography.SHA1.HashData(System.Text.Encoding.UTF8.GetBytes(live + message + files.Count))).ToLowerInvariant();
+        Repo.Commits[sha] = content;
+        Repo.Refs[branch] = sha;
+        Repo.Parents[sha] = [live];
+        Repo.CommitMessages[sha] = message;
+        var i = Repo.Pulls.FindIndex(p => p.Info.HeadRef == branch);
+        if (i >= 0)
+        {
+            Repo.Pulls[i] = (Repo.Pulls[i].Info with { HeadSha = sha }, Repo.Pulls[i].Body);
+        }
+
+        return Task.FromResult(mode == Mode.LostAfter ? WriteResult<string>.Unknown() : WriteResult<string>.Done(sha));
+    }
 
     public Task<WriteResult<bool>> SetViewedAsync(RepoAccess access, string pullNodeId, string path, bool viewed, CancellationToken ct) =>
         Run("viewed", access, path + (viewed ? " on" : " off"), () =>
@@ -338,6 +471,12 @@ internal sealed class FakeWriter : IRepoWriter
             return Task.FromResult(RepoResult<NodeOwner>.Of(new NodeOwner("PullRequestReviewThread", t.Repository, t.Number, null)));
         }
 
+        // The pull request itself, as its description's reactions name it: PR_<number>, as the fake source numbers them.
+        if (nodeId.StartsWith("PR_", StringComparison.Ordinal) && Repo is { } owner && int.TryParse(nodeId["PR_".Length..], out var number) && owner.Pulls.Any(p => p.Info.Number == number))
+        {
+            return Task.FromResult(RepoResult<NodeOwner>.Of(new NodeOwner("PullRequest", $"{owner.Owner}/{owner.Name}", number, owner.Pulls.First(p => p.Info.Number == number).Info.Author)));
+        }
+
         return Task.FromResult(Comments.TryGetValue(nodeId, out var c)
             ? RepoResult<NodeOwner>.Of(new NodeOwner(c.Type, c.Repository, c.Number, c.Author))
             : RepoResult<NodeOwner>.Fail(RepoFailure.NotFound));
@@ -356,6 +495,15 @@ internal sealed class FakeWriter : IRepoWriter
 
     public Task<RepoResult<bool>> ThreadResolvedAsync(RepoAccess access, string threadId, CancellationToken ct) =>
         Task.FromResult(Threads.TryGetValue(threadId, out var t) ? RepoResult<bool>.Of(t.Resolved) : RepoResult<bool>.Fail(RepoFailure.NotFound));
+
+    public Task<RepoResult<string>> ReviewBodyAsync(RepoAccess access, string reviewId, CancellationToken ct) =>
+        Task.FromResult(RepoResult<string>.Of(ReviewBodies.TryGetValue(reviewId, out var body) ? body : ""));
+
+    public Task<RepoResult<bool>> ViewerReactedAsync(RepoAccess access, string subjectId, string content, CancellationToken ct) =>
+        Task.FromResult(RepoResult<bool>.Of(Reactions.ContainsKey((subjectId, access.Who, content))));
+
+    public Task<RepoResult<bool>> CommentMinimizedAsync(RepoAccess access, string commentId, CancellationToken ct) =>
+        Task.FromResult(RepoResult<bool>.Of(Minimized.ContainsKey(commentId)));
 
     /// <summary>The write calls only, without the reads (node checks, reconciliation).</summary>
     public IReadOnlyList<(string Action, RepoAccess Access, string Detail)> Writes =>

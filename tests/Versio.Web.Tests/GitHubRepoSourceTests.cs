@@ -202,12 +202,13 @@ public sealed class GitHubRepoSourceTests : IAsyncLifetime
                 headRefOid = new string('d', 40), baseRefName = "main", baseRef = new { target = new { oid = new string('c', 40) } },
                 labels = new { nodes = new[] { new { name = "plc", color = "FF0000" }, new { name = "odd", color = "red;x" } } },
                 assignees = new { nodes = new[] { new { login = "jo" } } },
-                reviewRequests = new { nodes = new object[] { new { requestedReviewer = new { __typename = "Team", name = "controls" } } } },
+                reviewRequests = new { nodes = new object[] { new { requestedReviewer = new { __typename = "Team", name = "controls", slug = "plc-controls" } } } },
+                viewerSubscription = "UNSUBSCRIBED", viewerCanReact = true,
                 latestOpinionatedReviews = new { nodes = new[] { new { author = new { login = "sam" }, state = "APPROVED" } } },
                 additions = 12, deletions = 3, changedFiles = 2, totalCommentsCount = 4, createdAt = "2026-10-15T10:00:00Z", locked = true, activeLockReason = "RESOLVED",
                 isCrossRepository = true, authorAssociation = "MEMBER",
                 author = new { login = "jo", avatarUrl = "https://avatars.githubusercontent.com/u/7?v=4" },
-                milestone = new { title = "v2" },
+                milestone = new { title = "v2", number = 5 },
                 headRepository = new { nameWithOwner = "fork/plant" },
                 commits = new { totalCount = 3, nodes = new[] { new { commit = new { statusCheckRollup = new { state = "FAILURE", contexts = new { nodes = new object[]
                 {
@@ -274,7 +275,8 @@ public sealed class GitHubRepoSourceTests : IAsyncLifetime
                 check_suite = new { id = 7L }, output = new { title = "Built", summary = "All **green**", annotations_count = 3 },
             } } });
         });
-        app.MapGet("/repos/acme/plant/commits/{sha}", (string sha) => Results.Json(new { sha, parents = new[] { new { sha = new string('a', 40) }, new { sha = new string('b', 40) } } }));
+        app.MapGet("/repos/acme/plant/commits/{sha}", (string sha) => Results.Json(new { sha, parents = new[] { new { sha = new string('a', 40) }, new { sha = new string('b', 40) } }, commit = new { message = "Apply suggestions\n\n<!-- versio:op v1 K -->" } }));
+        app.MapGet("/repos/acme/plant/milestones", () => Results.Json(new object[] { new { number = 5, title = "v2", state = "open" }, new { number = 6, title = "v3", state = "open" } }));
         app.MapGet("/repos/acme/plant/commits/{sha}/status", () => Results.Json(new
         {
             statuses = new[] { new { context = "legacy", state = "pending", target_url = "javascript:alert(1)", description = "Waiting on the rig", creator = new { login = "jenkins-bot" }, created_at = "2026-10-17T08:01:00Z" } },
@@ -507,9 +509,23 @@ public sealed class GitHubRepoSourceTests : IAsyncLifetime
 
         Assert.Equal(new string('d', 40), summary.HeadSha);
         Assert.Equal(new string('c', 40), summary.BaseTipSha);
-        Assert.Equal([new PullReviewer("sam", "APPROVED"), new PullReviewer("controls", "REQUESTED", IsTeam: true)], summary.Reviewers);
+        // A team is asked and withdrawn by its slug, which REST wants, and shown by its name.
+        Assert.Equal([new PullReviewer("sam", "APPROVED"), new PullReviewer("controls", "REQUESTED", IsTeam: true) { Slug = "plc-controls" }], summary.Reviewers);
         // A colour is six hex digits or nothing: it ends up in a style attribute on the page.
         Assert.Equal([new PullLabel("plc", "ff0000"), new PullLabel("odd", "")], summary.Labels);
+    }
+
+    /// <summary>What Step 5's writes need read back: the milestone's number, the viewer's notifications, whether they may react; and the milestones themselves.</summary>
+    [Fact]
+    public async Task The_summary_reads_the_milestone_number_the_subscription_and_the_milestones_list_with_a_commits_message()
+    {
+        var summary = (await Source().GetPullSummaryAsync(Alice, "acme", "plant", 7, CancellationToken.None)).Value!;
+        var milestones = (await Source().GetMilestonesAsync(Alice, "acme", "plant", CancellationToken.None)).Value!;
+        var message = (await Source().GetCommitMessageAsync(Alice, "acme", "plant", new string('u', 40), CancellationToken.None)).Value;
+
+        Assert.Equal((5, "UNSUBSCRIBED", true), (summary.MilestoneNumber, summary.ViewerSubscription, summary.ViewerCanReact));
+        Assert.Equal([new MilestoneInfo(5, "v2", "open"), new MilestoneInfo(6, "v3", "open")], milestones);
+        Assert.Equal("Apply suggestions\n\n<!-- versio:op v1 K -->", message);
     }
 
     /// <summary>

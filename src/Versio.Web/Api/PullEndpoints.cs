@@ -362,6 +362,26 @@ public static class PullEndpoints
                 ? Results.Ok(new { labels = labels.Value!.Select(l => new { value = l.Name, label = CodeHtml.Spelled(l.Name), color = l.Color }) })
                 : ApiEndpoints.Refused(labels.Failure, http);
         });
+
+        // The open milestones, for the sidebar's picker (Step 5): the number is what a write names.
+        repos.MapGet("/milestones", async (string owner, string repo, HttpContext http, AccessResolver access, IRepoSource source, CancellationToken ct) =>
+        {
+            if (!ApiEndpoints.Valid(owner, repo))
+            {
+                return Results.NotFound();
+            }
+
+            var who = await access.ResolveAsync(http, owner, repo, ct).ConfigureAwait(false);
+            if (!who.Ok)
+            {
+                return ApiEndpoints.Refused(who.Failure, http);
+            }
+
+            var milestones = await source.GetMilestonesAsync(who.Value!, owner, repo, ct).ConfigureAwait(false);
+            return milestones.Ok
+                ? Results.Ok(new { milestones = milestones.Value!.Select(m => new { number = m.Number, title = CodeHtml.Spelled(m.Title) }) })
+                : ApiEndpoints.Refused(milestones.Failure, http);
+        });
     }
 
     /// <summary>The live state, threads, conversation and commits: each against the snapshot it is read for.</summary>
@@ -400,7 +420,12 @@ public static class PullEndpoints
                     reviewDecision = live.ReviewDecision,
                     labels = live.Labels.Select(l => new { name = CodeHtml.Spelled(l.Name), value = l.Name, color = l.Color }),
                     assignees = live.Assignees.Select(CodeHtml.Spelled),
-                    reviewers = live.Reviewers.Select(r => new { login = CodeHtml.Spelled(r.Login), state = r.State, isTeam = r.IsTeam, avatar = r.AvatarUrl }),
+                    reviewers = live.Reviewers.Select(r => new { login = CodeHtml.Spelled(r.Login), state = r.State, isTeam = r.IsTeam, avatar = r.AvatarUrl, slug = r.Slug }),
+                    // The pull request's own node: what a reaction on its description names (Step 5).
+                    nodeId = live.NodeId,
+                    milestoneNumber = live.MilestoneNumber,
+                    viewerSubscription = live.ViewerSubscription,
+                    canReact = live.ViewerCanReact,
                     // GitHub refuses an author's approval: the page offers it to nobody else.
                     viewerIsAuthor = live.ViewerIsAuthor,
                     viewerLastReviewCommit = live.ViewerLastReviewCommit,
@@ -498,6 +523,11 @@ public static class PullEndpoints
                         path = c.Path,
                         pathLabel = CodeHtml.Spelled(c.Path),
                         html = ApiEndpoints.MarkdownFragment(ReviewTags.Strip(c.Body)),
+                        // The draft's own words and place, so the review panel can show and edit each
+                        // one (Step 5), not only name its file.
+                        markdown = ReviewTags.Strip(c.Body),
+                        line = c.Line,
+                        startLine = c.StartLine,
                     }),
                 },
             });
@@ -572,6 +602,11 @@ public static class PullEndpoints
                         url = c.Url,
                         reactions = c.Reactions.Select(Reaction),
                         pending = c.Pending,
+                        minimized = c.Minimized,
+                        minimizedReason = c.MinimizedReason,
+                        // The suggested change the comment carries, as text the page draws as a
+                        // diff and offers to apply (Step 5); spelled line by line like a hunk.
+                        suggestion = Suggestions.Read(c.Body) is { } suggestion ? SpelledLines(suggestion) : null,
                     }),
                 }),
             });
@@ -621,6 +656,8 @@ public static class PullEndpoints
                         url = i.Url,
                         reactions = i.Reactions.Select(Reaction),
                         verified = i.Verified,
+                        minimized = i.Minimized,
+                        minimizedReason = i.MinimizedReason,
                     }),
                 })
                 : ApiEndpoints.Refused(timeline.Failure, http);

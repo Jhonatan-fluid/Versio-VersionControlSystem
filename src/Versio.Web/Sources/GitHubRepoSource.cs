@@ -275,15 +275,15 @@ public sealed class GitHubRepoSource(
             pullRequest(number: $number) {
               state isDraft merged mergeable reviewDecision headRefOid baseRefName title body viewerCanUpdate
               additions deletions changedFiles totalCommentsCount createdAt closedAt mergedAt locked activeLockReason
-              isCrossRepository authorAssociation
+              isCrossRepository authorAssociation viewerSubscription viewerCanReact
               author { login avatarUrl }
               mergedBy { login }
-              milestone { title }
+              milestone { title number }
               headRepository { nameWithOwner }
               baseRef { target { oid } }
               labels(first: 30) { nodes { name color } }
               assignees(first: 20) { nodes { login } }
-              reviewRequests(first: 30) { nodes { requestedReviewer { __typename ... on User { login avatarUrl } ... on Team { name } } } }
+              reviewRequests(first: 30) { nodes { requestedReviewer { __typename ... on User { login avatarUrl } ... on Team { name slug } } } }
               latestOpinionatedReviews(first: 30) { nodes { author { login avatarUrl } state } }
               id viewerDidAuthor
               viewerLatestReview { state commit { oid } }
@@ -326,7 +326,8 @@ public sealed class GitHubRepoSource(
                     : "";
                 if (name.Length > 0 && reviewers.All(x => x.Login != name))
                 {
-                    reviewers.Add(new PullReviewer(name, "REQUESTED", team, team ? null : Avatar(who)));
+                    // The slug is what REST asks and withdraws a team by; the name is what is shown.
+                    reviewers.Add(new PullReviewer(name, "REQUESTED", team, team ? null : Avatar(who)) { Slug = team ? Text(who, "slug") is { Length: > 0 } slug ? slug : null : null });
                 }
             }
 
@@ -393,6 +394,9 @@ public sealed class GitHubRepoSource(
                 Locked = Bool(p, "locked"),
                 LockReason = Text(p, "activeLockReason") is { Length: > 0 } lr ? lr : null,
                 Milestone = p.TryGetProperty("milestone", out var ms) && ms.ValueKind == JsonValueKind.Object ? Text(ms, "title") : null,
+                MilestoneNumber = ms.ValueKind == JsonValueKind.Object ? Int(ms, "number") : null,
+                ViewerSubscription = Text(p, "viewerSubscription") is { Length: > 0 } sub ? sub : null,
+                ViewerCanReact = Bool(p, "viewerCanReact"),
                 HeadRepository = Bool(p, "isCrossRepository") && p.TryGetProperty("headRepository", out var hr) && hr.ValueKind == JsonValueKind.Object ? Text(hr, "nameWithOwner") : null,
                 Reactions = Reactions(p),
                 CheckRollup = rollup,
@@ -466,6 +470,14 @@ public sealed class GitHubRepoSource(
         GetJsonAsync<IReadOnlyList<PullLabel>>(access, $"repos/{E(owner)}/{E(repo)}/labels?per_page=100",
             root => root.EnumerateArray().Select(l => new PullLabel(Text(l, "name"), HexColor(Text(l, "color")))).ToList(), ct);
 
+    public Task<RepoResult<IReadOnlyList<MilestoneInfo>>> GetMilestonesAsync(RepoAccess access, string owner, string repo, CancellationToken ct) =>
+        GetJsonAsync<IReadOnlyList<MilestoneInfo>>(access, $"repos/{E(owner)}/{E(repo)}/milestones?state=open&per_page=100",
+            root => root.EnumerateArray().Where(m => Int(m, "number") is not null).Select(m => new MilestoneInfo(Int(m, "number")!.Value, Text(m, "title"), Text(m, "state"))).ToList(), ct);
+
+    public Task<RepoResult<string>> GetCommitMessageAsync(RepoAccess access, string owner, string repo, string sha, CancellationToken ct) =>
+        GetJsonAsync<string>(access, $"repos/{E(owner)}/{E(repo)}/commits/{E(sha)}",
+            root => root.TryGetProperty("commit", out var c) && c.ValueKind == JsonValueKind.Object ? Text(c, "message") : "", ct);
+
     /// <remarks>GitHub answers 204 for yes and 404 for no: no body either way, so not <see cref="GetJsonAsync{T}"/>.</remarks>
     public async Task<RepoResult<bool>> CanAssignAsync(RepoAccess access, string owner, string repo, string login, CancellationToken ct)
     {
@@ -492,7 +504,7 @@ public sealed class GitHubRepoSource(
               reviews(states: PENDING, first: 10) {
                 nodes {
                   id viewerDidAuthor author { login } commit { oid }
-                  comments(first: 100) { pageInfo { hasNextPage endCursor } nodes { id path body } }
+                  comments(first: 100) { pageInfo { hasNextPage endCursor } nodes { id path body line startLine } }
                 }
               }
             }
@@ -503,7 +515,7 @@ public sealed class GitHubRepoSource(
     private const string PendingCommentsQuery = """
         query($id: ID!, $after: String) {
           node(id: $id) {
-            ... on PullRequestReview { comments(first: 100, after: $after) { pageInfo { hasNextPage endCursor } nodes { id path body } } }
+            ... on PullRequestReview { comments(first: 100, after: $after) { pageInfo { hasNextPage endCursor } nodes { id path body line startLine } } }
           }
         }
         """;
@@ -514,7 +526,7 @@ public sealed class GitHubRepoSource(
     private static (List<PendingComment> Comments, string? Next) CommentsPage(JsonElement comments)
     {
         var info = comments.GetProperty("pageInfo");
-        return (comments.GetProperty("nodes").EnumerateArray().Select(c => new PendingComment(Text(c, "id"), Text(c, "path"), Text(c, "body"))).ToList(),
+        return (comments.GetProperty("nodes").EnumerateArray().Select(c => new PendingComment(Text(c, "id"), Text(c, "path"), Text(c, "body")) { Line = Int(c, "line"), StartLine = Int(c, "startLine") }).ToList(),
             Bool(info, "hasNextPage") ? Text(info, "endCursor") : null);
     }
 
@@ -769,10 +781,12 @@ public sealed class GitHubRepoSource(
         Url = Https(Text(c, "url")),
         Reactions = Reactions(c),
         Pending = Text(c, "state") == "PENDING",
+        Minimized = Bool(c, "isMinimized"),
+        MinimizedReason = Text(c, "minimizedReason") is { Length: > 0 } why ? why : null,
     };
 
     /// <summary>The fields read of every review comment, in the threads query and the thread's later pages alike.</summary>
-    private const string CommentFields = "id author { login avatarUrl } body createdAt lastEditedAt url authorAssociation state diffHunk commit { oid } originalCommit { oid } pullRequestReview { id } viewerCanUpdate viewerCanDelete " + ReactionFields;
+    private const string CommentFields = "id author { login avatarUrl } body createdAt lastEditedAt url authorAssociation state diffHunk commit { oid } originalCommit { oid } pullRequestReview { id } viewerCanUpdate viewerCanDelete isMinimized minimizedReason " + ReactionFields;
 
     private const string TimelineQuery = $$"""
         query($owner: String!, $repo: String!, $number: Int!, $after: String) {
@@ -788,8 +802,8 @@ public sealed class GitHubRepoSource(
                 pageInfo { hasNextPage endCursor }
                 nodes {
                   __typename
-                  ... on IssueComment { id author { login avatarUrl } body createdAt lastEditedAt url authorAssociation viewerCanUpdate viewerCanDelete {{ReactionFields}} }
-                  ... on PullRequestReview { id author { login avatarUrl } body state submittedAt createdAt lastEditedAt url authorAssociation commit { oid } {{ReactionFields}} }
+                  ... on IssueComment { id author { login avatarUrl } body createdAt lastEditedAt url authorAssociation viewerCanUpdate viewerCanDelete isMinimized minimizedReason {{ReactionFields}} }
+                  ... on PullRequestReview { id author { login avatarUrl } body state submittedAt createdAt lastEditedAt url authorAssociation commit { oid } viewerCanUpdate {{ReactionFields}} }
                   ... on PullRequestCommit { url commit { oid messageHeadline committedDate author { name avatarUrl user { login } } signature { isValid } } }
                   ... on HeadRefForcePushedEvent { actor { login } createdAt beforeCommit { oid } afterCommit { oid } }
                   ... on MergedEvent { actor { login } createdAt commit { oid } mergeRefName }
@@ -891,10 +905,12 @@ public sealed class GitHubRepoSource(
                 Text(n, "id") is { Length: > 0 } id ? id : null, Bool(n, "viewerCanUpdate"), Bool(n, "viewerCanDelete"))
             {
                 AuthorAssociation = Text(n, "authorAssociation"), AvatarUrl = Avatar(n, "author"), EditedAt = Date(n, "lastEditedAt"), Url = Https(Text(n, "url")), Reactions = Reactions(n),
+                Minimized = Bool(n, "isMinimized"), MinimizedReason = Text(n, "minimizedReason") is { Length: > 0 } why ? why : null,
             },
+            // A review's summary is the author's to edit (viewerCanUpdate), as on github.com; deleting a submitted review is not a thing GitHub offers.
             "PullRequestReview" => new TimelineItem("review", Login(n, "author"),
                 n.TryGetProperty("submittedAt", out var s) && s.ValueKind == JsonValueKind.String ? s.GetDateTimeOffset() : At("createdAt"),
-                Text(n, "body"), Text(n, "state"), Oid(n, "commit"), Text(n, "id") is { Length: > 0 } rid ? rid : null)
+                Text(n, "body"), Text(n, "state"), Oid(n, "commit"), Text(n, "id") is { Length: > 0 } rid ? rid : null, Bool(n, "viewerCanUpdate"))
             {
                 AuthorAssociation = Text(n, "authorAssociation"), AvatarUrl = Avatar(n, "author"), EditedAt = Date(n, "lastEditedAt"), Url = Https(Text(n, "url")), Reactions = Reactions(n),
             },
