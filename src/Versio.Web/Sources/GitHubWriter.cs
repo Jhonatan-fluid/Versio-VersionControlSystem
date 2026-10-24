@@ -50,6 +50,13 @@ public sealed class GitHubWriter(IHttpClientFactory clients, IOptions<WebOptions
             root => root.GetProperty("node_id").GetString() ?? "", ct).ConfigureAwait(false);
     }
 
+    public Task<WriteResult<string>> AddCommitCommentAsync(RepoAccess access, string owner, string repo, string sha, string body, CancellationToken ct) =>
+        RestAsync(access, HttpMethod.Post, $"repos/{E(owner)}/{E(repo)}/commits/{E(sha)}/comments", new { body },
+            root => root.GetProperty("node_id").GetString() ?? "", ct);
+
+    public Task<RepoResult<string>> FindTaggedCommitCommentAsync(RepoAccess access, string owner, string repo, string sha, string tag, CancellationToken ct) =>
+        SearchAsync(access, $"repos/{E(owner)}/{E(repo)}/commits/{E(sha)}/comments", Tagged(access, tag, c => c.GetProperty("node_id").GetString()), ct);
+
     private const string ReplyMutation = """
         mutation($thread: ID!, $body: String!) {
           addPullRequestReviewThreadReply(input: { pullRequestReviewThreadId: $thread, body: $body }) { comment { id } }

@@ -64,6 +64,34 @@ public static partial class PullWriteEndpoints
         repos.MapWrite("POST", "/markdown", (PreviewRequest request) =>
             Results.Ok(new { html = request.Body is { Length: > 0 and <= MaxBodyChars } b ? ApiEndpoints.MarkdownFragment(ReviewTags.Strip(b)) : "" }));
 
+        // A comment on a commit (Step 3b): no pull request, so no snapshot — the commit's sha is
+        // the revision, fixed by nature, and the ledger keys it under pull request 0 with the sha
+        // in the payload. Reconciled by the viewer's own tagged comment on that commit.
+        repos.MapWrite("POST", "/commits/{sha}/comments", async (string owner, string repo, string sha, CommentRequest request, HttpContext http, Writes w, CancellationToken ct) =>
+        {
+            if (sha is not { Length: 40 } || !sha.All(Uri.IsHexDigit))
+            {
+                return Invalid("sha", "Name the commit by its full sha.");
+            }
+
+            if (Body(request.Body) is not { } body)
+            {
+                return Invalid("body", "A comment needs some text.");
+            }
+
+            return await w.RunWithoutSnapshotAsync(http, owner, repo, request, "commit-comment", ReviewTags.PayloadHash(sha, body),
+                precondition: async who =>
+                {
+                    var resolved = await w.Source.ResolveCommitAsync(who, owner, repo, sha, ct).ConfigureAwait(false);
+                    return resolved.Ok ? null : resolved.Failure == RepoFailure.NotFound
+                        ? Results.Json(new { error = "not-found", message = "Not found, or not visible to you." }, statusCode: 404)
+                        : ApiEndpoints.Refused(resolved.Failure);
+                },
+                (who, key) => w.Writer.AddCommitCommentAsync(who, owner, repo, sha, ReviewTags.WithOperation(body, key), CancellationToken.None),
+                (who, key, since) => w.Writer.FindTaggedCommitCommentAsync(who, owner, repo, sha, ReviewTags.OperationTag(key), ct),
+                idempotent: false, ct).ConfigureAwait(false);
+        });
+
         repos.MapWrite("POST", "/pulls", async (string owner, string repo, CreatePullRequest request, HttpContext http, Writes w, CancellationToken ct) =>
         {
             // The head may be a fork's, as GitHub names one (owner:branch) — Step 7; the base is always this repository's.

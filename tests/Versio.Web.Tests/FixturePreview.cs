@@ -112,7 +112,8 @@ public sealed class FixturePreview
             new ReviewThread("T-old", simulation, true, false, 22, null, "LEFT", 22, "LINE",
                 [new ReviewComment("C3", "sam", "This old value is the bug.", when, next, next, CanEdit: true, CanDelete: true)], false, CanReply: true, CanUnresolve: true),
             new ReviewThread("T-gone", alarm, false, true, null, null, "RIGHT", 4, "LINE",
-                [new ReviewComment("C4", "sam", "An earlier remark on a line that has since moved.", when.AddDays(-1), null, next)], false),
+                // Outdated: GitHub keeps the hunk it was written on, which the page shows (Step 3b).
+                [new ReviewComment("C4", "sam", "An earlier remark on a line that has since moved.", when.AddDays(-1), null, next) { DiffHunk = "@@ -2,4 +2,4 @@\n TYPE ST_AlarmSettings :\n STRUCT\n-\tbEnabled : BOOL;\n+\tbEnabled : BOOL := FALSE;" }], false),
             // Written on github.com on the struct's changed line, no tag: placed on the row holding it.
             new ReviewThread("T-row", alarm, false, false, 9, null, "RIGHT", 9, "LINE",
                 [new ReviewComment("C5", "lee", "Off by default means a fresh controller raises nothing. Intended?", when.AddMinutes(30), next, next)], false, CanReply: true, CanResolve: true),
@@ -126,6 +127,19 @@ public sealed class FixturePreview
             new CheckInfo("plc-compile", "completed", "failure", "https://github.com/acme/plant/actions/runs/2", "check-run") { Id = 2, App = "GitHub Actions", Suite = 10, StartedAt = when.AddMinutes(3), CompletedAt = when.AddMinutes(9), Title = "2 errors", Summary = "`PLC_PRG` line 12: unknown identifier `tSetpoint`.", AnnotationCount = 2 },
             new CheckInfo("soak-test", "in_progress", null, null, "check-run") { Id = 3, App = "Soak rig", Suite = 11, StartedAt = when.AddMinutes(10) },
             new CheckInfo("ci/jenkins", "completed", "success", "https://jenkins.example/job/plant/42", "status") { App = "jenkins-bot", Description = "Build #42 passed", CompletedAt = when.AddMinutes(8) },
+        ];
+        // The compile run's two annotations (Step 3b): listed under the run on Checks, drawn on the
+        // lines on Files changed — one on the changed program's new line, one as a warning.
+        repo.Annotations[2] =
+        [
+            new CheckAnnotation(simulation, 22, 22, "failure", "C0046: identifier 'tSetpoint' not defined", "Compile error"),
+            new CheckAnnotation(simulation, 3, 3, "warning", "C0035: variable 'rStep' is declared but never used", null),
+        ];
+        // Two comments on the head commit (Step 3b): one on the commit, one GitHub placed on a line.
+        repo.CommitComments[next] =
+        [
+            new CommitComment("CC_1", "lee", null, "Is the cooling step right for the **small** plant too?", when.AddMinutes(12), null, null, null),
+            new CommitComment("CC_2", "sam", null, "Yes: the simulation was the only thing off.", when.AddMinutes(20), simulation, 22, null),
         ];
         // The conversation GitHub would show: the push, the label and reviewer events, a comment
         // with reactions and an edit mark, a review whose thread the page lists under it (its

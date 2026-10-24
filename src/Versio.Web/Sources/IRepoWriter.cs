@@ -60,6 +60,12 @@ public interface IRepoWriter
 {
     Task<WriteResult<string>> AddConversationCommentAsync(RepoAccess access, string owner, string repo, int number, string body, CancellationToken ct);
 
+    /// <summary>A comment on a commit as a whole (Step 3b); the value is its node id.</summary>
+    Task<WriteResult<string>> AddCommitCommentAsync(RepoAccess access, string owner, string repo, string sha, string body, CancellationToken ct);
+
+    /// <summary>The id of the viewer's comment on this commit that carries <paramref name="tag"/>; empty when there is none.</summary>
+    Task<RepoResult<string>> FindTaggedCommitCommentAsync(RepoAccess access, string owner, string repo, string sha, string tag, CancellationToken ct);
+
     Task<WriteResult<string>> AddLineCommentAsync(RepoAccess access, string owner, string repo, int number, LineComment comment, CancellationToken ct);
 
     Task<WriteResult<string>> ReplyAsync(RepoAccess access, string threadId, string body, CancellationToken ct);

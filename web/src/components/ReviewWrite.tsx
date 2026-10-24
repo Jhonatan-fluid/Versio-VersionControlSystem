@@ -46,6 +46,20 @@ function writeDraft(slot: string, draft: Draft | null) {
 }
 
 /**
+ * Moves the words of one box to another that has none yet — a draft on a member row switched to
+ * the row as it was (Step 3b). Only while no key is held: once sent, the text is that operation's
+ * payload and belongs to its box; and never over words the other box already has.
+ */
+export function carryDraft(fromSlot: string, toSlot: string): void {
+  const from = readDraft(fromSlot);
+  const to = readDraft(toSlot);
+  if (from.opKey === null && from.body && !to.body && !to.opKey) {
+    writeDraft(toSlot, { body: from.body, opKey: null });
+    writeDraft(fromSlot, null);
+  }
+}
+
+/**
  * The snapshot a write goes under: the one its held key was first sent under, when there is one,
  * otherwise the page's. The token is all that differs; the server reads every revision from it.
  *

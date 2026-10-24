@@ -277,6 +277,17 @@ public sealed class GitHubRepoSourceTests : IAsyncLifetime
         });
         app.MapGet("/repos/acme/plant/commits/{sha}", (string sha) => Results.Json(new { sha, parents = new[] { new { sha = new string('a', 40) }, new { sha = new string('b', 40) } }, commit = new { message = "Apply suggestions\n\n<!-- versio:op v1 K -->" } }));
         app.MapGet("/repos/acme/plant/milestones", () => Results.Json(new object[] { new { number = 5, title = "v2", state = "open" }, new { number = 6, title = "v3", state = "open" } }));
+        // Step 3b: a commit's comments (one on a line of a file, one on the commit) and a run's annotations.
+        app.MapGet("/repos/acme/plant/commits/" + new string('u', 40) + "/comments", () => Results.Json(new object[]
+        {
+            new { node_id = "CC_1", user = new { login = "sam", avatar_url = "https://avatars.githubusercontent.com/u/1" }, body = "On the commit", created_at = "2026-10-24T09:00:00Z", path = (string?)null, line = (int?)null, html_url = "https://github.com/acme/plant/commit/u#commitcomment-1" },
+            new { node_id = "CC_2", user = new { login = "lee", avatar_url = (string?)null }, body = "On a line", created_at = "2026-10-24T09:01:00Z", path = (string?)"src/Pump.st", line = (int?)2, html_url = "http://insecure.example/x" },
+        }));
+        app.MapGet("/repos/acme/plant/check-runs/42/annotations", () => Results.Json(new object[]
+        {
+            new { path = "src/Pump.st", start_line = 2, end_line = 2, annotation_level = "failure", message = "unknown identifier", title = "C0046" },
+            new { path = "src/Pump.st", start_line = 5, end_line = (int?)null, annotation_level = "", message = "odd", title = "" },
+        }));
         app.MapGet("/repos/acme/plant/commits/{sha}/status", () => Results.Json(new
         {
             statuses = new[] { new { context = "legacy", state = "pending", target_url = "javascript:alert(1)", description = "Waiting on the rig", creator = new { login = "jenkins-bot" }, created_at = "2026-10-17T08:01:00Z" } },
@@ -526,6 +537,27 @@ public sealed class GitHubRepoSourceTests : IAsyncLifetime
         Assert.Equal((5, "UNSUBSCRIBED", true), (summary.MilestoneNumber, summary.ViewerSubscription, summary.ViewerCanReact));
         Assert.Equal([new MilestoneInfo(5, "v2", "open"), new MilestoneInfo(6, "v3", "open")], milestones);
         Assert.Equal("Apply suggestions\n\n<!-- versio:op v1 K -->", message);
+    }
+
+    /// <summary>Step 3b's reads: a commit's comments with a line comment's place, https links only; a run's annotations with GitHub's blanks filled in.</summary>
+    [Fact]
+    public async Task A_commits_comments_and_a_runs_annotations_are_read_in_their_shape()
+    {
+        var comments = (await Source().GetCommitCommentsAsync(Alice, "acme", "plant", new string('u', 40), CancellationToken.None)).Value!;
+        var annotations = (await Source().GetCheckAnnotationsAsync(Alice, "acme", "plant", 42, CancellationToken.None)).Value!;
+
+        Assert.Equal(
+        [
+            new CommitComment("CC_1", "sam", "https://avatars.githubusercontent.com/u/1", "On the commit", new DateTimeOffset(2026, 10, 24, 9, 0, 0, TimeSpan.Zero), null, null, "https://github.com/acme/plant/commit/u#commitcomment-1"),
+            // A line comment names its file and line; a link that is not https is dropped, as every link is.
+            new CommitComment("CC_2", "lee", null, "On a line", new DateTimeOffset(2026, 10, 24, 9, 1, 0, TimeSpan.Zero), "src/Pump.st", 2, null),
+        ], comments);
+        Assert.Equal(
+        [
+            new CheckAnnotation("src/Pump.st", 2, 2, "failure", "unknown identifier", "C0046"),
+            // No end line means the start line; no level means a notice; an empty title is none.
+            new CheckAnnotation("src/Pump.st", 5, 5, "notice", "odd", null),
+        ], annotations);
     }
 
     /// <summary>

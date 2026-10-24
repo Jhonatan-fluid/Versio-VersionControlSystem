@@ -228,6 +228,43 @@ public static partial class ApiEndpoints
             });
         });
 
+        // A commit's comments (Step 3b): GitHub's commit comments, on the commit as a whole or on a
+        // line of one of its files, drawn under the commit page's files.
+        api.MapGet("/commit/comments", async (string owner, string repo, string? sha, HttpContext http, AccessResolver access, IRepoSource source, CancellationToken ct) =>
+        {
+            if (!Valid(owner, repo) || sha is not { Length: >= 7 and <= 40 } || !sha.All(Uri.IsHexDigit))
+            {
+                return Results.NotFound();
+            }
+
+            var who = await access.ResolveAsync(http, owner, repo, ct).ConfigureAwait(false);
+            if (!who.Ok)
+            {
+                return Refused(who.Failure, http);
+            }
+
+            var comments = await source.GetCommitCommentsAsync(who.Value!, owner, repo, sha, ct).ConfigureAwait(false);
+            return comments.Ok
+                ? Results.Ok(new
+                {
+                    // Whether the box is drawn: writes on here and a signed-in person (S9, S1).
+                    writable = http.RequestServices.GetRequiredService<Microsoft.Extensions.Options.IOptions<WebOptions>>().Value.Writable(owner, repo) && who.Value!.Kind == AccessKind.User,
+                    comments = comments.Value!.Select(c => new
+                    {
+                        id = c.Id,
+                        author = CodeHtml.Spelled(c.Author),
+                        avatar = c.AuthorAvatar,
+                        html = MarkdownFragment(Versio.Web.Review.ReviewTags.Strip(c.Body)),
+                        when = c.When,
+                        path = c.Path,
+                        pathLabel = c.Path is { } p ? CodeHtml.Spelled(p) : null,
+                        line = c.Line,
+                        url = c.Url,
+                    }),
+                })
+                : Refused(comments.Failure, http);
+        });
+
         api.MapGet("/tags", async (string owner, string repo, HttpContext http, AccessResolver access, IRepoSource source, CancellationToken ct) =>
         {
             if (!Valid(owner, repo))

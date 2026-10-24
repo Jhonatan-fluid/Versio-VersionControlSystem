@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Text.Json;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Hosting.Server;
@@ -68,6 +69,13 @@ public sealed class GitHubWriterTests : IAsyncLifetime
         app.MapDelete("/repos/acme/plant/git/refs/heads/gone", () => Results.Json(new { message = "Reference does not exist" }, statusCode: 422));
         app.MapPost("/repos/acme/plant/git/refs", () => Results.Json(new { @ref = "refs/heads/fix" }, statusCode: 201));
         app.MapPost("/repos/acme/plant/pulls/12/requested_reviewers", () => Results.Json(new { number = 12 }, statusCode: 201));
+        // Step 3b: a comment on a commit, and the list it is found in again when the answer is lost.
+        app.MapPost("/repos/acme/plant/commits/" + new string('u', 40) + "/comments", () => Results.Json(new { node_id = "CC_9" }, statusCode: 201));
+        app.MapGet("/repos/acme/plant/commits/" + new string('u', 40) + "/comments", () => Results.Json(new object[]
+        {
+            new { node_id = "CC_8", user = new { login = "sam" }, body = "theirs <!-- versio:op v1 K -->" },
+            new { node_id = "CC_9", user = new { login = "alice" }, body = "mine <!-- versio:op v1 K -->" },
+        }));
         app.MapDelete("/repos/acme/plant/issues/12/labels/gone", () => Results.Json(new { message = "Label does not exist" }, statusCode: 404));
         app.MapDelete("/repos/acme/plant/issues/12/labels/{name}", () => Results.Json(Array.Empty<object>()));
         app.MapGet("/repos/acme/plant/pulls", () => Results.Json(new object[]
@@ -382,6 +390,24 @@ public sealed class GitHubWriterTests : IAsyncLifetime
         // The field is sent even when null: that is how a milestone is cleared.
         Assert.Equal("{\"milestone\":null}", _requests.Single(r => r.Path.EndsWith("/issues/12", StringComparison.Ordinal)).Body);
         Assert.Equal((true, false), (reacted.Value, notReacted.Value));
+    }
+
+    /// <summary>Step 3b: a comment on a commit is a REST post naming the sha; a lost answer is found again by the viewer's own tagged comment, never somebody else's with the same tag.</summary>
+    [Fact]
+    public async Task A_commit_comment_is_posted_to_the_commit_and_found_again_by_the_viewers_tag()
+    {
+        var sha = new string('u', 40);
+
+        var posted = await Writer().AddCommitCommentAsync(Alice, "acme", "plant", sha, "mine <!-- versio:op v1 K -->", CancellationToken.None);
+        var found = await Writer().FindTaggedCommitCommentAsync(Alice, "acme", "plant", sha, "<!-- versio:op v1 K -->", CancellationToken.None);
+        var missing = await Writer().FindTaggedCommitCommentAsync(Alice, "acme", "plant", sha, "<!-- versio:op v1 Z -->", CancellationToken.None);
+
+        Assert.Equal((WriteOutcome.Done, "CC_9"), (posted.Outcome, posted.Value));
+        var sent = JsonDocument.Parse(_requests.Single(r => r.Method == "POST" && r.Path.EndsWith("/comments", StringComparison.Ordinal)).Body).RootElement;
+        Assert.Equal("mine <!-- versio:op v1 K -->", sent.GetProperty("body").GetString());
+        Assert.Single(sent.EnumerateObject());
+        Assert.Equal("CC_9", found.Value);
+        Assert.Equal("", missing.Value);
     }
 
     /// <summary>

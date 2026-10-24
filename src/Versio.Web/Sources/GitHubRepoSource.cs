@@ -197,6 +197,17 @@ public sealed class GitHubRepoSource(
             };
         }, ct);
 
+    public Task<RepoResult<IReadOnlyList<CommitComment>>> GetCommitCommentsAsync(RepoAccess access, string owner, string repo, string sha, CancellationToken ct) =>
+        GetJsonAsync<IReadOnlyList<CommitComment>>(access, $"repos/{E(owner)}/{E(repo)}/commits/{E(sha)}/comments?per_page=100",
+            root => root.EnumerateArray().Select(c => new CommitComment(Text(c, "node_id"), Login(c, "user"), Avatar(c, "user"), Text(c, "body"),
+                Date(c, "created_at") ?? default, Text(c, "path") is { Length: > 0 } p ? p : null, Int(c, "line"), Https(Text(c, "html_url")))).ToList(), ct);
+
+    /// <remarks>One page of a hundred: a run that leaves more annotations than that is a run whose page on GitHub is the place to read them.</remarks>
+    public Task<RepoResult<IReadOnlyList<CheckAnnotation>>> GetCheckAnnotationsAsync(RepoAccess access, string owner, string repo, long runId, CancellationToken ct) =>
+        GetJsonAsync<IReadOnlyList<CheckAnnotation>>(access, $"repos/{E(owner)}/{E(repo)}/check-runs/{runId.ToString(CultureInfo.InvariantCulture)}/annotations?per_page=100",
+            root => root.EnumerateArray().Select(a => new CheckAnnotation(Text(a, "path"), Int(a, "start_line") ?? 0, Int(a, "end_line") ?? Int(a, "start_line") ?? 0,
+                Text(a, "annotation_level") is { Length: > 0 } level ? level : "notice", Text(a, "message"), Text(a, "title") is { Length: > 0 } t ? t : null)).ToList(), ct);
+
     public Task<RepoResult<IReadOnlyList<TagInfo>>> GetTagsAsync(RepoAccess access, string owner, string repo, CancellationToken ct) =>
         GetJsonAsync<IReadOnlyList<TagInfo>>(access, $"repos/{E(owner)}/{E(repo)}/tags?per_page=100",
             root => root.EnumerateArray().Select(t => new TagInfo(Text(t, "name"), t.TryGetProperty("commit", out var c) ? Text(c, "sha") : "")).ToList(), ct);

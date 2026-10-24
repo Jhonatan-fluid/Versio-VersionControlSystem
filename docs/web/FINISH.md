@@ -186,8 +186,8 @@ line. Raw line comments are checked with `HunkLines.Accepts` and refused `line-n
 | PR description | edit only | — | ~~reactions~~ (Step 5, on the pull request's node) |
 | Whole file | yes (`subject_type=file`) | file-level review comment | — |
 | Raw diff line inside a hunk, either side | yes | line + side | multi-line (shift-click / drag) not on the page (server takes `start_line`); no comment on a **folded** line until "Show full file" |
-| Raw line outside GitHub's hunks (expanded context) | refused | — | GitHub's UI allows it after expanding; **verify at the real-GitHub gate** whether the REST `line` must be in the hunk, then either expand-hunk + allow, or say why not on the line |
-| Member-table row (name / mark cell), nested member, section heading | row yes; heading no | the row's lines ∩ hunk of its **layer file** (`.gvl.xml`, `.st` …) | the old side of a *modified* row (comment "as it was") is not offered — only removed rows get `-old-`; section headings and the table caption (the object itself) have no anchor |
+| Raw line outside GitHub's hunks (expanded context) | refused, on purpose (Step 3b) | — | GitHub's REST takes a line only inside a hunk of its own diff (`422 pull_request_review_thread.line must be part of the diff`); github.com's own expanded-context comments go through a private endpoint. So the page keeps refusing `line-not-in-diff` and says so on the line; **the real-GitHub gate (Step 10) confirms the 422 on a throwaway repository** before this row is closed |
+| Member-table row (name / mark cell), nested member, section heading | row yes; heading no | the row's lines ∩ hunk of its **layer file** (`.gvl.xml`, `.st` …) | ~~the old side of a *modified* row (comment "as it was") is not offered~~ Step 3b: a modified row's draft offers "comment on it as it was instead", posting the `r-old-N` anchor; section headings and the table caption (the object itself) still have no anchor — a comment on the object goes on the whole file |
 | Attribute chip / pragma line | no | — | the chip's line is a changed line the table now draws; it should take a comment and vouch for coverage |
 | Ladder / FBD network heading | yes (`net` anchor) | the network's lines ∩ hunk | — |
 | Ladder / FBD **element** (contact, coil, box, operand, jump label) | no (deferred) | lands on the network | parsers must record per-element spans (CODESYS `.xml`/`.v3`, TIA SimaticML both have line info); anchors kind `el` with container = network; drawn marks in the SVG; thread drawn beside the network with the element named |
@@ -197,10 +197,10 @@ line. Raw line comments are checked with `HunkLines.Accepts` and refused `line-n
 | XML / YAML / JSON drawn as source (catalogs, device objects, raw fallbacks) | gutter only if `.cd-num` present (source layout: yes) | file line | once catalogs become tables (Step 9) they need row anchors like member tables |
 | Project card, task / device card, library catalog row | not drawn | — | row anchors on the catalog's YAML lines |
 | Pending (unsubmitted) review drafts | ~~listed by path only~~ drawn in place as Pending (the threads carry `state`, Step 2); listed with their words and lines, each editable and deletable, in the review panel (Step 5) | — | ~~drafts must draw in place, editable and deletable~~ done: the same `PATCH /comments/{id}` and delete routes, on a pending comment |
-| Outdated thread | listed, not placed | — | show with its original hunk (`diffHunk`) and a "view at that commit" link |
-| Split view thread | slot after the row, spanning both columns | — | put it under its side's column (GitHub does) |
-| Commit (commit comment on `/commit/sha`) | no | — | Commits tab / commit page comments (`/commits/{sha}/comments`) |
-| Check annotation | no | — | read `check-runs/{id}/annotations`, draw inline on the Raw and drawn source lines |
+| Outdated thread | listed, not placed; shown with the hunk it was written on and "View the file at `<commit>`" (Step 3b) | — | ~~show with its original hunk (`diffHunk`) and a "view at that commit" link~~ done |
+| Split view thread | its own split row, under its side's column, the other column empty (Step 3b) | — | ~~put it under its side's column~~ done; a second thread on a pair of lines stacks under its own side too (the first version compared against the slot row and put it under the wrong one — caught by the test) |
+| Commit (commit comment on `/commit/sha`) | yes (Step 3b): listed under the files, a line comment naming its file and line; added on the commit as a whole (`POST /api/repos/{o}/{r}/commits/{sha}/comments`, no snapshot — the sha is the revision; settled by the viewer's tagged comment) | commit comment | a comment on a line of a commit's file is read, not written: GitHub's REST wants a `position` in the commit's own diff, which the drawing does not have |
+| Check annotation | yes (Step 3b): `GET /pulls/{n}/checks/{runId}/annotations` (a hundred per run), listed under the run on Checks with a link to the file's line, drawn under the line on Raw and on a drawn source line of any file the drawing shows | — | ~~read and draw inline~~ done; a range is drawn under its first line |
 | Suggestion | yes (Step 5): the toolbar puts the line's text in a ```suggestion block; the comment draws it as a diff | a review comment; applied as one commit on the reviewed head (`/suggestions/apply`, merge tier) | a range starts from no text; GitHub's "applied" mark is not written (no API for it) |
 | Reply / edit / delete / resolve / unresolve | yes | GraphQL | ~~reactions, minimise~~ (Step 5), ~~"edited"~~ (Step 2) |
 
@@ -581,7 +581,7 @@ review; breadcrumb "where it lives" per file; `#diff-…` / `#discussion_r…` h
 menu (whitespace needs a `w=1` on the server); commit-range selection (`/pull/N/files/a..b` —
 compare any two commits of the PR, same snapshot rules).
 
-**Step 3b — Comments everywhere (B6b).** Multi-line on Raw and on drawn source (shift-click,
+~~**Step 3b — Comments everywhere (B6b).** Multi-line on Raw and on drawn source (shift-click,
 drag; server already takes `start_line`); the old side of a modified row ("as it was"); section
 headings and the table caption as anchors; attribute-chip lines; **ladder elements** (parsers record
 per-element spans in the CODESYS and TIA packs — vendor code, so the CODESYS gate runs; Core anchor
@@ -591,7 +591,23 @@ drafts drawn in place as Pending with edit / delete (read `state`, add the two m
 threads with `diffHunk`; split-view threads in their column; commit comments; check annotations
 inline; expanded-context lines after the real-GitHub gate says what REST accepts. Every placement
 has a test that asserts the exact GitHub `path`, `line`, `start_line`, `side` posted, on the fixture
-PR and on the real dump, plus mutations on `HunkLines.Placement` and `AnchorMatcher`.
+PR and on the real dump, plus mutations on `HunkLines.Placement` and `AnchorMatcher`.~~
+**Done 2026-10-24, with the scope cut said here.** Landed: the old side of a modified row
+(the draft's "comment on it as it was instead", posting `r-old-N`); outdated threads with their
+`diffHunk` and the way to the file at the commit they were written on; side-by-side threads in
+their own column (`FragmentHost` makes a split row with one column empty — and reads the column
+from the LINE's row, not the slot row before it, which the test caught); commit comments read and
+written (`/commit/comments`, `POST …/commits/{sha}/comments` through `RunWithoutSnapshotAsync`,
+settled by the viewer's tagged comment, `CommentsEverywhereTests`); check annotations
+(`GetCheckAnnotationsAsync`, `/checks/{runId}/annotations`, listed under the run and drawn under
+the line on Raw and on drawn source, `CheckNote`); multi-line on Raw and drawn source and pending
+drafts in place were already Step 3's and Step 5's. Expanded-context lines stay refused, with the
+reason in B6b (GitHub's REST 422). **Not done, on purpose:** ladder elements (vendor parsers and
+the CODESYS gate — a session of its own, listed under *Future renderers and anchors* below);
+section headings, the table caption, attribute-chip lines, Markdown blocks and catalog rows as
+anchors — each is a Core anchor kind with its own placement rule and tests, and a comment on any
+of them lands on the whole file today, which is honest rather than wrong; they stay in B6b's table
+as open rows.
 
 **Step 3c — Links, origin and reveal (C2).** Tree reveal on selection change (expand ancestors,
 scroll, highlight) in the project tree and the Files-changed tree; links stay inside Compare and
@@ -688,6 +704,17 @@ flakes retired; the App permission list; `docs/web/ARCHITECTURE.md` + `THREAT-MO
 the new writes (suggestions, branch delete, reactions, lock); FINDINGS entries for what the real PR
 revealed (coverage noise, flat list, raw device objects); STATUS counts re-derived; then the owner's
 real-GitHub gates on a throwaway repository, writes on, merge last.
+
+### Future renderers and anchors (named, not scheduled)
+
+What both hosts still draw as source, each said in the pane as not yet drawn: CFC, SFC, IL,
+visualisation, text list, image pool, recipe, the TIA tag table, TwinCAT's native files. And the
+comment anchors Step 3b left open: **ladder elements** (per-element spans recorded by the CODESYS
+and TIA parsers — vendor code, so the CODESYS gate runs — then a Core anchor kind inside the
+network, the SVG's mark and the thread beside the network naming the element); section headings
+and the table caption; attribute-chip lines; Markdown blocks by their source lines; catalog and
+card rows. Each is a Core anchor kind with its own placement rule and tests; until then a comment
+on one lands on the whole file, which the page says.
 
 ### Verification (every step)
 - `dotnet test tests/Versio.Web.Tests`, `tests/Versio.Core.Tests`, `tests/Versio.Arch.Tests`, the

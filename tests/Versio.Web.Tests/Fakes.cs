@@ -183,6 +183,12 @@ internal sealed class FakeGitHub : IRepoSource
 
         /// <summary>Tag name to commit sha.</summary>
         public Dictionary<string, string> Tags { get; } = new(StringComparer.Ordinal);
+
+        /// <summary>Comments per commit, oldest first.</summary>
+        public Dictionary<string, List<CommitComment>> CommitComments { get; } = new(StringComparer.Ordinal);
+
+        /// <summary>Annotations per check run id.</summary>
+        public Dictionary<long, IReadOnlyList<CheckAnnotation>> Annotations { get; } = [];
     }
 
     private readonly Dictionary<string, FakeRepo> _repos = new(StringComparer.OrdinalIgnoreCase);
@@ -378,6 +384,22 @@ internal sealed class FakeGitHub : IRepoSource
             Deletions = changed.Sum(c => c.Deletions),
             Files = changed.OrderBy(c => c.Path, StringComparer.Ordinal).ToList(),
         }));
+    }
+
+    public Task<RepoResult<IReadOnlyList<CommitComment>>> GetCommitCommentsAsync(RepoAccess access, string owner, string repo, string sha, CancellationToken ct)
+    {
+        var r = See(access, owner, repo, "commit-comments " + sha);
+        return Task.FromResult(r.Ok
+            ? RepoResult<IReadOnlyList<CommitComment>>.Of(r.Value!.CommitComments.TryGetValue(sha, out var list) ? list.ToList() : [])
+            : r.As<IReadOnlyList<CommitComment>>());
+    }
+
+    public Task<RepoResult<IReadOnlyList<CheckAnnotation>>> GetCheckAnnotationsAsync(RepoAccess access, string owner, string repo, long runId, CancellationToken ct)
+    {
+        var r = See(access, owner, repo, "annotations " + runId.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        return Task.FromResult(r.Ok
+            ? RepoResult<IReadOnlyList<CheckAnnotation>>.Of(r.Value!.Annotations.TryGetValue(runId, out var list) ? list : [])
+            : r.As<IReadOnlyList<CheckAnnotation>>());
     }
 
     public Task<RepoResult<IReadOnlyList<TagInfo>>> GetTagsAsync(RepoAccess access, string owner, string repo, CancellationToken ct)

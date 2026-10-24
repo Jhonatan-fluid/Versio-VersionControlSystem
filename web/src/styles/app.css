@@ -502,6 +502,26 @@ tr.thread-row > td { padding: 4px 8px 8px 32px; background: transparent; }
 .thread-draft { border-color: var(--color-accent-emphasis); }
 .file-comment { margin: 0 0 10px; font-size: 13px; }
 
+/* Step 3b (docs/web/FINISH.md): comments everywhere. A side-by-side thread sits under its own
+   column; an outdated thread shows the hunk it was written on; a check's annotation is drawn
+   under its line in GitHub's three tones; a commit's comments sit under its files. */
+.thread-slot-row { background: var(--color-canvas-subtle); }
+.thread-slot-cell > .thread-slot { margin: 4px 8px 8px 46px; max-width: none; }
+.thread-side-switch { margin-left: 8px; font-size: 12px; }
+.thread-hunk { margin: 0 0 8px; }
+.thread-hunk-code { margin: 0 0 4px; padding: 6px 8px; font-size: 12px; line-height: 1.4; background: var(--color-canvas-subtle); border: 1px solid var(--color-border-muted); border-radius: var(--radius); overflow-x: auto; white-space: pre; }
+.check-note { display: flex; gap: 8px; padding: 8px 12px; margin: 4px 0 8px; border: 1px solid var(--color-border-default); border-left-width: 4px; border-radius: var(--radius); background: var(--color-canvas-default); font-family: var(--font-ui); white-space: normal; }
+.check-note-danger { border-left-color: var(--color-danger-emphasis); }
+.check-note-attention { border-left-color: var(--color-attention-emphasis); }
+.check-note-accent { border-left-color: var(--color-accent-emphasis); }
+.check-note-mark { flex: none; padding-top: 2px; }
+.check-note-body { min-width: 0; }
+.check-note-text { margin: 4px 0 0; white-space: pre-wrap; font-size: 12px; line-height: 1.4; }
+.check-annotations { margin-top: 8px; }
+.commit-comments { margin-top: 16px; max-width: 900px; }
+.commit-comments .comment-row + .comment-row { margin-top: 12px; }
+.commit-comment-new { margin-top: 12px; }
+
 /* Step 5 (docs/web/FINISH.md): the writes GitHub's page has. Reactions as toggles with the
    picker; a hidden comment folded behind its reason; a suggested change as a mini diff with its
    apply buttons; the review dropdown with its pending count and editable drafts; the reason

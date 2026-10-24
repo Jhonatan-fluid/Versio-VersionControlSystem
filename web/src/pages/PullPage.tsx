@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router';
-import type { CoverageGap, Layout, Me, PaneView, PendingReviewView, ReviewCheck, ReviewCommits, ReviewFile, ReviewFileView, ReviewSnapshot, ReviewStatus, ReviewThread, ReviewThreads, ReviewTimeline, ThreadPlacement } from '../api';
+import type { CheckAnnotation, CoverageGap, Layout, Me, PaneView, PendingReviewView, ReviewCheck, ReviewCommits, ReviewFile, ReviewFileView, ReviewSnapshot, ReviewStatus, ReviewThread, ReviewThreads, ReviewTimeline, ThreadPlacement } from '../api';
 import { ApiError, api } from '../api';
 import type { Annotation } from '../components/FragmentHost';
 import { FragmentHost } from '../components/FragmentHost';
@@ -10,7 +10,7 @@ import { MergeBox } from '../components/MergeBox';
 import { ErrorPanel } from '../components/Pane';
 import { AssigneesEditor, BaseEditor, LabelsEditor, LockAction, MilestoneEditor, StateActions, SubscriptionAction, TitleEditor } from '../components/PullMeta';
 import { ReviewBar, ReviewersEditor } from '../components/ReviewBar';
-import { ActionButton, CommentBox, ReasonAction, describe, newOpKey } from '../components/ReviewWrite';
+import { ActionButton, CommentBox, ReasonAction, carryDraft, describe, newOpKey } from '../components/ReviewWrite';
 import { RepoLayout } from '../components/RepoLayout';
 import { Avatar, Blankslate, Flash, Icon, IssueLabel, Layout as TwoColumn, Loading, RelativeTime, SidebarSection, StateBadge, UnderlineNav, pullState, type NavItem } from '../components/ui';
 import { blobUrl, compareUrl, parsePullTab, pullUrl, type PullTab } from '../routes';
@@ -249,6 +249,23 @@ function PullReview({ me }: { me: Me | null }) {
 
   // Read again after every write: a title, a label or a close shows at once, not at the next poll.
   const status = usePolled(snap ? (s) => api.review.status(owner, repo, snap, s) : null, token, changed);
+  // The annotations the checks left (Step 3b): read once per run that has any, for the Checks tab's
+  // list and for the file sections, which draw each on its line as GitHub does. A run's id comes
+  // from the status; the same ids read again say nothing new, so the key is the ids themselves.
+  const annotatedRuns = (status?.checks ?? []).filter((c) => c.annotations && c.id).map((c) => c.id as number);
+  const annotatedKey = annotatedRuns.join(',');
+  const notes = useAsync<RunNote[]>(
+    async (s) => {
+      if (!snap || annotatedRuns.length === 0) {
+        return [];
+      }
+      const read = await Promise.all(annotatedRuns.map((id) => api.review.annotations(owner, repo, snap, id, s)));
+      // Each note keeps its run, so the Checks tab lists a run's own and not every run's.
+      return read.flatMap((r, k) => r.annotations.map((a) => ({ ...a, runId: annotatedRuns[k]! })));
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [token, annotatedKey],
+  );
   const live = status?.summary ?? null;
   // The merge box's state: read only with the merge tier on, and again after every write.
   const mergeState = useAsync((s) => (snap?.canMerge && tab === 'conversation' ? api.review.mergeState(owner, repo, snap, s) : never()), [token, tab, changed]);
@@ -517,6 +534,7 @@ function PullReview({ me }: { me: Me | null }) {
                     viewed={viewed.has(f.path)}
                     onViewed={(on) => markViewed(f.path, on)}
                     hash={hash}
+                    notes={notes.state === 'ok' ? notes.value : []}
                   />
                 ))}
                 {files.state === 'ok' && files.value.truncated && <p className="text-muted">The first {files.value.files.length} of {files.value.total} files are shown; the rest are on GitHub.</p>}
@@ -542,7 +560,7 @@ function PullReview({ me }: { me: Me | null }) {
                       } />
                   )}
                   {tab === 'commits' && <Commits commits={commits} />}
-                  {tab === 'checks' && <Checks status={status} onOpenPath={(p) => navigate(blobUrl(owner, repo, snap!.headSha, p))} />}
+                  {tab === 'checks' && <Checks status={status} onOpenPath={(p) => navigate(blobUrl(owner, repo, snap!.headSha, p))} notes={notes} fileLink={(p) => pullUrl(owner, repo, n, 'files', p, search)} />}
                 </>
               }
               sidebar={<Summary status={status} writer={writer} />}
@@ -1008,7 +1026,33 @@ function checkLook(c: ReviewCheck): { icon: 'check-circle-fill' | 'x-circle-fill
   }
 }
 
-function Checks({ status, onOpenPath }: { status: ReviewStatus | null; onOpenPath: (p: string) => void }) {
+/** A check's annotation with the run it came from (the read is per run; the page keeps the id). */
+type RunNote = CheckAnnotation & { runId: number };
+
+/** One annotation a check left, as the Checks tab lists it and a file section draws it on the line. */
+function CheckNote({ note, fileLink }: { note: CheckAnnotation; fileLink?: (p: string) => string }) {
+  const level = note.level === 'failure' ? 'danger' : note.level === 'warning' ? 'attention' : 'accent';
+  const lines = note.startLine === note.endLine ? `L${note.startLine}` : `L${note.startLine}–L${note.endLine}`;
+  const icon = note.level === 'failure' ? 'x-circle-fill' : note.level === 'warning' ? 'alert' : 'info';
+  return (
+    <div className={`check-note check-note-${level}`} role="note">
+      <span className={`check-note-mark text-${level}`} aria-hidden="true"><Icon name={icon} /></span>
+      <div className="check-note-body">
+        <div className="check-note-where text-small">
+          <span className="text-bold">{note.level === 'failure' ? 'Error' : note.level === 'warning' ? 'Warning' : 'Notice'}</span>
+          {/* To the file's section of Files changed, where the note is drawn under its line; a
+              #L hash would mean nothing there (the sections scroll to comment permalinks only). */}
+          {fileLink ? <> in <Link to={fileLink(note.path)}>{note.pathLabel}:{lines}</Link></> : <> on {lines}</>}
+          {note.title && <>: {note.title}</>}
+        </div>
+        {/* The CI's words, spelled by the server: text, never markup. */}
+        <pre className="check-note-text">{note.message}</pre>
+      </div>
+    </div>
+  );
+}
+
+function Checks({ status, onOpenPath, notes, fileLink }: { status: ReviewStatus | null; onOpenPath: (p: string) => void; notes: Async<RunNote[]>; fileLink: (p: string) => string }) {
   const [open, setOpen] = useState<string | null>(null);
   if (!status) {
     return <Loading what="Reading the checks…" />;
@@ -1077,6 +1121,17 @@ function Checks({ status, onOpenPath }: { status: ReviewStatus | null; onOpenPat
                       {c.title && <div className="text-bold">{c.title}</div>}
                       {c.description && <div>{c.description}</div>}
                       {c.summary && <FragmentHost html={c.summary} path="" onOpenPath={onOpenPath} line={null} onLine={() => {}} />}
+                      {/* The run's own annotations, from the read shared with the file sections
+                          (every run's are read together, each note keeping its run) — the server
+                          reads at most a hundred per run and says nothing of more. */}
+                      {c.annotations ? (
+                        <div className="check-annotations">
+                          {notes.state === 'loading' && <Loading what="Reading the annotations…" />}
+                          {notes.state === 'error' && <p className="text-danger">{notes.error.message}</p>}
+                          {notes.state === 'ok' && !notes.value.some((a) => a.runId === c.id) && <p className="text-muted">GitHub listed no annotations for this run.</p>}
+                          {notes.state === 'ok' && notes.value.filter((a) => a.runId === c.id).map((a, j) => <CheckNote key={`${a.path}:${a.startLine}:${j}`} note={a} fileLink={fileLink} />)}
+                        </div>
+                      ) : null}
                     </div>
                   )}
                 </li>
@@ -1109,6 +1164,8 @@ interface FileSectionProps {
   onViewed: (on: boolean) => void;
   /** The URL's fragment, for scrolling to a comment's permalink once its thread is placed. */
   hash: string;
+  /** Every annotation the checks left on this pull request; the section draws those on its own lines. */
+  notes: CheckAnnotation[];
 }
 
 /**
@@ -1117,7 +1174,7 @@ interface FileSectionProps {
  * the section is near the viewport (an 85-file pull request must not ask for 85 drawings at once)
  * and never again once read. A viewed file folds, as on GitHub; the chevron reopens it.
  */
-function FileSection({ writer, snap, owner, repo, file, active, threads, threadsState, initialView, initialLayout, initialFull, onLayer, onOpenPath, signInUrl, viewed, onViewed, hash }: FileSectionProps) {
+function FileSection({ writer, snap, owner, repo, file, active, threads, threadsState, initialView, initialLayout, initialFull, onLayer, onOpenPath, signInUrl, viewed, onViewed, hash, notes }: FileSectionProps) {
   const [view, setView] = useState<PaneView>(initialView);
   const [layout, setLayout] = useState<Layout>(initialLayout);
   const [full, setFull] = useState(initialFull);
@@ -1201,7 +1258,7 @@ function FileSection({ writer, snap, owner, repo, file, active, threads, threads
       {open && (
         <div className="file-review-body">
           <FileReview writer={writer} path={path} file={file} result={result} threads={threads} threadsState={threadsState} view={view} onView={setView}
-            onLayer={onLayer} onOpenPath={onOpenPath} signInUrl={signInUrl} onUnfold={() => setFull(true)} hash={hash} />
+            onLayer={onLayer} onOpenPath={onOpenPath} signInUrl={signInUrl} onUnfold={() => setFull(true)} hash={hash} notes={notes} />
         </div>
       )}
     </section>
@@ -1224,6 +1281,8 @@ interface FileReviewProps {
   onUnfold: () => void;
   /** The URL's fragment: a comment's permalink to scroll to once placed. */
   hash: string;
+  /** The checks' annotations on this pull request: those on this file's lines are drawn under them. */
+  notes?: CheckAnnotation[];
 }
 
 /** A gap's place, in words: a whole file, or a stretch of lines on one side. */
@@ -1243,14 +1302,16 @@ export function gapWords(gap: CoverageGap): string {
  * threads. On Raw, a thread sits under its line; anything that cannot be placed — outdated, on the
  * file, or on a line this drawing does not show — is listed above, never dropped.
  */
-function FileReview({ writer, path, file, result, threads, threadsState, view, onView, onLayer, onOpenPath, signInUrl, onUnfold, hash }: FileReviewProps) {
+function FileReview({ writer, path, file, result, threads, threadsState, view, onView, onLayer, onOpenPath, signInUrl, onUnfold, hash, notes = [] }: FileReviewProps) {
   const [placed, setPlaced] = useState<string[]>([]);
   // A new comment being written. On Raw, on a diff line (the diff's own numbers are file lines).
   // On a drawing, on an element the server will resolve (a member row, a network), or on a drawn
-  // source line of the file its block names — a code body under a table is another file.
+  // source line of the file its block names — a code body under a table is another file. An
+  // element drawn on both sides (a modified row) has the other side's anchor as `alt`, so the
+  // comment can be moved to the row as it was (Step 3b).
   type Draft =
     | { kind: 'line'; side: 'LEFT' | 'RIGHT'; line: number; file: string; startLine?: number; text?: string }
-    | { kind: 'anchor'; dom: string };
+    | { kind: 'anchor'; dom: string; alt?: string };
   const [drafting, setDrafting] = useState<Draft | null>(null);
   const [fileComment, setFileComment] = useState(false);
   // Resolved threads are shown by default, as this page always showed them; the toggle hides
@@ -1274,8 +1335,19 @@ function FileReview({ writer, path, file, result, threads, threadsState, view, o
   const canDraw = writer !== null && view === 'rendered';
   const placements = result.state === 'ok' ? result.value.placements : [];
   const shown = showResolved ? threads : threads.filter((t) => !t.resolved);
+  const layers = result.state === 'ok' ? result.value.view.layers : [];
   const annotations: Annotation[] = useMemo(() => {
     const byId = new Map(shown.map((t) => [t.id, t]));
+    // A check's annotation sits under its first line, new side: on Raw when it is this file's,
+    // on a drawing when it is on any file the drawing shows (a code body under a table is its
+    // own file). One that finds no drawn line is simply not drawn: the Checks tab lists them all.
+    const checkNotes: Annotation[] = notes.flatMap((a, i) => {
+      if (view === 'raw' ? a.path !== path : !layers.includes(a.path)) {
+        return [];
+      }
+      const selector = view === 'raw' ? `[data-line="${a.startLine}"]` : `[data-src-path="${attr(a.path)}"] [data-file-line="${a.startLine}"]`;
+      return [{ key: `note:${i}`, selector, content: <CheckNote note={a} /> }];
+    });
     const placedThreads: Annotation[] = view === 'raw'
       ? shown.flatMap((t) => {
           const selector = threadSelector(t);
@@ -1305,7 +1377,19 @@ function FileReview({ writer, path, file, result, threads, threadsState, view, o
         selector,
         content: (
           <div className="thread thread-draft">
-            <header className="thread-head muted">{what}</header>
+            <header className="thread-head muted">
+              {what}
+              {drafting.kind === 'anchor' && drafting.alt && (
+                <button type="button" className="link-button thread-side-switch" onClick={() => {
+                  // The other side is another box (its own slot, its own operation): the words
+                  // typed so far go with the person, as long as nothing was sent yet.
+                  carryDraft(`${writer.slots}:draft:${path}:${where}`, `${writer.slots}:draft:${path}:${drafting.alt}`);
+                  setDrafting({ kind: 'anchor', dom: drafting.alt!, alt: drafting.dom });
+                }}>
+                  comment on it as it {drafting.alt.includes('-old-') ? 'was' : 'is'} instead
+                </button>
+              )}
+            </header>
             <CommentBox owner={writer.owner} repo={writer.repo} snap={writer.snap} slot={`${writer.slots}:draft:${path}:${where}`}
               path={drafting.kind === 'anchor' ? '/anchor-comments' : '/line-comments'}
               payload={drafting.kind === 'anchor'
@@ -1319,8 +1403,8 @@ function FileReview({ writer, path, file, result, threads, threadsState, view, o
         ),
       });
     }
-    return placedThreads;
-  }, [shown, view, onOpenPath, drafting, writer, path, placements, file]);
+    return [...checkNotes, ...placedThreads];
+  }, [shown, view, onOpenPath, drafting, writer, path, placements, file, notes, layers]);
   const unplaced = shown.filter((t) => !placed.includes(t.id));
   const resolvedCount = threads.filter((t) => t.resolved).length;
 
@@ -1423,11 +1507,11 @@ function FileReview({ writer, path, file, result, threads, threadsState, view, o
           }
         } : undefined}
         onAnchorPick={canDraw ? (ids) => {
-          // An element standing for both sides is commented on as it is now; one only on the older
-          // side (removed) as it was.
+          // An element standing for both sides is commented on as it is now, with the older side
+          // offered in the draft's header; one only on the older side (removed) as it was.
           const dom = ids.find((id) => id.includes('-new-')) ?? ids[0];
           if (dom) {
-            setDrafting({ kind: 'anchor', dom });
+            setDrafting({ kind: 'anchor', dom, alt: ids.find((id) => id !== dom) });
           }
         } : undefined} />
       </div>
@@ -1438,6 +1522,13 @@ function FileReview({ writer, path, file, result, threads, threadsState, view, o
 function Thread({ thread, writer, onOpenPath, moved = false }: { thread: ReviewThread; writer: Writer | null; onOpenPath: (p: string) => void; moved?: boolean }) {
   const [replying, setReplying] = useState(false);
   const [editing, setEditing] = useState<string | null>(null);
+  const { owner = '', repo = '' } = useParams();
+  // An outdated thread's line is gone from the diff: GitHub keeps the hunk the comment was written
+  // on, and shows it (Step 3b) with the way to the file at that commit. Spelled lines from the
+  // server, drawn as text.
+  const first = thread.comments[0];
+  const hunk = thread.outdated && first?.diffHunk ? first.diffHunk : null;
+  const at = thread.outdated && first?.originalCommit ? first.originalCommit : null;
   const where = thread.subject === 'FILE' ? 'on the file'
     : thread.line !== null ? `${thread.side === 'LEFT' ? 'old' : 'new'} line ${thread.startLine && thread.startLine !== thread.line ? `${thread.startLine}–` : ''}${thread.line}`
     : `was on line ${thread.originalLine ?? '?'}`;
@@ -1456,6 +1547,16 @@ function Thread({ thread, writer, onOpenPath, moved = false }: { thread: ReviewT
           </span>
         )}
       </header>
+      {hunk && (
+        <div className="thread-hunk">
+          <pre className="thread-hunk-code">{hunk}</pre>
+          {at && owner && (
+            <Link className="text-small" to={`${blobUrl(owner, repo, at, thread.path)}${thread.originalLine ? `#L${thread.originalLine}` : ''}`}>
+              View the file at {at.slice(0, 7)}, where this was written
+            </Link>
+          )}
+        </div>
+      )}
       {thread.comments.map((c) => {
         const body = writer && editing === c.id ? (
           <CommentBox owner={writer.owner} repo={writer.repo} snap={writer.snap} slot={`${writer.slots}:edit:${c.id}`} path={`/comments/${encodeURIComponent(c.id)}`} method="PATCH"

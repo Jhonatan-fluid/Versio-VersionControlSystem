@@ -2,8 +2,10 @@ import { useEffect, useRef, useState } from 'react';
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router';
 import type { CommitDetail, Layout, Me, PaneView, TreeNode } from '../api';
 import { api } from '../api';
+import { CommentCard, anchorOf } from '../components/Conversation';
 import { FragmentHost } from '../components/FragmentHost';
 import { ErrorPanel } from '../components/Pane';
+import { describe, newOpKey, releasesKey } from '../components/ReviewWrite';
 import { RepoLayout } from '../components/RepoLayout';
 import { TreePanel } from '../components/TreePanel';
 import { Avatar, Blankslate, Icon, Loading, RelativeTime } from '../components/ui';
@@ -91,7 +93,78 @@ export function CommitPage({ me }: { me: Me | null }) {
           </div>
         </div>
       )}
+      <CommitComments owner={owner} repo={repo} sha={c.sha} onOpenPath={(p) => navigate(blobUrl(owner, repo, c.sha, p))} />
     </RepoLayout>
+  );
+}
+
+/**
+ * GitHub's commit comments (FINISH.md Step 3b), under the files as github.com draws them: each
+ * as a comment card, one GitHub placed on a line naming its file and line; and a box to add one
+ * on the commit as a whole when writes are on here and the person is signed in. The write goes
+ * with an operation key like every other, with no snapshot: a commit is its own revision.
+ */
+function CommitComments({ owner, repo, sha, onOpenPath }: { owner: string; repo: string; sha: string; onOpenPath: (p: string) => void }) {
+  const [generation, setGeneration] = useState(0);
+  const comments = useAsync((s) => api.commitComments(owner, repo, sha, s), [owner, repo, sha, generation]);
+  if (comments.state === 'loading') {
+    return <section className="commit-comments" aria-label="Comments"><Loading what="Reading the comments…" /></section>;
+  }
+  if (comments.state === 'error') {
+    return <section className="commit-comments" aria-label="Comments"><p className="text-danger">{comments.error.message}</p></section>;
+  }
+  const { writable, comments: list } = comments.value;
+  return (
+    <section className="commit-comments" aria-label="Comments">
+      <h2 className="panel-title">{list.length} comment{list.length === 1 ? '' : 's'} on this commit</h2>
+      {list.map((c) => (
+        <CommentCard key={c.id} author={c.author} avatar={c.avatar} when={c.when} url={c.url} anchor={anchorOf(c.url)}
+          verb={c.path ? <>commented on <Link to={blobUrl(owner, repo, sha, c.path)}>{c.pathLabel}{c.line !== null ? `:L${c.line}` : ''}</Link></> : 'commented'}>
+          <FragmentHost html={c.html} path="" onOpenPath={onOpenPath} line={null} onLine={() => {}} />
+        </CommentCard>
+      ))}
+      {writable && <CommitCommentBox owner={owner} repo={repo} sha={sha} onDone={() => setGeneration((g) => g + 1)} />}
+    </section>
+  );
+}
+
+/** The box for a comment on the commit: the same key rules as every comment box, without a snapshot. */
+function CommitCommentBox({ owner, repo, sha, onDone }: { owner: string; repo: string; sha: string; onDone: () => void }) {
+  const [body, setBody] = useState('');
+  // Held from the first submission to the outcome, as CommentBox holds its key: a retry is the
+  // same operation to the server, never a second comment.
+  const [opKey, setOpKey] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [note, setNote] = useState<string | null>(null);
+  async function submit() {
+    if (!body.trim() || busy) {
+      return;
+    }
+    const key = opKey ?? newOpKey();
+    setOpKey(key);
+    setBusy(true);
+    setNote(null);
+    const answer = await api.addCommitComment(owner, repo, sha, { opKey: key, body });
+    setBusy(false);
+    if (answer.outcome === 'done') {
+      setBody('');
+      setOpKey(null);
+      onDone();
+      return;
+    }
+    if (releasesKey(answer, opKey !== null)) {
+      setOpKey(null);
+    }
+    setNote(describe(answer));
+  }
+  return (
+    <div className="commit-comment-new comment-box">
+      <textarea value={body} placeholder="Leave a comment on this commit" readOnly={opKey !== null} rows={4} onChange={(e) => { setBody(e.target.value); setOpKey(null); }} />
+      {note && <p className="notice comment-note" role="status">{note}</p>}
+      <div className="comment-actions">
+        <button type="button" className="btn btn-primary" onClick={submit} disabled={busy || !body.trim()}>{opKey !== null && !busy ? 'Try again' : 'Comment on this commit'}</button>
+      </div>
+    </div>
   );
 }
 

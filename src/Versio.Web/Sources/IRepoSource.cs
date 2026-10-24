@@ -107,6 +107,12 @@ public sealed record CommitDetail(string Sha, string Message, string AuthorName,
 /// <summary>A tag, as the tags page lists it.</summary>
 public sealed record TagInfo(string Name, string CommitSha);
 
+/// <summary>A comment on a commit (GitHub's commit comments, Step 3b): on the commit as a whole, or on a line of one of its files.</summary>
+public sealed record CommitComment(string Id, string Author, string? AuthorAvatar, string Body, DateTimeOffset When, string? Path, int? Line, string? Url);
+
+/// <summary>One annotation a check run left on the code: a path and lines, a level (notice, warning, failure), its words.</summary>
+public sealed record CheckAnnotation(string Path, int StartLine, int EndLine, string Level, string Message, string? Title);
+
 /// <summary>
 /// An open pull request as the list shows it. <paramref name="HeadSha"/> rather than a head ref
 /// for comparing: the head branch may live in a fork, where its NAME means nothing in this
@@ -548,6 +554,12 @@ public interface IRepoSource
 
     /// <summary>The repository's tags, up to 100, as GitHub lists them (newest first by its own order).</summary>
     Task<RepoResult<IReadOnlyList<TagInfo>>> GetTagsAsync(RepoAccess access, string owner, string repo, CancellationToken ct);
+
+    /// <summary>The comments on a commit, oldest first, up to 100.</summary>
+    Task<RepoResult<IReadOnlyList<CommitComment>>> GetCommitCommentsAsync(RepoAccess access, string owner, string repo, string sha, CancellationToken ct);
+
+    /// <summary>The annotations one check run left, up to 100: what GitHub draws inline on the diff.</summary>
+    Task<RepoResult<IReadOnlyList<CheckAnnotation>>> GetCheckAnnotationsAsync(RepoAccess access, string owner, string repo, long runId, CancellationToken ct);
 
     /// <summary>The open pull requests, most recently updated first, up to <paramref name="limit"/>.</summary>
     Task<RepoResult<IReadOnlyList<PullInfo>>> GetPullsAsync(RepoAccess access, string owner, string repo, int limit, CancellationToken ct);

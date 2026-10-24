@@ -109,6 +109,30 @@ export interface Tag {
   commit: string;
 }
 
+/** A comment on a commit (Step 3b): on the commit as a whole, or one GitHub placed on a line of a file. */
+export interface CommitComment {
+  id: string;
+  author: string;
+  avatar: string | null;
+  html: string;
+  when: string;
+  path: string | null;
+  pathLabel: string | null;
+  line: number | null;
+  url: string | null;
+}
+
+/** One annotation a check run left on the code (Step 3b): where, how bad, and the CI's words, spelled. */
+export interface CheckAnnotation {
+  path: string;
+  pathLabel: string;
+  startLine: number;
+  endLine: number;
+  level: string;
+  message: string;
+  title: string | null;
+}
+
 export interface View {
   kind: string;
   title: string;
@@ -750,6 +774,9 @@ export const api = {
       get<{ paths: string[] }>(`${reviewBase(owner, repo, s.number)}/viewed`, signal, sealed(s)),
     coverage: (owner: string, repo: string, s: ReviewSnapshot, signal?: AbortSignal) =>
       get<CoverageSummary>(`${reviewBase(owner, repo, s.number)}/coverage`, signal, sealed(s)),
+    /** The annotations one check run left: listed on the Checks tab, drawn on the file's lines. */
+    annotations: (owner: string, repo: string, s: ReviewSnapshot, runId: number, signal?: AbortSignal) =>
+      get<{ annotations: CheckAnnotation[] }>(`${reviewBase(owner, repo, s.number)}/checks/${runId}/annotations`, signal, sealed(s)),
 
     /**
      * A write. Never throws on a refusal: every answer — done, pending, unknown, refused — is the
@@ -764,6 +791,12 @@ export const api = {
       return (answer as unknown as { html?: string }).html ?? '';
     },
   },
+  /** A commit's comments, and whether the viewer may add one. */
+  commitComments: (owner: string, repo: string, sha: string, signal?: AbortSignal) =>
+    get<{ writable: boolean; comments: CommitComment[] }>(`${repoBase(owner, repo)}/commit/comments${query({ sha })}`, signal),
+  /** A comment on a commit as a whole: a write like any other, with no snapshot because a commit is its own revision. */
+  addCommitComment: (owner: string, repo: string, sha: string, body: { opKey: string; body: string }) =>
+    send(`${repoBase(owner, repo)}/commits/${e(sha)}/comments`, 'POST', {}, body),
   /** Opens a pull request: a write like any other (an operation key, never thrown), with no snapshot because there is no pull request yet. */
   createPull: (owner: string, repo: string, body: { opKey: string; base: string; head: string; title: string; body: string; draft: boolean }) =>
     send(`${repoBase(owner, repo)}/pulls`, 'POST', {}, body),

@@ -22,6 +22,12 @@ const rawDiff = `<div class="cd-page cd-diff">
   <div class="cd-drow" data-line="3"><span class="cd-num">3</span><span class="cd-marker">+</span><code class="cd-code">  run : BOOL := TRUE;</code></div>
 </div>`;
 
+// Side by side, as TextDiffHtml draws it: one row per pair, the old line's cell, a rule, the new line's cell.
+const splitDiff = `<div class="cd-page cd-diff">
+  <div class="cd-split"><div class="cd-cell" data-old-line="2"><span class="cd-num">2</span><code class="cd-code">VAR</code></div><span class="cd-rule"></span><div class="cd-cell" data-line="2"><span class="cd-num">2</span><code class="cd-code">VAR</code></div></div>
+  <div class="cd-split"><div class="cd-cell" data-old-line="3"><span class="cd-num">3</span><code class="cd-code">  run : BOOL;</code></div><span class="cd-rule"></span><div class="cd-cell" data-line="3"><span class="cd-num">3</span><code class="cd-code">  run : BOOL := TRUE;</code></div></div>
+</div>`;
+
 // A rendered body as SourceHtml draws it: data-line is the line within its SECTION, not the file
 // line GitHub means. A thread placed by it would sit on the wrong line, which is why rendered views
 // list threads instead of placing them until anchors exist (slice 3).
@@ -45,6 +51,8 @@ interface Reply {
 interface Options {
   stale?: boolean;
   writable?: boolean;
+  /** What a run's /annotations answers (Step 3b); none by default. */
+  annotations?: unknown[];
   /** What each write answers, by path suffix; done by default. */
   writes?: Record<string, Reply | Reply[]>;
   /** Where the server placed each thread on the drawing. */
@@ -118,16 +126,21 @@ function answer(url: string, o: Options): unknown {
   }
   if (url.includes('/files/view')) {
     const raw = url.includes('view=raw');
+    const html = raw ? (url.includes('layout=split') ? splitDiff : rawDiff) : renderedSource;
     return {
       coverage: raw ? 'raw' : o.coverage ?? 'partial',
       gaps: raw ? [] : o.gaps ?? [],
       placements: raw ? [] : o.placements ?? [],
-      view: { kind: raw ? 'diff' : 'table', title: 'Pump', path: 'src/Pump.st', html: raw ? rawDiff : renderedSource, notices: [], layers: ['src/Pump.st'], layerLabels: ['src/Pump.st'] },
+      view: { kind: raw ? 'diff' : 'table', title: 'Pump', path: 'src/Pump.st', html, notices: [], layers: ['src/Pump.st'], layerLabels: ['src/Pump.st'] },
     };
+  }
+  if (url.includes('/annotations')) {
+    // Run 7's; any other run left none.
+    return { annotations: url.includes('/checks/7/') ? o.annotations ?? [] : [] };
   }
   if (url.endsWith('/threads')) {
     const comment = (id: string, html: string) => ({ id, author: 'sam', when: '2026-10-17T09:00:00Z', html, markdown: 'text', commit: head, originalCommit: head, canEdit: true, canDelete: true,
-      reviewId: id === 'c1' ? o.threadReview ?? null : null, diffHunk: id === 'c1' ? '@@ -1,3 +1,3 @@\n a\n-b\n+c' : null,
+      reviewId: id === 'c1' ? o.threadReview ?? null : null, diffHunk: id === 'c1' ? '@@ -1,3 +1,3 @@\n a\n-b\n+c' : id === 'c3' ? '@@ -8,2 +8,2 @@\n old\n-x\n+y' : null,
       suggestion: id === 'c1' ? o.suggestion ?? null : null, reactions: id === 'c1' ? [{ content: 'HEART', count: 2, viewerHasReacted: false }] : [] });
     const may = { canReply: true, canResolve: true, canUnresolve: true };
     return {
@@ -1884,6 +1897,121 @@ describe('PullPage review writes', () => {
     await click(button(host.querySelector('.review-draft')!, 'Save')!, host);
 
     expect(writes().map((w) => [w.method, w.url.slice(w.url.indexOf('/comments/')), w.body])).toMatchObject([['PATCH', '/comments/C1', { body: 'y' }]]);
+    act(() => root.unmount());
+  });
+});
+
+// Comments everywhere (docs/web/FINISH.md, Step 3b): an outdated thread keeps the hunk it was
+// written on; a side-by-side thread sits under its own column; a modified row can be commented on
+// as it was; a check's annotations are listed under the run and drawn on the file's lines.
+describe('PullPage comments everywhere', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+    document.body.innerHTML = '';
+    sessionStorage.clear();
+  });
+
+  async function click(element: Element, host: HTMLElement) {
+    await act(async () => {
+      (element as HTMLElement).click();
+    });
+    await settle(host, () => false);
+  }
+  const writes = () => calls.filter((c) => c.method !== 'GET' && !c.url.endsWith('/markdown'));
+
+  const annotated = {
+    checks: [
+      { name: 'plc-compile', status: 'completed', conclusion: 'failure', url: null, source: 'check-run', id: 7, annotations: 1 },
+      // GitHub counts one for this run, but lists none when asked: its list says so, not run 7's.
+      { name: 'lint', status: 'completed', conclusion: 'success', url: null, source: 'check-run', id: 8, annotations: 1 },
+    ],
+    annotations: [{ path: 'src/Pump.st', pathLabel: 'src/Pump.st', startLine: 3, endLine: 3, level: 'failure', message: 'unknown identifier', title: 'C0046' }],
+  };
+
+  it('shows an outdated thread with the hunk it was written on and the way to the file at that commit', async () => {
+    const { host, root } = await render('/acme/plant/pull/12?tab=files&path=src%2FPump.st&view=raw');
+
+    const gone = host.querySelector('.unplaced [data-thread="GONE"]')!;
+    expect(gone.querySelector('.thread-hunk-code')?.textContent).toBe('@@ -8,2 +8,2 @@\n old\n-x\n+y');
+    expect(gone.querySelector('.thread-hunk a')?.getAttribute('href')).toBe(`/acme/plant/blob/${head}/src/Pump.st#L9`);
+    // A thread still on its line shows no hunk: the line itself is there.
+    expect(host.querySelector('[data-thread="NEW3"] .thread-hunk')).toBeNull();
+    act(() => root.unmount());
+  });
+
+  it('side by side, puts each thread under its own column, the other column empty', async () => {
+    const { host, root } = await render('/acme/plant/pull/12?tab=files&path=src%2FPump.st&view=raw&layout=split');
+
+    const newThread = host.querySelector('[data-thread="NEW3"]')!;
+    const oldThread = host.querySelector('[data-thread="OLD3"]')!;
+    const newRow = newThread.closest('.thread-slot-row')!;
+    const oldRow = oldThread.closest('.thread-slot-row')!;
+    // The new side is the right column, the old side the left; both slot rows follow the line's row.
+    expect(newThread.closest('.cd-cell')).toBe(newRow.lastElementChild);
+    expect(oldThread.closest('.cd-cell')).toBe(oldRow.firstElementChild);
+    expect(newRow.querySelector('.cd-cell:first-child [data-thread]')).toBeNull();
+    const lineRow = host.querySelector('.cd-split:has([data-line="3"])');
+    expect([newRow, oldRow]).toContain(lineRow?.nextElementSibling);
+    act(() => root.unmount());
+  });
+
+  it('offers the older side of a modified row, and posts that side\'s id when chosen', async () => {
+    const { host, root } = await render('/acme/plant/pull/12?tab=files&path=src%2FPump.st', { writable: true });
+
+    await click(host.querySelector('tr[data-anchors~="r-new-0"] td.mt-name')!, host);
+    let draft = host.querySelector('.thread-draft')!;
+    expect(draft.querySelector('.thread-head')?.textContent).not.toContain('member, as it was');
+    expect(draft.querySelector('.thread-side-switch')?.textContent).toContain('as it was instead');
+    // Words typed before switching sides go with the person: losing them is the failure that matters.
+    await act(async () => {
+      const textarea = draft.querySelector('textarea')!;
+      Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')!.set!.call(textarea, 'Was this right before?');
+      textarea.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    await click(draft.querySelector('.thread-side-switch')!, host);
+    draft = host.querySelector('.thread-draft')!;
+    expect(draft.querySelector('.thread-head')?.textContent).toContain('member, as it was');
+    expect(draft.querySelector('.thread-side-switch')?.textContent).toContain('as it is instead');
+    expect(draft.querySelector('textarea')?.value).toBe('Was this right before?');
+    await click(Array.from(draft.querySelectorAll('button')).find((b) => b.textContent === 'Comment')!, host);
+
+    expect(writes()[0]!.body).toMatchObject({ path: 'src/Pump.st', dom: 'r-old-0' });
+    act(() => root.unmount());
+  });
+
+  it("lists a run's annotations under it on Checks, each linking to the file's line", async () => {
+    const { host, root } = await render('/acme/plant/pull/12/checks', annotated);
+
+    const [first, second] = Array.from(host.querySelectorAll('button')).filter((b) => b.textContent?.includes('Show output'));
+    await click(second!, host);
+    expect(host.querySelector('.check-annotations')?.textContent).toContain('GitHub listed no annotations for this run.');
+    expect(host.querySelector('.check-annotations .check-note')).toBeNull();
+    await click(first!, host);
+    const note = host.querySelector('.check-annotations .check-note')!;
+    expect(note.textContent).toContain('Error');
+    expect(note.textContent).toContain('C0046');
+    expect(note.querySelector('.check-note-text')?.textContent).toBe('unknown identifier');
+    expect(note.querySelector('a')?.getAttribute('href')).toContain('/acme/plant/pull/12/files');
+    expect(note.querySelector('a')?.getAttribute('href')).toContain('src%2FPump.st');
+    expect(note.querySelector('a')?.textContent).toBe('src/Pump.st:L3');
+    expect(calls.some((c) => c.url.endsWith('/checks/7/annotations') && c.snapshot === token)).toBe(true);
+    act(() => root.unmount());
+  });
+
+  it("draws a run's annotation under its line on Raw, and not where the file has no such line", async () => {
+    const { host, root } = await render('/acme/plant/pull/12?tab=files&path=src%2FPump.st&view=raw', annotated);
+
+    const rows = Array.from(host.querySelectorAll('.cd-drow'));
+    const newRow = rows.find((r) => r.getAttribute('data-line') === '3' && !r.hasAttribute('data-old-line'))!;
+    let after: Element | null = newRow.nextElementSibling;
+    const slots: Element[] = [];
+    while (after?.classList.contains('thread-slot')) {
+      slots.push(after);
+      after = after.nextElementSibling;
+    }
+    expect(slots.some((s) => s.querySelector('.check-note')?.textContent?.includes('unknown identifier'))).toBe(true);
+    expect(host.querySelectorAll('.check-note').length).toBe(1);
     act(() => root.unmount());
   });
 });

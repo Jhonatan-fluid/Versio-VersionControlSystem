@@ -18,7 +18,7 @@ function rowText(row: HTMLElement, gutter: HTMLElement): string {
     return code.textContent ?? '';
   }
   const copy = cell.cloneNode(true) as HTMLElement;
-  copy.querySelectorAll('.cd-num, .cd-marker, .thread-slot').forEach((e) => e.remove());
+  copy.querySelectorAll('.cd-num, .cd-marker, .thread-slot, .thread-slot-row').forEach((e) => e.remove());
   return copy.textContent ?? '';
 }
 
@@ -90,15 +90,38 @@ export function FragmentHost({ html, path, onOpenPath, line, onLine, annotations
         if (!target) {
           continue;
         }
-        let after: Element = target.closest('.cd-drow, .cd-split, .cd-row, tr.mt-row, section.ld-row') ?? target;
+        const row: Element = target.closest('.cd-drow, .cd-split, .cd-row, tr.mt-row, section.ld-row') ?? target;
+        let after: Element = row;
         // Several threads on one row stack in the order given.
-        while (after.nextElementSibling?.classList.contains('thread-slot')) {
+        while (after.nextElementSibling?.classList.contains('thread-slot') || after.nextElementSibling?.classList.contains('thread-slot-row')) {
           after = after.nextElementSibling;
         }
         // A table row's slot is a table row of its own, one cell across: a div between rows of a
         // tbody is invalid markup, and browsers move it out of the table, away from its row.
         let slot: HTMLElement;
-        if (after instanceof HTMLTableRowElement || after.closest('tbody')) {
+        const cell = target.closest<HTMLElement>('.cd-split > .cd-cell');
+        // Which column the line is in, read from the LINE's row: once a slot row follows it, `after`
+        // is that slot row, whose first cell is never the line's — comparing against it put the
+        // second thread on a pair of lines under the wrong column (found by the test, 2026-10-24).
+        const onLeft = cell !== null && row.querySelector('.cd-cell') === cell;
+        if (cell && row.classList.contains('cd-split')) {
+          // Side by side (Step 3b): the slot is a split row of its own with the thread under the
+          // column the line is in and the other column empty, as GitHub draws it — a slot across
+          // both columns read as if the comment were on both sides' lines.
+          const slotRow = document.createElement('div');
+          slotRow.className = 'cd-split thread-slot-row';
+          const left = document.createElement('div');
+          left.className = 'cd-cell thread-slot-cell';
+          const rule = document.createElement('span');
+          rule.className = 'cd-rule';
+          const right = document.createElement('div');
+          right.className = 'cd-cell thread-slot-cell';
+          slotRow.append(left, rule, right);
+          after.after(slotRow);
+          slot = document.createElement('div');
+          slot.className = 'thread-slot';
+          (onLeft ? left : right).appendChild(slot);
+        } else if (after instanceof HTMLTableRowElement || after.closest('tbody')) {
           const row = document.createElement('tr');
           row.className = 'thread-slot thread-row';
           const cell = document.createElement('td');
@@ -116,7 +139,7 @@ export function FragmentHost({ html, path, onOpenPath, line, onLine, annotations
     }
     setSlots(made);
     placedReport.current?.([...made.keys()]);
-    return () => made.forEach((slot) => (slot.closest('tr.thread-row') ?? slot).remove());
+    return () => made.forEach((slot) => (slot.closest('tr.thread-row, .thread-slot-row') ?? slot).remove());
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [clean, wantedKey]);
 

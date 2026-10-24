@@ -222,6 +222,12 @@ public sealed class PullPreview
             _ => "COMMENTED",
         };
 
+        public Task<WriteResult<string>> AddCommitCommentAsync(RepoAccess access, string owner, string repo, string sha, string body, CancellationToken ct) =>
+            inner.AddCommitCommentAsync(access, owner, repo, sha, body, ct);
+
+        public Task<RepoResult<string>> FindTaggedCommitCommentAsync(RepoAccess access, string owner, string repo, string sha, string tag, CancellationToken ct) =>
+            inner.FindTaggedCommitCommentAsync(access, owner, repo, sha, tag, ct);
+
         public async Task<WriteResult<string>> AddConversationCommentAsync(RepoAccess access, string owner, string repo, int number, string body, CancellationToken ct)
         {
             var r = await inner.AddConversationCommentAsync(access, owner, repo, number, body, ct);

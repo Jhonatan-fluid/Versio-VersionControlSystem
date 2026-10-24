@@ -36,13 +36,27 @@ function answer(url: string): unknown {
   if (url.includes('/compare/view')) {
     return { kind: 'source', title: 'Pump', path: 'src/Pump.st', html: '<div class="cd-page">drawn</div>', notices: [], layers: ['src/Pump.st'], layerLabels: ['src/Pump.st'] };
   }
+  if (url.includes('/commit/comments')) {
+    return { writable: true, comments: [
+      { id: 'CC_1', author: 'lee', avatar: null, html: '<div class="md-page"><p>Right for the small plant?</p></div>', when: '2026-10-17T09:00:00Z', path: null, pathLabel: null, line: null, url: 'https://github.com/acme/plant/commit/x#commitcomment-1' },
+      { id: 'CC_2', author: 'jo', avatar: null, html: '<div class="md-page"><p>Yes.</p></div>', when: '2026-10-17T09:10:00Z', path: 'src/Pump.st', pathLabel: 'src/Pump.st', line: 2, url: null },
+    ] };
+  }
   return { owner: 'acme', name: 'plant', private: false, defaultBranch: 'main' };
 }
 
+let writes: { url: string; body: Record<string, unknown>; csrf: string | null }[] = [];
+
 async function render(path: string) {
   urls = [];
-  vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+  writes = [];
+  vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
     urls.push(url);
+    if (init?.method === 'POST') {
+      const headers = (init.headers ?? {}) as Record<string, string>;
+      writes.push({ url, body: JSON.parse(init.body as string) as Record<string, unknown>, csrf: headers['X-Versio-Request'] ?? null });
+      return new Response(JSON.stringify({ outcome: 'done', id: 'CC_3' }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+    }
     return new Response(JSON.stringify(answer(url)), { status: 200, headers: { 'Content-Type': 'application/json' } });
   }));
   const host = document.createElement('div');
@@ -98,6 +112,38 @@ describe('CommitPage', () => {
     expect(sections[0]?.querySelector('.diffstat')?.textContent).toContain('+1');
     expect(urls.filter((u) => u.includes('/compare/view')).every((u) => u.includes(`base=${parent}`) && u.includes(`head=${sha}`))).toBe(true);
     expect(sections[0]?.querySelector('.cd-page')?.textContent).toBe('drawn');
+    act(() => root.unmount());
+  });
+
+  // Step 3b: GitHub's commit comments under the files, one on a line naming its file; a new one
+  // posted on the commit with an operation key and the header no cross-site request can send.
+  it("lists the commit's comments, a line comment naming its file, and posts a new one with an operation key", async () => {
+    const { host, root } = await render(`/acme/plant/commit/${sha}`);
+    const section = host.querySelector('.commit-comments')!;
+
+    expect(section.querySelector('.panel-title')?.textContent).toBe('2 comments on this commit');
+    const cards = Array.from(section.querySelectorAll('.comment'));
+    expect(cards[0]?.textContent).toContain('Right for the small plant?');
+    expect(cards[0]?.closest('.comment-row')?.id).toBe('commitcomment-1');
+    expect(cards[1]?.querySelector(`a[href="/acme/plant/blob/${sha}/src/Pump.st"]`)?.textContent).toBe('src/Pump.st:L2');
+
+    const textarea = section.querySelector('textarea')!;
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')!.set!.call(textarea, 'Looks right.');
+      textarea.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    await act(async () => {
+      Array.from(section.querySelectorAll('button')).find((b) => b.textContent === 'Comment on this commit')!.click();
+      await new Promise((r) => setTimeout(r, 20));
+    });
+
+    expect(writes).toHaveLength(1);
+    expect(writes[0]!.url).toContain(`/commits/${sha}/comments`);
+    expect(writes[0]!.body).toMatchObject({ body: 'Looks right.' });
+    expect(typeof writes[0]!.body.opKey).toBe('string');
+    expect(writes[0]!.csrf).toBe('1');
+    // Posted: read again, so the new comment shows without a reload.
+    expect(urls.filter((u) => u.includes('/commit/comments')).length).toBe(2);
     act(() => root.unmount());
   });
 });

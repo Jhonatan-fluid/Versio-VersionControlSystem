@@ -542,6 +542,39 @@ public static class PullEndpoints
             });
         });
 
+        // The annotations one check run left (Step 3b): a path, lines, a level and the CI's words.
+        // Listed on the Checks tab and drawn inline on the file's lines, as GitHub does. The run is
+        // named by its id from the /status list, so a stale id is simply an empty list from GitHub.
+        pulls.MapGet("/checks/{runId:long}/annotations", async (string owner, string repo, int number, long runId, HttpContext http, AccessResolver access,
+            ReviewSnapshots snapshots, IRepoSource source, CancellationToken ct) =>
+        {
+            var opened = await OpenAsync(owner, repo, number, http, access, snapshots, ct).ConfigureAwait(false);
+            if (opened.Refusal is { } refusal)
+            {
+                return refusal;
+            }
+
+            var read = await source.GetCheckAnnotationsAsync(opened.Access!, owner, repo, runId, ct).ConfigureAwait(false);
+            return read.Ok
+                ? Results.Ok(new
+                {
+                    annotations = read.Value!.Select(a => new
+                    {
+                        path = a.Path,
+                        pathLabel = CodeHtml.Spelled(a.Path),
+                        startLine = a.StartLine,
+                        endLine = a.EndLine,
+                        // notice | warning | failure, GitHub's words; anything else the page draws as a notice.
+                        level = a.Level,
+                        // The CI's own text (S6: untrusted): hidden characters spelled out, and the
+                        // page draws it as text, so a tag in it is letters, never markup.
+                        message = CodeHtml.Spelled(a.Message),
+                        title = a.Title is { } t ? CodeHtml.Spelled(t) : null,
+                    }),
+                })
+                : ApiEndpoints.Refused(read.Failure, http);
+        });
+
         pulls.MapGet("/viewed", async (string owner, string repo, int number, HttpContext http, AccessResolver access,
             ReviewSnapshots snapshots, IRepoSource source, CancellationToken ct) =>
         {

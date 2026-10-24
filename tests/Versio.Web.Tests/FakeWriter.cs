@@ -91,6 +91,23 @@ internal sealed class FakeWriter : IRepoWriter
         return id;
     }
 
+    /// <summary>Commit comments made, filed where the source reads them: a commit's comments show on the page after a reload.</summary>
+    public Task<WriteResult<string>> AddCommitCommentAsync(RepoAccess access, string owner, string repo, string sha, string body, CancellationToken ct) =>
+        Run("commit-comment", access, $"{sha} {body}", () =>
+        {
+            var id = $"CC_{Interlocked.Increment(ref _ids)}abcd";
+            var list = Repo!.CommitComments.TryGetValue(sha, out var known) ? known : Repo.CommitComments[sha] = [];
+            list.Add(new CommitComment(id, access.Who, null, body, Now, null, null, null));
+            return id;
+        });
+
+    public Task<RepoResult<string>> FindTaggedCommitCommentAsync(RepoAccess access, string owner, string repo, string sha, string tag, CancellationToken ct)
+    {
+        Calls.Enqueue(("find", access, tag));
+        var found = Repo!.CommitComments.TryGetValue(sha, out var list) ? list.FirstOrDefault(c => c.Author == access.Who && c.Body.Contains(tag, StringComparison.Ordinal)) : null;
+        return Task.FromResult(RepoResult<string>.Of(found?.Id ?? ""));
+    }
+
     public Task<WriteResult<string>> AddConversationCommentAsync(RepoAccess access, string owner, string repo, int number, string body, CancellationToken ct) =>
         Run("comment", access, body, () => NewComment("IssueComment", owner, repo, number, access.Who, body, null));
 
