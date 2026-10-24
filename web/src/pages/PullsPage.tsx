@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router';
 import type { Me, Pull } from '../api';
 import { api } from '../api';
@@ -69,6 +69,9 @@ export function PullsPage({ me }: { me: Me | null }) {
   const q = search.get('q') ?? 'is:open';
   const after = search.get('after') ?? undefined;
   const [typed, setTyped] = useState(q);
+  // The box follows the URL: a filter pill, a tab, Next or Back changes ?q=, and a box still
+  // showing the old query dropped that filter on the next Enter (review, 2026-10-24).
+  useEffect(() => setTyped(q), [q]);
   const pulls = useAsync((s) => api.pulls(owner, repo, s, q, after), [owner, repo, q, after]);
   const signIn = me?.signInAvailable && !me.signedIn ? api.signInUrl(location.pathname + location.search) : null;
   usePageTitle('Pull requests', `${owner}/${repo}`);

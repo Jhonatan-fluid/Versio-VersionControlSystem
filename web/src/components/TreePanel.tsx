@@ -95,7 +95,10 @@ function Node({ node, depth, filter, selected, onSelect, openAll }: { node: Tree
   // panel opens the way to each change. The code view's whole tree opens one level, as before.
   const [open, setOpen] = useState(depth < 1 || holdsSelection || openAll);
   const row = useRef<HTMLButtonElement>(null);
-  const isSelected = selected !== null && (node.files.includes(selected) || node.path === selected) && !branch;
+  // A branch that opens something (a block with methods under it) is selected like a leaf; the
+  // first version lit no branch, so an open block with members was never shown as the current
+  // one and never scrolled to (review, 2026-10-24).
+  const isSelected = selected !== null && (node.files.includes(selected) || node.path === selected) && (!branch || node.files.length > 0);
 
   // Reveal the selection whenever it changes, not only when the tree first drew: a type link
   // clicked in a table selects an object in a folder that may be closed, and the desktop's
@@ -139,8 +142,11 @@ function Node({ node, depth, filter, selected, onSelect, openAll }: { node: Tree
         className={`tree-row kind-${node.kind}${isSelected ? ' is-selected' : ''}${tone ? ` tone-${tone}` : ''}${status === 'deleted' ? ' is-deleted' : ''}`}
         style={{ paddingLeft: `${8 + depth * 14}px` }}
         onClick={() => {
+          // A folder toggles. A block with members opens its members on the click that opens it,
+          // and toggles them only once it is the current one — re-clicking the open block folded
+          // its methods away while opening it (review, 2026-10-24).
           if (branch) {
-            setOpen(!open);
+            setOpen(opensSomething && !isSelected ? true : !open);
           }
           if (opensSomething) {
             onSelect(node);

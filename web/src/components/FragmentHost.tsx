@@ -286,7 +286,10 @@ export function FragmentHost({ html, path, onOpenPath, line, onLine, annotations
     }
 
     if (onAnchorPick) {
-      const target = element.closest<HTMLElement>('td.mt-name, td.mt-mark, .ld-head');
+      // A member's name or mark, a network's heading, a catalog row's name or mark (a library, a
+      // task, a device: `CatalogHtml` gives its rows anchors too, and they were unreachable here
+      // until the review of 2026-10-24).
+      const target = element.closest<HTMLElement>('td.mt-name, td.mt-mark, .ld-head, td.ct-name, td.ct-mark');
       const anchored = target?.closest<HTMLElement>('[data-anchors]');
       const ids = anchored?.dataset.anchors?.split(' ').filter((id) => id.length > 0) ?? [];
       if (ids.length > 0) {

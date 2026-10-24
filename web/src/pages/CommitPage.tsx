@@ -4,6 +4,7 @@ import type { CommitDetail, Layout, Me, PaneView, TreeNode } from '../api';
 import { api } from '../api';
 import { CommentCard, anchorOf } from '../components/Conversation';
 import { FragmentHost } from '../components/FragmentHost';
+import { safeHref } from '../fragment';
 import { ErrorPanel } from '../components/Pane';
 import { describe, newOpKey, readDraft, releasesKey, writeDraft, type Draft } from '../components/ReviewWrite';
 import { RepoLayout } from '../components/RepoLayout';
@@ -124,7 +125,9 @@ function CommitComments({ owner, repo, sha, onOpenPath }: { owner: string; repo:
           <FragmentHost html={c.html} path="" onOpenPath={onOpenPath} line={null} onLine={() => {}} />
         </CommentCard>
       ))}
-      {writable && <CommitCommentBox owner={owner} repo={repo} sha={sha} onDone={() => setGeneration((g) => g + 1)} />}
+      {/* Keyed by the commit, as CommentBox is by its slot: a box kept across commits would save
+          one commit's words under the next one's slot (ReviewWrite's "Pump draft overwrote Valve's"). */}
+      {writable && <CommitCommentBox key={`${owner}/${repo}:${sha}`} owner={owner} repo={repo} sha={sha} onDone={() => setGeneration((g) => g + 1)} />}
     </section>
   );
 }
@@ -193,7 +196,7 @@ function CommitCard({ owner, repo, commit: c }: { owner: string; repo: string; c
         </div>
         <div className="commit-card-actions">
           <Link to={treeUrl(owner, repo, c.sha)} className="btn btn-small">Browse files</Link>
-          {c.url && <a href={c.url} target="_blank" rel="noopener noreferrer" className="btn btn-small" title="On GitHub"><Icon name="link" className="btn-icon" /></a>}
+          {safeHref(c.url) && <a href={safeHref(c.url)!} target="_blank" rel="noopener noreferrer" className="btn btn-small" title="On GitHub"><Icon name="link" className="btn-icon" /></a>}
         </div>
       </div>
       <div className="commit-card-foot">

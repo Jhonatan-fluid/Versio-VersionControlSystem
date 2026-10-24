@@ -46,6 +46,15 @@ export function hasLadder(html: string): boolean {
 }
 
 /**
+ * A URL the server relayed from GitHub (a comment's permalink, a check's details page), as an
+ * href: only http(s). The server validates what it sends, and this is the page's own wall against
+ * a `javascript:` link reaching an anchor should that ever slip (review, 2026-10-24).
+ */
+export function safeHref(url: string | null | undefined): string | null {
+  return url && /^https?:\/\//i.test(url) ? url : null;
+}
+
+/**
  * Where a Markdown link may go. Core writes links into data-href, never href, so nothing in a
  * document can navigate by itself; this decides what a click does. A same-repository relative
  * path to another Markdown document stays in the viewer — the desktop's rule (ShellViewModel

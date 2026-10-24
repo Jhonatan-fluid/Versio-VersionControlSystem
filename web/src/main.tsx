@@ -17,7 +17,7 @@ import { PullPage } from './pages/PullPage';
 import { NewPullPage } from './pages/NewPullPage';
 import { PullsPage } from './pages/PullsPage';
 import { ReleasesPage } from './pages/ReleasesPage';
-import { commitsUrl, pullUrl, releasesUrl } from './routes';
+import { commitUrl, commitsUrl, newPullUrl, pullUrl, releasesUrl } from './routes';
 import './styles/app.css';
 
 /**
@@ -36,6 +36,13 @@ function App() {
       <Route path="/:owner/:repo/blob/:ref/*" element={<RepoPage me={who} />} />
       <Route path="/:owner/:repo/compare/:range" element={<ComparePage me={who} />} />
       <Route path="/:owner/:repo/commits/:ref/*" element={<CommitsPage me={who} />} />
+      {/* GitHub's shapes a pasted link may carry (review, 2026-10-24): /commits with no ref is the
+          default branch's; /compare with no range opens the branch pickers; /pull/N/commits/sha is
+          that commit; /releases/latest is the newest release. */}
+      <Route path="/:owner/:repo/commits" element={<CommitsPage me={who} />} />
+      <Route path="/:owner/:repo/compare" element={<CompareRedirect />} />
+      <Route path="/:owner/:repo/pull/:number/commits/:sha" element={<PullCommitRedirect />} />
+      <Route path="/:owner/:repo/releases/latest" element={<ReleasesPage me={who} latest />} />
       <Route path="/:owner/:repo/commit/:sha" element={<CommitPage me={who} />} />
       <Route path="/:owner/:repo/branches" element={<BranchesPage me={who} />} />
       <Route path="/:owner/:repo/tags" element={<TagsPage me={who} />} />
@@ -50,6 +57,18 @@ function App() {
       <Route path="*" element={<NotFound me={who} />} />
     </Routes>
   );
+}
+
+/** /compare with no range: GitHub shows the branch pickers, which here are the new pull request form's. */
+function CompareRedirect() {
+  const { owner = '', repo = '' } = useParams();
+  return <Navigate to={newPullUrl(owner, repo)} replace />;
+}
+
+/** /pull/N/commits/sha: GitHub's one-commit review; here the commit's own page. */
+function PullCommitRedirect() {
+  const { owner = '', repo = '', sha = '' } = useParams();
+  return <Navigate to={commitUrl(owner, repo, sha)} replace />;
 }
 
 /** /history/ref/path was this page's name for GitHub's /commits/ref/path. */

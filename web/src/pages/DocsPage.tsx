@@ -1,9 +1,10 @@
+import { useState } from 'react';
 import { useLocation, useNavigate, useParams, useSearchParams } from 'react-router';
 import type { Layout, Me, PaneView, TreeNode } from '../api';
 import { api, rawUrl } from '../api';
 import { ErrorPanel, Pane } from '../components/Pane';
 import { RepoLayout } from '../components/RepoLayout';
-import { Blankslate, Icon, LinkButton, Loading } from '../components/ui';
+import { Blankslate, Button, Icon, LinkButton, Loading } from '../components/ui';
 import { blobUrl, docsUrl } from '../routes';
 import { usePageTitle } from '../title';
 import { useAsync } from '../useAsync';
@@ -57,6 +58,7 @@ export function DocsPage({ me }: { me: Me | null }) {
   const location = useLocation();
   const navigate = useNavigate();
   const picked = search.get('path');
+  const [listOpen, setListOpen] = useState(false);
   const view: PaneView = search.get('view') === 'raw' ? 'raw' : 'rendered';
   const layout: Layout = search.get('layout') === 'split' ? 'split' : 'unified';
 
@@ -96,7 +98,12 @@ export function DocsPage({ me }: { me: Me | null }) {
 
   return (
     <RepoLayout me={me} owner={owner} repo={repo} nav="docs" refName={ref ?? defaultBranch} wide>
-      <div className="code-view">
+      {/* The list is a drawer at phone width, as the Code view's tree is; this page had no way to
+          open it there (review, 2026-10-24). */}
+      <div className="code-toolbar">
+        <Button className="tree-toggle-button" leadingIcon="three-bars" size="small" onClick={() => setListOpen(!listOpen)} aria-label="Show or hide the documents" />
+      </div>
+      <div className={`code-view${listOpen ? ' sidebar-open' : ''}`}>
         <aside className="code-sidebar">
           <div className="code-sidebar-head">
             <Icon name="book" className="text-muted" />

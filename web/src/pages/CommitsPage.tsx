@@ -38,24 +38,26 @@ export function CommitsPage({ me }: { me: Me | null }) {
   const navigate = useNavigate();
   const info = useAsync((s) => api.repo(owner, repo, s), [owner, repo]);
   const branches = useAsync((s) => api.branches(owner, repo, s), [owner, repo]);
-  const commits = useAsync((s) => api.history(owner, repo, ref, path || undefined, s), [owner, repo, ref, path]);
+  // GitHub's /commits with no ref is the default branch's (review, 2026-10-24: it landed on NotFound).
+  const refShown = ref || (info.state === 'ok' ? info.value.defaultBranch : '');
+  const commits = useAsync((s) => (refShown ? api.history(owner, repo, refShown, path || undefined, s) : new Promise<never>(() => {})), [owner, repo, refShown, path]);
   // Compare opens on the default branch against the ref shown, as from the repository page. It
   // first compared the ref with itself, which always opened on "no differences" (found in review).
   const defaultBranch = info.state === 'ok' ? info.value.defaultBranch : 'main';
   const signIn = me?.signInAvailable && !me.signedIn ? api.signInUrl(location.pathname) : null;
-  usePageTitle(path ? `History for ${path}` : `Commits · ${ref}`, `${owner}/${repo}`);
+  usePageTitle(path ? `History for ${path}` : `Commits · ${refShown}`, `${owner}/${repo}`);
 
   return (
-    <RepoLayout me={me} owner={owner} repo={repo} nav="commits" refName={ref}>
+    <RepoLayout me={me} owner={owner} repo={repo} nav="commits" refName={refShown}>
       <div className="code-toolbar" style={{ padding: '0 0 16px' }}>
         <BranchPicker
-          value={ref}
+          value={refShown}
           branches={branches.state === 'ok' ? branches.value.branches : []}
           truncated={branches.state === 'ok' && branches.value.truncated}
           onPick={(r) => navigate(commitsUrl(owner, repo, r, path || undefined))}
         />
         {path && <span className="text-muted">History for <code>{path}</code></span>}
-        <Link to={compareUrl(owner, repo, defaultBranch, ref, path || undefined)} className="btn btn-small" style={{ marginLeft: 'auto' }}>
+        <Link to={compareUrl(owner, repo, defaultBranch, refShown, path || undefined)} className="btn btn-small" style={{ marginLeft: 'auto' }}>
           <Icon name="diff" className="btn-icon" />
           <span className="btn-text">Compare</span>
         </Link>

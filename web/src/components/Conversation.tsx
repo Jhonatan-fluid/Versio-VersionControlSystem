@@ -1,6 +1,7 @@
-import { useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Link } from 'react-router';
 import type { Reaction, ReviewThread, TimelineItem } from '../api';
+import { safeHref } from '../fragment';
 import { FragmentHost } from './FragmentHost';
 import { Avatar, Icon, IssueLabel, RelativeTime, type IconName } from './ui';
 
@@ -34,6 +35,21 @@ export const reactionWords = ['THUMBS_UP', 'THUMBS_DOWN', 'LAUGH', 'HOORAY', 'CO
  */
 export function Reactions({ reactions, onToggle }: { reactions?: Reaction[] | null; onToggle?: (content: string, on: boolean) => void }) {
   const [picking, setPicking] = useState(false);
+  // The picker closes on a click outside it and on Escape, as the header's menus do: it stayed
+  // open until a reaction was picked (review, 2026-10-24).
+  const adder = useRef<HTMLSpanElement>(null);
+  useEffect(() => {
+    if (!picking) {
+      return;
+    }
+    const away = (e: MouseEvent) => {
+      if (adder.current && !adder.current.contains(e.target as Node)) {
+        setPicking(false);
+      }
+    };
+    document.addEventListener('mousedown', away);
+    return () => document.removeEventListener('mousedown', away);
+  }, [picking]);
   const list = reactions ?? [];
   if (list.length === 0 && !onToggle) {
     return null;
@@ -44,7 +60,9 @@ export function Reactions({ reactions, onToggle }: { reactions?: Reaction[] | nu
   return (
     <div className="reactions" aria-label="Reactions">
       {list.map((r) => onToggle ? (
+        // The word is in the accessible name, not only the title: a title on a button is not read out.
         <button key={r.content} type="button" className={`reaction${r.viewerHasReacted ? ' is-mine' : ''}`} title={`${r.count} ${r.content.toLowerCase().replace('_', ' ')}`}
+          aria-label={`${r.count} ${r.content.toLowerCase().replace('_', ' ')}${r.viewerHasReacted ? ', yours' : ''}`}
           aria-pressed={r.viewerHasReacted} onClick={() => onToggle(r.content, !r.viewerHasReacted)}>
           {pill(r)} {r.count}
         </button>
@@ -54,8 +72,8 @@ export function Reactions({ reactions, onToggle }: { reactions?: Reaction[] | nu
         </span>
       ))}
       {onToggle && (
-        <span className="reaction-add">
-          <button type="button" className="reaction reaction-add-button" aria-label="Add reaction" aria-expanded={picking} onClick={() => setPicking(!picking)}>
+        <span className="reaction-add" ref={adder} onKeyDown={(e) => { if (e.key === 'Escape') { setPicking(false); } }}>
+          <button type="button" className="reaction reaction-add-button" aria-label="Add reaction" aria-haspopup="menu" aria-expanded={picking} onClick={() => setPicking(!picking)}>
             <Icon name="smiley" size={14} />
           </button>
           {picking && (
@@ -153,7 +171,7 @@ export function CommentCard({ author, avatar, association, when, editedAt, url, 
           {(tools || url) && (
             <span className="comment-head-tools">
               {tools}
-              {url && <a href={url} target="_blank" rel="noopener noreferrer" title="On GitHub"><Icon name="link" /></a>}
+              {safeHref(url) && <a href={safeHref(url)!} target="_blank" rel="noopener noreferrer" title="On GitHub"><Icon name="link" /></a>}
             </span>
           )}
         </header>
@@ -218,12 +236,13 @@ function sentence(item: TimelineItem, baseLabel: string): ReactNode {
         return <>mentioned this</>;
       }
       const name = <>{r.repository ? `${r.repository}#${r.number}` : `#${r.number}`} {r.title}</>;
-      return <>{item.message === 'closes' ? 'will close this in ' : 'mentioned this in '}{r.url ? <a href={r.url} target="_blank" rel="noopener noreferrer">{name}</a> : name}</>;
+      return <>{item.message === 'closes' ? 'will close this in ' : 'mentioned this in '}{safeHref(r.url) ? <a href={safeHref(r.url)!} target="_blank" rel="noopener noreferrer">{name}</a> : name}</>;
     }
     case 'referenced': return <>referenced this in <code>{sha8(item.sha)}</code>{item.message ? <> {item.message}</> : null}{item.target ? <> ({item.target})</> : null}</>;
     case 'milestoned': return <>added this to the {t} milestone</>;
     case 'demilestoned': return <>removed this from the {t} milestone</>;
-    case 'locked': return <>locked this conversation{item.message ? <> as <span className="text-bold">{item.message.toLowerCase().replace('_', ' ')}</span></> : null}</>;
+    // GitHub's own words for the reasons: "off-topic" hyphenated, the rest spaced.
+    case 'locked': return <>locked this conversation{item.message ? <> as <span className="text-bold">{item.message === 'OFF_TOPIC' ? 'off-topic' : item.message.toLowerCase().replace('_', ' ')}</span></> : null}</>;
     case 'unlocked': return <>unlocked this conversation</>;
     case 'auto-merge-on': return <>enabled auto-merge</>;
     case 'auto-merge-off': return <>disabled auto-merge{item.message ? <>: <em>{item.message}</em></> : null}</>;
@@ -303,7 +322,7 @@ export function ReviewCard({ item, threads, renderThread, onOpenPath, fileLink, 
           <span className="text-bold">{item.actor}</span> {verb} <RelativeTime when={item.when} />
           {item.editedAt && <span className="text-muted" title={`Edited ${new Date(item.editedAt).toLocaleString()}`}>· edited</span>}
           <RoleBadge association={item.association} />
-          {item.url && <a href={item.url} target="_blank" rel="noopener noreferrer" className="text-muted" title="On GitHub"><Icon name="link" /></a>}
+          {safeHref(item.url) && <a href={safeHref(item.url)!} target="_blank" rel="noopener noreferrer" className="text-muted" title="On GitHub"><Icon name="link" /></a>}
           {tools && <span className="comment-head-tools">{tools}</span>}
         </div>
         {editor ? (

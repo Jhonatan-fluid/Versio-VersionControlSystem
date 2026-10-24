@@ -1,4 +1,5 @@
 import type { ButtonHTMLAttributes, ReactNode } from 'react';
+import { useState } from 'react';
 import { Link } from 'react-router';
 import { Icon, type IconName } from './Icon';
 
@@ -114,8 +115,11 @@ export function pullState(p: { merged?: boolean; draft?: boolean; state?: string
  */
 export function Avatar({ login, url, size = 20 }: { login: string; url?: string | null; size?: number }) {
   const letter = (login.trim()[0] ?? '?').toUpperCase();
-  return url ? (
-    <img className="avatar" src={url} alt="" width={size} height={size} style={{ width: size, height: size }} loading="lazy" />
+  // A picture that does not load becomes the letter: the remark above promised this and the
+  // component drew the browser's broken-image glyph (review, 2026-10-24).
+  const [broken, setBroken] = useState(false);
+  return url && !broken ? (
+    <img className="avatar" src={url} alt="" width={size} height={size} style={{ width: size, height: size }} loading="lazy" onError={() => setBroken(true)} />
   ) : (
     <span className="avatar avatar-letter" style={{ width: size, height: size, fontSize: Math.max(10, size * 0.5) }} aria-hidden="true">{letter}</span>
   );
@@ -203,11 +207,13 @@ export function relativeWords(when: Date, now: Date = new Date()): string {
     return future ? 'in a moment' : 'just now';
   } else if (s < 90) {
     words = '1 minute';
-  } else if (s < 3600) {
+  } else if (Math.round(s / 60) < 60) {
+    // The unit is chosen AFTER rounding: 3,599 s rounded to minutes is 60, which is "1 hour",
+    // not "60 minutes" (review, 2026-10-24; the same at 24 hours and 30 days).
     words = unit(Math.round(s / 60), 'minute');
-  } else if (s < 86400) {
+  } else if (Math.round(s / 3600) < 24) {
     words = unit(Math.round(s / 3600), 'hour');
-  } else if (s < 86400 * 30) {
+  } else if (Math.round(s / 86400) < 30) {
     words = unit(Math.round(s / 86400), 'day');
   } else {
     // Past a month GitHub writes the date itself, with the year only when it is not this one.

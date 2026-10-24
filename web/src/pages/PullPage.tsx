@@ -4,6 +4,7 @@ import type { CheckAnnotation, CoverageGap, Layout, Me, PaneView, PendingReviewV
 import { ApiError, api } from '../api';
 import type { Annotation } from '../components/FragmentHost';
 import { FragmentHost } from '../components/FragmentHost';
+import { safeHref } from '../fragment';
 import { FilesTree } from '../components/FilesTree';
 import { CommentCard, CommitRow, EventRow, Minimized, Reactions, ReviewCard, RoleBadge, anchorOf } from '../components/Conversation';
 import { MergeBox } from '../components/MergeBox';
@@ -65,20 +66,23 @@ function usePolled<T>(load: ((signal: AbortSignal) => Promise<T>) | null, key: s
       return;
     }
     const controller = new AbortController();
+    let timer = 0;
     const poll = () => {
       if (document.visibilityState !== 'hidden') {
         // A blip keeps the last answer; a snapshot the server no longer accepts is said, or a tab
         // left open past the snapshot's life froze at its last answer with no banner until the
-        // first write was refused (review, 2026-10-24).
+        // first write was refused (review, 2026-10-24). And the polling stops then: every further
+        // poll would be the same refused request, every thirty seconds, until the tab closed.
         load(controller.signal).then((v) => !controller.signal.aborted && setValue(v), (error: Error) => {
           if (!controller.signal.aborted && needsReload(error)) {
+            window.clearInterval(timer);
             expired.current?.();
           }
         });
       }
     };
     poll();
-    const timer = window.setInterval(poll, POLL_MS);
+    timer = window.setInterval(poll, POLL_MS);
     document.addEventListener('visibilitychange', poll);
     return () => {
       controller.abort();
@@ -410,6 +414,17 @@ function PullReview({ me }: { me: Me | null }) {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [hashPath, tab]);
+  // A comment's or review's permalink on the Conversation tab: the timeline arrives after the
+  // browser's one load-time fragment scroll, so the page scrolls once it is drawn (review,
+  // 2026-10-24). Files changed has its own, once the thread is placed.
+  useEffect(() => {
+    if (tab === 'conversation' && hash && timeline.state === 'ok') {
+      const target = document.getElementById(hash);
+      if (target && typeof target.scrollIntoView === 'function') {
+        target.scrollIntoView({ block: 'start' });
+      }
+    }
+  }, [tab, hash, timeline.state]);
   const inPull = (p: string) => files.state === 'ok' && files.value.files.some((f) => f.path === p);
   // A link to something this pull request does not change — a type, an identifier — opens a
   // peek at the reviewed head beside the review (FINISH.md C2, "stay in context"), never the
@@ -501,7 +516,8 @@ function PullReview({ me }: { me: Me | null }) {
                 </span>
               )}
             </div>
-            {peek && snap && <PeekPane owner={owner} repo={repo} refName={snap.headSha} path={peek} onClose={() => setPeek(null)} signInUrl={signIn} />}
+            {/* Keyed by the path: the peek keeps its own trail from the path it opened on, so a second link while it is open must start a new one (review, 2026-10-24). */}
+            {peek && snap && <PeekPane key={peek} owner={owner} repo={repo} refName={snap.headSha} path={peek} onClose={() => setPeek(null)} signInUrl={signIn} />}
             <div className="pr-tabs">
               <UnderlineNav items={navItems} current={tab} label="Pull request" />
               {live?.additions !== undefined && live.deletions !== undefined && (
@@ -762,7 +778,7 @@ function MergeSummary({ live, status }: { live: ReviewStatus['summary']; status:
                         <span className="check-name">{c.name}</span>
                         {c.required && <span className="row-badge check-required">Required</span>}
                         <span className="text-muted text-small">{state === 'running' ? 'in progress' : state.replace('_', ' ')}</span>
-                        {c.url && <a href={c.url} target="_blank" rel="noopener noreferrer">Details</a>}
+                        {safeHref(c.url) && <a href={safeHref(c.url)!} target="_blank" rel="noopener noreferrer">Details</a>}
                       </li>
                     );
                   })}
@@ -1021,7 +1037,7 @@ function Commits({ commits }: { commits: Async<ReviewCommits> }) {
                 </div>
               </div>
               <div className="commit-side">
-                {x.url ? <a href={x.url} target="_blank" rel="noopener noreferrer" className="commit-sha" title="This commit on GitHub">{x.sha.slice(0, 7)}</a> : <code className="commit-sha" title={x.sha}>{x.sha.slice(0, 7)}</code>}
+                {safeHref(x.url) ? <a href={safeHref(x.url)!} target="_blank" rel="noopener noreferrer" className="commit-sha" title="This commit on GitHub">{x.sha.slice(0, 7)}</a> : <code className="commit-sha" title={x.sha}>{x.sha.slice(0, 7)}</code>}
               </div>
             </li>
           ))}
@@ -1149,7 +1165,7 @@ function Checks({ status, onOpenPath, notes, fileLink }: { status: ReviewStatus 
                       </button>
                     )}
                     {/* https only, checked by the server; opened, never fetched or framed here. */}
-                    {c.url && <a href={c.url} target="_blank" rel="noopener noreferrer" className="btn btn-small">Details</a>}
+                    {safeHref(c.url) && <a href={safeHref(c.url)!} target="_blank" rel="noopener noreferrer" className="btn btn-small">Details</a>}
                   </div>
                   {open === id && (
                     <div className="check-output">
@@ -1258,6 +1274,15 @@ function FileSection({ writer, snap, owner, repo, file, active, threads, threads
       setWanted(true);
     }
   }, [near, open]);
+  // A new snapshot (a push, "load the latest") while the file is folded: not wanted until it is
+  // opened again, or every file ever opened re-read its drawing on every push, folded or not —
+  // 85 reads per push on a fully viewed review (review of the review, 2026-10-24).
+  useEffect(() => {
+    if (!open) {
+      setWanted(false);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [snap.token]);
   const result = useAsync(
     (s) => (wanted ? api.review.fileView(owner, repo, snap, path, view, layout, file.previousPath ?? undefined, s, full) : never()),
     [snap.token, path, view, layout, full, wanted],

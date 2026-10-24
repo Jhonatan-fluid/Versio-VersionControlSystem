@@ -47,6 +47,22 @@ export function BranchPicker({ value, branches, truncated, onPick }: { value: st
  * shape — the branch picker and the latest-commit line over the content, the file tree in a
  * sidebar — with Versio's project tree in the sidebar and the desktop's rendering in the pane.
  */
+/** The folder or project node at `path`, or null when the path is not one (a file, an object, nothing). */
+function findFolder(nodes: TreeNode[], path: string): TreeNode | null {
+  for (const node of nodes) {
+    if (node.path === path) {
+      return node.kind === 'folder' || node.kind === 'project' ? node : null;
+    }
+    if (path.startsWith(node.path + '/') && node.children.length > 0) {
+      const below = findFolder(node.children, path);
+      if (below) {
+        return below;
+      }
+    }
+  }
+  return null;
+}
+
 export function RepoPage({ me }: { me: Me | null }) {
   const { owner = '', repo = '', ref: refParam, '*': pathParam } = useParams();
   const [search, setSearch] = useSearchParams();
@@ -61,7 +77,9 @@ export function RepoPage({ me }: { me: Me | null }) {
   const latest = useAsync((s) => (ref ? api.history(owner, repo, ref, undefined, s) : new Promise<never>(() => {})), [owner, repo, ref]);
 
   const readme = tree.state === 'ok' ? tree.value.nodes.find((n) => n.kind === 'file' && /^readme(\.md|\.markdown)?$/i.test(n.name))?.path ?? null : null;
-  const path = pathParam || readme;
+  // A path that names a folder of the tree (a pasted /tree/ref/folder link) lists the folder.
+  const folderNode = tree.state === 'ok' && pathParam ? findFolder(tree.value.nodes, pathParam) : null;
+  const path = folderNode ? null : pathParam || readme;
   const view: PaneView = search.get('view') === 'raw' ? 'raw' : 'rendered';
   const layout: Layout = search.get('layout') === 'split' ? 'split' : 'unified';
   const line = lineFromHash(location.hash);
@@ -160,7 +178,22 @@ export function RepoPage({ me }: { me: Me | null }) {
           </div>
         </aside>
         <div className="code-main">
-          {path ? (
+          {folderNode ? (
+            // GitHub's /tree/ref/folder: the folder's own listing, not a drawing of a directory
+            // (which the server has no view for; the page asked it anyway until the review of 2026-10-24).
+            <div className="list-box" aria-label={`Files in ${folderNode.label}`}>
+              <div className="list-row text-bold"><Icon name="file-directory-fill" className="tree-icon tree-icon-folder" /> {folderNode.label}</div>
+              {folderNode.children.map((child) => (
+                <div key={child.path} className="list-row">
+                  {child.kind === 'folder' || child.kind === 'project'
+                    ? <Link to={treeUrl(owner, repo, refName, child.path)}><Icon name="file-directory-fill" className="tree-icon tree-icon-folder" /> {child.name}</Link>
+                    : <button type="button" className="link-button" onClick={() => select(child)}>{child.name}</button>}
+                  {child.typeName && <span className="text-muted text-small"> {child.typeName}</span>}
+                </div>
+              ))}
+              {folderNode.children.length === 0 && <p className="text-muted pad">Nothing in this folder.</p>}
+            </div>
+          ) : path ? (
             <Pane
               result={pane}
               view={view}

@@ -138,7 +138,7 @@ export function ComparePage({ me }: { me: Me | null }) {
           </div>
         </div>
       )}
-      {peek && <PeekPane owner={owner} repo={repo} refName={head} path={peek} onClose={() => setPeek(null)} signInUrl={signIn} />}
+      {peek && <PeekPane key={peek} owner={owner} repo={repo} refName={head} path={peek} onClose={() => setPeek(null)} signInUrl={signIn} />}
     </RepoLayout>
   );
 }

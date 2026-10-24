@@ -92,8 +92,8 @@ export function ReviewBar({ owner, repo, snap, slots, status, pending, files, op
         )}
         <span className="review-bar-tools">
           {review && (
-            <ActionButton owner={owner} repo={repo} snap={snap} path={`/reviews/${encodeURIComponent(review.id)}/discard`} label="Discard"
-              confirm="Discard your pending review and its comments? This cannot be undone." onDone={onChanged} />
+            <ActionButton owner={owner} repo={repo} snap={snap} path={`/reviews/${encodeURIComponent(review.id)}/discard`} label="Abandon review"
+              confirm="Abandon your pending review and its comments? This cannot be undone." onDone={onChanged} />
           )}
           {pending.state === 'ok' && (
             // GitHub's "Review changes" button with its pending count; the dialog opens under it.
@@ -404,7 +404,7 @@ export function ReviewersEditor({ owner, repo, snap, reviewers, onChanged }: { o
       </ul>
       <form className="reviewers-add" onSubmit={(e) => { e.preventDefault(); ask(); }}>
         <input value={login} onChange={(e) => setLogin(e.target.value)} placeholder="Login, or org/team" aria-label="Ask for a review from" disabled={busy} />
-        <button type="submit" className="btn btn-small" disabled={busy || !login.trim()}>Ask</button>
+        <button type="submit" className="btn btn-small" disabled={busy || !login.trim()}>Request</button>
       </form>
       {note && <p className="notice comment-note" role="status">{note}</p>}
     </div>

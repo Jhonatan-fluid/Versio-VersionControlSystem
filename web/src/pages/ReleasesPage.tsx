@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import { Link, useLocation, useNavigate, useParams } from 'react-router';
 import type { Me } from '../api';
 import { api } from '../api';
@@ -14,17 +15,26 @@ import { useAsync } from '../useAsync';
  * its tag, its author and its notes. The list carries meta only; one release's notes are
  * fetched when it is opened, because fifty rendered bodies would be paid for rows nobody reads.
  */
-export function ReleasesPage({ me }: { me: Me | null }) {
-  const { owner = '', repo = '', tag: picked } = useParams();
+export function ReleasesPage({ me, latest = false }: { me: Me | null; latest?: boolean }) {
+  const { owner = '', repo = '', tag: tagParam } = useParams();
+  const picked = latest ? 'latest' : tagParam;
   const location = useLocation();
   const navigate = useNavigate();
 
   const info = useAsync((s) => api.repo(owner, repo, s), [owner, repo]);
   const releases = useAsync((s) => api.releases(owner, repo, s), [owner, repo]);
   const release = useAsync(
-    (s) => (picked ? api.releaseView(owner, repo, picked, s) : new Promise<never>(() => {})),
+    (s) => (picked && picked !== 'latest' ? api.releaseView(owner, repo, picked, s) : new Promise<never>(() => {})),
     [owner, repo, picked],
   );
+  // GitHub's /releases/latest: the newest release's own page, once the list says which that is.
+  useEffect(() => {
+    if (picked === 'latest' && releases.state === 'ok') {
+      const newest = releases.value.releases[0]?.tag;
+      navigate(newest ? releasesUrl(owner, repo, newest) : releasesUrl(owner, repo), { replace: true });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [picked, releases.state]);
 
   const defaultBranch = info.state === 'ok' ? info.value.defaultBranch : 'main';
   const signIn = me?.signInAvailable && !me.signedIn ? api.signInUrl(location.pathname + location.search) : null;
@@ -61,7 +71,8 @@ export function ReleasesPage({ me }: { me: Me | null }) {
                       <span className="text-bold">{release.value.author}</span> released this <RelativeTime when={release.value.when} />
                     </p>
                     {release.value.html ? (
-                      <FragmentHost html={release.value.html} path="" onOpenPath={(p) => navigate(blobUrl(owner, repo, defaultBranch, p))} line={null} onLine={() => {}} />
+                      // A link in the notes opens the file at the release's own tag, not at the default branch's tip.
+                      <FragmentHost html={release.value.html} path="" onOpenPath={(p) => navigate(blobUrl(owner, repo, picked ?? defaultBranch, p))} line={null} onLine={() => {}} />
                     ) : (
                       <p className="text-muted">No notes.</p>
                     )}

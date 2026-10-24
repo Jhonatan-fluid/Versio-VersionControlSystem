@@ -1088,9 +1088,9 @@ describe('PullPage review', () => {
     const confirm = vi.spyOn(window, 'confirm').mockReturnValueOnce(false).mockReturnValueOnce(true);
     const { host, root } = await render('/acme/plant/pull/12', { writable: true, pending: pendingOn(head) });
 
-    await click(button(host, 'Discard')!, host);
+    await click(button(host, 'Abandon review')!, host);
     expect(writes()).toHaveLength(0);
-    await click(button(host, 'Discard')!, host);
+    await click(button(host, 'Abandon review')!, host);
 
     expect(confirm).toHaveBeenCalledTimes(2);
     expect(writes()[0]!.url.endsWith('/reviews/PRR_1/discard')).toBe(true);
@@ -1104,7 +1104,7 @@ describe('PullPage review', () => {
       Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, 'lee');
       input.dispatchEvent(new Event('input', { bubbles: true }));
     });
-    await click(button(host, 'Ask')!, host);
+    await click(button(host, 'Request')!, host);
     await click(button(host, 'remove')!, host);
 
     // Only the half being changed is sent (Step 5): an add, then a removal.
@@ -1952,7 +1952,7 @@ describe('PullPage review writes', () => {
     await click(rows[0]!.querySelector('[aria-label="Re-request review from kim"]')!, host);
     await click(rows[1]!.querySelector('[aria-label="Stop asking Controls"]')!, host);
     await fill(host.querySelector<HTMLInputElement>('.reviewers-add input')!, 'acme/safety');
-    await click(button(host, 'Ask')!, host);
+    await click(button(host, 'Request')!, host);
 
     expect(writes().map((w) => w.body)).toMatchObject([{ add: ['kim'] }, { removeTeams: ['plc-controls'] }, { addTeams: ['safety'] }]);
     act(() => root.unmount());

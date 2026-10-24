@@ -411,7 +411,7 @@ code, kbd, pre { font-family: var(--font-mono); }
 /* GitHub's split button (Step 6): the primary half acts, the caret opens the method menu under it. */
 .merge-split { position: relative; display: inline-block; }
 .merge-method-caret { padding-left: 8px; padding-right: 8px; }
-.merge-method-menu { position: absolute; top: 100%; left: 0; z-index: 5; margin-top: 4px; min-width: 300px; padding: 4px 0; background: var(--color-canvas-overlay, var(--color-canvas-default)); border: 1px solid var(--color-border-default); border-radius: var(--radius); box-shadow: var(--shadow-medium, 0 3px 6px rgba(140, 149, 159, 0.15)); display: flex; flex-direction: column; }
+.merge-method-menu { position: absolute; top: 100%; left: 0; z-index: 5; margin-top: 4px; min-width: 300px; padding: 4px 0; background: var(--color-canvas-overlay, var(--color-canvas-default)); border: 1px solid var(--color-border-default); border-radius: var(--radius); box-shadow: var(--color-shadow-medium, 0 3px 6px rgba(140, 149, 159, 0.15)); display: flex; flex-direction: column; }
 .merge-method-option { display: flex; gap: 8px; align-items: flex-start; padding: 8px 12px; font-size: 13px; text-align: left; cursor: pointer; color: var(--color-fg-default); }
 .merge-method-option:hover { background: var(--color-neutral-muted); text-decoration: none; }
 .merge-method-option input { margin-top: 3px; }
@@ -504,7 +504,7 @@ tr.thread-row > td { padding: 4px 8px 8px 32px; background: transparent; }
 .check-note-text { margin: 4px 0 0; white-space: pre-wrap; font-size: 12px; line-height: 1.4; }
 .check-annotations { margin-top: 8px; }
 /* Step 3c: links, origin and reveal. The peek beside a review or a comparison; the "used by" list under the layer chips. */
-.peek { position: fixed; top: 64px; right: 16px; bottom: 16px; width: min(560px, calc(100vw - 32px)); display: flex; flex-direction: column; background: var(--color-canvas-default); border: 1px solid var(--color-border-default); border-radius: var(--radius); box-shadow: var(--shadow-large, 0 8px 24px rgba(140, 149, 159, 0.3)); z-index: 30; }
+.peek { position: fixed; top: 64px; right: 16px; bottom: 16px; width: min(560px, calc(100vw - 32px)); display: flex; flex-direction: column; background: var(--color-canvas-default); border: 1px solid var(--color-border-default); border-radius: var(--radius); box-shadow: var(--color-shadow-large, 0 8px 24px rgba(140, 149, 159, 0.3)); z-index: 30; }
 .peek-head { display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-bottom: 1px solid var(--color-border-default); background: var(--color-canvas-subtle); border-radius: var(--radius) var(--radius) 0 0; }
 .peek-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .peek-body { flex: 1; min-height: 0; overflow: auto; padding: 8px 12px; }
@@ -523,7 +523,7 @@ button.reaction { cursor: pointer; background: var(--color-canvas-default); }
 button.reaction:hover { border-color: var(--color-accent-emphasis); }
 .reaction-add { position: relative; display: inline-flex; }
 .reaction-add-button { padding: 2px 6px; }
-.reaction-picker { position: absolute; top: 100%; left: 0; z-index: 5; margin-top: 4px; display: flex; gap: 2px; padding: 4px; background: var(--color-canvas-overlay, var(--color-canvas-default)); border: 1px solid var(--color-border-default); border-radius: var(--radius); box-shadow: var(--shadow-medium, 0 3px 6px rgba(140, 149, 159, 0.15)); }
+.reaction-picker { position: absolute; top: 100%; left: 0; z-index: 5; margin-top: 4px; display: flex; gap: 2px; padding: 4px; background: var(--color-canvas-overlay, var(--color-canvas-default)); border: 1px solid var(--color-border-default); border-radius: var(--radius); box-shadow: var(--color-shadow-medium, 0 3px 6px rgba(140, 149, 159, 0.15)); }
 .reaction-pick { font-size: 16px; line-height: 1; padding: 4px 6px; border: 0; background: transparent; border-radius: var(--radius); cursor: pointer; }
 .reaction-pick:hover { background: var(--color-neutral-muted); }
 .reaction-pick.is-mine { background: var(--color-accent-subtle); }
@@ -533,7 +533,7 @@ button.reaction:hover { border-color: var(--color-accent-emphasis); }
 .suggestion { margin: 8px 0 4px; border: 1px solid var(--color-border-default); border-radius: var(--radius); overflow: hidden; font-family: var(--font-ui); }
 .suggestion-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 6px 10px; background: var(--color-canvas-subtle); border-bottom: 1px solid var(--color-border-default); font-size: 12px; }
 .suggestion-tools { margin-left: auto; display: inline-flex; gap: 6px; align-items: center; }
-.suggestion-body { margin: 0; padding: 6px 10px; font: 12px/1.5 var(--font-mono); background: var(--color-diff-add-bg, var(--color-success-subtle)); white-space: pre; overflow-x: auto; }
+.suggestion-body { margin: 0; padding: 6px 10px; font: 12px/1.5 var(--font-mono); background: var(--color-diff-add-line, var(--color-success-subtle)); white-space: pre; overflow-x: auto; }
 .comment-toolbar { display: flex; gap: 4px; }
 .review-changes { display: inline-flex; align-items: center; gap: 6px; }
 .review-pending-comments .review-draft { border: 1px solid var(--color-border-muted); border-radius: var(--radius); padding: 6px 10px; margin-top: 6px; }
@@ -688,3 +688,7 @@ a.commit-sha:hover { color: var(--color-accent-fg); }
   .pane-title h1 { flex-basis: 100%; }
   .repo-title { font-size: 16px; }
 }
+
+/* The sidebar label with its remove button, and the drawer toggle only at phone width (review, 2026-10-24). */
+.label-with-remove { display: inline-flex; align-items: center; gap: 2px; }
+@media (min-width: 768px) { .tree-toggle-button { display: none; } }

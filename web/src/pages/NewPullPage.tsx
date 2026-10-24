@@ -86,8 +86,16 @@ function NewPullForm({ me }: { me: Me | null }) {
   const pulls = useAsync((s) => api.pulls(owner, repo, s), [owner, repo]);
   const defaultBranch = info.state === 'ok' ? info.value.defaultBranch : '';
 
-  const [form, setForm] = useState<Form>(() => readForm(slot) ?? {
-    base: search.get('base') ?? '', head: search.get('head') ?? '', title: '', body: '', draft: false, template: null, opKey: null,
+  const [form, setForm] = useState<Form>(() => {
+    const fresh: Form = { base: search.get('base') ?? '', head: search.get('head') ?? '', title: '', body: '', draft: false, template: null, opKey: null };
+    const kept = readForm(slot);
+    if (!kept) {
+      return fresh;
+    }
+    // The words are kept across a reload; the branches follow the link that opened the form
+    // while nothing has been sent — a draft for feature-a otherwise hijacked "Create pull
+    // request" from feature-b's comparison (review, 2026-10-24). A held key binds everything.
+    return kept.opKey !== null ? kept : { ...kept, base: search.get('base') ?? kept.base, head: search.get('head') ?? kept.head };
   });
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState<string | null>(null);

@@ -816,9 +816,9 @@ export const api = {
     send(`${repoBase(owner, repo)}/pulls`, 'POST', {}, body),
   pullTemplate: (owner: string, repo: string, base: string, signal?: AbortSignal) =>
     get<{ markdown: string | null; path: string | null }>(`${repoBase(owner, repo)}/pulls/template${query({ base })}`, signal),
-  labels: (owner: string, repo: string, signal?: AbortSignal) => get<{ labels: RepoLabel[] }>(`${repoBase(owner, repo)}/labels`, signal),
+  labels: (owner: string, repo: string, signal?: AbortSignal) => get<{ labels: RepoLabel[]; truncated: boolean }>(`${repoBase(owner, repo)}/labels`, signal),
   /** The open milestones: the number is what a write names, the title is shown. */
-  milestones: (owner: string, repo: string, signal?: AbortSignal) => get<{ milestones: { number: number; title: string }[] }>(`${repoBase(owner, repo)}/milestones`, signal),
+  milestones: (owner: string, repo: string, signal?: AbortSignal) => get<{ milestones: { number: number; title: string }[]; truncated: boolean }>(`${repoBase(owner, repo)}/milestones`, signal),
   releases: (owner: string, repo: string, signal?: AbortSignal) => get<ReleaseList>(`${repoBase(owner, repo)}/releases`, signal),
   releaseView: (owner: string, repo: string, tag: string, signal?: AbortSignal) =>
     get<ReleaseView>(`${repoBase(owner, repo)}/releases/view${query({ tag })}`, signal),

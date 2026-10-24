@@ -17,8 +17,9 @@ export function blobUrl(owner: string, repo: string, ref: string, path: string, 
   return `${repoUrl(owner, repo)}/blob/${seg(ref)}/${pathSegments(path)}${q}`;
 }
 
-export function treeUrl(owner: string, repo: string, ref: string): string {
-  return `${repoUrl(owner, repo)}/tree/${seg(ref)}`;
+/** The tree at a ref, or opened at a folder of it (GitHub's /tree/ref/folder shape). */
+export function treeUrl(owner: string, repo: string, ref: string, folder?: string): string {
+  return `${repoUrl(owner, repo)}/tree/${seg(ref)}${folder ? `/${folder.split('/').map(seg).join('/')}` : ''}`;
 }
 
 export function compareUrl(owner: string, repo: string, base: string, head: string, path?: string, params?: URLSearchParams): string {
