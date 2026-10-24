@@ -19,6 +19,76 @@ produce a diff touching everything else.
 
 ---
 
+### The coverage banner on real code: 55 of 85 files "may not show every change", and the drawing was right
+
+**2026-10-23, the owner's `CodesysStandardLibrary` pull request #3 in the real-pull-request
+preview.** Review coverage (docs/web/PLAN.md, C4) decides per changed line whether the drawing
+vouches for it, and the page says "The drawing may not show every change in this file" with each
+gap. On this pull request — an FBS library, 85 files — the review dialog counted 55 files with
+gaps. `FB_Alarm` listed twelve "changed, but not shown as changed" lines; `Symbol Set`, a new
+780-line file drawn as a table with every row marked A, said "lines 1–780: changed, but not shown";
+`MoveHome`, whose header went `METHOD` → `METHOD PUBLIC`, reported the same edit twice ("as it
+was", "as it is") and its empty member table added "1 declaration change is not shown in this
+table (line 2)"; `PersistentVars` flagged two comment lines above two new rows.
+
+**Every one of those was the rule being right about the letters and wrong about the drawing.**
+The rule as written vouched for a declaration line only when every token on it was a field the
+table displays, and for no XML line at all, because XML is mostly markup. So:
+
+| What changed | What the rule saw | What a reviewer saw |
+|---|---|---|
+| Twelve declarations re-aligned with tabs | lines changed under rows reading unchanged | the same cells, twelve warnings |
+| A new file, every row A | 780 XML lines, none a field | a complete table called partial |
+| `METHOD` → `METHOD PUBLIC` | one line removed, one added, neither a row | the same edit listed twice, plus the table's note |
+| `// SCADA` moved with its row into `VAR_IN_OUT` | a comment line outside the row's span | a drawn comment called hidden |
+| `VAR_IN_OUT` opened, a blank line removed | lines no row owns | framing called hidden |
+| `STRING(GVL_Alarm.DEFAULT_DESCRIPTION_LENGTH)` | `(` splits a token the parser kept whole | a shown type called hidden |
+
+**Fixed by six rules, in Core only** (`Coverage`, `StDeclarationTable`, `MemberTable.Structural`,
+`MarkupLines`, `LadderDocument.Structural`; the packs declare their framing; `ViewService` and the
+page were not touched, and the `gaps` contract is unchanged):
+
+1. A file entirely new or deleted that anything drew is complete (`Coverage.Check`).
+2. A row drawn A / D / M vouches for every line it spans, pragma chips included; an unchanged row
+   vouches for its lines when their text holds the same words (spacing, a comment moved from above
+   the declaration to its end). The token-leftover test is gone — the table draws pragmas as chips
+   now, so a row's span holds nothing it does not draw.
+3. The declaration's framing — the header (when it says nothing beyond its keywords), `VAR` /
+   `END_VAR`, `END_TYPE`, blank lines — is declared by the parser and vouched for by the table.
+   `HeaderResidue` no longer includes the keyword or the modifiers; the cost, stated in its
+   remarks, is that an access modifier changed from one value to another is not reported.
+4. A line edited in place is one gap, named as it is now (`Coverage.Check` groups the diff into
+   edits; the older side is listed only where it is all there is).
+5. An XML table's framing is every markup-only line outside its rows and outside the
+   implementation (`MarkupLines`: tags and spacing, at most a GUID; text content is a value and
+   stays a gap). The CODESYS and TIA tables declare it; the FBS `(* METADATA *)` / `__V3_META__`
+   headers and the closing keyword line are framing too.
+6. `Coverage.Ladder`: every network's span on the sides it is drawn on, plus the ladder parser's
+   framing (outside the networks, outside the Interface, which is the table's). **Not yet wired in
+   `ViewService`**, which another session holds; the hand-over note names the two lines.
+
+Also moved: a row's span now starts at the comment lines above it that became its comment cell
+(a review comment on that line lands on the row), and `SafeXml.LinesOf` counts the newlines in a
+text node, because a CODESYS declaration is one text node of thirty lines and its span ended on
+the first.
+
+**Evidence.** On the same dump, re-made with `tools/web/dump_pull.py` into this session's
+scratchpad: 77 of 85 files complete, 8 partial, down from 30 and 55. `FB_Alarm`, `Symbol Set`,
+`MoveHome` and `PersistentVars` read complete. The eight that remain are, every one, a `///` doc
+comment above an object's header edited, added or removed — `ResetFaults`, `Acknowledge`,
+`EvaluateInputs`, `Outputs`, `E_AlarmState`, `FB_Logger`, `Unregister`, `E_LoggerError`. The doc
+comment is a line the table has no cell for, so that gap is the truth; drawing the object's doc
+comment as a caption would close it, and is a follow-up. A ninth, `GVL_Logger`, was a comment
+moved from above `BATCH_CAPACITY` to the end of its line, which is why rule 2 compares words
+rather than spacing. Twenty-four mutations (each rule taken out, each pack's exclusion dropped,
+the residue's keyword put back, the span not extended, the text newlines not counted) each failed
+a test; three first "survived" by not compiling (`if (false)` is an unreachable-code error under
+`TreatWarningsAsErrors`, and an unused local function is another), and were rewritten as mutants
+that build. `PullPreview` takes `VERSIO_WEB_PREVIEW_PORT` now, because the owner's own fixture
+preview held 5199 while this was measured.
+
+---
+
 ### The web drew a compared source unlike the app: struck lines, no folding, a removed header
 
 **2026-10-23, branch `PrReview`, the owner's `CodesysStandardLibrary` pull request #3** in the

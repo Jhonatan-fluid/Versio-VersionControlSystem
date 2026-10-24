@@ -566,11 +566,21 @@ expected-SHA precondition. Resolving threads, `isOutdated`, `reviewDecision` and
   else Ambiguous or Gone, which go to an outdated/unplaced list. Identical rungs are common, so two
   candidates are never a pick. Only renames GitHub reports are followed. A tag never silently beats
   a disagreeing current line.
-- **C4, coverage: claim only what is proven.** Spans place comments; they prove nothing about what
-  the drawing shows. A change is **represented** only when the renderer names the specific field
-  it displays and that field differs; anything else — including an ignored attribute on the same
-  XML line as a shown one — is **unknown** and listed as "may not show — check Raw". A renderer
-  without field evidence labels its view **partial**. No percentages until the evidence exists.
+- **C4, coverage: claim what the renderer drew, and say the rest once.** A change is
+  **represented** when a renderer can name the line: a source row drawn added or struck; a line
+  inside a member row drawn A / D / M (its pragma chips included); a line of an unchanged row whose
+  text holds the same words (re-aligned, or a comment moved to the end of its line); a changed
+  attribute chip's line; a network's span on a side it is
+  drawn on; or a line the parser declared **framing** — the declaration's own keywords, blank
+  lines, the markup around and between an XML table's rows (`MemberTable.Structural`,
+  `LadderDocument.Structural`, `MarkupLines`). A file entirely new or deleted that anything drew is
+  complete. One edit is one gap, named as it is now. Everything else is **unknown** and listed as
+  "may not show — check Raw": a doc comment no row owns, a value in XML the table has no column for,
+  an `EXTENDS` added to a header, a pragma the parser does not read. A renderer with no evidence at
+  all labels its view **partial**. *Rewritten 2026-10-23 (FINDINGS, "the coverage banner on real
+  code"): the first version vouched for a declaration line only when every token on it was a shown
+  field, and for no XML line at all, which on a real 85-file pull request flagged 55 files, nearly
+  all of them re-indentation, framing and whole new files.*
 - **C5, uncertain writes.** An operation key per write, reserved atomically before calling
   GitHub, with its payload hash and a state (pending, then succeeded, failed or unknown). No blind
   retries: a lost response or a crash is reconciled (Versio's `versio:op` tag in bodies, or a
@@ -636,13 +646,15 @@ only use of Contents write; **no admin bypass, ever**.
 4. Coverage evidence (C4), pending reviews, approval and request changes (C2). **Built
    2026-10-19; its real-GitHub gate waits for the App.** As built: coverage is decided per
    **changed line of every file of the object**, not per element — a drawn source layout vouches
-   for the lines it draws added and struck; a compared member table vouches for a line only when
-   it lies in one row's lines, the row is drawn as changed, and every token on it is a whole token
-   of a field the table shows (so a shown value change beside an unshown pragma on the same line is
-   a gap). Anything else is a gap with its reason (`not-shown`, `no-evidence` — a ladder, which has
-   no field evidence yet — `not-drawn`, `too-large`), and a view is "complete" only with no gap.
-   **XML member tables stay partial**: XML lines are mostly markup the table does not show, so none
-   is vouched for. The page lists every gap and links each to Raw or the layer it is in; the review
+   for the lines it draws added and struck; a compared member table vouches for the lines of a row
+   it draws as changed, for an unchanged row's lines when they hold the same words, for a changed
+   attribute chip's line and for the declaration's framing (as C4 says since 2026-10-23; until then
+   a line was vouched for only when every token on it was a shown field, and XML tables stayed
+   partial). Anything else is a gap with its reason (`not-shown`, `no-evidence`, `not-drawn`,
+   `too-large`), and a view is "complete" only with no gap. `Coverage.Ladder` gives a ladder
+   evidence (every network's span, plus the parser's framing); **the web still reports its ladders
+   as `no-evidence`** until `ViewService` calls it — the one wiring left, noted in the hand-over.
+   The page lists every gap and links each to Raw or the layer it is in; the review
    dialog totals files never opened here and files with gaps (`/coverage`, rendering at most 200
    files, the rest "unchecked" and counted as unsure), and informs without blocking. Reviews: a
    one-shot review is `POST /reviews` with `commit_id`; a draft comment can go into a pending

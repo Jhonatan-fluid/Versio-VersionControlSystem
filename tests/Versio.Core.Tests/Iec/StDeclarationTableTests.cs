@@ -324,10 +324,12 @@ public class StDeclarationTableTests
         var scada = Row(table, "Scada");
         Assert.Equal(["symbol = readwrite"], Chips(scada.Attributes));
         Assert.Equal("readwrite", scada.Attributes[0].Value);
-        // The comment above the pragma is still the variable's, and the row starts at the
-        // pragma, so a changed attribute marks the row and a review comment on it lands here.
+        // The comment above the pragma is still the variable's, and the row starts at that
+        // comment (2026-10-23; at the pragma before): every line the row draws a cell from is
+        // the row's, so a changed comment or attribute marks the row, review coverage vouches
+        // for the line through it, and a review comment on either line lands here.
         Assert.Equal("SCADA", scada.Comment);
-        Assert.Equal(new LineSpan(11, 12), scada.Lines);
+        Assert.Equal(new LineSpan(10, 12), scada.Lines);
 
         Assert.Equal(["implicit-parameter = instance-path"], Chips(Row(table, "InstancePath").Attributes));
         Assert.Empty(table.Members.Where(m => m.IsSectionHeading).SelectMany(m => m.Attributes));
@@ -366,9 +368,36 @@ public class StDeclarationTableTests
     {
         var table = StDeclarationTable.Parse(UpdateMeta, "x")!;
 
-        // The doc comment is drawn nowhere; "FUNCTION" stands for the header, whose name is the
-        // title. Everything else is a row, a heading, an attribute or a comment given to a row.
-        Assert.Equal([new UnshownLine(2, "/// Refreshes a block's SCADA Meta identity."), new UnshownLine(3, "FUNCTION")], table.Unshown);
+        // The doc comment is drawn nowhere. The header says nothing the table does not draw (its
+        // name is the title, its kind the table's kind, its type the Return row), so it is framing
+        // rather than unshown. Everything else is a row, a heading, an attribute or a comment
+        // given to a row.
+        Assert.Equal([new UnshownLine(2, "/// Refreshes a block's SCADA Meta identity.")], table.Unshown);
+    }
+
+    /// <summary>
+    /// The framing: the header, the section keywords and blank lines, as spans. What review coverage
+    /// vouches for through the table (docs/web/PLAN.md, C4), and nothing a row or an attribute draws.
+    /// </summary>
+    [Fact]
+    public void The_declarations_own_syntax_and_its_blank_lines_are_framing()
+    {
+        var table = StDeclarationTable.Parse("FUNCTION_BLOCK FB\nVAR_INPUT\n\tx : INT;\n\n\t// doc\n\ty : INT;\nEND_VAR\n// stray\nVAR\nEND_VAR", "x")!;
+
+        // Line 1 the header, 2 VAR_INPUT, 4 blank, 7 END_VAR, 9 VAR, 10 END_VAR (file lines, from 1);
+        // the stray comment is unshown, the rows are drawn.
+        Assert.Equal([new LineSpan(1, 2), new LineSpan(4, 4), new LineSpan(7, 7), new LineSpan(9, 10)], table.Structural);
+        Assert.Equal(["// stray"], table.Unshown.Select(u => u.Text));
+        Assert.Equal(new LineSpan(5, 6), Row(table, "y").Lines);
+
+        // A header that says more (EXTENDS) is unshown, not framing.
+        var extended = StDeclarationTable.Parse("FUNCTION_BLOCK FB EXTENDS Base\nVAR\nEND_VAR", "x")!;
+        Assert.Equal([new LineSpan(2, 3)], extended.Structural);
+        Assert.Equal(["EXTENDS Base"], extended.Unshown.Select(u => u.Text));
+
+        // Shifted with the rows when the declaration is read out of a larger file.
+        Assert.Equal([new LineSpan(10, 11), new LineSpan(13, 13), new LineSpan(16, 16), new LineSpan(18, 19)],
+            StDeclarationTable.Parse("FUNCTION_BLOCK FB\nVAR_INPUT\n\tx : INT;\n\n\t// doc\n\ty : INT;\nEND_VAR\n// stray\nVAR\nEND_VAR", "x", firstLine: 10)!.Structural);
     }
 
     [Fact]
@@ -377,16 +406,22 @@ public class StDeclarationTableTests
         var table = StDeclarationTable.Parse(
             "FUNCTION_BLOCK B EXTENDS A\nVAR_INPUT\n\tx : INT;\nEND_VAR\n// between\n{warning 'check'}\nVAR\n\ty : INT;\nEND_VAR", "x")!;
 
-        Assert.Equal(["FUNCTION_BLOCK EXTENDS A", "// between", "{warning 'check'}"], table.Unshown.Select(u => u.Text).ToList());
+        // The header stands as what it says beyond its keywords: the kind is the table's kind.
+        Assert.Equal(["EXTENDS A", "// between", "{warning 'check'}"], table.Unshown.Select(u => u.Text).ToList());
         Assert.Empty(table.Attributes);
     }
 
     [Fact]
-    public void A_functions_return_type_is_drawn_so_only_its_keywords_stand_for_the_header()
+    public void A_functions_return_type_is_drawn_and_its_keywords_are_framing_so_nothing_stands_for_the_header()
     {
         var table = StDeclarationTable.Parse("METHOD PRIVATE M : BOOL // ok\nVAR_INPUT\n\tx : INT;\nEND_VAR", "x")!;
 
-        Assert.Equal([new UnshownLine(1, "METHOD PRIVATE")], table.Unshown);
+        // Until 2026-10-23 "METHOD PRIVATE" stood in for the line, so a header that gained PUBLIC
+        // warned "1 declaration change is not shown" beside a code block showing every change (the
+        // owner's MoveHome). The keyword is the kind and the modifier is not reported — stated as a
+        // cost on HeaderResidue — and the type with its comment is the Return row.
+        Assert.Empty(table.Unshown);
+        Assert.Equal(new LineSpan(1, 1), Row(table, "M").Lines);
     }
 
     [Fact]
@@ -394,7 +429,7 @@ public class StDeclarationTableTests
     {
         var table = StDeclarationTable.Parse(UpdateMeta, "x", firstLine: 10)!;
 
-        Assert.Equal([11, 12], table.Unshown.Select(u => u.Line).ToList());
+        Assert.Equal([11], table.Unshown.Select(u => u.Line).ToList());
         Assert.Equal(new LineSpan(10, 10), table.Attributes[0].Lines);
         Assert.Equal(new LineSpan(20, 20), Row(table, "Scada").Attributes[0].Lines);
     }

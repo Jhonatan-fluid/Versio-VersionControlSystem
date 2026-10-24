@@ -21,8 +21,9 @@ UX remainder) is built and tested as of 2026-08-25** — UX-6 find boxes, UX-7 `
 Escape, UX-8 copy-a-commit, UX-12 amend-while-unpushed — and its visual half joins the
 eyeball list in item 2. Do not start from `archive/` or a handoff.
 
-**Tests:** 3,900 across twelve projects (plus 135 vitest in `web/`), last counted 2026-10-23
-on `PrReview` — re-derived by summing the table below, which the old total no longer matched; the toolchain-gated
+**Tests:** 3,934 across twelve projects (plus 135 vitest in `web/`), last counted 2026-10-23
+on `VersioWeb` with the coverage-rules branch merged (Core 1,870, CODESYS pure 399, TIA pure 100 after the review-coverage rewrite — FINDINGS
+"the coverage banner on real code") — re-derived by summing the table below; the toolchain-gated
 counts (TIA 5, TwinCAT 6, CODESYS 55) are from their last gate runs, not re-run for the count. **The Rendered view of an ST object reads like the IDE (2026-09-20):** no
 `@@` line, one gutter, a Declaration / Implementation divider, and the implementation
 numbered from 1 so a compile error's line number can be found — FINDINGS 2026-09-20. **With TIA Portal open, a commit no longer records a stale mirror**: the
@@ -61,13 +62,13 @@ marking, duplicate-param keys, and the detail-pane lookup. All of them are in
 
 | Project | Tests | Time | Needs |
 |---|---|---|---|
-| `Versio.Core.Tests` | 1,837 | under a second | nothing |
+| `Versio.Core.Tests` | 1,870 | under a second | nothing |
 | `Versio.Integration.Tests` | 176 | ~10 s | real git |
 | `Versio.App.Tests` | 800 (re-counted 2026-10-23) | 10 m 36 s on 2026-10-23; 12 m 19 s, 10 m 42 s and 9 m 5 s on 2026-10-22; 10 m 46 s on 2026-10-19; 10 m 58 s on 2026-10-16; 6 m 35 s on 2026-10-10; 8 m 38 s on 2026-10-05; ~3.6 min on 2026-09-22 | nothing |
 | `Versio.Arch.Tests` | 36 | instant | nothing |
-| `Versio.Plc.Codesys.Pure.Tests` | 396 | under a second | nothing |
+| `Versio.Plc.Codesys.Pure.Tests` | 399 | under a second | nothing |
 | `Versio.Plc.Codesys.Parity.Tests` | 100 | ~15 s | `python` on PATH — skips cleanly without it, so check the count |
-| `Versio.Plc.TiaPortal.Pure.Tests` | 98 | instant | nothing |
+| `Versio.Plc.TiaPortal.Pure.Tests` | 100 | instant | nothing |
 | `Versio.Plc.TiaPortal.Tests` | 5 | seconds when skipped; minutes when Portal runs the import gate | **real TIA Portal** — skips without Openness membership or LFS content |
 | `Versio.Plc.TwinCat.Pure.Tests` | 23 | instant | nothing |
 | `Versio.Plc.TwinCat.Tests` | 6 | seconds when skipped; ~5 min when XAE runs the import gate | **real TwinCAT XAE** — skips without `TcXaeShell.DTE.17.0` or the fixture |
@@ -451,7 +452,9 @@ One list. Reorder it; do not copy it into another file.
    right after the GraphQL-errors change; three runs after it were green (340/340 each). Still not
    investigated; the resolution-cache race stays the suspect. **A third sighting the same day**,
    once in a full run; four runs after it green (348/348). Three in a day is no longer rare enough to
-   leave: it is the next loose end to take up.
+   leave: it is the next loose end to take up. **A fourth, 2026-10-23**, once in a full Web run on
+   the coverage-rules branch while an integration run shared the machine; alone and in a second full
+   run, green (364/364). Still the resolution-cache suspect, still not investigated.
    **Left, all needing the owner or a deployment:**
    - **register the GitHub App** (on GitHub: read-only Contents and Metadata, a callback at
      `/auth/callback`) and run sign-in against real GitHub; until then the server runs

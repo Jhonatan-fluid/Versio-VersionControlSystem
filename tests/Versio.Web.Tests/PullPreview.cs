@@ -26,6 +26,11 @@ namespace Versio.Web.Tests;
 /// %TEMP%/versio-web-pull-preview-sessions.txt: the pull request's author, and a reviewer who can
 /// approve (GitHub never lets an author approve their own). It serves on port 5199 for an hour.
 /// </para>
+/// <para>
+/// VERSIO_WEB_PREVIEW_PORT moves it to another port, and the sessions file then carries the port in
+/// its name, so a second preview (a worktree checking a change against the same dump while the owner's
+/// own preview holds 5199, 2026-10-23) neither fails to bind nor overwrites the owner's session ids.
+/// </para>
 /// </remarks>
 public sealed class PullPreview
 {
@@ -134,9 +139,10 @@ public sealed class PullPreview
         repo.Threads[number] = new ReviewThreadList(threads, false);
         github.PreviewGraphWithoutToken = true;
 
+        var port = Environment.GetEnvironmentVariable("VERSIO_WEB_PREVIEW_PORT") is { Length: > 0 } chosen ? chosen : "5199";
         var settings = new Dictionary<string, string?>
         {
-            ["urls"] = "http://127.0.0.1:5199",
+            ["urls"] = "http://127.0.0.1:" + port,
             ["Web:Repositories:0"] = $"{owner}/{name}",
             ["Web:Writes:Enabled"] = "true",
             ["Web:Writes:Repositories:0"] = $"{owner}/{name}",
@@ -152,7 +158,7 @@ public sealed class PullPreview
         var asAuthor = await sessions.CreateAsync(11, author, author, "", "author-token", DateTimeOffset.UtcNow.AddHours(8), null, DateTimeOffset.UtcNow.AddMonths(1));
         var asReviewer = await sessions.CreateAsync(12, ReviewerLogin, ReviewerLogin, "", "reviewer-token", DateTimeOffset.UtcNow.AddHours(8), null, DateTimeOffset.UtcNow.AddMonths(1));
         repo.PullAuthorToken[number] = "author-token";
-        await File.WriteAllTextAsync(Path.Combine(Path.GetTempPath(), "versio-web-pull-preview-sessions.txt"),
+        await File.WriteAllTextAsync(Path.Combine(Path.GetTempPath(), port == "5199" ? "versio-web-pull-preview-sessions.txt" : $"versio-web-pull-preview-sessions-{port}.txt"),
             $"author {asAuthor.Id}\nreviewer {asReviewer.Id}\n");
 
         await Task.Delay(TimeSpan.FromHours(1));

@@ -100,10 +100,17 @@ public static class SafeXml
     /// <see cref="LoadOptions.SetLineInfo"/>; null otherwise.
     /// </summary>
     /// <remarks>
-    /// From the element's own start to the last line any descendant starts on: a reader reports
-    /// where elements begin, not where they close, so a closing tag on a line of its own is left
-    /// out. Close enough for what it is used for, pinning a review comment to the element's lines;
-    /// a closing tag is never what changed.
+    /// <para>
+    /// From the element's own start to the last line any descendant starts on, or any descendant's
+    /// text runs to: a reader reports where elements begin, not where they close, so a closing
+    /// tag on a line of its own is left out. Close enough for what it is used for, pinning a review
+    /// comment to the element's lines; a closing tag is never what changed.
+    /// </para>
+    /// <para>
+    /// Text counts since 2026-10-23: a CODESYS declaration is one text node holding thirty lines
+    /// of Structured Text, and a span that ended on its first line left the other twenty-nine
+    /// outside the element for review coverage, which then took them for framing between rows.
+    /// </para>
     /// </remarks>
     public static LineSpan? LinesOf(XElement element, int offset = 0)
     {
@@ -116,9 +123,10 @@ public static class SafeXml
         var end = self.LineNumber;
         foreach (var node in element.DescendantNodes())
         {
-            if (node is IXmlLineInfo info && info.HasLineInfo() && info.LineNumber > end)
+            if (node is IXmlLineInfo info && info.HasLineInfo())
             {
-                end = info.LineNumber;
+                var last = info.LineNumber + (node is XText text ? text.Value.Count(c => c == '\n') : 0);
+                end = Math.Max(end, last);
             }
         }
 

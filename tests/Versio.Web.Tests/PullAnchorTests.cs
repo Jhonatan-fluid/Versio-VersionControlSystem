@@ -340,11 +340,16 @@ public sealed partial class PullAnchorTests
         await using var _ = host;
 
         var cold = (await View(host, token, alice, renamed)).GetProperty("view").GetProperty("html").GetString()!;
-        var told = (await View(host, token, alice, renamed, from: Struct)).GetProperty("view").GetProperty("html").GetString()!;
+        var toldView = await View(host, token, alice, renamed, from: Struct);
+        var told = toldView.GetProperty("view").GetProperty("html").GetString()!;
 
         Assert.DoesNotContain("data-change=\"none\"", cold, StringComparison.Ordinal);
         Assert.Contains("data-change=\"none\"", told, StringComparison.Ordinal);
         Assert.Contains("data-change=\"modified\"", told, StringComparison.Ordinal);
+        // Coverage reads the older text from the old path too (C4): the one changed line is vouched
+        // for by the row drawn modified against it, and nothing is listed as unshown.
+        Assert.Equal("complete", toldView.GetProperty("coverage").GetString());
+        Assert.Empty(toldView.GetProperty("gaps").EnumerateArray());
     }
     // ---- coverage (C4) ---------------------------------------------------------------------------
 
