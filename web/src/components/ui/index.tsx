@@ -268,4 +268,5 @@ export function Box({ header, children, className }: { header?: ReactNode; child
 }
 
 export { Icon };
+export { VersioMark } from './VersioMark';
 export type { IconName };

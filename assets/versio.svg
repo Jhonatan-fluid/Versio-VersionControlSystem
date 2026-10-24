@@ -21,16 +21,22 @@
   geometry per size and uses a simplified variant below 48 px - at 16 px a
   14-unit plate is three and a half pixels, and the join turns to mush.
 
-  THREE PLACES CARRY THIS GEOMETRY. Change one, change all three:
+  FOUR PLACES CARRY THIS GEOMETRY. Change one, change all four:
 
       assets/versio.svg                        this reference drawing
       tools/New-VersioIcon.ps1                 redraws it per icon size
       src/Versio.App/Theme/controls/Brand.xaml  the mark in the top bar, at 20 px
+      web/src/components/ui/VersioMark.tsx     the web page's header, at 32 px, in the
+                                               page's theme tokens (VersioMark.test.tsx
+                                               holds it to this file's numbers)
 
-  Brand.xaml drops the tile and punches the badge notch in Surface.Base instead:
+  web/public/versio.svg is this file byte for byte - the page's favicon - and the same
+  test checks that too, so it is a copy to refresh, not a fifth drawing.
+
+  Brand.xaml and VersioMark.tsx drop the tile and punch the badge notch in the surface instead:
   inside a bar that is already that colour, the tile would be an invisible square
   with a visible edge. Run the script and look at the 16 px output, and open the
-  app and look at the top bar, before believing a change to any of the three.
+  app and look at the top bar, before believing a change to any of the four.
 -->
 <svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 64 64"
      role="img" aria-label="Versio">

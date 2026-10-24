@@ -1,4 +1,5 @@
-/* The page around the fragments, drawn in github.com's grammar (docs/web/FINISH.md, E). The
+/* The page around the fragments, drawn in github.com's grammar (docs/web/FINISH.md, E) and
+   Versio's colours (tokens.css is the desktop palette under Primer's names, 2026-10-24). The
    fragments' own look is CodePageAssets.Css and LadderPageAssets.Css from Versio.Core, linked
    in index.html; nothing here restyles them beyond fitting them in and pointing their colour
    variables at the page's tokens (tokens.css).

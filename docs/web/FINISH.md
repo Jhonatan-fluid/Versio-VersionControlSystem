@@ -438,9 +438,16 @@ Also from the map:
 - **Theme**: no generator, no pinning test (the palette header names a `ThemeTokenTests` that does
   not exist); `CodePageAssets.cs` base colours differ from the desktop palette (added `#1a7f37` vs
   `#1A7F45`, accent `#0969da` vs `#2563EB`…); ladder CSS defaults are GitHub-ish and the desktop
-  overrides them at runtime; dark follows the OS only. **Decision for this plan:** the web adopts
+  overrides them at runtime; dark follows the OS only. ~~**Decision for this plan:** the web adopts
   GitHub's palette (the owner's ask) and the *code/ladder/table* CSS stays the shared Core one with
-  GitHub-matching light/dark values; the desktop keeps mapping its own palette onto the same tokens.
+  GitHub-matching light/dark values; the desktop keeps mapping its own palette onto the same tokens.~~
+  **Reversed 2026-10-24, on the owner's first look at the finished shape:** GitHub's layout and
+  components, *Versio's* icon, colours and style. `tokens.css` keeps Primer's names and takes the
+  desktop palette's values (`Palette.Light/Dark.xaml`), pinned colour for colour by `tokens.test.ts`;
+  the primary button is the accent blue as the desktop's `AccentButton` is; the header draws
+  `VersioMark` (the reference drawing without its tile, as `Brand.xaml` does) and the favicon is
+  `assets/versio.svg` itself. The Core CSS defaults are still GitHub-ish, and both hosts still map
+  their palette over them at runtime — the generator and the shared defaults remain open.
 - **Vendor-name leaks** in the web: none in executable code; four comments name CODESYS / TIA
   (`RepoModel.cs:335`, `ViewService.cs:159,311,823`, `GitHubRepoSource.cs:134`) — reword.
 
@@ -485,10 +492,12 @@ Also from the map:
   footer.~~ Step 1, 2026-10-23: `AppHeader`, `RepoLayout`, `tokens.css`, the `ui/` components, Octicons; no search box and no footer yet.
 - **Typography**: GitHub's stacks and sizes (`-apple-system, "Segoe UI", "Noto Sans"…`, 14px/1.5;
   PR title ~32px; `ui-monospace` 12px in diffs). Today `app.css:23-24,47,117`.
-- **Tokens**: adopt Primer's full token set (canvas, canvas-subtle, border-muted, fg-muted,
+- ~~**Tokens**: adopt Primer's full token set (canvas, canvas-subtle, border-muted, fg-muted,
   accent, success, attention, severe, danger, done, diff add/del backgrounds and word emphasis,
   focus ring) in light and dark, with a theme switch (`data-color-mode`) rather than only
-  `prefers-color-scheme`. Fix dark-mode state pills (dark text on saturated fills, `app.css:253-256`).
+  `prefers-color-scheme`. Fix dark-mode state pills (dark text on saturated fills, `app.css:253-256`).~~
+  Step 1 took Primer's names *and values*; on 2026-10-24 the values became the desktop palette's
+  (D, *Theme*), the names stayed, and the octocat in the header became the Versio mark.
 - **Components**: Octicons; buttons (primary green, default, danger, invisible, split with caret,
   button groups); counters (filled); filled labels with contrast text; state badges with icons;
   avatars and stacks; timeline with icon badges; comment cards; select menus / popovers with search;

@@ -21,10 +21,12 @@ export default defineConfig({
     modulePreload: { polyfill: false },
   },
   server: {
-    // The page's own folder, plus the folder of the one C# file whose script ladderScript.test.ts
-    // runs as written, so the test cannot drift from what the server serves. Vite refused the file
-    // named alone; one folder of Core, not the repository.
-    fs: { allow: ['.', '../src/Versio.Core/Iec/Ladder'] },
+    // The page's own folder, plus the folders of the files tests read as written so they cannot
+    // drift from the source: the one C# file whose script ladderScript.test.ts runs, the icon's
+    // reference drawing VersioMark.test.tsx holds the header's mark to, and the desktop palette
+    // tokens.test.ts holds the page's colours to. Vite refused a file named alone; folders, and
+    // never the repository.
+    fs: { allow: ['.', '../src/Versio.Core/Iec/Ladder', '../assets', '../src/Versio.App/Theme/tokens'] },
     proxy: {
       '/api': api,
       '/auth': api,

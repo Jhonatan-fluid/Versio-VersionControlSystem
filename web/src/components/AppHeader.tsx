@@ -4,7 +4,7 @@ import type { Me } from '../api';
 import { api } from '../api';
 import { repoUrl } from '../routes';
 import { applyColorMode, readColorMode, type ColorMode } from '../theme';
-import { Avatar, Icon, LinkButton } from './ui';
+import { Avatar, Icon, LinkButton, VersioMark } from './ui';
 
 interface Props {
   me: Me | null;
@@ -15,7 +15,9 @@ interface Props {
 }
 
 /**
- * GitHub's global header: the mark, the breadcrumb, and on the right the person — their
+ * GitHub's global header, with Versio's mark where GitHub's would be: the octocat sat here
+ * until the owner's first look (2026-10-24) — the page is shaped like github.com, and the
+ * one thing that must say it is not github.com is the brand. Then the breadcrumb, and on the right the person — their
  * picture opening a menu with the theme and sign-out — or the way in. The branch picker that
  * used to live here belongs to the Code view and nowhere else; a pull request page with a
  * `main` picker in its header was one of the owner's findings (docs/web/FINISH.md, A12).
@@ -26,7 +28,7 @@ export function AppHeader({ me, repo, crumb }: Props) {
     <header className="app-header">
       <div className="app-header-inner">
         <Link to="/" className="app-header-mark" aria-label="Versio home">
-          <Icon name="mark-github" size={32} />
+          <VersioMark size={32} />
         </Link>
         <nav className="app-header-crumbs" aria-label="Where you are">
           {repo ? (

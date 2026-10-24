@@ -339,8 +339,9 @@ One list. Reorder it; do not copy it into another file.
    - the owner's eyeball of the drawing (right rail?) and of the row.
 10. **Versio Web, a browser view of a repository on GitHub, read-only at first and a pull request reviewer since slice 2 — built 2026-10-11 on
    `WebViewer`, since merged.** **[`web/FINISH.md`](web/FINISH.md) is the queue, and its Steps 0–10
-   landed between 2026-10-23 and 2026-10-24 on `VersioWeb`:** GitHub's look and feel in place of
-   the desktop shell, the pull request page at parity (comments everywhere, landing on the right
+   landed between 2026-10-23 and 2026-10-24 on `VersioWeb`:** GitHub's shape in place of the
+   desktop shell (with Versio's mark and palette, not GitHub's, since the owner's first look on
+   2026-10-24 — `tokens.css` is the desktop palette, `VersioMark` the header), the pull request page at parity (comments everywhere, landing on the right
    GitHub line; checks with their annotations; the merge box; the lists and the form; commit
    comments), every desktop drawing for every vendor through Core's one renderer choice, links that
    stay in context and reveal their target, "used by", and the operations work (audit lines on every

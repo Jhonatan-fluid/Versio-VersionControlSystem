@@ -5,9 +5,9 @@
     assets/versio.svg, two plates and an agreement disc - existed and appeared nowhere a user
     could see it. This is that drawing, at 20 px, in the app's own colours.
 
-    THREE PLACES CARRY THIS GEOMETRY, and the header of assets/versio.svg says so: the SVG
-    reference drawing, tools/New-VersioIcon.ps1 which redraws it per icon size, and here.
-    Change one, change all three.
+    FOUR PLACES CARRY THIS GEOMETRY, and the header of assets/versio.svg says so: the SVG
+    reference drawing, tools/New-VersioIcon.ps1 which redraws it per icon size, the web
+    page's VersioMark.tsx, and here. Change one, change all four.
 
     Two departures from the SVG, both deliberate:
 
