@@ -27,6 +27,11 @@
     <!-- Referencing the WinExe is deliberate and supported: the dialogs under test are its
          types, and duplicating them anywhere else would test a copy. -->
     <ProjectReference Include="..\..\src\Versio.App\Versio.App.csproj" />
+
+    <!-- The web viewer and its fake GitHub, for the one test that runs BOTH hosts over every
+         fixture object and asserts they chose the same drawing (RenderChoiceParityTests). The
+         choice is Core's; this is the test that proves both hosts ask it. -->
+    <ProjectReference Include="..\Versio.Web.Tests\Versio.Web.Tests.csproj" />
   </ItemGroup>
 
 </Project>

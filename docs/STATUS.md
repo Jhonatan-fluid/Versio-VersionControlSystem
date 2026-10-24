@@ -64,7 +64,7 @@ marking, duplicate-param keys, and the detail-pane lookup. All of them are in
 |---|---|---|---|
 | `Versio.Core.Tests` | 1,870 | under a second | nothing |
 | `Versio.Integration.Tests` | 176 | ~10 s | real git |
-| `Versio.App.Tests` | 800 (re-counted 2026-10-23) | 10 m 36 s on 2026-10-23; 12 m 19 s, 10 m 42 s and 9 m 5 s on 2026-10-22; 10 m 46 s on 2026-10-19; 10 m 58 s on 2026-10-16; 6 m 35 s on 2026-10-10; 8 m 38 s on 2026-10-05; ~3.6 min on 2026-09-22 | nothing |
+| `Versio.App.Tests` | 801 (re-counted 2026-10-23) | 10 m 45 s (loaded: mutation checks ran beside it) and 10 m 36 s on 2026-10-23; 12 m 19 s, 10 m 42 s and 9 m 5 s on 2026-10-22; 10 m 46 s on 2026-10-19; 10 m 58 s on 2026-10-16; 6 m 35 s on 2026-10-10; 8 m 38 s on 2026-10-05; ~3.6 min on 2026-09-22 | nothing |
 | `Versio.Arch.Tests` | 36 | instant | nothing |
 | `Versio.Plc.Codesys.Pure.Tests` | 399 | under a second | nothing |
 | `Versio.Plc.Codesys.Parity.Tests` | 100 | ~15 s | `python` on PATH — skips cleanly without it, so check the count |
@@ -469,8 +469,17 @@ One list. Reorder it; do not copy it into another file.
      ~~and at the Docs tab's embedded PDF~~ — **seen drawing in the owner's Chrome 2026-10-16**,
      after its first look found the viewer's own frame lock blocking it (FINDINGS 2026-10-16);
    - the external penetration test and a cost alarm, once it is deployed;
-   - later, on purpose: the desktop drawing with the shared HTML renderers, and the choice of
-     renderer moved into Core for both (today mirrored, pinned by a test).
+   - later, on purpose: the desktop drawing with the shared HTML renderers; ~~and the choice of
+     renderer moved into Core for both (today mirrored, pinned by a test)~~ — **moved 2026-10-23**.
+   **2026-10-23: the choice of what a row draws is Core's** (`RenderChoice.Decide`), called by
+   the desktop pane and by `ViewService`, after the owner's FBS library pull request drew its
+   catalogs and empty objects as raw metadata on the web (FINDINGS 2026-10-23): the web now draws
+   the project card, the three catalogs (Versio's YAML and the vendor's own files), the task and
+   device cards, the empty-object note in a pull request, the whole file under a table whose
+   format knows no body, a `.html` as `kind: "webpage"` served sandboxed by `/raw`, and a notice
+   over any native file no model draws. `RenderChoiceParityTests` runs both hosts over every
+   fixture row; `/tree` nodes carry the desktop's row whole. The page's side (framing the web
+   page, drawing the new kinds and the tree fields) is the `web/` rebuild's.
 7. **Wait for a specimen, not a build.** C5 (`DELETE_UNREADABLE`) and `native_partial` close when
    reality produces an object nobody has observed. They cannot be manufactured. See
    [`phase1/IMPORT-PLAN.md`](phase1/IMPORT-PLAN.md).

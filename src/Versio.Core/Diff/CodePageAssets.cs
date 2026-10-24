@@ -132,6 +132,37 @@ public static class CodePageAssets
         .mt-link { color: var(--cd-accent); cursor: pointer; text-decoration: underline; }
         .mt-row:hover { outline: 1px solid var(--cd-border); }
         .mt-type, .mt-value, .mt-access, .mt-comment, .mt-name { white-space: pre-wrap; }
+        .ct-page { color: var(--cd-fg); font: 13px var(--cd-ui); }
+        .ct-head { display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: baseline; }
+        .ct-title { font: 600 15px var(--cd-ui); }
+        .ct-note { color: var(--cd-muted); margin: 2px 0 8px; font-size: 12px; }
+        .ct-summary { margin: 0 0 8px; }
+        .ct-table { border-collapse: collapse; width: 100%; font: 13px/20px var(--cd-mono); }
+        .ct-table th { text-align: left; font: 600 11px var(--cd-ui); color: var(--cd-muted);
+          padding: 2px 8px; border-bottom: 1px solid var(--cd-border); }
+        .ct-table td { padding: 1px 8px; vertical-align: top; }
+        .ct-mark { width: 16px; text-align: center; font-weight: 600; }
+        .ct-section td { padding-top: 10px; font: 600 11px var(--cd-ui); color: var(--cd-muted);
+          text-transform: uppercase; }
+        .ct-added { background: var(--cd-added-bg); }
+        .ct-added .ct-mark { color: var(--cd-added); }
+        .ct-removed { background: var(--cd-removed-bg); }
+        .ct-removed .ct-mark { color: var(--cd-removed); }
+        .ct-removed td:not(.ct-mark) { text-decoration: line-through; }
+        .ct-modified .ct-mark { color: var(--cd-hidden); }
+        .ct-was { color: var(--cd-removed); }
+        .ct-now { color: var(--cd-added); text-decoration: none; }
+        .ct-row:hover { outline: 1px solid var(--cd-border); }
+        .ct-slot .ct-name, .ct-slot .ct-cell { color: var(--cd-muted); }
+        .ct-name, .ct-cell { white-space: pre-wrap; }
+        .pc-page { color: var(--cd-fg); font: 13px var(--cd-ui); }
+        .pc-title { font: 600 15px var(--cd-ui); margin: 0 0 8px; }
+        .pc-facts { border-collapse: collapse; }
+        .pc-facts th { text-align: left; font: 600 11px var(--cd-ui); color: var(--cd-muted);
+          padding: 2px 16px 2px 0; vertical-align: top; white-space: nowrap; }
+        .pc-fact { vertical-align: top; }
+        .pc-value { padding: 2px 0; white-space: pre-wrap; }
+        .pc-label { text-transform: uppercase; }
         .cd-confusable { text-decoration: underline wavy var(--cd-hidden); text-underline-offset: 3px;
           background: var(--cd-hidden-bg); border-radius: 3px; }
         .cd-t-keyword { color: var(--cd-t-keyword); }

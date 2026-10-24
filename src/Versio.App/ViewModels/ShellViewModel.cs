@@ -3094,14 +3094,13 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
     /// <summary>
     /// The absolute path of an HTML file that exists, or null. Only <c>.html</c> and
     /// <c>.htm</c>: an <c>.svg</c> or <c>.xml</c> would also load in a browser, but nobody
-    /// asked to "view an XML file as a web page", and every extension added here is another
-    /// kind of repository content the app will hand to a browser engine.
+    /// asked to "view an XML file as a web page", and every extension added there is another
+    /// kind of repository content the app will hand to a browser engine. The list is Core's
+    /// (<see cref="RenderChoice.IsWebPage"/>), the same one the web viewer frames by.
     /// </summary>
     private string? WebPageFor(string? relative)
     {
-        if (relative is null || RepositoryPath is not { } root
-            || !(relative.EndsWith(".html", StringComparison.OrdinalIgnoreCase)
-                 || relative.EndsWith(".htm", StringComparison.OrdinalIgnoreCase)))
+        if (relative is null || RepositoryPath is not { } root || !RenderChoice.IsWebPage(relative))
         {
             return null;
         }
@@ -7037,12 +7036,6 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
     /// </remarks>
     private sealed record CatalogSource(IReadOnlyList<string> Files, Func<IReadOnlyList<string>, object?> ParseHead);
 
-    /// <summary>A Versio YAML catalog, read back by the reader its suffix names.</summary>
-    private static CatalogSource YamlSource(string file) => new([file], heads =>
-        file.EndsWith(LibraryCatalog.FileSuffix, StringComparison.OrdinalIgnoreCase) ? LibraryCatalog.Parse(heads[0])
-        : file.EndsWith(TaskCatalog.FileSuffix, StringComparison.OrdinalIgnoreCase) ? TaskCatalog.Parse(heads[0])
-        : DeviceCatalog.Parse(heads[0]));
-
     /// <summary>
     /// Counts builds of the rendered half. A late git read compares it with the count it started
     /// under and drops its result when they differ: by then somebody else's block is on screen.
@@ -7457,12 +7450,39 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         RenderedContent = marked;
     }
 
+    /// <summary>
+    /// The choice behind <see cref="RenderedContent"/>: what Core decided this row draws, before
+    /// this host drew it. Read by <c>RenderChoiceParityTests</c>, which runs the web viewer over the
+    /// same rows and asserts the same answer.
+    /// </summary>
+    public RenderChoice? RenderedChoice { get; private set; }
+
+    /// <summary>
+    /// The rendered half of a row: Core decides what is drawn (<see cref="RenderChoice.Decide"/>),
+    /// this draws it with the pane's records.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The decision used to be a switch in here, mirrored by hand in the web viewer's
+    /// <c>ViewService</c>, and the two drifted until the owner compared them on a real pull
+    /// request (FINDINGS 2026-10-23). Every arm's reasoning moved to <see cref="RenderChoice"/>
+    /// with it; what stays here is the host's half — reading the disk, the records the XAML
+    /// templates bind to, and the sources the marking reads HEAD through.
+    /// </para>
+    /// <para>
+    /// Deleting the member-table arm returns <see cref="SourceRender"/> for a data block and
+    /// <c>MemberTablePaneFlowTests</c> goes red; the ladder arm, <c>LadderPaneFlowTests</c>; the
+    /// empty-object arm, <c>EmptyObjectPaneFlowTests</c>; the Markdown arm,
+    /// <c>MarkdownPaneFlowTests</c>; the device arm, <c>DeviceTreeFlowTests</c>.
+    /// </para>
+    /// </remarks>
     private object? BuildRenderedContent(TreeRow row)
     {
         _tableSource = null;
         _ladderSource = null;
         _catalogSource = null;
         _renderGeneration++;
+        RenderedChoice = null;
 
         if (RepositoryPath is not { } root)
         {
@@ -7470,9 +7490,6 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         }
 
         var node = row.Node;
-
-        string? CatalogFile(string suffix) => node.Files.FirstOrDefault(
-            f => f.EndsWith(suffix, StringComparison.OrdinalIgnoreCase));
 
         string Absolute(string relative) =>
             Path.Combine(root, relative.Replace('/', Path.DirectorySeparatorChar));
@@ -7490,15 +7507,16 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
             }
         }
 
+        var choice = RenderChoice.Decide(node, ReadOrNull, row.PrimaryFile);
+        RenderedChoice = choice;
+
+        // The committed copy of a catalog is read by the reader that read the working one.
+        CatalogSource Catalog() => new(choice.Files, heads => choice.Reparse!(heads));
+
         // A ladder block, drawn. Unchanged, it is complete at once; changed, it waits for the
         // committed copy (MarkChangesAsync) rather than claiming "no changes" in the meantime.
-        LadderRender? LadderFor(IPlcProjectFormat format, string file, string text)
+        LadderRender Ladder(IPlcProjectFormat format, string file, LadderDocument document)
         {
-            if (format.TryParseLadder(file, text) is not { } document)
-            {
-                return null;
-            }
-
             var pending = node.Status != ChangeKind.Unmodified;
             _ladderSource = (format, file, document, pending);
             var comparison = LadderDiff.Compare(document.Body, document.Body);
@@ -7510,192 +7528,74 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
             return new LadderRender { Path = file, Comparison = comparison, Style = document.Style, Pending = pending };
         }
 
-        switch (node.Kind)
+        switch (choice.Kind)
         {
-            case ProjectNodeKind.Project:
+            case RenderKind.ProjectCard:
                 return BuildProjectSummary(node);
 
-            // A reference or task row renders its whole catalog: the row's own facts are in
-            // the table, highlighted by being the thing the user just clicked at.
-            case ProjectNodeKind.Library
-                when CatalogFile(LibraryCatalog.FileSuffix) is { } yaml
-                     && ReadOrNull(yaml) is { } text
-                     && LibraryCatalog.Parse(text) is { IsValid: true } catalog:
-                _catalogSource = YamlSource(yaml);
-                return catalog;
+            case RenderKind.LibraryCatalog or RenderKind.TaskCatalog or RenderKind.DeviceCatalog:
+                _catalogSource = Catalog();
+                return choice.Model;
 
-            case ProjectNodeKind.Task
-                when CatalogFile(TaskCatalog.FileSuffix) is { } yaml
-                     && ReadOrNull(yaml) is { } text
-                     && TaskCatalog.Parse(text).Tasks.FirstOrDefault(
-                            t => t.Name == node.Name) is { } task:
-                return new TaskDetailRender { Task = task };
+            case RenderKind.TaskCard:
+                return new TaskDetailRender { Task = (TaskRecord)choice.Model! };
 
-            case ProjectNodeKind.Device
-                when CatalogFile(DeviceCatalog.FileSuffix) is { } deviceYaml
-                     && ReadOrNull(deviceYaml) is { } deviceText
-                     && DeviceCatalog.Parse(deviceText) is { IsValid: true } deviceCatalog:
-                return DeviceDetail(deviceCatalog, node);
+            case RenderKind.DeviceCard:
+                return DeviceDetail((DeviceCatalog)choice.Model!, node);
 
-            case ProjectNodeKind.Object or ProjectNodeKind.File:
-                if (CatalogFile(LibraryCatalog.FileSuffix) is { } libraries
-                    && ReadOrNull(libraries) is { } libText
-                    && LibraryCatalog.Parse(libText) is { IsValid: true } libCatalog)
+            case RenderKind.MemberTable:
+            {
+                var table = LinkTypes((MemberTable)choice.Model!, choice.File!);
+                _tableSource = (choice.Format!, choice.File!);
+
+                // A ladder block's code is a diagram, not text: drawn under its table the way the
+                // IDE shows the interface above the networks.
+                if (choice.Code == CodeUnder.Ladder)
                 {
-                    _catalogSource = YamlSource(libraries);
-                    return libCatalog;
+                    return new InterfaceRender { Table = table, Ladder = Ladder(choice.Format!, choice.CodeFile!, choice.CodeLadder!) };
                 }
 
-                if (CatalogFile(TaskCatalog.FileSuffix) is { } tasks
-                    && ReadOrNull(tasks) is { } taskText
-                    && TaskCatalog.Parse(taskText) is { IsValid: true } taskCatalog)
+                // A code block is its interface AND its code. The table alone would take the code
+                // out of the Rendered tab it was always in, so the source rides underneath it.
+                if (choice.Code is CodeUnder.Body or CodeUnder.WholeFile
+                    && SourceRender.Load(Absolute(choice.CodeFile!), choice.CodeFile!,
+                           noChanges: node.Status == ChangeKind.Unmodified) is { } codeView
+                    && !codeView.PseudoDiff.Contains('\0'))
                 {
-                    _catalogSource = YamlSource(tasks);
-                    return taskCatalog;
-                }
-
-                if (CatalogFile(DeviceCatalog.FileSuffix) is { } devices
-                    && ReadOrNull(devices) is { } devicesText
-                    && DeviceCatalog.Parse(devicesText) is { IsValid: true } devicesCatalog)
-                {
-                    _catalogSource = YamlSource(devices);
-                    return devicesCatalog;
-                }
-
-                // A vendor's own files for the same three things: a source project has no
-                // Versio YAML, and before this its library manager, devices and tasks drew as
-                // raw source (the owner, 2026-10-10). The committed copy is read by the same
-                // format, so the marks compare like with like.
-                if (VendorCatalog(node) is { } vendorCatalog)
-                {
-                    return vendorCatalog;
-                }
-
-                // Every registered format, every layer of this object. The readable
-                // sibling is often the primary file; the table lives in a native one
-                // beside it. Asking PrimaryFile alone would highlight that text and
-                // never offer the table. The format that does not understand the
-                // bytes returns null and costs a suffix check.
-                //
-                // Deleting this loop returns SourceRender for a data block and
-                // MemberTablePaneFlowTests goes red — the same class of silent-green
-                // as a dropped subscription.
-                foreach (var format in PlcFormats.All)
-                {
-                    foreach (var file in node.Files)
+                    // Only the body: the declaration above it is the table, and the BEGIN / END_
+                    // marks around it say nothing a reader needs. Core strips its shared indent
+                    // and numbers it from 1 (owner, 2026-10-05). Raw keeps the file.
+                    if (choice.Body is { } body && ReadOrNull(choice.CodeFile!) is { } codeText)
                     {
-                        if (ReadOrNull(file) is { } text
-                            && format.TryParseMemberTable(file, text) is { IsValid: true } parsed
-                            // A table with nothing in it is a husk, not an interface: a
-                            // parameterless method tabled column headers over a blank
-                            // (seen on a real library, 2026-10-14) where its code should
-                            // be. Falling through draws the source with its sections,
-                            // which is what a type with no members has always got. The
-                            // cost is the rare block whose members were ALL deleted: its
-                            // struck rows live in Raw rather than a rendered table.
-                            // Section headings do not count — Members carries them as
-                            // rows, and a heading over nothing is the same husk.
-                            //
-                            // EXCEPT a code block's interface, since 2026-10-23: the owner
-                            // wants a POU with no variables (FsLibrary's Main, VAR END_VAR)
-                            // drawn as every other POU is, an empty table over its code. The
-                            // husk's harm was the table standing where the code should be,
-                            // and an interface now always carries its code underneath, so
-                            // that harm cannot recur. Types and variable lists keep the rule.
-                            && (parsed.IsInterface || parsed.Members.Any(m => !m.IsSectionHeading)))
-                        {
-                            var table = LinkTypes(parsed, file);
-                            _tableSource = (format, file);
-
-                            // A ladder block's code is a diagram, not text: drawn under its
-                            // table the way the IDE shows the interface above the networks.
-                            if (table.IsInterface
-                                && row.PrimaryFile is { } ladderFile
-                                && ReadOrNull(ladderFile) is { } ladderText
-                                && LadderFor(format, ladderFile, ladderText) is { } drawn)
-                            {
-                                return new InterfaceRender { Table = table, Ladder = drawn };
-                            }
-
-                            // A code block is its interface AND its code. The table alone
-                            // would take the code out of the Rendered tab it was always in,
-                            // so the source rides underneath it.
-                            if (table.IsInterface
-                                && row.PrimaryFile is { } code
-                                && SourceRender.Load(Absolute(code), code,
-                                       noChanges: node.Status == ChangeKind.Unmodified) is { } codeView
-                                && !codeView.PseudoDiff.Contains('\0'))
-                            {
-                                // Only the body: the declaration above it is the table, and the
-                                // BEGIN / END_ marks around it say nothing a reader needs. The
-                                // format says where the body is; Core strips its shared indent and
-                                // numbers it from 1 (owner, 2026-10-05). Raw keeps the file.
-                                if (ReadOrNull(code) is { } codeText
-                                    && format.CodeBody(code, codeText) is { } body)
-                                {
-                                    codeView = codeView with
-                                    {
-                                        Rows = Versio.Core.Iec.StSourceLayout.Body(codeText, body.Start, body.End),
-                                    };
-                                }
-
-                                return new InterfaceRender { Table = table, Source = codeView };
-                            }
-
-                            return table;
-                        }
+                        codeView = codeView with { Rows = Versio.Core.Iec.StSourceLayout.Body(codeText, body.Start, body.End) };
                     }
+
+                    return new InterfaceRender { Table = table, Source = codeView };
                 }
 
-                // A ladder block with no table above it (an organisation block has no interface
-                // the table draws): the networks alone. Every format, every layer, as for the
-                // table, and before the source layout, which would otherwise highlight the
-                // vendor's XML. Deleting this loop turns LadderPaneFlowTests red.
-                foreach (var format in PlcFormats.All)
-                {
-                    foreach (var file in node.Files)
-                    {
-                        if (ReadOrNull(file) is { } text && LadderFor(format, file, text) is { } ladder)
-                        {
-                            return ladder;
-                        }
-                    }
-                }
+                return table;
+            }
 
-                // An object with nothing in its own file (a CODESYS Communication Manager, Plc
-                // Logic): the note says so, where one line of archive XML read as a view that had
-                // failed (owner, 2026-10-23). The same wording the web viewer draws, from Core.
-                // Raw keeps the file. Deleting this arm turns EmptyObjectPaneFlowTests red.
-                if (row.PrimaryFile is { } emptyPath
-                    && ReadOrNull(emptyPath) is { } emptyText
-                    && PlcFormats.All.Any(f => f.HoldsNoSettings(emptyPath, emptyText)))
-                {
-                    return MarkdownRender.From(emptyPath, Versio.Core.Projects.EmptyObjectNote.For(hasChildren: node.Children.Count > 0));
-                }
+            case RenderKind.Ladder:
+                return Ladder(choice.Format!, choice.File!, (LadderDocument)choice.Model!);
 
-                // Markdown before the source layout, which would otherwise take it: an ST
-                // layout of a document is the raw text with line numbers, which is what Raw
-                // already shows. Deleting this arm turns MarkdownPaneFlowTests red.
-                if (row.PrimaryFile is { } markdownPath
-                    && MarkdownRender.Handles(markdownPath)
-                    && ReadOrNull(markdownPath) is { } markdownText
-                    && !markdownText.Contains('\0'))
-                {
-                    return MarkdownRender.From(markdownPath, markdownText);
-                }
+            // The same wording the web viewer draws, from Core. Raw keeps the file.
+            case RenderKind.EmptyObject:
+                return MarkdownRender.From(choice.File!, Versio.Core.Projects.EmptyObjectNote.For(hasChildren: node.Children.Count > 0)) with { IsNote = true };
 
-                if (row.PrimaryFile is { } primary
-                    && SourceRender.Load(Absolute(primary), primary,
+            case RenderKind.Markdown when ReadOrNull(choice.File!) is { } markdownText:
+                return MarkdownRender.From(choice.File!, markdownText);
+
+            // A web page's Rendered tab is its markup as source; the page itself is the third
+            // chip (WebPagePath, set by ShowNode from the same primary file).
+            case RenderKind.WebPage or RenderKind.Source:
+                return SourceRender.Load(Absolute(choice.File!), choice.File!,
                            noChanges: node.Status == ChangeKind.Unmodified) is { } source
-
-                    // A NUL says binary — an image or a compiled blob dropped into the
-                    // repository — and a code renderer fed one draws a wall of boxes.
-                    && !source.PseudoDiff.Contains('\0'))
-                {
-                    return source;
-                }
-
-                return null;
+                       // A NUL says binary — an image or a compiled blob dropped into the
+                       // repository — and a code renderer fed one draws a wall of boxes.
+                       && !source.PseudoDiff.Contains('\0')
+                    ? source
+                    : null;
 
             default:
                 return null;
@@ -7706,134 +7606,17 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
     /// One grafted device row: the catalog is the file, this is the highlight.
     /// </summary>
     /// <remarks>
-    /// Deleting the <c>ProjectNodeKind.Device</c> arm above returns null for these rows and
-    /// <c>DeviceTreeFlowTests</c> goes red — the same class of silent-green as a dropped
-    /// subscription. The Object/File <c>*.devices.yaml</c> arm is a second door: selecting
+    /// The facts are Core's (<see cref="Cards.Device"/>), shared with the web viewer since
+    /// 2026-10-23; the vendor's own catalog files are read by <see cref="RenderChoice"/> for both.
+    /// Deleting the <c>DeviceCard</c> arm of <see cref="BuildRenderedContent"/> returns null for
+    /// these rows and <c>DeviceTreeFlowTests</c> goes red — the same class of silent-green as a
+    /// dropped subscription. The Object/File <c>*.devices.yaml</c> arm is a second door: selecting
     /// the device itself must still open the table.
     /// </remarks>
-    /// <summary>
-    /// A library manager, device or task read by a vendor's format from its own file, or a task
-    /// configuration whose child objects are tasks; null when no format reads any of them.
-    /// </summary>
-    private object? VendorCatalog(Versio.Core.Projects.ProjectTreeNode node)
-    {
-        string? Read(string file)
-        {
-            try
-            {
-                return RepositoryPath is { } root
-                    ? File.ReadAllText(Path.Combine(root, file.Replace('/', Path.DirectorySeparatorChar)))
-                    : null;
-            }
-            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-            {
-                return null;
-            }
-        }
-
-        foreach (var format in PlcFormats.All)
-        {
-            foreach (var file in node.Files)
-            {
-                if (Read(file) is not { } text)
-                {
-                    continue;
-                }
-
-                if (format.TryParseLibraryCatalog(file, text) is { IsValid: true } libraries)
-                {
-                    _catalogSource = new CatalogSource([file], heads => format.TryParseLibraryCatalog(file, heads[0]));
-                    return libraries;
-                }
-
-                if (format.TryParseDeviceCatalog(file, text) is { IsValid: true } device)
-                {
-                    _catalogSource = new CatalogSource([file], heads => format.TryParseDeviceCatalog(file, heads[0]));
-                    return device;
-                }
-
-                if (format.TryParseTask(file, text) is { } task)
-                {
-                    return new TaskDetailRender { Task = task };
-                }
-            }
-
-            // A configuration saved as one file per task: its table is its children's tasks,
-            // in the order the tree has them.
-            var children = node.Children
-                .Where(c => c.Files.Count > 0)
-                .Select(c => (File: c.Files[0], Text: Read(c.Files[0])))
-                .Where(c => c.Text is not null)
-                .Select(c => (c.File, Task: format.TryParseTask(c.File, c.Text!)))
-                .Where(c => c.Task is not null)
-                .ToList();
-            if (children.Count > 0)
-            {
-                var files = children.Select(c => c.File).ToList();
-                _catalogSource = new CatalogSource(files, heads => new TaskCatalog
-                {
-                    Schema = 1,
-                    Configuration = node.Name,
-                    Tasks = heads.Select((head, i) => head.Length == 0 ? null : format.TryParseTask(files[i], head)).OfType<TaskRecord>().ToList(),
-                });
-                return new TaskCatalog
-                {
-                    Schema = 1,
-                    Configuration = node.Name,
-                    Path = node.Path,
-                    Tasks = children.Select(c => c.Task!).ToList(),
-                };
-            }
-        }
-
-        return null;
-    }
-
     private static DeviceDetailRender DeviceDetail(
         Versio.Core.Projects.DeviceCatalog catalog,
-        Versio.Core.Projects.ProjectTreeNode node)
-    {
-        var facts = new List<FactRow> { new("Device", catalog.Name) };
-        var path = node.Path;
-        var slotAt = path.LastIndexOf(DeviceCatalog.SlotRowMarker, StringComparison.Ordinal);
-        var paramAt = path.LastIndexOf(DeviceCatalog.ParamRowMarker, StringComparison.Ordinal);
-        var connAt = path.LastIndexOf(DeviceCatalog.ConnectorRowMarker, StringComparison.Ordinal);
-
-        if (slotAt >= 0)
-        {
-            facts.Insert(0, new("Slot", path[(slotAt + DeviceCatalog.SlotRowMarker.Length)..]));
-        }
-        else if (paramAt >= 0)
-        {
-            facts.Insert(0, new("Value", node.Detail.Length > 0 ? node.Detail : "—"));
-        }
-        else if (connAt >= 0)
-        {
-            var key = path[(connAt + DeviceCatalog.ConnectorRowMarker.Length)..];
-
-            // KeyedConnectors, matching the tree's row paths: colliding keys carry #2/#3
-            // there, so a raw-Key lookup would open the first duplicate's facts for both.
-            var connector = catalog.KeyedConnectors()
-                .FirstOrDefault(kv => string.Equals(kv.Key, key, StringComparison.Ordinal))
-                .Value;
-            if (connector is not null)
-            {
-                if (connector.ConnectorId.Length > 0)
-                {
-                    facts.Add(new("Connector id", connector.ConnectorId));
-                }
-
-                if (connector.ModuleType.Length > 0)
-                {
-                    facts.Add(new("Module type", connector.ModuleType));
-                }
-
-                facts.Add(new("Parameters", connector.Parameters.Count.ToString()));
-            }
-        }
-
-        return new DeviceDetailRender { Title = node.Name, Facts = facts };
-    }
+        Versio.Core.Projects.ProjectTreeNode node) =>
+        new() { Title = node.Name, Facts = Cards.Device(catalog, node).Select(f => new FactRow(f.Label, f.Value)).ToList() };
 
     /// <summary>The project card: what a glance at the row should answer.</summary>
     /// <remarks>

@@ -92,10 +92,14 @@ public sealed record MarkdownRender
     public required string Path { get; init; }
     public required IReadOnlyList<MdBlock> Blocks { get; init; }
 
-    /// <summary>The extensions read as Markdown. Anything else keeps its own renderer.</summary>
-    public static bool Handles(string path) =>
-        path.EndsWith(".md", StringComparison.OrdinalIgnoreCase)
-        || path.EndsWith(".markdown", StringComparison.OrdinalIgnoreCase);
+    /// <summary>
+    /// True for the empty-object note (<see cref="Versio.Core.Projects.EmptyObjectNote"/>) drawn
+    /// through this record, so a test can tell the note from a document: both are Markdown here.
+    /// </summary>
+    public bool IsNote { get; init; }
+
+    /// <summary>The extensions read as Markdown. Anything else keeps its own renderer. The rule is Core's.</summary>
+    public static bool Handles(string path) => Versio.Core.Projects.RenderChoice.IsMarkdown(path);
 
     public static MarkdownRender From(string repoRelativePath, string text) =>
         new() { Path = repoRelativePath, Blocks = Markdown.Parse(text) };
@@ -161,24 +165,9 @@ public sealed record TaskDetailRender
 {
     public required TaskRecord Task { get; init; }
 
+    /// <summary>The rows, decided in Core (<see cref="Cards.Task"/>) so the web's task card lists the same.</summary>
     public IReadOnlyList<FactRow> Facts =>
-        new List<FactRow>
-        {
-            new("Priority", Blank(Task.Priority)),
-            new("Interval", Blank(Task.DisplaySchedule)),
-            new("Core binding", Task.CoreBinding switch
-            {
-                "" => "—",
-                "-1" => "-1 (not bound to a core)",
-                var c => c,
-            }),
-            new("Watchdog", Task.WatchdogEnabled
-                ? $"enabled · time {Blank(Task.WatchdogTime)} · sensitivity {Blank(Task.WatchdogSensitivity)}"
-                : "disabled"),
-            new("Calls", Task.Pous.Count == 0 ? "—" : string.Join(", ", Task.Pous)),
-        };
-
-    private static string Blank(string value) => value.Length == 0 ? "—" : value;
+        Cards.Task(Task).Select(f => new FactRow(f.Label, f.Value)).ToList();
 }
 
 /// <summary>

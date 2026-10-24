@@ -43,6 +43,9 @@ public static class Documents
         return path[dot..].ToLowerInvariant() switch
         {
             ".pdf" => new Disposition("application/pdf", Inline: true),
+            // A web page, served inline for the page to frame sandboxed; the security headers
+            // middleware adds the sandbox policy to every HTML answer of this route.
+            ".html" or ".htm" => new Disposition("text/html", Inline: true),
             ".md" or ".markdown" or ".txt" or ".csv" => new Disposition("text/plain", Inline: false),
             ".docx" or ".doc" or ".xlsx" or ".xls" or ".pptx" or ".ppt"
                 or ".odt" or ".ods" or ".odp" or ".rtf" => new Disposition("application/octet-stream", Inline: false),

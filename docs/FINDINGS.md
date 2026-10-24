@@ -19,6 +19,63 @@ produce a diff touching everything else.
 
 ---
 
+### The web drew a library's catalogs and empty objects as raw metadata: the renderer choice was two copies, and the second had lost half its arms
+
+**2026-10-23, the owner's FBS library pull request, on the web review page.** `Communication
+Manager`, `OPC UA Server` and `Libraries.json` drew as `__V3_META__` JSON followed by archive
+XML. The app draws the first two as the one-line note *This object stores no settings of its
+own* and the third as the library manager's table. The owner: the scripts were meant to be
+reused, which is why the web and the desktop share a repository.
+
+**Cause: the decision of what a row draws existed twice, and only one copy had been kept up.**
+`ShellViewModel.BuildRenderedContent` chose in this order: project card, a reference / task /
+device row's catalog or card, Versio's YAML catalogs, the vendor's own catalog files, a member
+table (with the husk rule, and the block's ladder, body or whole file underneath), a ladder, the
+empty-object note, Markdown, the source, plus the web-page chip. `ViewService.Rendered` chose:
+table, ladder, note, Markdown, source — and `RenderedCompare`, the path a pull request takes,
+chose table, ladder, source: no note at all, no catalogs, no cards, no husk rule, no page, and
+under a table whose format knows no body (a TIA STL block, a TwinCAT graphical POU) nothing where
+the app draws the whole file. `ViewService`'s own remarks said "mirrored, not shared; moving it
+into Core is later", and `ViewServiceTests` claimed to pin "the desktop's order" while running one
+host. Every suite was green through a year of drift.
+
+**Fixed by making the choice Core's** (`RenderChoice.Decide`, `src/Versio.Core/Projects/RenderChoice.cs`):
+given a node, a reader and the registered formats it returns what is drawn, from which layer, the
+parsed model, a `Reparse` for the committed or older copy, what sits under an interface table, and
+the notice over a native file no model draws. Both hosts call it; each keeps its drawing. The
+catalogs and cards got Core HTML renderers in the `MemberTableHtml` pattern (`CatalogHtml`,
+`Cards` / `CardHtml`), the FBS forms read through the formats' `TryParseLibraryCatalog`,
+`TryParseTask` and `TryParseDeviceCatalog` the web had never called, a `.html` answers
+`kind: "webpage"` and `/raw` serves it under a `sandbox` policy, and whatever still falls to
+source because no model exists says so — *Versio has no drawing for this Visualization yet; this
+is its file as the vendor saved it* — rather than showing silent XML.
+
+**The pinning test the claim needed: both hosts over every fixture row.**
+`RenderChoiceParityTests` (`tests/Versio.App.Tests`) opens the real shell on a temp repository
+holding every fixture project (the two CODESYS mirrors, the FBS project, the TIA and TwinCAT
+exports, a README and a web page) and the web's `ViewService` on a fake GitHub holding the same
+files, selects every row on both, and compares what each drew. Its first run found four more
+web-only defects the drift had hidden, each fixed under it:
+
+| Row | Web | Desktop | Why |
+|---|---|---|---|
+| `Device`, `EtherCAT_Master`, `ET 200SP station_2`, `Devices` (device objects) | 404 | device table | `RepoModel.NodeFor` indexed objects by their files only; a device object's path is the device, its file the catalog beside it |
+| `…tasks.yaml::MainTask` (a task row) | the whole task table | the task's card | the view cache key had the file shown and every blob, not the row: a task row and its configuration share both, so the row got the configuration's cached answer |
+| FBS `Task Configuration.taskconfig.xml.v3` | raw XML | the task table | the web read an object's own layers only; the configuration's table comes from its children's files, which the desktop reads from disk |
+| grafted reference / slot rows | 404 | catalog / card | the same index gap as the device objects |
+
+Project rows, device objects and grafted rows are indexed by their path now; the key carries
+the row; every child's first file is read with the object's layers and is in the key, since a
+changed task changes the table.
+
+**Evidence.** `RenderChoiceTests` pins every arm with a stand-in format; `CatalogHtmlTests`,
+`CardsTests` and the extended `RendererAllowlistTests` pin the renderers; `RenderedKindsTests`
+pins each kind the web answers, the sandboxed page and the tree's grown node;
+`RenderChoiceParityTests` runs both hosts. The mutation checks and the suite counts are below
+the entry's date in STATUS.
+
+---
+
 ### The coverage banner on real code: 55 of 85 files "may not show every change", and the drawing was right
 
 **2026-10-23, the owner's `CodesysStandardLibrary` pull request #3 in the real-pull-request
