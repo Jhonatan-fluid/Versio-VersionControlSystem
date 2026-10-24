@@ -144,6 +144,10 @@ public static class PullEndpoints
                     @object = (head.NodeFor(f.Path) ?? mergeBase.NodeFor(f.Path)) is { Kind: ProjectNodeKind.Object } n ? CodeHtml.Spelled(n.Name) : null,
                     inline = f.InlineUnavailable is null,
                     inlineUnavailable = f.InlineUnavailable,
+                    // GitHub's "+12 −3" per file, counted from the patch it gave; null without one
+                    // (binary, too large, past its list), which the page draws as no count rather than 0.
+                    additions = f.Patch is { } p1 ? PatchStats(p1).Added : (int?)null,
+                    deletions = f.Patch is { } p2 ? PatchStats(p2).Removed : (int?)null,
                 }),
             });
         });
@@ -664,6 +668,28 @@ public static class PullEndpoints
                 }),
             });
         });
+    }
+
+    /// <summary>
+    /// Lines added and removed in a unified patch as GitHub writes one: hunks only, no file header,
+    /// so every '+' and '-' line counts except the "\ No newline at end of file" marker.
+    /// </summary>
+    internal static (int Added, int Removed) PatchStats(string patch)
+    {
+        int added = 0, removed = 0;
+        foreach (var raw in patch.Split('\n'))
+        {
+            if (raw.StartsWith("+", StringComparison.Ordinal) && !raw.StartsWith("+++", StringComparison.Ordinal))
+            {
+                added++;
+            }
+            else if (raw.StartsWith("-", StringComparison.Ordinal) && !raw.StartsWith("---", StringComparison.Ordinal))
+            {
+                removed++;
+            }
+        }
+
+        return (added, removed);
     }
 
     /// <summary>

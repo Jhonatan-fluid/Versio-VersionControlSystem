@@ -208,6 +208,9 @@ public sealed class PullReviewTests
         Assert.True(files["src/Pump.st"].GetProperty("inline").GetBoolean());
         Assert.False(files["src/Logo.bin"].GetProperty("inline").GetBoolean());
         Assert.Equal("no-patch", files["src/Logo.bin"].GetProperty("inlineUnavailable").GetString());
+        // GitHub's per-file "+1 -1", from its patch; no patch, no count (never a zero that reads as "nothing changed").
+        Assert.Equal((1, 1), (files["src/Pump.st"].GetProperty("additions").GetInt32(), files["src/Pump.st"].GetProperty("deletions").GetInt32()));
+        Assert.Equal(JsonValueKind.Null, files["src/Logo.bin"].GetProperty("additions").ValueKind);
     }
 
     /// <summary>

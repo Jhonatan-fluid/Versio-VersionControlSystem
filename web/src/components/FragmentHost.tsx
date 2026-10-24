@@ -34,7 +34,9 @@ interface Props {
    * A gutter click on a diff row, with both of its file lines: the new side's (data-line) and the
    * old side's (data-old-line). A review comment needs the side; a link to a line does not.
    */
-  onRowPick?: (row: { line: number | null; oldLine: number | null; fileLine: number | null; oldFileLine: number | null; srcPath: string | null }) => void;
+  onRowPick?: (row: { line: number | null; oldLine: number | null; fileLine: number | null; oldFileLine: number | null; srcPath: string | null; shift: boolean }) => void;
+  /** A folded stretch ("N unchanged lines") was clicked: the page asks for the whole file. */
+  onUnfold?: () => void;
   /**
    * A click on a drawn element a review comment can sit on — a member's name, a network's heading —
    * with the anchor ids it stands for (its <c>data-anchors</c>). Only those two targets, so a click
@@ -48,7 +50,7 @@ interface Props {
  * fragment is sanitised (the third wall), placed, and then only read, through the data-* markers
  * the renderers promise.
  */
-export function FragmentHost({ html, path, onOpenPath, line, onLine, annotations, onPlaced, onRowPick, onAnchorPick }: Props) {
+export function FragmentHost({ html, path, onOpenPath, line, onLine, annotations, onPlaced, onRowPick, onAnchorPick, onUnfold }: Props) {
   const host = useRef<HTMLDivElement>(null);
   const clean = useMemo(() => sanitize(html), [html]);
   const [slots, setSlots] = useState<Map<string, HTMLElement>>(() => new Map());
@@ -220,6 +222,21 @@ export function FragmentHost({ html, path, onOpenPath, line, onLine, annotations
       }
     }
 
+    if (onUnfold && element.closest<HTMLElement>('.cd-fold')) {
+      onUnfold();
+      return;
+    }
+
+    if (onUnfold && element.closest<HTMLElement>('.cd-fold')) {
+      onUnfold();
+      return;
+    }
+
+    if (onUnfold && element.closest<HTMLElement>('.cd-fold')) {
+      onUnfold();
+      return;
+    }
+
     const gutter = element.closest<HTMLElement>('.cd-num');
     const row = gutter?.parentElement;
     if (row && onRowPick) {
@@ -233,6 +250,7 @@ export function FragmentHost({ html, path, onOpenPath, line, onLine, annotations
         fileLine: n(row.dataset.fileLine),
         oldFileLine: n(row.dataset.oldFileLine),
         srcPath: row.closest<HTMLElement>('[data-src-path]')?.dataset.srcPath || null,
+        shift: event.shiftKey,
       });
       return;
     }

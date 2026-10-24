@@ -88,7 +88,7 @@ function Node({ node, depth, filter, selected, onSelect }: { node: TreeNode; dep
     }
   }, [holdsSelection, selected]);
   useEffect(() => {
-    if (isSelected && row.current) {
+    if (isSelected && row.current && typeof row.current.scrollIntoView === 'function') {
       row.current.scrollIntoView({ block: 'nearest' });
     }
   }, [isSelected, selected]);

@@ -347,7 +347,9 @@ code, kbd, pre { font-family: var(--font-mono); }
 .review-complete { font-size: 12px; margin: 0 0 8px; }
 .review-viewed { margin: 0 8px 0 4px; flex: none; }
 .review-viewed-label, .full-file-label { font-size: 12px; display: inline-flex; gap: 4px; align-items: center; }
-.changes li:has(.review-viewed) { display: flex; align-items: center; }
+/* The direct child only: a folder row's li also HAS a checkbox below it, and flexing it put the
+   folder's list beside its button (seen 2026-10-23). */
+.changes li:has(> .review-viewed) { display: flex; align-items: center; }
 .reviewers-editor .row-list button { margin-left: 6px; font-size: 12px; }
 .title-edit { margin-left: 8px; font: 12px var(--font-ui); vertical-align: middle; }
 .base-edit { font-size: 12px; white-space: nowrap; flex: none; }
@@ -510,6 +512,35 @@ a.commit-sha:hover { color: var(--color-accent-fg); }
 .check-required { margin-left: 6px; }
 .check-output { padding: 8px 16px 12px 42px; border-top: 1px solid var(--color-border-muted); background: var(--color-canvas-subtle); font-size: 13px; }
 .check-output .md-page { font-size: 13px; }
+
+/* Files changed (FINISH.md Step 3): the changed-file tree, and every file stacked under a
+   sticky header; a folded (viewed) file is its header alone. */
+.files-tree-nav { font-size: 13px; }
+.files-tree-nav ul { list-style: none; margin: 0; padding: 0; }
+.files-tree-nav .tree-row { min-width: 0; }
+.files-tree-nav .tree-name { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: left; }
+.files-tree-nav .tree-caret, .files-tree-nav .tree-icon, .files-tree-nav .change { flex: none; }
+.files-tree .changes li:has(> .review-viewed) > .tree-row { flex: 1; min-width: 0; }
+.files-tree-head { padding: 8px 8px 4px; border-bottom: 1px solid var(--color-border-muted); }
+.files-tree-head .tree-filter { margin: 0 0 6px; width: 100%; }
+.files-progress { display: flex; flex-direction: column; gap: 3px; }
+.files-progress-bar { display: block; height: 4px; background: var(--color-neutral-muted); border-radius: 2px; overflow: hidden; }
+.files-progress-bar > span { display: block; height: 100%; background: var(--color-success-emphasis); }
+.tree-folder .tree-name { font-weight: 600; }
+.tree-count { margin-left: auto; }
+.tree-stat { margin-left: auto; font-size: 11px; }
+.files-tree li.is-viewed > .tree-row .tree-name { color: var(--color-fg-muted); }
+.file-review.is-folded > .pane-head { border-radius: var(--radius); border-bottom: 0; }
+.file-review > .pane-head .pane-title { align-items: center; }
+.file-chevron { padding: 0 4px; }
+.file-review .review-file { font: 600 14px var(--font-mono); margin: 0; white-space: nowrap; flex: none; }
+.file-review > .pane-head .pane-title { flex: 1; min-width: 0; }
+.file-review > .pane-head .pane-tools { flex: none; }
+.file-review.is-viewed > .pane-head { background: var(--color-canvas-subtle); }
+.file-resolved-toggle { margin: 0 0 8px; }
+.file-resolved-toggle label { display: inline-flex; gap: 6px; align-items: center; }
+.fragment .cd-fold { cursor: pointer; }
+.fragment .cd-fold:hover { background: var(--color-accent-subtle); }
 
 /* Mermaid diagrams, drawn in sandboxed frames. The frame is born at height 0 and grows to the
    height its diagram reports — never display:none, which would void the frame's layout and make

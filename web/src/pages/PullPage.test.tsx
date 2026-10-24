@@ -109,7 +109,7 @@ function answer(url: string, o: Options): unknown {
       patchSource: 'pull', githubListCut: false, total: o.twoFiles ? 2 : 1, truncated: false,
       files: [
         { path: 'src/Pump.st', label: 'src/Pump.st', change: 'modified', previousPath: null, previousLabel: null, object: 'Pump', inline: true, inlineUnavailable: null },
-        ...(o.twoFiles ? [{ path: 'src/Valve.st', label: 'src/Valve.st', change: 'modified', previousPath: null, previousLabel: null, object: 'Valve', inline: true, inlineUnavailable: null }] : []),
+        ...(o.twoFiles ? [{ path: 'src/Valve.st', label: 'src/Valve.st', change: 'modified', previousPath: null, previousLabel: null, object: 'Valve', inline: true, inlineUnavailable: null, additions: 2, deletions: 1 }] : []),
       ],
     };
   }
@@ -774,9 +774,11 @@ describe('PullPage review', () => {
 
   it("moving between files never saves one file's draft under another's", async () => {
     const { host, root } = await render('/acme/plant/pull/12?tab=files&path=src%2FValve.st&view=raw', { writable: true, twoFiles: true });
-    const fill = async (text: string) => {
+    // Every file is on the page now (Step 3), each in its own section: the boxes are found by file.
+    const section = (file: string) => host.querySelector(`[data-file="${file}"]`)!;
+    const fill = async (file: string, text: string) => {
       await act(async () => {
-        const textarea = host.querySelector<HTMLTextAreaElement>('.file-comment textarea')!;
+        const textarea = section(file).querySelector<HTMLTextAreaElement>('.file-comment textarea')!;
         Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')!.set!.call(textarea, text);
         textarea.dispatchEvent(new Event('input', { bubbles: true }));
       });
@@ -787,19 +789,19 @@ describe('PullPage review', () => {
       return slot ? (JSON.parse(sessionStorage.getItem(slot)!) as { body: string }).body : null;
     };
 
-    await click(button(host, 'Comment on the whole file')!, host);
-    await fill('Valve draft');
+    await click(button(section('src/Valve.st'), 'Comment on the whole file')!, host);
+    await fill('src/Valve.st', 'Valve draft');
     await open('src/Pump.st');
-    if (!host.querySelector('.file-comment textarea')) {
-      await click(button(host, 'Comment on the whole file')!, host);
+    if (!section('src/Pump.st').querySelector('.file-comment textarea')) {
+      await click(button(section('src/Pump.st'), 'Comment on the whole file')!, host);
     }
-    expect(host.querySelector<HTMLTextAreaElement>('.file-comment textarea')!.value).toBe('');
-    await fill('Pump draft');
+    expect(section('src/Pump.st').querySelector<HTMLTextAreaElement>('.file-comment textarea')!.value).toBe('');
+    await fill('src/Pump.st', 'Pump draft');
     await open('src/Valve.st');
 
     expect(draftOf('src/Valve.st')).toBe('Valve draft');
     expect(draftOf('src/Pump.st')).toBe('Pump draft');
-    expect(host.querySelector<HTMLTextAreaElement>('.file-comment textarea')?.value ?? 'Valve draft').toBe('Valve draft');
+    expect(section('src/Valve.st').querySelector<HTMLTextAreaElement>('.file-comment textarea')?.value ?? 'Valve draft').toBe('Valve draft');
     act(() => root.unmount());
   });
 
@@ -1523,6 +1525,94 @@ describe('PullPage conversation', () => {
     expect(row.querySelector('.commit-body')).toBeNull();
     await click(row.querySelector('.commit-expand')!, host);
     expect(row.querySelector('.commit-body')?.textContent).toBe('It was wrong.');
+    act(() => root.unmount());
+  });
+});
+
+// Step 3 of docs/web/FINISH.md: Files changed as GitHub shows it — the tree of changed files
+// beside every file stacked, each with its own header and state; a shift-click makes a range.
+describe('PullPage files changed', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    document.body.innerHTML = '';
+    sessionStorage.clear();
+  });
+
+  async function click(element: Element, host: HTMLElement, shift = false) {
+    await act(async () => {
+      element.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, shiftKey: shift }));
+    });
+    await settle(host, () => false);
+  }
+
+  it('stacks every changed file under its own sticky header, the one in the URL first and lit in the tree', async () => {
+    const { host, root } = await render('/acme/plant/pull/12/files?path=src%2FValve.st', { twoFiles: true });
+
+    const sections = Array.from(host.querySelectorAll('.file-review'));
+    expect(sections.map((s) => s.getAttribute('data-file'))).toEqual(['src/Pump.st', 'src/Valve.st']);
+    // Each section has its header with the object's name, where it lives and its +N −M.
+    expect(sections[1]?.querySelector('.review-file')?.textContent).toBe('Valve');
+    expect(sections[1]?.querySelector('.pane-folder')?.textContent).toBe('src');
+    expect(sections[1]?.querySelector('.diffstat')?.textContent).toContain('+2');
+    expect(host.querySelector('.files-tree .tree-row.is-selected')?.textContent).toContain('Valve');
+    // The tree groups by folder: one "src" folder with two files under it.
+    expect(host.querySelector('.files-tree .tree-folder .tree-name')?.textContent).toBe('src');
+    expect(host.querySelectorAll('.files-tree [role="treeitem"][aria-selected]')).toHaveLength(2);
+    act(() => root.unmount());
+  });
+
+  it('folds a viewed file to its header, as GitHub does, and the chevron opens it again', async () => {
+    const { host, root } = await render('/acme/plant/pull/12/files?path=src%2FValve.st', { writable: true, twoFiles: true, viewed: ['src/Pump.st'] });
+
+    const pump = host.querySelector('[data-file="src/Pump.st"]')!;
+    expect(pump.classList.contains('is-folded')).toBe(true);
+    expect(pump.querySelector('.file-review-body')).toBeNull();
+    expect(host.querySelector('.files-progress')?.textContent).toContain('1 / 2 files viewed');
+    await click(pump.querySelector('.file-chevron')!, host);
+    expect(pump.querySelector('.file-review-body')).not.toBeNull();
+    act(() => root.unmount());
+  });
+
+  it('a shift-click on a second line makes the draft a range, posted with its start line', async () => {
+    const { host, root } = await render('/acme/plant/pull/12/files?path=src%2FPump.st&view=raw', { writable: true });
+    const number = (line: number) => host.querySelector(`[data-line="${line}"] .cd-num`)!;
+
+    await click(number(2), host);
+    expect(host.querySelector('.thread-draft .thread-head')?.textContent).toContain('new line 2');
+    await click(number(3), host, true);
+    expect(host.querySelector('.thread-draft .thread-head')?.textContent).toContain('new lines 2–3');
+
+    const textarea = host.querySelector<HTMLTextAreaElement>('.thread-draft textarea')!;
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')!.set!.call(textarea, 'Both of these.');
+      textarea.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    await click(Array.from(host.querySelectorAll('.thread-draft button')).find((b) => b.textContent === 'Comment')!, host);
+
+    const posted = calls.find((c) => c.method === 'POST' && c.url.endsWith('/line-comments'))!;
+    expect(posted.body).toMatchObject({ path: 'src/Pump.st', line: 3, startLine: 2, side: 'RIGHT' });
+    act(() => root.unmount());
+  });
+
+  it('hides resolved threads when asked, and says how many it hides', async () => {
+    const { host, root } = await render('/acme/plant/pull/12/files?path=src%2FPump.st&view=raw');
+
+    expect(host.querySelector('[data-thread="OLD3"]')).not.toBeNull();
+    const toggle = host.querySelector<HTMLInputElement>('.file-resolved-toggle input')!;
+    expect(host.querySelector('.file-resolved-toggle')?.textContent).toContain('Show 1 resolved thread');
+    await click(toggle, host);
+    expect(host.querySelector('[data-thread="OLD3"]')).toBeNull();
+    expect(host.querySelector('[data-thread="NEW3"]')).not.toBeNull();
+    act(() => root.unmount());
+  });
+
+  it('a link to another file of the pull request goes to that file’s section; to anything else, to the object at the head', async () => {
+    const { host, root } = await render('/acme/plant/pull/12/files?path=src%2FPump.st', { twoFiles: true });
+    await act(async () => {
+      jump('/acme/plant/pull/12/files?path=src%2FValve.st');
+    });
+    await settle(host);
+    expect(host.querySelector('.files-tree .tree-row.is-selected')?.textContent).toContain('Valve');
     act(() => root.unmount());
   });
 });

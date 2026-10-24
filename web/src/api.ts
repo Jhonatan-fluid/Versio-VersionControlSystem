@@ -225,6 +225,9 @@ export interface ReviewFile {
   object: string | null;
   inline: boolean;
   inlineUnavailable: InlineUnavailable | null;
+  /** GitHub's "+12 −3" for the file, from its patch; absent or null without one. */
+  additions?: number | null;
+  deletions?: number | null;
 }
 
 export interface ReviewFiles {

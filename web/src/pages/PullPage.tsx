@@ -4,6 +4,7 @@ import type { CoverageGap, Layout, Me, PaneView, PendingReviewView, ReviewCheck,
 import { ApiError, api } from '../api';
 import type { Annotation } from '../components/FragmentHost';
 import { FragmentHost } from '../components/FragmentHost';
+import { FilesTree } from '../components/FilesTree';
 import { CommentCard, CommitRow, EventRow, Reactions, ReviewCard, RoleBadge, anchorOf } from '../components/Conversation';
 import { MergeBox } from '../components/MergeBox';
 import { ErrorPanel } from '../components/Pane';
@@ -172,7 +173,7 @@ export function PullPage({ me }: { me: Me | null }) {
 function PullReview({ me }: { me: Me | null }) {
   const { owner = '', repo = '', number = '', tab: tabParam } = useParams();
   const n = Number(number);
-  const [search, setSearch] = useSearchParams();
+  const [search] = useSearchParams();
   const location = useLocation();
   const navigate = useNavigate();
   // GitHub's /pull/N/files; ?tab=files is the shape this page wrote before and still reads.
@@ -205,12 +206,6 @@ function PullReview({ me }: { me: Me | null }) {
   const threads = useAsync((s) => (snap ? api.review.threads(owner, repo, snap, s) : never()), [token, changed]);
   const timeline = useAsync((s) => (snap && tab === 'conversation' ? api.review.timeline(owner, repo, snap, s) : never()), [token, tab, changed]);
   const commits = useAsync((s) => (snap && tab === 'commits' ? api.review.commits(owner, repo, snap, s) : never()), [token, tab]);
-  // A renamed file is drawn against its old path, which only the files list (from GitHub) knows.
-  const from = files.state === 'ok' ? files.value.files.find((f) => f.path === path)?.previousPath ?? undefined : undefined;
-  const fileView = useAsync(
-    (s) => (snap && tab === 'files' && path && files.state !== 'loading' ? api.review.fileView(owner, repo, snap, path, view, layout, from, s, full) : never()),
-    [token, tab, path, view, layout, from, files.state, full],
-  );
 
   // The viewer's own review state: only with writes on, since only then can anything be done with it.
   const writable = snap?.writable === true;
@@ -270,20 +265,10 @@ function PullReview({ me }: { me: Me | null }) {
       }
     });
   }
-  const expired = [files, threads, timeline, commits, fileView].some((a) => a.state === 'error' && needsReload(a.error));
+  const expired = [files, threads, timeline, commits].some((a) => a.state === 'error' && needsReload(a.error));
 
   function go(nextTab: Tab, nextPath?: string) {
     navigate(pullUrl(owner, repo, n, nextTab === 'conversation' ? undefined : nextTab, nextPath, search));
-  }
-
-  function setParam(key: string, value: string, fallback: string) {
-    const next = new URLSearchParams(search);
-    if (value === fallback) {
-      next.delete(key);
-    } else {
-      next.set(key, value);
-    }
-    setSearch(next);
   }
 
   const fileThreads = (p: string) => (threads.state === 'ok' ? threads.value.threads.filter((t) => t.path === p) : []);
@@ -305,31 +290,18 @@ function PullReview({ me }: { me: Me | null }) {
       : null,
   }));
 
-  const fileList = files.state === 'ok' && (
-    <>
-      {files.value.truncated && <p className="text-muted pad">The first {files.value.files.length} of {files.value.total} files are listed.</p>}
-      <ul className="changes">
-        {files.value.files.length === 0 && <li className="text-muted pad">This pull request changes no files.</li>}
-        {files.value.files.map((f) => {
-          const count = fileThreads(f.path).length;
-          return (
-            <li key={f.path}>
-              <button type="button" className={`tree-row${f.path === path ? ' is-selected' : ''}`} onClick={() => go('files', f.path)} title={f.label}>
-                <span className={`change change-${f.change}`}>{mark[f.change]}</span>
-                <span className="tree-name">{f.object ?? f.label.slice(f.label.lastIndexOf('/') + 1)}</span>
-                {!f.inline && <span className="text-muted review-flag" title={unavailable[f.inlineUnavailable ?? ''] ?? ''}>file only</span>}
-                {count > 0 && <span className="review-count" title={`${count} review thread${count === 1 ? '' : 's'}`}>{count}</span>}
-              </button>
-              {writer && (
-                <input type="checkbox" className="review-viewed" checked={viewed.has(f.path)} onChange={(e) => markViewed(f.path, e.target.checked)}
-                  aria-label={`Viewed ${f.label}`} title="Viewed" />
-              )}
-            </li>
-          );
-        })}
-      </ul>
-    </>
-  );
+  // A thread's permalink (#discussion_r…) names a comment; the file holding it is the one to open.
+  const hash = location.hash.startsWith('#') ? location.hash.slice(1) : '';
+  const hashPath = hash && threads.state === 'ok'
+    ? threads.value.threads.find((t) => t.comments.some((c) => anchorOf(c.url) === hash))?.path ?? null
+    : null;
+  useEffect(() => {
+    if (tab === 'files' && hashPath && hashPath !== path) {
+      go('files', hashPath);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hashPath, tab]);
+  const inPull = (p: string) => files.state === 'ok' && files.value.files.some((f) => f.path === p);
 
   const notices = snap && (
     <>
@@ -419,36 +391,44 @@ function PullReview({ me }: { me: Me | null }) {
           {notices}
           {tab === 'files' ? (
             <div className="files-view">
-              <aside className="files-tree" aria-label="Changed files">
-                {fileList}
+              <aside className="files-tree">
+                {files.state === 'ok' && (
+                  <FilesTree files={files.value.files} active={path} onPick={(p) => go('files', p)} threadCount={(p) => fileThreads(p).length}
+                    viewed={viewed} onViewed={writer ? markViewed : null} truncated={files.value.truncated} total={files.value.total} />
+                )}
                 {files.state === 'loading' && <Loading what="Listing the files…" />}
               </aside>
               <div className="files-main">
                 {revision}
                 {reviewBar}
-                {path ? (
-                  <FileReview
+                {/* Every file, stacked, as GitHub stacks them: each section loads its drawing as it
+                    comes into view, the one the URL names opens first and is scrolled to. A link
+                    to another file of this pull request goes to that file's section; to anything
+                    else, to the object at the reviewed commit. */}
+                {files.state === 'ok' && files.value.files.length === 0 && <Blankslate icon="diff" heading="No files changed">This pull request changes nothing.</Blankslate>}
+                {files.state === 'ok' && snap && files.value.files.map((f) => (
+                  <FileSection
+                    key={f.path}
                     writer={writer}
-                    path={path}
-                    file={files.state === 'ok' ? files.value.files.find((f) => f.path === path) ?? null : null}
-                    result={fileView}
-                    threads={fileThreads(path)}
+                    snap={snap}
+                    owner={owner}
+                    repo={repo}
+                    file={f}
+                    active={f.path === path}
+                    threads={fileThreads(f.path)}
                     threadsState={threads}
-                    view={view}
-                    layout={layout}
-                    onView={(v) => setParam('view', v, 'rendered')}
-                    onLayout={(l) => setParam('layout', l, 'unified')}
-                    full={full}
-                    onFull={(on) => setParam('full', on ? '1' : '0', '0')}
-                    onLayer={(layer) => go('files', layer)}
-                    onOpenPath={(p) => navigate(blobUrl(owner, repo, snap!.headSha, p))}
+                    initialView={view}
+                    initialLayout={layout}
+                    initialFull={full}
+                    onLayer={(layer) => (inPull(layer) ? go('files', layer) : navigate(blobUrl(owner, repo, snap.headSha, layer)))}
+                    onOpenPath={(p) => (inPull(p) ? go('files', p) : navigate(blobUrl(owner, repo, snap.headSha, p)))}
                     signInUrl={signIn}
-                    viewed={viewed.has(path)}
-                    onViewed={(on) => markViewed(path, on)}
+                    viewed={viewed.has(f.path)}
+                    onViewed={(on) => markViewed(f.path, on)}
+                    hash={hash}
                   />
-                ) : (
-                  <Blankslate icon="diff" heading="Pick a changed file">Each file is drawn as the desktop draws it, with the review's threads on its rows, networks and lines.</Blankslate>
-                )}
+                ))}
+                {files.state === 'ok' && files.value.truncated && <p className="text-muted">The first {files.value.files.length} of {files.value.total} files are shown; the rest are on GitHub.</p>}
               </div>
             </div>
           ) : (
@@ -919,6 +899,125 @@ function Checks({ status, onOpenPath }: { status: ReviewStatus | null; onOpenPat
   );
 }
 
+interface FileSectionProps {
+  writer: Writer | null;
+  snap: ReviewSnapshot;
+  owner: string;
+  repo: string;
+  file: ReviewFile;
+  /** The file the URL names: opened first and scrolled to. */
+  active: boolean;
+  threads: ReviewThread[];
+  threadsState: Async<ReviewThreads>;
+  initialView: PaneView;
+  initialLayout: Layout;
+  initialFull: boolean;
+  onLayer: (path: string) => void;
+  onOpenPath: (path: string) => void;
+  signInUrl: string | null;
+  viewed: boolean;
+  onViewed: (on: boolean) => void;
+  /** The URL's fragment, for scrolling to a comment's permalink once its thread is placed. */
+  hash: string;
+}
+
+/**
+ * One file of the stacked Files changed: GitHub's sticky header — chevron, the object's name and
+ * where it lives, +N −M, Viewed, the view switches — over the drawing, which is asked for only when
+ * the section is near the viewport (an 85-file pull request must not ask for 85 drawings at once)
+ * and never again once read. A viewed file folds, as on GitHub; the chevron reopens it.
+ */
+function FileSection({ writer, snap, owner, repo, file, active, threads, threadsState, initialView, initialLayout, initialFull, onLayer, onOpenPath, signInUrl, viewed, onViewed, hash }: FileSectionProps) {
+  const [view, setView] = useState<PaneView>(initialView);
+  const [layout, setLayout] = useState<Layout>(initialLayout);
+  const [full, setFull] = useState(initialFull);
+  const [open, setOpen] = useState(!viewed || active);
+  const [near, setNear] = useState(active);
+  const host = useRef<HTMLElement>(null);
+  const path = file.path;
+
+  // A viewed mark folds the file; unmarking opens it again (GitHub's rule). The chevron overrides either.
+  useEffect(() => setOpen(!viewed || active), [viewed, active]);
+
+  // Load when near the viewport. Without IntersectionObserver (the tests' jsdom) everything loads at once.
+  useEffect(() => {
+    if (near || !open) {
+      return;
+    }
+    const el = host.current;
+    if (!el || typeof IntersectionObserver === 'undefined') {
+      setNear(true);
+      return;
+    }
+    const observer = new IntersectionObserver((entries) => {
+      if (entries.some((e) => e.isIntersecting)) {
+        setNear(true);
+        observer.disconnect();
+      }
+    }, { rootMargin: '600px 0px' });
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [near, open]);
+
+  useEffect(() => {
+    // Optional: the tests' jsdom draws no layout and has no scrollIntoView.
+    if (active && host.current && typeof host.current.scrollIntoView === 'function') {
+      host.current.scrollIntoView({ block: 'start' });
+    }
+  }, [active]);
+
+  const result = useAsync(
+    (s) => (near && open ? api.review.fileView(owner, repo, snap, path, view, layout, file.previousPath ?? undefined, s, full) : never()),
+    [snap.token, path, view, layout, full, near, open],
+  );
+
+  const segments = file.label.split('/');
+  const name = file.object ?? segments[segments.length - 1] ?? file.label;
+  const folder = segments.slice(0, -1).join(' › ').replace(/\^/g, '');
+  return (
+    <section ref={host} className={`file-review${open ? '' : ' is-folded'}${viewed ? ' is-viewed' : ''}`} data-file={path} id={`diff-${encodeURIComponent(path)}`}>
+      <div className="pane-head">
+        <div className="pane-title" title={file.label}>
+          <button type="button" className="btn btn-invisible btn-small file-chevron" aria-expanded={open} aria-label={open ? 'Collapse this file' : 'Expand this file'} onClick={() => setOpen(!open)}>
+            <Icon name={open ? 'chevron-down' : 'chevron-right'} />
+          </button>
+          <span className={`change change-${file.change}`} title={file.change}>{mark[file.change]}</span>
+          <h2 className="review-file">{name}</h2>
+          {folder && <span className="pane-folder" title={file.label}>{folder}</span>}
+          {file.change === 'renamed' && file.previousLabel && <span className="text-muted text-small">renamed from {file.previousLabel}</span>}
+          {file.additions !== undefined && file.additions !== null && file.deletions !== undefined && file.deletions !== null && (
+            <span className="diffstat"><span className="diffstat-add">+{file.additions}</span> <span className="diffstat-del">−{file.deletions}</span></span>
+          )}
+        </div>
+        <div className="pane-tools">
+          {writer && (
+            <label className="review-viewed-label">
+              <input type="checkbox" checked={viewed} onChange={(e) => onViewed(e.target.checked)} /> Viewed
+            </label>
+          )}
+          <div className="segmented" role="tablist" aria-label="View">
+            <button type="button" role="tab" aria-selected={view === 'rendered'} onClick={() => setView('rendered')}>Rendered</button>
+            <button type="button" role="tab" aria-selected={view === 'raw'} onClick={() => setView('raw')}>Raw</button>
+          </div>
+          <label className="full-file-label" title="Every line, on both tabs; clear, the drawing is folded to the lines around each change">
+            <input type="checkbox" checked={full} onChange={(e) => setFull(e.target.checked)} /> Show full file
+          </label>
+          <div className="segmented" role="group" aria-label="Layout">
+            <button type="button" aria-pressed={layout === 'unified'} onClick={() => setLayout('unified')}>Unified</button>
+            <button type="button" aria-pressed={layout === 'split'} onClick={() => setLayout('split')}>Side by side</button>
+          </div>
+        </div>
+      </div>
+      {open && (
+        <div className="file-review-body">
+          <FileReview writer={writer} path={path} file={file} result={result} threads={threads} threadsState={threadsState} view={view} onView={setView}
+            onLayer={onLayer} onOpenPath={onOpenPath} signInUrl={signInUrl} onUnfold={() => setFull(true)} hash={hash} />
+        </div>
+      )}
+    </section>
+  );
+}
+
 interface FileReviewProps {
   writer: Writer | null;
   path: string;
@@ -927,16 +1026,14 @@ interface FileReviewProps {
   threads: ReviewThread[];
   threadsState: Async<ReviewThreads>;
   view: PaneView;
-  layout: Layout;
   onView: (v: PaneView) => void;
-  onLayout: (l: Layout) => void;
-  full: boolean;
-  onFull: (full: boolean) => void;
   onLayer: (path: string) => void;
   onOpenPath: (path: string) => void;
   signInUrl: string | null;
-  viewed: boolean;
-  onViewed: (on: boolean) => void;
+  /** A fold row was clicked: the section asks for the whole file. */
+  onUnfold: () => void;
+  /** The URL's fragment: a comment's permalink to scroll to once placed. */
+  hash: string;
 }
 
 /** A gap's place, in words: a whole file, or a stretch of lines on one side. */
@@ -956,24 +1053,40 @@ export function gapWords(gap: CoverageGap): string {
  * threads. On Raw, a thread sits under its line; anything that cannot be placed — outdated, on the
  * file, or on a line this drawing does not show — is listed above, never dropped.
  */
-function FileReview({ writer, path, file, result, threads, threadsState, view, layout, onView, onLayout, full, onFull, onLayer, onOpenPath, signInUrl, viewed, onViewed }: FileReviewProps) {
+function FileReview({ writer, path, file, result, threads, threadsState, view, onView, onLayer, onOpenPath, signInUrl, onUnfold, hash }: FileReviewProps) {
   const [placed, setPlaced] = useState<string[]>([]);
   // A new comment being written. On Raw, on a diff line (the diff's own numbers are file lines).
   // On a drawing, on an element the server will resolve (a member row, a network), or on a drawn
   // source line of the file its block names — a code body under a table is another file.
   type Draft =
-    | { kind: 'line'; side: 'LEFT' | 'RIGHT'; line: number; file: string }
+    | { kind: 'line'; side: 'LEFT' | 'RIGHT'; line: number; file: string; startLine?: number }
     | { kind: 'anchor'; dom: string };
   const [drafting, setDrafting] = useState<Draft | null>(null);
   const [fileComment, setFileComment] = useState(false);
+  // Resolved threads are shown by default, as this page always showed them; the toggle hides
+  // them (GitHub folds them). Hidden means not placed: the row has no slot for them.
+  const [showResolved, setShowResolved] = useState(true);
   useEffect(() => setDrafting(null), [path, view]);
+  // A shift-click on a second line of the same file and side makes the draft a range, as a
+  // shift-click does on GitHub: GitHub takes a range inside one hunk on one side, which the
+  // server checks before posting (HunkLines.Accepts).
+  function pickLine(side: 'LEFT' | 'RIGHT', line: number, file: string, shift: boolean) {
+    setDrafting((d) => {
+      if (shift && d && d.kind === 'line' && d.side === side && d.file === file && d.line !== line) {
+        const [from, to] = d.line < line ? [d.startLine ?? d.line, line] : [line, d.line];
+        return { kind: 'line', side, file, line: to, startLine: from };
+      }
+      return { kind: 'line', side, line, file };
+    });
+  }
   const canLine = writer !== null && view === 'raw' && file?.inline === true;
   const canDraw = writer !== null && view === 'rendered';
   const placements = result.state === 'ok' ? result.value.placements : [];
+  const shown = showResolved ? threads : threads.filter((t) => !t.resolved);
   const annotations: Annotation[] = useMemo(() => {
-    const byId = new Map(threads.map((t) => [t.id, t]));
+    const byId = new Map(shown.map((t) => [t.id, t]));
     const placedThreads: Annotation[] = view === 'raw'
-      ? threads.flatMap((t) => {
+      ? shown.flatMap((t) => {
           const selector = threadSelector(t);
           return selector ? [{ key: t.id, selector, content: <Thread thread={t} writer={writer} onOpenPath={onOpenPath} /> }] : [];
         })
@@ -985,7 +1098,7 @@ function FileReview({ writer, path, file, result, threads, threadsState, view, l
             : [];
         });
     if (drafting && writer) {
-      const where = drafting.kind === 'anchor' ? drafting.dom : `${drafting.file}:${drafting.side}:${drafting.line}`;
+      const where = drafting.kind === 'anchor' ? drafting.dom : `${drafting.file}:${drafting.side}:${drafting.startLine ?? ''}-${drafting.line}`;
       const selector = drafting.kind === 'anchor'
         ? `[data-anchors~="${drafting.dom}"]`
         : view === 'raw'
@@ -993,7 +1106,9 @@ function FileReview({ writer, path, file, result, threads, threadsState, view, l
           : `[data-src-path="${attr(drafting.file)}"] [${drafting.side === 'LEFT' ? 'data-old-file-line' : 'data-file-line'}="${drafting.line}"]`;
       const what = drafting.kind === 'anchor'
         ? `New comment on this ${drafting.dom.startsWith('n-') ? 'network' : 'member'}${drafting.dom.includes('-old-') ? ', as it was' : ''}`
-        : `New comment on ${drafting.side === 'LEFT' ? 'old' : 'new'} line ${drafting.line}`;
+        : drafting.startLine
+          ? `New comment on ${drafting.side === 'LEFT' ? 'old' : 'new'} lines ${drafting.startLine}–${drafting.line}`
+          : `New comment on ${drafting.side === 'LEFT' ? 'old' : 'new'} line ${drafting.line}`;
       placedThreads.push({
         key: `draft:${where}`,
         selector,
@@ -1004,7 +1119,7 @@ function FileReview({ writer, path, file, result, threads, threadsState, view, l
               path={drafting.kind === 'anchor' ? '/anchor-comments' : '/line-comments'}
               payload={drafting.kind === 'anchor'
                 ? { path, from: file?.previousPath ?? undefined, dom: drafting.dom }
-                : { path: drafting.file, line: drafting.line, side: drafting.side }}
+                : { path: drafting.file, line: drafting.line, side: drafting.side, ...(drafting.startLine ? { startLine: drafting.startLine } : {}) }}
               submitLabel="Comment" alternative={writer.review} onCancel={() => setDrafting(null)}
               onDone={() => { setDrafting(null); writer.onChanged(); }} onStale={writer.onStale} />
           </div>
@@ -1012,8 +1127,17 @@ function FileReview({ writer, path, file, result, threads, threadsState, view, l
       });
     }
     return placedThreads;
-  }, [threads, view, onOpenPath, drafting, writer, path, placements, file]);
-  const unplaced = threads.filter((t) => !placed.includes(t.id));
+  }, [shown, view, onOpenPath, drafting, writer, path, placements, file]);
+  const unplaced = shown.filter((t) => !placed.includes(t.id));
+  const resolvedCount = threads.filter((t) => t.resolved).length;
+
+  // A permalink to a comment: once its thread is placed, scroll to it.
+  useEffect(() => {
+    const target = hash && placed.length > 0 ? document.getElementById(hash) : null;
+    if (target && typeof target.scrollIntoView === 'function') {
+      target.scrollIntoView({ block: 'center' });
+    }
+  }, [hash, placed]);
 
   if (result.state === 'loading') {
     return <p className="muted" aria-busy="true">Loading...</p>;
@@ -1023,31 +1147,7 @@ function FileReview({ writer, path, file, result, threads, threadsState, view, l
   }
   const v = result.value.view;
   return (
-    <div className="file-review">
-      <div className="pane-head">
-        <div className="pane-title" title={v.path}>
-          <span className="pane-label">DIFF</span>
-          <h2 className="review-file">{v.title}</h2>
-        </div>
-        <div className="pane-tools">
-          {writer && (
-            <label className="review-viewed-label">
-              <input type="checkbox" checked={viewed} onChange={(e) => onViewed(e.target.checked)} /> Viewed
-            </label>
-          )}
-          <div className="segmented" role="tablist" aria-label="View">
-            <button type="button" role="tab" aria-selected={view === 'rendered'} onClick={() => onView('rendered')}>Rendered</button>
-            <button type="button" role="tab" aria-selected={view === 'raw'} onClick={() => onView('raw')}>Raw</button>
-          </div>
-          <label className="full-file-label" title="Every line, on both tabs; clear, the drawing is folded to the lines around each change">
-            <input type="checkbox" checked={full} onChange={(e) => onFull(e.target.checked)} /> Show full file
-          </label>
-          <div className="segmented" role="group" aria-label="Layout">
-            <button type="button" aria-pressed={layout === 'unified'} onClick={() => onLayout('unified')}>Unified</button>
-            <button type="button" aria-pressed={layout === 'split'} onClick={() => onLayout('split')}>Side by side</button>
-          </div>
-        </div>
-      </div>
+    <div className="file-review-inner">
       {v.layers.length > 1 && (
         <div className="layers" aria-label="Files of this object">
           {v.layers.map((layer, i) => (
@@ -1083,9 +1183,14 @@ function FileReview({ writer, path, file, result, threads, threadsState, view, l
         <p key={note} className="notice" role="note">{note}</p>
       ))}
       {threadsState.state === 'error' && <p className="muted">Review threads are not shown: {threadsState.error.message}</p>}
+      {resolvedCount > 0 && (
+        <p className="text-small file-resolved-toggle">
+          <label><input type="checkbox" checked={showResolved} onChange={(e) => setShowResolved(e.target.checked)} /> Show {resolvedCount} resolved thread{resolvedCount === 1 ? '' : 's'}</label>
+        </p>
+      )}
       {writer && (
         <div className="file-comment">
-          {canLine && <span className="muted">Click a line number to comment on that line. </span>}
+          {canLine && <span className="muted">Click a line number to comment on that line; shift-click another for a range. </span>}
           {canDraw && <span className="muted">Click a member's name, a network's heading or a line number to comment on it. </span>}
           {writer && view === 'raw' && file && !file.inline && <span className="muted">Comments on this file go on the whole file. </span>}
           {fileComment ? (
@@ -1107,13 +1212,13 @@ function FileReview({ writer, path, file, result, threads, threadsState, view, l
         </section>
       )}
       <div className={canDraw ? 'can-comment' : undefined}>
-      <FragmentHost html={v.html} path={v.path} onOpenPath={onOpenPath} line={null} onLine={() => {}} annotations={annotations} onPlaced={setPlaced}
+      <FragmentHost html={v.html} path={v.path} onOpenPath={onOpenPath} line={null} onLine={() => {}} annotations={annotations} onPlaced={setPlaced} onUnfold={onUnfold}
         onRowPick={canLine ? (row) => {
           // A context row has both numbers: it is commented on the new side, as GitHub does.
           const side = row.line !== null ? 'RIGHT' : 'LEFT';
           const line = row.line ?? row.oldLine;
           if (line !== null) {
-            setDrafting({ kind: 'line', side, line, file: path });
+            pickLine(side, line, path, row.shift);
           }
         } : canDraw ? (row) => {
           // A drawn source line names its file line on each side it exists on; the new side wins
@@ -1121,7 +1226,7 @@ function FileReview({ writer, path, file, result, threads, threadsState, view, l
           const side = row.fileLine !== null ? 'RIGHT' : 'LEFT';
           const line = row.fileLine ?? row.oldFileLine;
           if (line !== null && row.srcPath) {
-            setDrafting({ kind: 'line', side, line, file: row.srcPath });
+            pickLine(side, line, row.srcPath, row.shift);
           }
         } : undefined}
         onAnchorPick={canDraw ? (ids) => {
