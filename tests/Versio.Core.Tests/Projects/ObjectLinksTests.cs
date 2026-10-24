@@ -22,6 +22,7 @@ public sealed class ObjectLinksTests
         Project("plc/Machine.project", "plc/Machine", "Machine.project",
             Obj("App/FB_Motor.st", "FB_Motor", "POU", "g1"),
             Obj("App/FB_Pump.st", "FB_Pump", "POU", "g2"),
+            Obj("App/FB_Pump/Start.st", "Start", "METHOD", "g4"),
             Obj("App/GVL.gvl.st", "GVL", "GVL", "g3"),
             Obj("App/GVL.gvl.xml", "GVL", "GVL", "g3")),
         Project("plc/Other.project", "plc/Other", "Other.project",
@@ -71,11 +72,31 @@ public sealed class ObjectLinksTests
     }
 
     [Fact]
+    public void A_word_after_a_dot_is_a_member_of_something_and_never_the_object_of_that_name()
+    {
+        var links = ObjectLinks.Resolver(Index, "plc/Machine/App/FB_Motor.st", files => files.Paths[0]);
+        // pump.Start is pump's method and GVL.Start the list's variable; the index has an object
+        // called Start (FB_Pump's method) and must not be answered with it for either. The bare
+        // Start on the second line is linked: the resolver sees no declarations, so it cannot
+        // tell a local of that name from the method (said in the remarks, carried in FINISH).
+        const string Text = "pump.Start();\nStart := TRUE;\nGVL.Start := 1;";
+
+        var html = SourceHtml.Fragment(StSourceLayout.Lay(Text), LanguageCatalog.StructuredText, links: links);
+
+        Assert.Equal(1, html.Split("data-link=\"plc/Machine/App/FB_Pump/Start.st\"").Length - 1);
+        Assert.Contains("<span class=\"cd-t-link\" data-link=\"plc/Machine/App/GVL.gvl.st\" title=\"Open plc/Machine/App/GVL.gvl.st\">GVL</span>", html, StringComparison.Ordinal);
+
+        var candidates = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "Start" };
+        Assert.Empty(ObjectLinks.NamesReferenced("pump.Start();\nGVL.Start := 1;", LanguageCatalog.StructuredText, candidates));
+        Assert.Equal(["Start"], ObjectLinks.NamesReferenced("Start();", LanguageCatalog.StructuredText, candidates));
+    }
+
+    [Fact]
     public void A_projects_objects_are_listed_once_each_with_their_files()
     {
         var objects = Index.ObjectsIn("Machine");
 
-        Assert.Equal(["FB_Motor", "FB_Pump", "GVL"], objects.Select(o => o.Object.Name));
+        Assert.Equal(["FB_Motor", "FB_Pump", "GVL", "Start"], objects.Select(o => o.Object.Name));
         Assert.Equal(["plc/Machine/App/GVL.gvl.st", "plc/Machine/App/GVL.gvl.xml"], objects[2].Files.Paths);
         Assert.Empty(Index.ObjectsIn("Nowhere"));
     }

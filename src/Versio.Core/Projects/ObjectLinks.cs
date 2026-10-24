@@ -20,6 +20,15 @@ namespace Versio.Core.Projects;
 /// this is asked; comments and strings are never asked. So a remark that mentions <c>FB_Pump</c>
 /// stays a remark, and <c>BOOL</c> stays a type.
 /// </para>
+/// <para>
+/// <b>A word after a dot is a member, not an object.</b> <c>pump.Start()</c> calls pump's method
+/// and <c>GVL.Running</c> reads the list's variable; neither names the object called
+/// <c>Start</c> or <c>Running</c>, and the index keys methods and properties by their bare name,
+/// so answering would link every instance call to the first FB's method in path order (found in
+/// review, 2026-10-24). What this does not see is a local declared with an object's name: the
+/// resolver has no declarations, so a bare <c>Start</c> links to the method even where a
+/// variable shadows it. FINISH.md carries that.
+/// </para>
 /// </remarks>
 public static class ObjectLinks
 {
@@ -63,7 +72,7 @@ public static class ObjectLinks
         {
             foreach (var token in SyntaxTokenizer.Tokenize(line, language))
             {
-                if (token.Kind != TokenKind.Plain || token.Length == 0 || !(char.IsLetter(line[token.Start]) || line[token.Start] == '_'))
+                if (token.Kind != TokenKind.Plain || token.Length == 0 || !(char.IsLetter(line[token.Start]) || line[token.Start] == '_') || CodeHtml.IsMember(line, token.Start))
                 {
                     continue;
                 }

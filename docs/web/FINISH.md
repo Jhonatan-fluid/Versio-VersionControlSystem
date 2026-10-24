@@ -751,6 +751,11 @@ on one lands on the whole file, which the page says. And the links Step 3c left 
 boxes and operands (the same per-element spans), catalog rows (a task's program, a library's
 version, a device's entry), and the desktop's `DiffView` drawing the ST identifier links its
 `ObjectLinks` resolver already answers; a "used by" panel on the desktop beside the web's list.
+One limit of the resolver as it stands (review, 2026-10-24): it sees no declarations, so a local
+variable declared with an object's name — a `Start : BOOL` beside a method called `Start` —
+links to the object. A word after a dot is never linked (it is a member of what precedes it);
+telling a local from an object needs the declaration parser in the loop, which is the same
+work as "declared in".
 
 ### Verification (every step)
 - `dotnet test tests/Versio.Web.Tests`, `tests/Versio.Core.Tests`, `tests/Versio.Arch.Tests`, the

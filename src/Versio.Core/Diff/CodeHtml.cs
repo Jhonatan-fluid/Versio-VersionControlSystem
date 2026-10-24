@@ -74,7 +74,11 @@ public static class CodeHtml
         var hidden = 0;
         foreach (var token in SyntaxTokenizer.Tokenize(text, language))
         {
-            var link = links is not null && token.Kind == TokenKind.Plain && IsWord(text, token.Start, token.Length)
+            // A word after a dot is a member of whatever precedes it — pump.Start names pump's
+            // method, GVL.Running the list's variable — never the object of that name. The index
+            // keys methods and properties by their bare name, so without this every instance call
+            // linked to the first object called Start in path order (found in review, 2026-10-24).
+            var link = links is not null && token.Kind == TokenKind.Plain && IsWord(text, token.Start, token.Length) && !IsMember(text, token.Start)
                 ? links(text.Substring(token.Start, token.Length))
                 : null;
             if (link is not null)
@@ -90,6 +94,17 @@ public static class CodeHtml
         }
 
         return hidden;
+    }
+
+    /// <summary>
+    /// Whether the word at <paramref name="start"/> follows a dot: a member access, which no
+    /// object name is. Shared with the "used by" search (<c>ObjectLinks.NamesReferenced</c>), so
+    /// what one side links the other side counts, and nothing else.
+    /// </summary>
+    public static bool IsMember(string text, int start)
+    {
+        ArgumentNullException.ThrowIfNull(text);
+        return start > 0 && text[start - 1] == '.';
     }
 
     /// <summary>A plain token that is one identifier: letters, digits and underscores, starting with a letter or underscore.</summary>
