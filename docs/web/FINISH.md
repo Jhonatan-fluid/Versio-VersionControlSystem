@@ -758,6 +758,19 @@ on one lands on the whole file, which the page says. And the links Step 3c left 
 boxes and operands (the same per-element spans), catalog rows (a task's program, a library's
 version, a device's entry), and the desktop's `DiffView` drawing the ST identifier links its
 `ObjectLinks` resolver already answers; a "used by" panel on the desktop beside the web's list.
+The web's `SourceHtml` carries the tokenizer's block-comment state between lines since
+2026-10-24, so the body of a `(* … *)` is coloured as a comment on every line; the desktop's
+`DiffView` still tokenizes each row on its own (its rows are virtualised and built out of order,
+so the state would have to be precomputed per file), and colours the second line of such a
+comment as code — a visible difference between the hosts until that is done.
+What the third read of 2026-10-24 left open, each named where it bites: an operand's comment,
+symbol comment, address or a contact's flags changed alone inside a ladder network compares as
+Same and is vouched for (the model carries operand, kind and instance — the element-anchor
+parsing above would carry the rest); avatars never show on GitHub Enterprise (`Avatar()` and the
+CSP name github.com's avatar host); a device's slots are ordered as text, so "10" sorts before
+"2" past nine slots; the explorer strikes a rename's old path only when the caller passes it,
+and the web's compare passes none (`ChangedPaths` is a set difference of paths); `NotFound`
+still promises "a branch … or a release" works for shapes it does not route.
 One limit of the resolver as it stands (review, 2026-10-24): it sees no declarations, so a local
 variable declared with an object's name — a `Start : BOOL` beside a method called `Start` —
 links to the object. A word after a dot is never linked (it is a member of what precedes it);

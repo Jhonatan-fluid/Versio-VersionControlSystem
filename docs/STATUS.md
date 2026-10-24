@@ -22,8 +22,8 @@ UX remainder) is built and tested as of 2026-08-25** — UX-6 find boxes, UX-7 `
 Escape, UX-8 copy-a-commit, UX-12 amend-while-unpushed — and its visual half joins the
 eyeball list in item 2. Do not start from `archive/` or a handoff.
 
-**Tests:** 4,053 across twelve projects (plus 187 vitest in `web/`), last counted 2026-10-24
-on `VersioWeb` with the coverage-rules and renderer-choice branches merged (Core 1,911, Web 441) — re-derived by summing the table below; the toolchain-gated
+**Tests:** 4,066 across twelve projects (plus 187 vitest in `web/`), last counted 2026-10-24
+on `VersioWeb` with the coverage-rules and renderer-choice branches merged (Core 1,917, Web 448) — re-derived by summing the table below; the toolchain-gated
 counts (TIA 5, TwinCAT 6, CODESYS 55) are from their last gate runs, not re-run for the count. **The Rendered view of an ST object reads like the IDE (2026-09-20):** no
 `@@` line, one gutter, a Declaration / Implementation divider, and the implementation
 numbered from 1 so a compile error's line number can be found — FINDINGS 2026-09-20. **With TIA Portal open, a commit no longer records a stale mirror**: the
@@ -62,7 +62,7 @@ marking, duplicate-param keys, and the detail-pane lookup. All of them are in
 
 | Project | Tests | Time | Needs |
 |---|---|---|---|
-| `Versio.Core.Tests` | 1,911 | under a second | nothing |
+| `Versio.Core.Tests` | 1,917 | under a second | nothing |
 | `Versio.Integration.Tests` | 176 | ~10 s | real git |
 | `Versio.App.Tests` | 801 (re-counted 2026-10-23) | 10 m 45 s (loaded: mutation checks ran beside it) and 10 m 36 s on 2026-10-23; 12 m 19 s, 10 m 42 s and 9 m 5 s on 2026-10-22; 10 m 46 s on 2026-10-19; 10 m 58 s on 2026-10-16; 6 m 35 s on 2026-10-10; 8 m 38 s on 2026-10-05; ~3.6 min on 2026-09-22 | nothing |
 | `Versio.Arch.Tests` | 36 | instant | nothing |
@@ -72,7 +72,7 @@ marking, duplicate-param keys, and the detail-pane lookup. All of them are in
 | `Versio.Plc.TiaPortal.Tests` | 5 | seconds when skipped; minutes when Portal runs the import gate | **real TIA Portal** — skips without Openness membership or LFS content |
 | `Versio.Plc.TwinCat.Pure.Tests` | 23 | instant | nothing |
 | `Versio.Plc.TwinCat.Tests` | 6 | seconds when skipped; ~5 min when XAE runs the import gate | **real TwinCAT XAE** — skips without `TcXaeShell.DTE.17.0` or the fixture |
-| `Versio.Web.Tests` | 441 | a few seconds | nothing — GitHub is faked |
+| `Versio.Web.Tests` | 448 | a few seconds | nothing — GitHub is faked |
 | `web/` (vitest) | 187 | ~21 s on 2026-10-24 (the review page waits for its reads, not ticks; it was ~3 min) | the pinned Node in `web/.node` |
 | `Versio.Plc.Codesys.Tests` | 55 | **~30 min**; 41 m 14 s, 55/55, on 2026-10-11 on `WebViewer` | **real CODESYS** |
 
@@ -101,7 +101,7 @@ real toolchain.
 | [`project/PLAN.md`](project/PLAN.md) | Design record for Versio Project — one PLC beside the IDE. Not the live queue |
 | [`outpost/PLAN.md`](outpost/PLAN.md) | Design record for Versio Outpost — plant backup and confirmed restore. Not the live queue |
 | [`web/ARCHITECTURE.md`](web/ARCHITECTURE.md) | Versio Web as built: the layers, where every file is, one request end to end, what it reuses from the desktop |
-| [`web/PLAN.md`](web/PLAN.md) | Design record for Versio Web — a read-only browser view of a repository on GitHub, drawn by the same Core renderers. Its Step 1 is Outpost's Step 2b. Not the live queue |
+| [`web/PLAN.md`](web/PLAN.md) | Design record for Versio Web — a browser view of a repository on GitHub, drawn by the same Core renderers, and since slice 2 a pull request reviewer with writes on. Its Step 1 is Outpost's Step 2b. Not the live queue |
 | [`web/FINISH.md`](web/FINISH.md) | **The live queue for Versio Web** (2026-10-23): every gap between the page and a finished product — GitHub's look, the pull request page at parity, every desktop drawing — and the order they land in |
 | [`fbs/PLAN.md`](fbs/PLAN.md) | Design record for CODESYS File-Based Storage — an `.fbsproj` folder shown and drawn as a project, never synced. What the fixture measured. Not the live queue |
 
@@ -337,7 +337,7 @@ One list. Reorder it; do not copy it into another file.
    - "open in CODESYS" from `.sidecars/.~u`;
    - CFC;
    - the owner's eyeball of the drawing (right rail?) and of the row.
-10. **Versio Web, a read-only browser view of a repository on GitHub — built 2026-10-11 on
+10. **Versio Web, a browser view of a repository on GitHub, read-only at first and a pull request reviewer since slice 2 — built 2026-10-11 on
    `WebViewer`, since merged.** **[`web/FINISH.md`](web/FINISH.md) is the queue, and its Steps 0–10
    landed between 2026-10-23 and 2026-10-24 on `VersioWeb`:** GitHub's look and feel in place of
    the desktop shell, the pull request page at parity (comments everywhere, landing on the right

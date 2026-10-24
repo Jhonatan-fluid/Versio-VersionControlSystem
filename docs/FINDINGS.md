@@ -19,6 +19,78 @@ produce a diff touching everything else.
 
 ---
 
+### A third read: the coverage banner said "complete" four ways while hiding a change, and the first pass's own fixes had five holes
+
+**2026-10-24, the owner asked for "one more review, fix all your bugs".** Four fresh readers
+over what the second pass had only skimmed — the reader's internals, the auth and review
+helpers, the page's components, Core's catalogs and coverage — and one over the ten fix commits
+themselves. Everything below was checked against the code before it was fixed, and every rule
+added is pinned by a test that its own mutant fails.
+
+**The coverage banner lied four ways** (`Coverage`, `StDeclarationTable`), each a changed line
+reported as shown by a drawing that drew nothing of it:
+
+- A pragma between a row's comment and its declaration (`// the cap` / `{warning 'check'}` /
+  `Limit : INT := 5;`) sits inside the row's span, which runs from the comment; the modified row
+  vouched for it. With an attribute pragma above, `Flush` even *claimed* the line, so it was not
+  listed as unshown either. **Fix:** `Coverage.Table` refuses any line the table lists as unshown
+  on that side (`MemberTable.UnshownBefore` carries the older side's), and a row claims its
+  attribute lines, its comment lines and its declaration — never the range between.
+- A comment on a section or end keyword line (`VAR_INPUT // safety`, `END_VAR // …`) and on a
+  method header with no return row was claimed as framing; the STRUCT line checked its comment,
+  the others did not. `ClaimKeywordLine` checks for all of them.
+- An enumeration claimed every line from its header to `END_TYPE` while drawing only value
+  lines: a pragma on a value, a comment no value took, a comment on the header were "shown".
+  Claimed line by line now.
+- A placeholder network — an IL network in a ladder, an SCL compile unit in a LAD block — holds
+  no elements, so its fingerprint is its title and language; two versions with different
+  instructions compared as Same and the span was vouched for. Such a network vouches for nothing.
+
+**The first pass's fixes, re-read:** the S9 log fix named the valid repository and then printed
+the same decoded text through `Request.Path` (every refusal line spells the path now); a block
+comment opened on a directive line (`{attribute 'x'} (* why:`) hid from the new tokenizer state
+because the directive claimed the line first; a suggestion that replaced line 1 dropped the BOM
+the fix had just promised to keep; the expired-snapshot banner was raised and the poll went on
+every thirty seconds; a viewed and folded file, once "wanted", re-read its drawing on every push;
+the commit comment box was not keyed by its slot; a "used by" answer cut by a slow minute was
+cached as if cut by the project's size.
+
+**The reader and the host:** GitHub's secondary limit (a 403 with `Retry-After` and a remaining
+count that is not zero) read as "not found", so the page said "not visible to you" where the
+threat model promises the rate-limit words; the writer had mapped it right from the start.
+Labels and milestones were read one page deep and the write gates refused the 101st by name
+("this repository has no label X"); five pages now, and a cut list does not gate. Every
+anonymous request to a public repository the App is not installed on paid a JWT-signed GitHub
+call, and the per-repository gates grew without bound; "not installed" is remembered for a
+minute and the gates are striped. The `/pulls` counts swapped the state by substring, inside a
+quoted value too. A `versio:` tag with a `>` in its payload survived `Strip`. A search over
+GitHub's 256 characters was "GitHub could not be reached". The rate limiter partitioned on the
+raw session id. `X-Forwarded-Host` was never trusted even from a trusted proxy, and a sign-in
+refused for a wrong `redirect_uri` logged nothing that said so. A GraphQL answer with a null
+connection or a null commit author threw and failed the whole list. The threat model and
+`Documents.cs` still said "never HTML" a week after the web-page tab served it inline under a
+sandbox.
+
+**The page:** the peek kept its first path when a second link was clicked (keyed now); the pull
+request search box did not follow a filter click; the Documentation drawer could not be opened
+at phone width; a permalink on the Conversation tab never scrolled on load; the new pull request
+form kept a draft's branches over the link's; four GitHub URL shapes landed on NotFound or asked
+the server to draw a folder; Close and Reopen never told the page the snapshot was stale; the
+milestone select snapped back on pick; three popovers read shadow tokens that do not exist;
+"60 minutes ago" at the unit boundaries; a block with members was never lit as the current
+object and folded its members on a second click; `Avatar` promised a fallback it did not have;
+seven relayed URLs reached an `href` with no scheme check; the sidebar drew labels unlike
+everywhere else; the reaction picker had no Escape or outside click; and "Discard" and "Ask"
+where GitHub says "Abandon review" and "Request".
+
+**Not done, said in FINISH.md:** an operand's comment, address or flags changed alone still
+compares as Same inside a ladder network (the model does not carry them: the element-anchor
+work); the desktop's `DiffView` colours the second line of a block comment as code; avatars on
+GitHub Enterprise; a device's slots ordered as text past nine; a cross-folder rename marked in
+the explorer only when the caller passes the old path, which the web's compare does not.
+
+---
+
 ### A second read of the finished web page: every instance call linked to the first method of that name, and a commit comment's key lived only in React state
 
 **2026-10-24, the owner asked "are you done with the web page? review again your work".** A
@@ -32,9 +104,11 @@ resolver for every plain word, and `ObjectIndex` keys methods and properties by 
 the "used by" search counted the same calls as uses of that method. The fixture manifests show
 how common the collision is: `RefrigeratorControl` has ten names exported more than once
 (`P_Active`, `Get`, `P_ClassName` …). **Fix:** a word after a dot is a member of what precedes it
-and is never linked, on both sides (`CodeHtml.IsMember`, shared by the link and the search).
-Mutation: with `IsMember` returning false, `ObjectLinksTests` fails on the new test. What is still
-not seen is a local declared with an object's name; FINISH.md's deferred list says so.
+and is never linked (`CodeHtml.IsMember`). The first version applied the same rule to the
+"used by" search and emptied every method's list; the search counts dotted words by name now
+(the block-comment bullet below). Mutation: with `IsMember` returning false, `ObjectLinksTests`
+fails on the new test. What is still not seen is a local declared with an object's name;
+FINISH.md's deferred list says so.
 
 **The commit comment box held its operation key in React state.** Every other comment box keeps
 its draft and its held key in session storage (`ReviewWrite.readDraft`), which is what makes a

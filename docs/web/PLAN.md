@@ -1,4 +1,4 @@
-# Versio Web: a read-only repository viewer
+# Versio Web: a repository viewer (read-only at first; a pull request reviewer since slice 2)
 
 **Date:** 2026-10-11, after a review of the stack, the sign-in and two security passes with the
 owner. **This is a design record, not the live queue.** What Versio is today lives in
