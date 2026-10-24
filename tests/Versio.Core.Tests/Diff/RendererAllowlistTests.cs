@@ -68,6 +68,18 @@ public sealed partial class RendererAllowlistTests
                          TextDiffHtml.Fragment(diff, LanguageCatalog.StructuredText),
                          TextDiffHtml.Fragment(diff, SyntaxLanguage.PlainText, TextDiffView.SideBySide),
                          MemberTableHtml.Fragment(table),
+                         CatalogHtml.Fragment(CatalogDiff.Compare(
+                             new LibraryCatalog { Schema = 1, Manager = Noise(random, 10), References = [new LibraryReference { Name = Noise(random, 8), DefaultResolution = "1" }] },
+                             new LibraryCatalog { Schema = 1, Manager = Noise(random, 10), References = [new LibraryReference { Name = Noise(random, 8), DefaultResolution = Noise(random, 6), Namespace = Noise(random, 6) }] }), compared: true, sourcePath: Noise(random, 10)),
+                         CatalogHtml.Fragment(new TaskCatalog { Schema = 1, Configuration = Noise(random, 10), Tasks = [new TaskRecord { Name = Noise(random, 8), Priority = Noise(random, 4), Pous = [Noise(random, 8)] }] }),
+                         CatalogHtml.Fragment(new DeviceCatalog
+                         {
+                             Schema = 1,
+                             Name = Noise(random, 10),
+                             Connectors = [new DeviceConnector { ConnectorId = Noise(random, 4), Interface = Noise(random, 8), Parameters = new Dictionary<string, string>(StringComparer.Ordinal) }],
+                             Slots = new Dictionary<string, string>(StringComparer.Ordinal) { [Noise(random, 4) + "s"] = Noise(random, 8) },
+                         }),
+                         CardHtml.Fragment("task", Noise(random, 10), [new CardFact(Noise(random, 8), Noise(random, 20))], Noise(random, 10)),
                      })
             {
                 foreach (Match tag in Tag().Matches(html))
