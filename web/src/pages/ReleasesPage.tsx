@@ -1,6 +1,6 @@
 import { useEffect } from 'react';
 import { Link, useLocation, useNavigate, useParams } from 'react-router';
-import type { Me } from '../api';
+import type { Me, Release } from '../api';
 import { api } from '../api';
 import { FragmentHost } from '../components/FragmentHost';
 import { ErrorPanel } from '../components/Pane';
@@ -43,6 +43,48 @@ export function ReleasesPage({ me, latest = false }: { me: Me | null; latest?: b
   const signIn = me?.signInAvailable && !me.signedIn ? api.signInUrl(location.pathname + location.search) : null;
   usePageTitle(picked ? `Release ${picked}` : 'Releases', `${owner}/${repo}`);
 
+  // The list is the server's cap (the latest fifty). A direct link to a release past it fetched
+  // the notes and had nowhere to put them until 2026-10-25: the page drew one article per LISTED
+  // release and the picked one was not among them, so the list came up closed and the notes were
+  // dropped on the floor (the 2026-10-24 review's item 12). Such a release gets its own article
+  // first, built from the view's meta — spelled by the server, as a listed row's is — with the
+  // list below it, closed. The header needs the view, so while it loads or after it fails the
+  // box carries only the body: the raw tag from the URL is the one name here nobody has spelled.
+  const unlisted = picked !== undefined && releases.state === 'ok' && !releases.value.releases.some((r) => r.tag === picked);
+
+  const header = (r: Release) => (
+    <div className="box-header">
+      <Icon name="tag" className="text-muted" />
+      <Link to={releasesUrl(owner, repo, r.tag)} className="list-row-title">{r.name}</Link>
+      {r.prerelease && <span className="label" style={{ color: 'var(--color-attention-fg)', borderColor: 'var(--color-attention-fg)' }}>Pre-release</span>}
+      <span className="text-muted text-small" style={{ marginLeft: 'auto', display: 'inline-flex', gap: 6, alignItems: 'center' }}>
+        <code>{r.tagLabel}</code>
+        <RelativeTime when={r.when} />
+      </span>
+    </div>
+  );
+
+  const notes = (
+    <div className="box-body">
+      {release.state === 'loading' && <Loading what="Reading the notes…" />}
+      {release.state === 'error' && <p className="text-danger">{release.error.message}</p>}
+      {release.state === 'ok' && (
+        <>
+          <p className="text-muted text-small" style={{ display: 'flex', gap: 6, alignItems: 'center', marginTop: 0 }}>
+            <Avatar login={release.value.author} size={16} />
+            <span className="text-bold">{release.value.author}</span> released this <RelativeTime when={release.value.when} />
+          </p>
+          {release.value.html ? (
+            // A link in the notes opens the file at the release's own tag, not at the default branch's tip.
+            <FragmentHost html={release.value.html} path="" onOpenPath={(p) => navigate(blobUrl(owner, repo, picked ?? defaultBranch, p))} line={null} onLine={() => {}} />
+          ) : (
+            <p className="text-muted">No notes.</p>
+          )}
+        </>
+      )}
+    </div>
+  );
+
   return (
     <RepoLayout me={me} owner={owner} repo={repo} nav="releases" crumb="Releases">
       {releases.state === 'loading' && <Loading />}
@@ -50,39 +92,18 @@ export function ReleasesPage({ me, latest = false }: { me: Me | null; latest?: b
       {releases.state === 'ok' && releases.value.releases.length === 0 && (
         <Blankslate icon="tag" heading="No releases yet" spacious>Releases published on GitHub show here with their notes.</Blankslate>
       )}
+      {unlisted && (
+        <article className="box" style={{ marginBottom: 16 }} aria-current="true">
+          {release.state === 'ok' && header(release.value)}
+          {notes}
+        </article>
+      )}
       {releases.state === 'ok' && releases.value.releases.map((r) => {
         const open = r.tag === picked;
         return (
           <article key={r.tag} className="box" style={{ marginBottom: 16 }} aria-current={open ? 'true' : undefined}>
-            <div className="box-header">
-              <Icon name="tag" className="text-muted" />
-              <Link to={releasesUrl(owner, repo, r.tag)} className="list-row-title">{r.name}</Link>
-              {r.prerelease && <span className="label" style={{ color: 'var(--color-attention-fg)', borderColor: 'var(--color-attention-fg)' }}>Pre-release</span>}
-              <span className="text-muted text-small" style={{ marginLeft: 'auto', display: 'inline-flex', gap: 6, alignItems: 'center' }}>
-                <code>{r.tagLabel}</code>
-                <RelativeTime when={r.when} />
-              </span>
-            </div>
-            {open && (
-              <div className="box-body">
-                {release.state === 'loading' && <Loading what="Reading the notes…" />}
-                {release.state === 'error' && <p className="text-danger">{release.error.message}</p>}
-                {release.state === 'ok' && (
-                  <>
-                    <p className="text-muted text-small" style={{ display: 'flex', gap: 6, alignItems: 'center', marginTop: 0 }}>
-                      <Avatar login={release.value.author} size={16} />
-                      <span className="text-bold">{release.value.author}</span> released this <RelativeTime when={release.value.when} />
-                    </p>
-                    {release.value.html ? (
-                      // A link in the notes opens the file at the release's own tag, not at the default branch's tip.
-                      <FragmentHost html={release.value.html} path="" onOpenPath={(p) => navigate(blobUrl(owner, repo, picked ?? defaultBranch, p))} line={null} onLine={() => {}} />
-                    ) : (
-                      <p className="text-muted">No notes.</p>
-                    )}
-                  </>
-                )}
-              </div>
-            )}
+            {header(r)}
+            {open && notes}
           </article>
         );
       })}

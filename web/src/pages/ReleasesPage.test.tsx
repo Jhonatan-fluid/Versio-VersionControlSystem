@@ -8,6 +8,8 @@ import { ReleasesPage } from './ReleasesPage';
 
 /** The releases GitHub lists, newest first; the view answers for whichever tag the URL names. */
 let tags = ['v2.0', 'v1.0'];
+/** Whether the list is the server's cap, with older releases past it (the view still answers for those). */
+let truncated = false;
 
 function answer(url: string): unknown {
   if (url.includes('/releases/view')) {
@@ -19,7 +21,7 @@ function answer(url: string): unknown {
   }
   if (url.includes('/releases')) {
     return {
-      truncated: false,
+      truncated,
       releases: tags.map((tag, i) => (
         i === 0
           ? { tag, tagLabel: tag, name: 'Line 3', author: 'jo', when: '2026-10-01T00:00:00Z', prerelease: true }
@@ -68,6 +70,7 @@ describe('Releases', () => {
     vi.unstubAllGlobals();
     document.body.innerHTML = '';
     tags = ['v2.0', 'v1.0'];
+    truncated = false;
   });
 
   async function settle(host: HTMLElement) {
@@ -92,6 +95,26 @@ describe('Releases', () => {
     expect(rows[0]?.getAttribute('aria-current')).toBe('true');
     expect(rows[0]?.querySelector('.fragment')?.textContent).toContain('First, of latest.');
     expect(host.querySelector('[data-testid="where"]')?.textContent).toBe('/acme/plant/releases/tag/latest');
+    act(() => root.unmount());
+  });
+
+  // A direct link to a release older than the capped list fetched its notes and never showed
+  // them: the page drew an article per LISTED release, and the fetched view had no article to
+  // land in (the 2026-10-24 review's item 12). The listed releases stay below it, closed.
+  it('opens a release older than the capped list on its own page', async () => {
+    truncated = true;
+    const { host, root } = await render('/acme/plant/releases/tag/v0.9');
+    await settle(host);
+
+    const open = host.querySelector('article.box[aria-current="true"]');
+    expect(open?.querySelector('.fragment')?.textContent).toContain('First, of v0.9.');
+    expect(open?.querySelector('a.list-row-title')?.getAttribute('href')).toBe('/acme/plant/releases/tag/v0.9');
+    expect(open?.textContent).toContain('Pre-release');
+    const rows = Array.from(host.querySelectorAll('article.box'));
+    expect(rows).toHaveLength(3);
+    expect(rows[0]).toBe(open);
+    expect(rows.slice(1).every((r) => r.querySelector('.fragment') === null)).toBe(true);
+    expect(host.textContent).toContain('The latest 2.');
     act(() => root.unmount());
   });
 
