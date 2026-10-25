@@ -201,6 +201,61 @@ public sealed class GitAttributesTests
         Assert.Contains("plc/Machine/**", plan.Content, StringComparison.Ordinal);
     }
 
+    // ------------------------------------------------ patterns git would split
+
+    /// <summary>
+    /// A mirror path with a space is written as one quoted pattern.
+    /// </summary>
+    /// <remarks>
+    /// git splits an attribute line on whitespace, so <c>src/My App/export/** text eol=lf</c>
+    /// is the pattern <c>src/My</c> with the attributes <c>App/export/**</c>, <c>text</c>
+    /// and <c>eol=lf</c> — garbage, and the mirror got no LF rule. Written unquoted it was
+    /// also never recognised as covered on the next adoption, so every adoption appended
+    /// another block. The 2026-10-24 review's item 26.
+    /// </remarks>
+    [Fact]
+    public void A_mirror_path_with_a_space_is_written_as_one_quoted_pattern()
+    {
+        var plan = GitAttributes.Plan(string.Empty, [], lfsAvailable: false,
+                                      mirrors: ["src/My App/export"]);
+
+        Assert.Contains("\"src/My App/export/**\" text eol=lf", plan.Content, StringComparison.Ordinal);
+        Assert.Equal("src/My App/export/**", Assert.Single(plan.AddedPatterns));
+    }
+
+    [Fact]
+    public void A_quoted_pattern_already_in_the_file_counts_as_covered()
+    {
+        var first = GitAttributes.Plan(string.Empty, [], lfsAvailable: false,
+                                       mirrors: ["src/My App/export"]);
+        var second = GitAttributes.Plan(first.Content, [], lfsAvailable: false,
+                                        mirrors: ["src/My App/export"]);
+
+        Assert.False(second.ChangeNeeded);
+        Assert.Equal(first.Content, second.Content);
+    }
+
+    [Fact]
+    public void A_binary_pattern_with_a_space_is_quoted_too()
+    {
+        // The directory project's binary store is scoped to the project's own folder, and
+        // that folder is whatever the person called it.
+        var plan = GitAttributes.Plan(string.Empty, ["Cleaning Station/store/**"], lfsAvailable: false);
+
+        Assert.Contains("\"Cleaning Station/store/**\" binary -diff -merge", plan.Content, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Quotes_and_backslashes_inside_a_pattern_are_escaped_the_way_git_unescapes_them()
+    {
+        var plan = GitAttributes.Plan(string.Empty, [], lfsAvailable: false,
+                                      mirrors: ["a \"b\"/export"]);
+
+        Assert.Contains("\"a \\\"b\\\"/export/**\" text eol=lf", plan.Content, StringComparison.Ordinal);
+        Assert.False(GitAttributes.Plan(plan.Content, [], lfsAvailable: false,
+                                        mirrors: ["a \"b\"/export"]).ChangeNeeded);
+    }
+
     // ------------------------------------------------ a directory project's binary store
 
     /// <summary>The first token of every rule line - what git reads as the pattern.</summary>

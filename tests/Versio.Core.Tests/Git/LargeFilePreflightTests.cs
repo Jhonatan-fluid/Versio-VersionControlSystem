@@ -180,6 +180,19 @@ public sealed class LargeFilePreflightTests
     }
 
     [Fact]
+    public void A_quoted_pattern_with_a_space_is_read_as_one_pattern()
+    {
+        // git quotes a pattern that contains whitespace, and so does GitAttributes.Plan
+        // since the 2026-10-24 review's item 26; the first-whitespace split read only
+        // `"src/My` and matched nothing, so the project's own rule did not count.
+        var offenders = LargeFilePreflight.Unprotected(
+            [("src/My App/Machine.project", 20 * Mb)],
+            "\"src/My App/*.project\" filter=lfs diff=lfs -text\n");
+
+        Assert.Empty(offenders);
+    }
+
+    [Fact]
     public void A_filter_whose_name_merely_starts_with_lfs_is_not_protection()
     {
         // The old test was a substring search, so "filter=lfsx" counted.

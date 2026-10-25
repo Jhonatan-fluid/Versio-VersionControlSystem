@@ -71,11 +71,54 @@ public sealed class GitCliClientTests(ITestOutputHelper output) : IDisposable
         await p.WaitForExitAsync();
     }
 
+    /// <summary>Raw git, with what it printed and how it exited — for asking git's own opinion.</summary>
+    private static async Task<(int ExitCode, string StdOut)> RunRawOutputAsync(string workingDirectory, params string[] args)
+    {
+        var psi = new System.Diagnostics.ProcessStartInfo("git")
+        {
+            WorkingDirectory = workingDirectory,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            UseShellExecute = false,
+            CreateNoWindow = true,
+        };
+        foreach (var a in args)
+        {
+            psi.ArgumentList.Add(a);
+        }
+
+        using var p = System.Diagnostics.Process.Start(psi)!;
+        var stdout = await p.StandardOutput.ReadToEndAsync();
+        await p.WaitForExitAsync();
+        return (p.ExitCode, stdout);
+    }
+
     private void Write(string relative, string content)
     {
         var full = Path.Combine(_repo, relative);
         Directory.CreateDirectory(Path.GetDirectoryName(full)!);
         File.WriteAllText(full, content);
+    }
+
+    [SkippableFact]
+    public async Task A_mirror_path_with_a_space_gets_an_attribute_line_git_reads_as_one_pattern()
+    {
+        // git splits an attribute line on whitespace, so the unquoted
+        // `src/My App/export/** text eol=lf` the planner used to write was the pattern
+        // `src/My` with three attributes — the mirror got no LF rule, and git said so when
+        // asked. The 2026-10-24 review's item 26. Asked of git rather than of the planner's
+        // own reader, because what git makes of the line is the only thing that matters.
+        Skip.IfNot(GitAvailable, "git not on PATH");
+        await InitAsync();
+
+        var plan = GitAttributes.Plan(string.Empty, ["*.project"], lfsAvailable: false,
+                                      mirrors: ["src/My App/export"]);
+        Write(".gitattributes", plan.Content);
+
+        var (exit, answer) = await RunRawOutputAsync(_repo, "check-attr", "eol", "--", "src/My App/export/a.st");
+
+        Assert.Equal(0, exit);
+        Assert.Equal("src/My App/export/a.st: eol: lf", answer.Trim());
     }
 
     [SkippableFact]

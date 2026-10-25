@@ -103,15 +103,17 @@ public static class LargeFilePreflight
                 continue;
             }
 
-            var end = line.IndexOfAny([' ', '\t']);
-            if (end < 0)
+            // Read the way git reads it: a pattern with a space arrives quoted (the planner
+            // writes it so since the 2026-10-24 review's item 26), and the first-whitespace
+            // token of `"src/My App/*.project" filter=lfs` is `"src/My`, which protects nothing.
+            if (GitAttributesPattern.Read(line) is not var (pattern, end))
             {
                 continue;
             }
 
             if (FilterState(line[end..]) is { } lfs)
             {
-                rules.Add((ToRegex(line[..end]), lfs));
+                rules.Add((ToRegex(pattern), lfs));
             }
         }
 

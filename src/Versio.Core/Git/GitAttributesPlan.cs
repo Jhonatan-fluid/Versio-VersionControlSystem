@@ -128,7 +128,10 @@ public static class GitAttributes
             return GitAttributesPlan.NoChange(existing) with { Withheld = withheld };
         }
 
-        var width = missing.Concat(missingMirrors).Max(p => p.Length);
+        // Padded on the written form: a pattern with a space goes out quoted (the
+        // 2026-10-24 review's item 26, GitAttributesPattern), and the column the reader sees
+        // is the quoted one.
+        var width = missing.Concat(missingMirrors).Max(p => GitAttributesPattern.Quote(p).Length);
 
         // NO merge=lfs, AND THAT OMISSION IS THE WHOLE POINT OF THIS LINE.
         //
@@ -154,12 +157,13 @@ public static class GitAttributes
         // filter=lfs and diff=lfs stay: those name real, installed behaviours and are what
         // make the binary stored and shown sensibly. Only the merge token goes.
         var rules = missing.Select(p =>
-            $"{p.PadRight(width)} binary -diff -merge" +
+            $"{GitAttributesPattern.Quote(p).PadRight(width)} binary -diff -merge" +
             (lfsAvailable ? " filter=lfs diff=lfs" : string.Empty));
 
         // The opposite rule, for the opposite reason: the mirror exists to be diffed and
         // merged, and it has to arrive byte-identical on every machine that clones it.
-        var mirrorRules = missingMirrors.Select(p => $"{p.PadRight(width)} text eol=lf");
+        var mirrorRules = missingMirrors.Select(p =>
+            $"{GitAttributesPattern.Quote(p).PadRight(width)} text eol=lf");
 
         // LF regardless of platform: .gitattributes is read by git, and CRLF in the file it
         // uses to decide line endings is the kind of irony that costs an afternoon.
@@ -233,10 +237,14 @@ public static class GitAttributes
     /// Patterns the file already says something about.
     /// </summary>
     /// <remarks>
-    /// A deliberately shallow parse: the first whitespace-delimited token of a non-comment
-    /// line is the pattern. Enough to answer "has anyone already spoken about
-    /// <c>*.project</c>", which is the only question asked. It does not try to understand
-    /// the attributes, because acting on them would mean deciding a user's rule is wrong.
+    /// A deliberately shallow parse: the leading pattern of a non-comment line, read the way
+    /// git reads it (<see cref="GitAttributesPattern.Read"/>, which knows a quoted one).
+    /// Enough to answer "has anyone already spoken about <c>*.project</c>", which is the
+    /// only question asked. It does not try to understand the attributes, because acting on
+    /// them would mean deciding a user's rule is wrong. The first-whitespace token it used
+    /// to take never matched a quoted pattern with a space, so the mirror it had itself
+    /// written was never covered and every adoption appended it again — the 2026-10-24
+    /// review's item 26.
     /// </remarks>
     private static HashSet<string> ExistingPatterns(string content)
     {
@@ -250,8 +258,10 @@ public static class GitAttributes
                 continue;
             }
 
-            var end = line.IndexOfAny([' ', '\t']);
-            found.Add(end < 0 ? line : line[..end]);
+            if (GitAttributesPattern.Read(line) is { } read)
+            {
+                found.Add(read.Pattern);
+            }
         }
 
         return found;
