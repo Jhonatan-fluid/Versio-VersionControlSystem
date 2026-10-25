@@ -3777,19 +3777,27 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
     /// Take one side of the selected conflict.
     /// </summary>
     /// <remarks>
-    /// <b>"Ours" and "theirs" swap meaning under a rebase</b> — git replays your commits onto
-    /// the upstream, so during a rebase "ours" is the upstream's version. The labels are chosen
-    /// in the view from <see cref="MergeState"/>; this passes through what the user picked, and
-    /// the log records which side git was actually given.
+    /// <paramref name="mine"/> is what the button says: <b>this branch's</b> version. It is
+    /// mapped to git's side here, because <b>"ours" and "theirs" swap meaning under a
+    /// rebase</b> — git replays your commits onto the upstream, so during a rebase
+    /// <c>--ours</c> is the upstream's version and <c>--theirs</c> is this branch's. The
+    /// first version passed the flag straight through, and "Keep mine" in a rebase quietly
+    /// took the upstream's file (the 2026-10-24 review's item 29); the only test pressed it
+    /// in a merge. The log records both the choice and the side git was given.
     /// </remarks>
-    private async Task ResolveSelectedAsync(bool ours)
+    private async Task ResolveSelectedAsync(bool mine)
     {
         if (_git is null || SelectedConflict is not { } row)
         {
             return;
         }
 
-        _logger.Click(ours ? "Git.ResolveOurs" : "Git.ResolveTheirs");
+        var ours = _mergeState == MergeState.Rebasing ? !mine : mine;
+        _logger.Click(mine ? "Git.ResolveMine" : "Git.ResolveTheirs");
+        _logger.Info(LogCategory.Git,
+            $"keeping {(mine ? "this branch's" : "the incoming")} {row.Path} during a " +
+            $"{(_mergeState == MergeState.Rebasing ? "rebase" : "merge")}: " +
+            $"git {(ours ? "--ours" : "--theirs")}");
         using var busy = Busy.Begin(WorkKind.GitWrite, $"Resolving {row.Path}…");
 
         var result = await _git.ResolveWithSideAsync(row.Path, ours, busy.Token)

@@ -197,6 +197,49 @@ public sealed class ConflictFlowTests
     }
 
     [Fact]
+    public async Task Keeping_mine_during_a_rebase_still_keeps_this_branch_version()
+    {
+        // Under a rebase git's --ours is the upstream, because it is replaying this branch's
+        // commits onto it. The button says "mine" and means this branch either way; the first
+        // version passed the flag through and took the upstream's file (the 2026-10-24
+        // review's item 29).
+        using var repo = Diverged();
+        using var shell = Shell();
+
+        await shell.OpenAsync(repo.Path);
+        await Eventually.Press(shell.ReconcileCommand, true, "rebase");
+        await Eventually.Until(() => shell.Conflicted.Count > 0, "the rebase stopped");
+        Assert.Equal(MergeState.Rebasing, shell.MergeState);
+
+        shell.SelectedConflict = shell.Conflicted[0];
+
+        await Eventually.Press(shell.ResolveCommand, true, "keep mine");
+        await Eventually.Until(() => shell.Conflicted.Count == 0, "the file was resolved");
+
+        Assert.Equal("mine\n",
+                     File.ReadAllText(Path.Combine(repo.Path, "seed.txt")).Replace("\r\n", "\n"));
+    }
+
+    [Fact]
+    public async Task Keeping_theirs_during_a_rebase_takes_the_upstream_version()
+    {
+        using var repo = Diverged();
+        using var shell = Shell();
+
+        await shell.OpenAsync(repo.Path);
+        await Eventually.Press(shell.ReconcileCommand, true, "rebase");
+        await Eventually.Until(() => shell.Conflicted.Count > 0, "the rebase stopped");
+
+        shell.SelectedConflict = shell.Conflicted[0];
+
+        await Eventually.Press(shell.ResolveCommand, false, "keep theirs");
+        await Eventually.Until(() => shell.Conflicted.Count == 0, "the file was resolved");
+
+        Assert.Equal("theirs\n",
+                     File.ReadAllText(Path.Combine(repo.Path, "seed.txt")).Replace("\r\n", "\n"));
+    }
+
+    [Fact]
     public async Task Keeping_theirs_takes_the_incoming_version()
     {
         using var repo = Diverged();
