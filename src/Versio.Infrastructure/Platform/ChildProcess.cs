@@ -162,65 +162,76 @@ public static class ChildProcess
     }
 
     /// <summary>
-    /// PIDs currently running under this image name. Snapshot before Host starts so a
-    /// later reap can kill only the COM server Versio created, not one the user already
-    /// had open.
+    /// Kill the one IDE process a host reported as its own, and nothing else.
     /// </summary>
-    public static HashSet<int> PidsNamed(string processName)
+    /// <remarks>
+    /// <para>
+    /// A COM server is not a child of Host.exe, so KillTree on the host leaves it behind;
+    /// something has to reap it on Stop or timeout. The first version reaped every process
+    /// of the IDE's name that was not running when the host started — a snapshot diff over
+    /// the whole run, which is the mutex wait, the export or import and the timeout. A
+    /// Portal or XAE the engineer opened by hand in that window was "new" and died with its
+    /// unsaved project (the 2026-10-24 review's item 28). Now the host names the PID it
+    /// created, measured across the creation call alone, and this kills that PID only —
+    /// after checking the image name and that it started after the host did, so a reused
+    /// PID cannot stand in for it.
+    /// </para>
+    /// <para>
+    /// No PID means nothing is reaped by name: the caller logs that the IDE may be left
+    /// running, which is the recoverable failure. Killing by guess is the other one.
+    /// </para>
+    /// </remarks>
+    /// <param name="pid">What the host reported, or null when it reported nothing.</param>
+    /// <param name="processName">The IDE's image name without extension, as a cross-check.</param>
+    /// <param name="notBefore">The host's start; a process older than this is not ours.</param>
+    /// <returns>How many processes were asked to die. Zero is the usual case: it had already gone.</returns>
+    public static int KillOwned(int? pid, string processName, DateTime notBefore)
     {
-        try
+        if (pid is not { } id)
         {
-            return [.. Process.GetProcessesByName(processName).Select(p => p.Id)];
+            return 0;
         }
-        catch (InvalidOperationException)
-        {
-            return [];
-        }
-    }
 
-    /// <summary>
-    /// Kill processes of this name that were not in the snapshot. Best-effort: a COM
-    /// server is not a child of Host.exe, so KillTree on the host leaves it behind.
-    /// </summary>
-    /// <returns>How many processes were asked to die. Zero is success: they had already gone.</returns>
-    public static int KillNew(IReadOnlySet<int> before, string processName)
-    {
-        Process[] candidates;
+        Process candidate;
         try
         {
-            candidates = Process.GetProcessesByName(processName);
+            candidate = Process.GetProcessById(id);
+        }
+        catch (ArgumentException)
+        {
+            return 0;                               // already gone
         }
         catch (InvalidOperationException)
         {
             return 0;
         }
 
-        var killed = 0;
-        foreach (var candidate in candidates)
+        using (candidate)
         {
-            using (candidate)
+            try
             {
-                if (before.Contains(candidate.Id))
+                if (!string.Equals(candidate.ProcessName, processName, StringComparison.OrdinalIgnoreCase)
+                    || candidate.StartTime < notBefore)
                 {
-                    continue;
+                    return 0;                       // the PID was reused by something else
                 }
 
-                try
-                {
-                    candidate.Kill(entireProcessTree: true);
-                    killed++;
-                }
-                catch (InvalidOperationException)
-                {
-                    // Already gone.
-                }
-                catch (NotSupportedException)
-                {
-                }
+                candidate.Kill(entireProcessTree: true);
+                return 1;
+            }
+            catch (InvalidOperationException)
+            {
+                return 0;                           // exited between the lookup and the kill
+            }
+            catch (NotSupportedException)
+            {
+                return 0;
+            }
+            catch (System.ComponentModel.Win32Exception)
+            {
+                return 0;                           // access denied: not ours to kill either
             }
         }
-
-        return killed;
     }
 
     private static void TryCloseStdin(Process process)

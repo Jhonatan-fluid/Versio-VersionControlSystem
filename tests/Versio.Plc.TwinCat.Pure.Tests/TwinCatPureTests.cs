@@ -486,4 +486,16 @@ public sealed class TwinCatProtocolTests
         Assert.Contains("noise", output.Chatter);
         Assert.Contains("more", output.Chatter);
     }
+
+    [Fact]
+    public void The_host_names_the_xae_it_created()
+    {
+        // ide_pid is what lets Stop reap the one XAE this run started rather than every XAE
+        // that appeared during it (the 2026-10-24 review's item 28).
+        var output = TwinCatProtocol.Parse("@@VERSIO@@{\"t\":\"ide_pid\",\"pid\":\"4242\"}\n");
+
+        var evt = Assert.Single(output.Events);
+        Assert.Equal("ide_pid", evt.Type);
+        Assert.Equal("4242", evt.String("pid"));
+    }
 }

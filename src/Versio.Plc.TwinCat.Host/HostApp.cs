@@ -122,10 +122,29 @@ internal static partial class HostApp
                    ?? throw new InvalidOperationException(
                        progId + " is not registered. Install TwinCAT 3 XAE.");
         var created = Stopwatch.StartNew();
+
+        // XAE is a COM server the activation launches, not a child of this process, so the
+        // only way to know which TcXaeShell is ours is to look across the creation call
+        // itself. Reported to the runner as ide_pid; on Stop it reaps that PID and nothing
+        // else. Before this the runner diffed a snapshot taken over the whole run and
+        // killed every XAE that appeared meanwhile, the engineer's included (the 2026-10-24
+        // review's item 28). Ambiguous reports none: an XAE left running beats a stranger's
+        // killed.
+        var before = XaePids();
         var dte = Activator.CreateInstance(type)
                   ?? throw new InvalidOperationException("failed to construct " + progId);
         created.Stop();
         Emit("info", "phase", "dte", "detail", "created " + progId + " in " + created.ElapsedMilliseconds + "ms");
+        var mine = XaePids().Except(before).ToList();
+        if (mine.Count == 1)
+        {
+            Emit("ide_pid", "pid", mine[0].ToString(System.Globalization.CultureInfo.InvariantCulture));
+        }
+        else
+        {
+            Emit("warning", "msg", "could not tell which XAE this host created (" +
+                                   mine.Count + " appeared); Stop will not reap by name");
+        }
 
         try
         {
@@ -150,6 +169,18 @@ internal static partial class HostApp
         }
 
         return dte;
+    }
+
+    private static HashSet<int> XaePids()
+    {
+        try
+        {
+            return [.. Process.GetProcessesByName("TcXaeShell").Select(p => p.Id)];
+        }
+        catch (InvalidOperationException)
+        {
+            return [];
+        }
     }
 
     private static void OpenSolution(object dte, string sln)
