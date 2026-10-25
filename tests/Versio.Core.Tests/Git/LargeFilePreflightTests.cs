@@ -112,4 +112,81 @@ public sealed class LargeFilePreflightTests
 
         Assert.Single(offenders);
     }
+
+    /// <summary>
+    /// A later <c>-filter</c> on a narrower pattern takes the protection away again.
+    /// </summary>
+    /// <remarks>
+    /// gitattributes is last-match-wins per attribute. The preflight used to keep only the
+    /// rules that said <c>filter=lfs</c> and ask whether <i>any</i> of them matched, so
+    /// <c>*.bin filter=lfs</c> followed by <c>huge.bin -filter</c> still counted as
+    /// protected and the warning was suppressed for the one file git would actually commit
+    /// in full — a false negative, in a class whose remarks claimed only spurious questions
+    /// were possible. The 2026-10-24 review's item 13.
+    /// </remarks>
+    [Fact]
+    public void A_later_unset_filter_takes_the_protection_away()
+    {
+        var offenders = LargeFilePreflight.Unprotected(
+            [("huge.bin", 20 * Mb), ("other.bin", 20 * Mb)],
+            "*.bin filter=lfs diff=lfs merge=lfs -text\nhuge.bin -filter\n");
+
+        Assert.Equal("huge.bin", Assert.Single(offenders));
+    }
+
+    [Fact]
+    public void A_later_unspecified_filter_takes_the_protection_away()
+    {
+        // "!filter" is the third spelling: the attribute reverts to unspecified, which for
+        // LFS means the same as unset — git commits the content.
+        var offenders = LargeFilePreflight.Unprotected(
+            [("huge.bin", 20 * Mb)],
+            "*.bin filter=lfs\nhuge.bin !filter\n");
+
+        Assert.Equal("huge.bin", Assert.Single(offenders));
+    }
+
+    [Fact]
+    public void A_later_different_filter_takes_the_protection_away()
+    {
+        var offenders = LargeFilePreflight.Unprotected(
+            [("huge.bin", 20 * Mb)],
+            "*.bin filter=lfs\nhuge.bin filter=clean-only\n");
+
+        Assert.Equal("huge.bin", Assert.Single(offenders));
+    }
+
+    [Fact]
+    public void A_later_lfs_rule_puts_the_protection_back()
+    {
+        var offenders = LargeFilePreflight.Unprotected(
+            [("huge.bin", 20 * Mb)],
+            "*.bin filter=lfs\nhuge.bin -filter\nhuge.bin filter=lfs\n");
+
+        Assert.Empty(offenders);
+    }
+
+    [Fact]
+    public void A_later_rule_that_says_nothing_about_filter_leaves_the_protection_alone()
+    {
+        // Under git a rule only changes the attributes it names. Recording every later
+        // matching rule as "not lfs" would have traded the false negative for a false
+        // positive on the commonest hand-written layout: one line for lfs, one for -diff.
+        var offenders = LargeFilePreflight.Unprotected(
+            [("huge.bin", 20 * Mb)],
+            "*.bin filter=lfs\n*.bin -diff -merge\n");
+
+        Assert.Empty(offenders);
+    }
+
+    [Fact]
+    public void A_filter_whose_name_merely_starts_with_lfs_is_not_protection()
+    {
+        // The old test was a substring search, so "filter=lfsx" counted.
+        var offenders = LargeFilePreflight.Unprotected(
+            [("huge.bin", 20 * Mb)],
+            "*.bin filter=lfsx\n");
+
+        Assert.Equal("huge.bin", Assert.Single(offenders));
+    }
 }
