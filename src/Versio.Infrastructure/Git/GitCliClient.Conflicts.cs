@@ -93,10 +93,14 @@ public sealed partial class GitCliClient
             return null;
         }
 
-        // The runner appends a newline to stdout; TrimEntries drops it from the last field.
-        return [.. result.StdOut
-            .Split('\0', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-            .Where(p => p.Length > 0)];
+        // The runner appends one newline to stdout, and that one newline is all that is
+        // removed — by length, never by trimming. The first -z version split with
+        // TrimEntries to be rid of it, which also took the spaces off every field: a project
+        // under " plc/" came back as "plc/…", matched no tracked root, and the merge guard
+        // was bypassed for exactly the names -z was added to carry (the second-round review's
+        // item 2). A path is whatever git said it is, spaces included.
+        var listing = result.StdOut.EndsWith('\n') ? result.StdOut[..^1] : result.StdOut;
+        return [.. listing.Split('\0', StringSplitOptions.RemoveEmptyEntries)];
     }
 
     /// <summary>Replay this branch onto the upstream.</summary>

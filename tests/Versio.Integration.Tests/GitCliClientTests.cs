@@ -432,6 +432,40 @@ public sealed class GitCliClientTests(ITestOutputHelper output) : IDisposable
     }
 
     [SkippableFact]
+    public async Task Incoming_paths_keep_their_leading_spaces()
+    {
+        // The -z listing above was split with TrimEntries to drop the runner's trailing
+        // newline, and TrimEntries trims every field: " plc/Machine.project" arrived as
+        // "plc/Machine.project", matched no tracked root, and the merge guard let the merge
+        // through for a project it was tracking (the second-round review's item 2). The
+        // newline is removed by length now; a name with a space at either end is the name.
+        Skip.IfNot(GitAvailable, "git not on PATH");
+        await InitAsync();
+
+        Write("a.txt", "a");
+        await Client.StageAsync(["a.txt"], CancellationToken.None);
+        await Client.CommitAsync("initial", CancellationToken.None);
+
+        var created = await Client.CreateBranchAsync("topic", checkout: true, CancellationToken.None);
+        Assert.True(created.Success, created.FailureReason);
+        Write(" plc/Machine.project", "binary-ish");
+        Write(" plc/Machine/ Main.st", "PROGRAM Main\nEND_PROGRAM\n");
+        await Client.StageAsync([" plc"], CancellationToken.None);
+        await Client.CommitAsync("leading spaces", CancellationToken.None);
+        Assert.True((await Client.CheckoutAsync("main", CancellationToken.None)).Success);
+
+        var incoming = await Client.IncomingPathsAsync("topic", CancellationToken.None);
+
+        Assert.NotNull(incoming);
+        Assert.Equal([" plc/Machine.project", " plc/Machine/ Main.st"], incoming.Order());
+
+        var plan = MergePreflight.For(
+            "topic", incoming,
+            [new TrackedRoot { BindingId = "b1", Name = "Machine", ProjectPath = " plc/Machine.project", MirrorPath = " plc/Machine" }]);
+        Assert.Equal(MergeVerdict.TouchesTrackedProject, plan.Verdict);
+    }
+
+    [SkippableFact]
     public async Task A_file_the_working_tree_has_lost_is_still_readable_at_HEAD()
     {
         // The only source of a departed file's content. The import planner needs it to pair a
