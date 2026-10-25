@@ -140,7 +140,7 @@ def _sorted_siblings(body):
     return result
 
 
-def _sort_unordered_blocks(text):
+def _sort_unordered_blocks(text, whole_siblings=True):
     """Sort sibling ELEMENTS inside containers whose order is not meaningful.
 
     Deliberately line-based rather than a full XML parse: these payloads reach 2.5 MB and are
@@ -152,11 +152,14 @@ def _sort_unordered_blocks(text):
     swapped between them sorted to the same bag of lines, read as equivalent, and the export
     kept the old file on disk - a real change never reached the mirror (the 2026-10-24
     review's item 20). See _sorted_siblings.
+
+    whole_siblings=False is the pre-item-20 line sort, kept ONLY so normalized_forms can
+    reproduce the hash an older export recorded; nothing else may pass it.
     """
-    return u"\n".join(_sort_unordered_lines(text.split(u"\n")))
+    return u"\n".join(_sort_unordered_lines(text.split(u"\n"), whole_siblings))
 
 
-def _sort_unordered_lines(lines):
+def _sort_unordered_lines(lines, whole_siblings=True):
     result = []
     count = len(lines)
     i = 0
@@ -192,11 +195,31 @@ def _sort_unordered_lines(lines):
             continue
 
         result.append(line)
-        result.extend(_sorted_siblings(lines[i + 1:end]))
+        body = lines[i + 1:end]
+        if whole_siblings:
+            result.extend(_sorted_siblings(body))
+        else:
+            # The body's LINES sorted - the normalisation every export before 2026-10-24
+            # recorded its nhash under, blind to values swapped between two multi-line
+            # children (item 20). Reproduced here for those recorded hashes and for nothing
+            # else: see normalized_forms.
+            body.sort(key=_ordinal_key)
+            result.extend(body)
         result.append(lines[end])
         i = end + 1
 
     return result
+
+
+# The GUID placeholder. Braces, not angle brackets: "<masked-guid>" read to _sorted_siblings
+# as an element that opens and never closes, so every chunk after the first GUID was
+# swallowed into one and a reordered payload compared different with masking on - the only
+# setting the delete check uses (the second-round review's item 7). The old spelling is kept
+# beside it because every nhash recorded before that fix was taken over it, and a delete
+# check that could no longer reproduce those hashes refused every native deletion in every
+# existing mirror as DELETE_CONTENT_CHANGED (the third round's item 4): see normalized_forms.
+MASKED_GUID = u"{masked-guid}"
+_LEGACY_MASKED_GUID = u"<masked-guid>"
 
 
 def normalize(xml, mask_guids=True):
@@ -212,6 +235,41 @@ def normalize(xml, mask_guids=True):
     comparing two exports of the same project: GUIDs are stable across exports, so a
     difference there is genuinely meaningful and masking it away would hide a real change.
     """
+    return _normalize(xml, mask_guids, MASKED_GUID, True)
+
+
+def normalized_forms(xml):
+    """Every comparison form a manifest's nhash may have been taken over, current first.
+
+    The delete check compares a fresh re-export of the live object against the nhash the
+    manifest recorded at export time (versio_import.why_not_delete). That hash was taken
+    over whatever normalisation the exporting Versio had, and the normalisation has changed
+    twice since nhash exists: the sibling sort replaced the line sort on 2026-10-24 (the
+    first review round's item 20) and the GUID placeholder changed on 2026-10-25 (the
+    second's item 7). Each change made every hash recorded before it unreproducible, so an
+    unchanged object exported by an older Versio was refused as DELETE_CONTENT_CHANGED -
+    "edited since the export" - when nothing had touched it. Both committed fixture mirrors
+    are such older exports, every native record of them (the third round's item 4).
+
+    So the check accepts a match under any of these. Nothing is lost by it: a recorded hash
+    was produced by exactly one of them, and under the other two agreement is a SHA-256
+    collision. What an older form cannot see (the line sort's blindness to swapped values,
+    item 20) it could not see when that hash was recorded either, and the next export
+    records the hash under the current form, which closes that gap for that mirror. The
+    alternative - a version number beside nhash - would have changed the manifest's shape
+    for every reader and still needed these three functions to compare the old ones.
+
+    python only, deliberately: the C# normaliser compares two payloads it holds in memory
+    and never a recorded hash, so it has no older form to reproduce.
+    """
+    return [
+        _normalize(xml, True, MASKED_GUID, True)[0],
+        _normalize(xml, True, _LEGACY_MASKED_GUID, True)[0],
+        _normalize(xml, True, _LEGACY_MASKED_GUID, False)[0],
+    ]
+
+
+def _normalize(xml, mask_guids, placeholder, whole_siblings):
     if not xml:
         return (u"", 0, 0)
 
@@ -233,17 +291,14 @@ def normalize(xml, mask_guids=True):
     text = _COUNTER_RE.sub(mask_counter, text)
 
     if mask_guids:
-        # Braces, not angle brackets, as in the C#. "<masked-guid>" read to _sorted_siblings
-        # as an element that opens and never closes, so every chunk after the first GUID was
-        # swallowed into one and a reordered payload compared different with masking on -
-        # the only setting the delete check uses (the second-round review's item 7).
+        # MASKED_GUID, as in the C#; the legacy spelling only through normalized_forms.
         def mask_guid(match):
             guids[0] += 1
-            return u"{masked-guid}"
+            return placeholder
 
         text = _GUID_RE.sub(mask_guid, text)
 
-    text = _sort_unordered_blocks(text)
+    text = _sort_unordered_blocks(text, whole_siblings)
 
     return (text, guids[0], counters[0])
 

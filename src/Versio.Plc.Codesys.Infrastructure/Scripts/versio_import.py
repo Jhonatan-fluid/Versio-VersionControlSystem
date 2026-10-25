@@ -48,7 +48,7 @@ from versio_text import (WS, content_hash, join_st, normalize_decl_only,  # noqa
                          read_textual, scrub_native_xml, split_st)
 from versio_types import (FORM_NATIVE_R, NATIVE_FORMS, can_verify,  # noqa: E402
                           is_versio_file, type_of)
-from versio_native_equiv import normalize  # noqa: E402
+from versio_native_equiv import normalized_forms  # noqa: E402
 import versio_tree  # noqa: E402
 import versio_yaml  # noqa: E402
 
@@ -244,6 +244,10 @@ class Importer(object):
         # path that writes it: IronPython raises AttributeError on an unset attribute, and
         # that would turn a refusal-with-an-explanation into a fatal.
         self.reexport_error = None
+        # Set by why_not_delete when the live object matched its recorded nhash only under
+        # a normalisation an older Versio used; the removed event carries it so the log says
+        # whose normalisation vouched for the deletion.
+        self.older_nhash = False
 
     def warn(self, code, path, detail=None):
         self.warnings.append({"code": code, "path": path, "detail": detail})
@@ -939,8 +943,13 @@ class Importer(object):
                 continue
 
             self.removed += 1
+            # olderHash: the check matched the recorded nhash only under a normalisation an
+            # older Versio used (why_not_delete). The host puts it on the removed line, so a
+            # deletion vouched for by an older export's hash is a deletion the log can
+            # explain; the next export records the current one.
             emit({"t": "removed", "name": name, "path": "/".join(chain),
-                  "files": [f.get("path") for f in files]})
+                  "files": [f.get("path") for f in files],
+                  "olderHash": self.older_nhash})
 
     def why_not_delete(self, obj, name, files):
         """(code, detail) when this deletion must not happen, or None to proceed."""
@@ -949,10 +958,16 @@ class Importer(object):
                     "the plan lists no exported file for it, so there is nothing to check "
                     "the live object against")
 
+        self.older_nhash = False
+
         for entry in files:
             form = entry.get("form") or ""
             recorded = entry.get("hash") or ""
             nrecorded = entry.get("nhash") or ""
+            changed = ("DELETE_CONTENT_CHANGED",
+                       "the object in the project no longer matches what was exported to "
+                       "%s, so it has been edited since - the missing file is not "
+                       "permission to destroy that work" % entry.get("path"))
 
             if not can_verify(form, nrecorded):
                 # Either a form that can never be checked, or a native one exported before
@@ -963,36 +978,46 @@ class Importer(object):
                         "it changed since the export is unknowable" % (form or "recorded"))
 
             if form in NATIVE_FORMS:
-                live = self.normalized_native_of(obj, form)
+                live = self.reexported_native_of(obj, form)
                 if live is None:
                     return ("DELETE_UNREADABLE",
                             "its %s file could not be re-exported from the live object, so "
                             "the deletion cannot be checked: %s"
                             % (form, self.reexport_error or "no reason reported"))
-                compare_to = nrecorded
-            else:
-                live = self.exported_text_of(obj, form)
-                if live is None:
-                    # A form that CAN be checked, on an object that would not give up its
-                    # text. Reported apart from the line above because they are different
-                    # problems: one is a limit of this version and the other is this object,
-                    # right now, and merging them would have the log blame the form for
-                    # something it did not do.
-                    return ("DELETE_UNREADABLE",
-                            "its %s file should be rebuildable but the live object returned "
-                            "no text, so the deletion cannot be checked" % form)
-                compare_to = recorded
 
-            if content_hash(live) != compare_to:
-                return ("DELETE_CONTENT_CHANGED",
-                        "the object in the project no longer matches what was exported to "
-                        "%s, so it has been edited since - the missing file is not "
-                        "permission to destroy that work" % entry.get("path"))
+                # Under every normalisation the recorded hash may have been taken over, the
+                # current one first. A match under an older one is still a match - the hash
+                # was recorded by that Versio and no later edit could reproduce it - and it
+                # is said on the removed event, so the log names whose normalisation vouched.
+                # Comparing under the current one alone refused every native deletion in
+                # every mirror exported before 2026-10-25 as "edited since the export" (the
+                # third review round's item 4; the reasoning is on normalized_forms).
+                matched = [k for k, text in enumerate(normalized_forms(live))
+                           if content_hash(text) == nrecorded]
+                if not matched:
+                    return changed
+                if matched[0] > 0:
+                    self.older_nhash = True
+                continue
+
+            live = self.exported_text_of(obj, form)
+            if live is None:
+                # A form that CAN be checked, on an object that would not give up its
+                # text. Reported apart from the line above because they are different
+                # problems: one is a limit of this version and the other is this object,
+                # right now, and merging them would have the log blame the form for
+                # something it did not do.
+                return ("DELETE_UNREADABLE",
+                        "its %s file should be rebuildable but the live object returned "
+                        "no text, so the deletion cannot be checked" % form)
+
+            if content_hash(live) != recorded:
+                return changed
 
         return None
 
-    def normalized_native_of(self, obj, form):
-        """Re-export this object natively and return its comparison form, or None.
+    def reexported_native_of(self, obj, form):
+        """Re-export this object natively and return its scrubbed text, or None.
 
         The native half of the content check, and the thing that closes Phase 2's open
         half. It cannot work the way the textual half does: `hash` in the manifest is over
@@ -1007,11 +1032,14 @@ class Importer(object):
 
           - recursive only for NATIVE_R, which is the rule export_native is called with;
           - scrub_native_xml, which removes the Timestamp CODESYS re-mints per run;
-          - normalize with masking left at its default.
+          - and then, in why_not_delete, normalisation with masking on - under the current
+            form and under each older one an export may have recorded (normalized_forms),
+            because "match versio_export.py" means the versio_export.py that WROTE the hash.
 
         Any divergence turns the check from "unchanged" into "exported by a different
         version of Versio", which would refuse every native deletion for a reason that has
-        nothing to do with the object.
+        nothing to do with the object - and did, for one day, when the normalisation
+        changed and this only knew the new one.
         """
         # The system temp directory, NOT the mirror. The mirror is a git working tree with a
         # RepositoryWatcher on it, and writing into it mid-import would raise a change event
@@ -1036,7 +1064,7 @@ class Importer(object):
 
         self.reexport_error = None
         scrubbed, _ = scrub_native_xml(raw)
-        return normalize(scrubbed)[0]
+        return scrubbed
 
     def run(self):
         """Two phases, in this order, with a save between them.
