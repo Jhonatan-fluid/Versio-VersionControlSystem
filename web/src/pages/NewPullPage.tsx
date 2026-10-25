@@ -119,6 +119,20 @@ function NewPullForm({ me }: { me: Me | null }) {
   const writable = pulls.state === 'ok' && pulls.value.writable === true;
   const names = branches.state === 'ok' ? branches.value.branches.map((b) => b.name) : [];
   const fork = form.head.includes(':');
+  // The fork field keeps its own text and commits it to the head only once it holds a colon:
+  // bound to form.head and shown only when that held a colon, every keystroke before the colon
+  // reset the field to empty and made a bare character the head, which started a comparison of
+  // a branch named "b" (the 2026-10-24 review's item 34). A kept form or a ?head= of a fork's
+  // branch starts the field with it.
+  const [forkText, setForkText] = useState(fork ? form.head : '');
+  const typeFork = (text: string) => {
+    setForkText(text);
+    if (text.includes(':')) {
+      set({ head: text });
+    } else if (fork) {
+      set({ head: '' });
+    }
+  };
   const same = form.head !== '' && form.head === base;
   const ready = !busy && base !== '' && form.head !== '' && !same && form.title.trim() !== '';
   // GitHub's form shows the comparison under it: the files that would change, from this
@@ -231,14 +245,14 @@ function NewPullForm({ me }: { me: Me | null }) {
             <div className="new-pull-branches">
               <label>
                 Merge
-                <select value={fork ? '' : form.head} onChange={(e) => set({ head: e.target.value })} aria-label="Branch with the changes">
+                <select value={fork ? '' : form.head} onChange={(e) => { setForkText(''); set({ head: e.target.value }); }} aria-label="Branch with the changes">
                   <option value="">choose a branch</option>
                   {names.filter((b) => b !== base).map((b) => <option key={b} value={b}>{b}</option>)}
                 </select>
               </label>
               <label className="new-pull-fork">
                 or a fork's
-                <input value={fork ? form.head : ''} onChange={(e) => set({ head: e.target.value })} placeholder="owner:branch" aria-label="A fork's branch, as owner:branch" />
+                <input value={forkText} onChange={(e) => typeFork(e.target.value)} placeholder="owner:branch" aria-label="A fork's branch, as owner:branch" />
               </label>
               <label>
                 into

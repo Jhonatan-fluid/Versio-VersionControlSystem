@@ -281,4 +281,26 @@ describe('NewPullPage', () => {
     expect(creates()[0]!.body).toMatchObject({ base: 'main', head: 'bob:feature' });
     act(() => root.unmount());
   });
+
+  // The field showed form.head only once it held a colon, so before the colon every keystroke
+  // reset it to empty — and each keystroke made a bare character the head, which started a
+  // comparison of a branch named "b" (the 2026-10-24 review's item 34). The test above pastes the
+  // whole value in one fill, which is why it passed.
+  it('a fork’s branch can be typed one character at a time, and no branch "b" is compared', async () => {
+    const { host, root } = await render('/acme/plant/pulls/new');
+    const field = () => host.querySelector<HTMLInputElement>('input[aria-label="A fork\'s branch, as owner:branch"]')!;
+    let typed = '';
+    for (const ch of 'bob:feature') {
+      typed += ch;
+      await fill(field(), field().value + ch);
+      expect(field().value).toBe(typed);
+    }
+    await settle();
+    await fill(host.querySelector<HTMLInputElement>('.new-pull-title')!, 'From a fork');
+    await click(button(host, 'Create pull request')!);
+
+    expect(creates()[0]!.body).toMatchObject({ base: 'main', head: 'bob:feature' });
+    expect(calls.filter((c) => c.url.includes('/compare'))).toEqual([]);
+    act(() => root.unmount());
+  });
 });
