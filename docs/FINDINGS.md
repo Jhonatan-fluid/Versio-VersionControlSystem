@@ -19,6 +19,178 @@ produce a diff touching everything else.
 
 ---
 
+### The review's second round: eleven more, the one hole left open, and the shape they share
+
+**2026-10-25, the reviewer read `ba8dbdf` and the forty-four commits under it and sent eleven
+new or remaining items plus the one the first round had left open** — three P1 and nine P2, each
+with a reproduction against real git or the live code. Same method as the day before: every
+claim read against the code, a failing test first, one commit per item, the fix mutated away
+and the test watched go red, then restored. **All twelve are real and all twelve are fixed**;
+none is refuted and none is deferred. Three of the twelve are fixes to the first round's own
+fixes (2, 3, 7), which is the shape worth naming: a fix that closes the reported case and opens
+the one beside it. `-z` was added to carry awkward names, and the split that read it trimmed
+them. The task walk was scoped to one Application and its docstring promised a stop at a nested
+one that the code did not make. The sibling sort counted tags by shape, and the GUID mask was
+shaped like a tag. Each had a test for the case it was written for and none for the one next
+to it; each now has both.
+
+**The P1s:**
+
+- **1 — a project save exported over a mirror edit nothing had imported.** Named as the open
+  hole under the first round's item 3 and left as a skipped test; the reviewer asked for it
+  closed. An import that waits for confirmation, or for the IDE to let go, refuses without
+  claiming a direction — rightly, since nothing was written — so the binding stays Clean, and
+  from Clean the transition table lets an export run. The export regenerates the whole mirror
+  and the unconfirmed edit is gone with no backup: an import backs the project up first, an
+  export backs nothing up, because the mirror is supposed to be in git, and an uncommitted edit
+  is not. A new gate beside the direction lock, `MirrorEditStillPendingAsync`, refuses a project
+  job on a Clean binding whose mirror hash differs from the last synced mirror hash, with a new
+  verdict `BlockedByPendingEdit`; it reads hashes rather than the reason the import has not
+  happened, so the IDE-held case is covered as well as the confirmation one. Only Clean is asked
+  (under `ProjectAuthoritative` the text event was already refused out loud and the export is
+  what that refusal promised), only a recorded mirror hash is compared (an empty record is a
+  fresh clone adoption has not reached), and a checkout does not trip it, because
+  `AdoptExternalStateAsync` moves the record before any save is measured against it. The App
+  keeps the pending-import banner up on the new verdict too: a restart loses the banner while
+  the edit and the record survive on disk, so the refused save can be the first thing to notice
+  the edit, and the banner has to come back from it. **Rejected:** entering the `Conflict` state
+  dev.md promised. `(Conflict, _)` is Blocked, so it would refuse the confirmed import as well
+  and need a resolve act nothing in the app offers, while the two acts that resolve this already
+  exist — confirm (text wins; the save goes under the import's backup) or discard (project wins;
+  the save exports on its next event) — and a refusal derived from durable facts survives a
+  restart without being persisted. dev.md's table now says under `Conflict` that nothing enters
+  it, rather than promising a state. Four Core tests (the un-skipped one, the discard way out,
+  the IDE-held case, the `ProjectAuthoritative` case that must still export) and two App tests;
+  the gate disabled and the banner trigger narrowed each went red. Commit `1806b87`.
+- **2 — a leading space in a path bypassed the merge guard.** The `-z` listing the first round
+  added for item 15 split with `TrimEntries` to drop the runner's trailing newline, and
+  `TrimEntries` trims every field: `" plc/Machine.project"` arrived as `"plc/Machine.project"`,
+  matched no tracked root, and the preflight answered Proceed. The one newline the runner appends
+  is removed by length now and nothing else is touched; an Integration test commits a
+  leading-space directory and file on a branch and asserts the names verbatim and the guard's
+  `TouchesTrackedProject`. Commit `5ca8703`.
+- **3 — renaming a parent Application's program also rewrote a nested Application's tasks.**
+  The first round's item 31 scoped retargeting to the renamed object's own Application, and
+  `tasks_under`'s docstring said a nested Application is not descended into; the recursion went
+  into every child alike. The walk now takes the caller's Application test, as `application_of`
+  already does, and skips a nested Application whole; a rename inside it scopes to it and not to
+  its parent. The CPython tree test grows a Simulation inside the nested Application and asserts
+  both walks. **Owed:** the CODESYS gate's rename test on the embedded script. Commit `6324523`.
+
+**The P2s:**
+
+- **4 — a partly staged file was weighed on disk; the commit records the index.**
+  `ConfirmLargeFilesAsync` sized every staged path with `FileInfo`, so a file staged at 20 MiB
+  and overwritten on disk with five bytes passed the preflight at five bytes while the commit
+  wrote twenty megabytes into history — the one outcome the gate exists to make somebody choose
+  knowingly, and the partly-staged commit fix (`23a5ea4`) had just made that state ordinary. A
+  staged file deleted from disk had the same hole under a comment saying it "weighs nothing
+  either way". New `IGitClient.IndexBlobSizesAsync`: one `cat-file --batch-check` over
+  `:0:<path>` names on stdin, which git resolves literally (probed on spaces, non-ASCII,
+  `--odd.st`, parentheses, `^~@#`) with no paths on argv; the preflight asks it for every
+  staged path whose unstaged side is not Unmodified and keeps `FileInfo` for the rest; a null
+  answer is logged and falls back to the disk reading rather than to silence. Rejected:
+  `ls-files -s` plus `cat-file` (no `--pathspec-from-file`, so paths ride argv into the
+  CreateProcess limit the staging calls already hit); NUL-delimited input (`-z` arrived in 2.38
+  and became `-Z` two releases later); asking the index for every staged path (a spawn per
+  commit to re-measure files whose disk copy already matches). Commit `61b58ec`.
+- **5 — a bare `filter` and a character class were both read wrong.** `*.bin filter=lfs`
+  followed by `huge.bin filter` is, to git, the attribute set to true — `check-attr` answers
+  `set` — and no filter driver is called "true", so huge.bin is committed in full;
+  `FilterState` knew `-filter`, `!filter` and `filter=…` and let the fourth spelling fall
+  through as "says nothing", so the earlier lfs rule stood. `huge[.]bin -filter` failed by
+  another road: `ToRegex` escaped the brackets as literals and the override matched nothing.
+  The first round's item 13 had fixed the order without widening the vocabulary, and its
+  remark that an unreadable rule costs only a spurious question holds for a rule that grants
+  protection, not one that revokes it. Probing further found six shapes the old matcher read
+  *wider* than git (`a**b.bin` as any depth, `huge\*.bin` as a wildcard), granting protection
+  git never gives. The matcher is gitattributes(5)'s wildmatch now: classes with ranges, `!`/`^`
+  negation and POSIX names, backslash escapes, `**` as "any depth" only between slashes or ends,
+  a class that never matches `/`, and git's two never-matches (unclosed `[`, trailing `\`) left
+  out as git leaves them out. A 50-row Core theory is the `check-attr` transcript; a 25-row
+  Integration theory re-derives each expectation from git at test time. Rejected: an unclosed
+  `[` as a literal bracket (friendlier, and not what git does). Commit `afc3f41`.
+- **6 — a quoted pattern was unquoted by dropping the backslash.** `"huge\056bin" -filter` is
+  git's own spelling of an override for huge.bin (`\056` is the octal for a dot; `check-attr`
+  answers `unset`), and the reader the first round's item 26 added kept the digits, so the line
+  was a rule for huge056bin. `GitAttributesPattern.Read` is `unquote_c_style` now: the named
+  escapes, the verbatim `\\` and `\"`, three octal digits with the first at most 3, collected as
+  bytes and decoded as one UTF-8 run because git quotes a name byte by byte (`ä` arrives as
+  `\303\244`). It refuses what git refuses — short or over-range octal, unknown letter, dangling
+  backslash, unclosed quote — because git drops such a line entirely and a lenient reading
+  would turn a line git ignores into an override git does not apply. `Quote` is `quote_c_style`
+  for the same characters so a round trip holds; a non-ASCII name stays bare on purpose, since
+  git reads the bare form and every earlier adoption wrote it. Commit `67198f4`.
+- **7 — the GUID mask broke the repaired sibling sort.** The sort the first round's item 20
+  added counts tag depth by shape, and the placeholder was `<masked-guid>` — an element that
+  opens and never closes. With masking on, every chunk after the first GUID was swallowed into
+  one and nothing could be reordered, so a payload CODESYS had merely reordered compared
+  different; with masking off the same pair compared equivalent. Masking on is the only setting
+  an import's delete check uses, so a reordered native object was refused as
+  `DELETE_CONTENT_CHANGED`. The placeholder is `{masked-guid}` on both sides: it is only ever
+  compared against another mask, so its shape is free, and it must simply not look like a tag.
+  A Pure test and a parity corpus case whose *text* pins the shape; each half mutated back went
+  red on its own — the python one also against the real CODESYS fixture output, which carries
+  GUIDs inside siblings as a matter of course. Commit `2d602ec`.
+- **8 — a deleted task vanished from the configuration comparison.** `RenderChoice` dropped a
+  child whose current file could not be read *before* building `Files`, the list the committed
+  copies are read through, so a deleted task was in neither catalog: deleting VISU_TASK gave two
+  catalogs that both held MainTask. A child the tree marks Deleted whose file is gone is kept
+  in `Files` with no task of its own; `Reparse` reads its HEAD copy and `CatalogDiff` marks the
+  row Removed. The desktop's `MarkCatalogChangesAsync` would have thrown on the missing file,
+  warned and left the table unmarked — the deletion hidden a second way — and reads a missing
+  working copy as empty now. Rejected: keeping every unreadable child (an I/O failure would read
+  as a deleted task). Stated cost: a configuration whose every task was deleted has no live task
+  to say what it is and still draws as its own file. Commit `f5b8b38`.
+- **9 — several ST declarations on one line were one row, and a one-line VAR block was none.**
+  `StDeclarationTable` treated a line as one thing: `a : INT; b : BOOL;` became one variable `a`
+  of type `INT; b : BOOL`, and `VAR a : INT; END_VAR` opened a section, drew no row and claimed
+  its line as framing, so neither reached `Unshown` — a table a reviewer reads before committing
+  was quietly wrong. Each line's code is read in pieces now: a section keyword with its
+  qualifiers, each statement up to a top-level semicolon (judged at the depth still open from
+  the lines above, which the first draft got wrong and an existing bracket test caught), and
+  the open tail for the next line; a keyword sharing a line with a declaration claims nothing,
+  and what no row claims lands in `Unshown`. Rejected: cutting a keyword from any following
+  word, which would glue an unknown qualifier such as TIA's `DB_SPECIFIC` onto the next
+  declaration. The python side parses headers only and has no row parser to keep in step.
+  Commit `a84ea19`.
+- **10 — removing a final newline compared as "No changes."** `UnifiedDiffWriter` discarded
+  the empty last element after a final newline and never recorded whether there had been one,
+  so `value\n` and `value` wrote an empty patch; the remark that excused it is true of the
+  mirror's writers and false of the raw comparison, which also reads a vendor's JSON and a
+  README. Lines are compared with their terminators, as git compares them, and
+  `\ No newline at end of file` follows the line it describes, on whichever side, only inside a
+  hunk; all four shapes were checked against `git diff --no-index`. The parser, the side-by-side
+  pairing and the HTML already read the marker out of git's own patches, so nothing downstream
+  changed. Commit `11d64be`.
+- **11 — the web refused valid ref names and admitted invalid ones.** `ValidRef` was an
+  allow-list of ASCII letters, digits and `_ . / -`, so `release+hotfix` and `Prüfung` were "not
+  found" on every ref route, while `.hidden`, `a.lock`, `a//b` and a leading dash passed. The
+  gate is git's `check-ref-format` rules verbatim, plus two refusals kept on purpose: a leading
+  dash (nothing in the web hands a ref to a process — every ref reaches GitHub over HTTP
+  percent-encoded, pinned by a test reading `sha=release%2Bhotfix` off the wire — but an
+  option-shaped string should never qualify as a name) and C1 control characters. 44 rows;
+  the old gate under them fails 21. Rejected: widening the allow-list, which still refuses the
+  next character git takes and still admits `.lock`. Commit `87e1411`.
+- **12 — a direct link to an older release fetched its notes and never showed them.** The
+  page drew one article per release in the server's capped list and opened the one the URL
+  named; a tag past the cap fetched `/releases/view` and had no article to land in. A picked
+  tag the list does not carry gets its own article first, its header from the view's own
+  server-spelled meta once it answers and the shared notes body always, with the listed rows
+  closed below; header and body became two render helpers shared by both so they cannot
+  drift. While the view loads or fails only the body is drawn, because the raw tag from the
+  URL is the one name on the page nobody has spelled. Rejected: redirecting an unlisted tag to
+  GitHub. Commit `ab9f1ec`.
+
+**What this round owes the IDE gates:** `Versio.Plc.Codesys.Tests` over 3 (the rename's task
+retargeting) and 7 (the native equivalence the delete check reads), on the embedded python;
+nothing new for TIA or TwinCAT. **Not done:** branch deletion still addresses the hardcoded
+"origin" after the first round's item 39.
+
+**Counts after the round:** Core 2,050 (the skipped test of the day before is un-skipped and passes; nothing is skipped), Integration 215, Arch 36, CODESYS pure 405, parity 101, TIA pure 102, TwinCAT pure 27, Web 495, vitest 210, tsc clean; App 836 — 835/836 loaded in 13 m 9 s with the CODESYS gate running beside it, the one 30 s catch-up wait (`CommitWhileIdeHoldsProjectTests`) failing as it did the day before and passing alone in 4 s. The TIA gate's import Fact ran green in the worktree (1 passed, 4 skipped, 2 min); TwinCAT skipped; CODESYS is the gate session's run. 4,333 across the twelve projects.
+
+---
+
 ### An external review's forty-one findings, verified one by one: sixteen ways to lose work, and the twenty-five behind them
 
 **2026-10-24, the owner pasted a reviewer's list with no other words** — forty-one numbered
