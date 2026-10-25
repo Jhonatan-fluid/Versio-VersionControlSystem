@@ -1,3 +1,4 @@
+using System.IO;
 using Versio.App.ViewModels;
 using Versio.Core.Git;
 using Versio.Core.Logging;
@@ -128,6 +129,75 @@ public sealed class CommitPlanFlowTests
 
         var committed = FilesInHead(repo);
         Assert.Equal(["file2.st"], committed);
+    }
+
+    /// <summary>What git prints for one read-only command in the repository.</summary>
+    private static string GitOutput(TempRepo repo, string arguments)
+    {
+        using var git = System.Diagnostics.Process.Start(
+            new System.Diagnostics.ProcessStartInfo
+            {
+                FileName = "git",
+                Arguments = arguments,
+                WorkingDirectory = repo.Path,
+                UseShellExecute = false,
+                CreateNoWindow = true,
+                RedirectStandardOutput = true,
+            });
+
+        var output = git!.StandardOutput.ReadToEnd();
+        git.WaitForExit();
+        return output;
+    }
+
+    private static string Lines(params (int Line, string Text)[] edits)
+    {
+        var lines = Enumerable.Range(1, 20).Select(n => $"line {n}").ToArray();
+        foreach (var (line, text) in edits)
+        {
+            lines[line - 1] = text;
+        }
+
+        return string.Join("\n", lines) + "\n";
+    }
+
+    [Fact]
+    public async Task A_file_with_one_staged_hunk_commits_only_that_hunk()
+    {
+        // "Stage hunk" put one of two hunks in the index; Commit then ran `git add` on the
+        // whole path - include is every row when nothing is ticked - and the second hunk
+        // went into the commit as well. The button in the diff pane did nothing that the
+        // commit did not undo. The 2026-10-24 review's item 32. A row that is both staged
+        // and still changed in the working tree is committed as the index stands.
+        using var repo = new TempRepo();
+        var seed = Path.Combine(repo.Path, "seed.txt");
+        File.WriteAllText(seed, Lines());
+        repo.Git("commit -qam twenty");
+        File.WriteAllText(seed, Lines((2, "line 2 CHANGED"), (18, "line 18 CHANGED")));
+
+        using var shell = Shell();
+        await shell.OpenAsync(repo.Path);
+
+        await shell.ShowWorkingTreePathAsync("seed.txt");
+        await Eventually.Until(() => shell.CanStageHunks, "the diff to load");
+        await Eventually.Press(shell.HunkCommand, 0, "stage the first hunk");
+        await Eventually.Until(
+            () => shell.Pending.Any(r => r.Path == "seed.txt" && r.IsPartlyStaged),
+            "the row to read as partly staged");
+
+        shell.CommitMessage = "first hunk only";
+        await Eventually.Press(shell.CommitCommand, "commit");
+        await Eventually.Until(
+            () => GitOutput(repo, "log -1 --pretty=%s").Trim() == "first hunk only",
+            "the commit landed");
+
+        var committed = GitOutput(repo, "show HEAD --pretty=format: -- seed.txt");
+        Assert.Contains("+line 2 CHANGED", committed, StringComparison.Ordinal);
+        Assert.DoesNotContain("line 18 CHANGED", committed, StringComparison.Ordinal);
+
+        // The other hunk is still where it was typed, and still listed.
+        Assert.Contains("line 18 CHANGED", File.ReadAllText(seed), StringComparison.Ordinal);
+        await Eventually.Until(() => shell.Pending.Any(r => r.Path == "seed.txt"), "the rest to stay pending");
     }
 
     [Fact]

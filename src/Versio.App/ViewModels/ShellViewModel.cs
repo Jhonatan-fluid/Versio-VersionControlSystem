@@ -207,6 +207,7 @@ public sealed class ChangeRow(FileChange change) : ObservableObject
     {
         if (_change.Effective == fresh.Effective &&
             _change.IsStaged == fresh.IsStaged &&
+            _change.Unstaged == fresh.Unstaged &&
             _change.OriginalPath == fresh.OriginalPath)
         {
             return false;
@@ -217,8 +218,21 @@ public sealed class ChangeRow(FileChange change) : ObservableObject
         OnPropertyChanged(nameof(BrushKey));
         OnPropertyChanged(nameof(Detail));
         OnPropertyChanged(nameof(IsStaged));
+        OnPropertyChanged(nameof(IsPartlyStaged));
         return true;
     }
+
+    /// <summary>
+    /// True when part of this file is in the index and part is still only in the working
+    /// tree — the shape "Stage hunk" leaves behind.
+    /// </summary>
+    /// <remarks>
+    /// The commit reads this to leave the row alone rather than <c>git add</c> the whole
+    /// path, which re-staged the unstaged hunks and committed them with the one that was
+    /// chosen. The 2026-10-24 review's item 32. A file whose every change is staged, or
+    /// none of it, is not partly staged and is added as before.
+    /// </remarks>
+    public bool IsPartlyStaged => _change.IsStaged && _change.Unstaged is not ChangeKind.Unmodified;
 
     public string Glyph => ChangeGlyph.For(_change.Effective);
 
@@ -2453,7 +2467,22 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
     public string CommitExplanation =>
         CommitBlockedReason.Length > 0
             ? CommitBlockedReason
-            : $"{Commit.Explanation} (Ctrl+Enter)";
+            : $"{Commit.Explanation}{PartlyStagedNote} (Ctrl+Enter)";
+
+    /// <summary>
+    /// What the commit will do with a file that has a staged hunk and an unstaged one: say
+    /// so before the press, not after (item 32).
+    /// </summary>
+    private string PartlyStagedNote
+    {
+        get
+        {
+            var count = Chosen(Pending).Count(r => r.IsPartlyStaged);
+            return count == 0
+                ? string.Empty
+                : $" {Plural(count, "partly staged file")} go in as staged.";
+        }
+    }
 
     /// <summary>
     /// True while git reports an unmerged path.
@@ -3575,10 +3604,22 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
             return;
         }
 
-        _logger.Info(LogCategory.Git,
-            $"{Commit.Label}: staging {include.Count} file(s) before the commit");
+        // A partly staged file - "Stage hunk" put some of it in the index and left the rest
+        // in the working tree - is committed as the index stands. `git add` on its whole
+        // path would re-stage the hunks that were deliberately left out and commit them
+        // with the one that was chosen, which made the button in the diff pane a no-op the
+        // commit quietly undid. The 2026-10-24 review's item 32.
+        var partlyStaged = include.Where(r => r.IsPartlyStaged).ToList();
+        var toStage = include.Where(r => !r.IsPartlyStaged).ToList();
 
-        if (!await StageForCommitAsync(include).ConfigureAwait(true))
+        _logger.Info(LogCategory.Git,
+            $"{Commit.Label}: staging {toStage.Count} file(s) before the commit" +
+            (partlyStaged.Count == 0
+                ? string.Empty
+                : $"; {partlyStaged.Count} partly staged file(s) committed as the index stands: " +
+                  string.Join(", ", partlyStaged.Select(r => r.Path))));
+
+        if (!await StageForCommitAsync(toStage).ConfigureAwait(true))
         {
             return;
         }
@@ -3606,8 +3647,15 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         await RunRefreshAsync(RefreshTrigger.Manual, null).ConfigureAwait(true);
 
         Notifications.Success("Committed.",
-                              "Not pushed, so the direction lock is still held.");
+                              partlyStaged.Count == 0
+                                  ? "Not pushed, so the direction lock is still held."
+                                  : $"Not pushed, so the direction lock is still held. " +
+                                    $"{Plural(partlyStaged.Count, "partly staged file")} went in as " +
+                                    "staged; the rest of each is still in the working tree.");
     }
+
+    private static string Plural(int count, string noun) =>
+        count == 1 ? $"1 {noun}" : $"{count} {noun}s";
 
     /// <summary>
     /// Fix the last commit's message (UX-12). Two presses, message-only, unpushed-only.
