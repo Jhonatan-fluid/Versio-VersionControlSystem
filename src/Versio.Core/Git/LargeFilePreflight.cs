@@ -69,9 +69,39 @@ public static class LargeFilePreflight
 
         return staged
             .Where(f => f.Bytes >= threshold)
-            .Where(f => !IsProtected(Normalize(f.Path), rules))
+            .Where(f => !IsProtected(ByteForm(Normalize(f.Path)), rules))
             .Select(f => f.Path)
             .ToList();
+    }
+
+    /// <summary>
+    /// The text as wildmatch walks it: one character per UTF-8 byte, the ASCII ones as
+    /// themselves and the rest moved into the private-use area.
+    /// </summary>
+    /// <remarks>
+    /// git matches a pattern against a path byte by byte, so <c>?</c> and a character class
+    /// each consume one byte of the path's UTF-8 — ä is two of them, 😀 four — and a
+    /// literal ä in the pattern is its two bytes. Matching .NET strings walked UTF-16
+    /// characters, one per ä, so <c>?.bin filter=lfs</c>, which git does not apply to ä.bin,
+    /// read as protecting it and the warning was suppressed for a file git commits in full;
+    /// and <c>?.bin -filter</c> after <c>*.bin filter=lfs</c>, which git ignores for ä.bin,
+    /// took its protection away here (the 2026-10-25 review's third round, item 3). Pattern
+    /// and path both pass through this, so a literal still names its file. Bytes 0x80–0xFF
+    /// become U+E080–U+E0FF rather than Latin-1 characters, because <c>IgnoreCase</c> folds
+    /// Latin-1 letters and git's folding is ASCII-only; the private-use area has no case,
+    /// and it keeps the bytes' order, so a range that crosses 0x80 still compares as git's
+    /// bytes do.
+    /// </remarks>
+    private static string ByteForm(string text)
+    {
+        var bytes = Encoding.UTF8.GetBytes(text);
+        var sb = new StringBuilder(bytes.Length);
+        foreach (var b in bytes)
+        {
+            sb.Append(b < 0x80 ? (char)b : (char)(0xE000 + b));
+        }
+
+        return sb.ToString();
     }
 
     /// <summary>Whether the last rule that matches the path, and says anything about the filter, says lfs.</summary>
@@ -189,13 +219,18 @@ public static class LargeFilePreflight
     /// defaults on and gitattributes folds with it, inside classes too (<c>v[a-c].bin</c>
     /// matches <c>vB.bin</c>).
     /// </para>
+    /// <para>
+    /// Over bytes, not characters: the pattern is matched in its <see cref="ByteForm"/>
+    /// against the path's, so <c>?</c> is one byte of UTF-8 as it is for git, and a
+    /// non-ASCII file name is matched the way git matches it rather than the way .NET would.
+    /// </para>
     /// </remarks>
     private static Regex? ToRegex(string pattern)
     {
         // Any slash, leading or not, anchors the pattern at the .gitattributes folder — the
         // repository root here. A leading one is then just that anchor spelled out.
         var anchored = pattern.Contains('/');
-        var glob = pattern.TrimStart('/');
+        var glob = ByteForm(pattern.TrimStart('/'));
 
         var sb = new StringBuilder();
         for (var i = 0; i < glob.Length; i++)

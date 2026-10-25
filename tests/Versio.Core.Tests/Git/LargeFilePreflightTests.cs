@@ -295,6 +295,22 @@ public sealed class LargeFilePreflightTests
     [InlineData("v[z-a].bin", "v-.bin", false)]
     [InlineData("v[!z-a].bin", "vz.bin", false)]
     [InlineData("v[!z-a].bin", "va.bin", true)]
+    // wildmatch walks BYTES: `?` and a class each consume one byte of the path's UTF-8, so
+    // ä (two bytes) is `??` and never `?` or `[ä]`, and 😀 (four) is `????`. The matcher
+    // walked UTF-16 characters, so a rule git did not apply to ä.bin suppressed the warning
+    // for it (the third round, item 3). A literal still names the file, bytes matched to
+    // bytes; and a range `[a-ä]` is `a` to ä's first byte with its second a member, which
+    // ä.bin itself does not fit (the class takes its first byte, `.bin` must follow).
+    [InlineData("?.bin", "ä.bin", false)]
+    [InlineData("??.bin", "ä.bin", true)]
+    [InlineData("[ä].bin", "ä.bin", false)]
+    [InlineData("ä.bin", "ä.bin", true)]
+    [InlineData("[a-ä].bin", "ä.bin", false)]
+    [InlineData("[a-ä].bin", "b.bin", true)]
+    [InlineData("[a-ä].bin", "Ä.bin", false)]
+    [InlineData("?.bin", "😀.bin", false)]
+    [InlineData("????.bin", "😀.bin", true)]
+    [InlineData("*.bin", "😀.bin", true)]
     // A class never matches a slash, even when the slash is listed or inside a range.
     [InlineData("a[/]b.bin", "a/b.bin", false)]
     [InlineData("a[+-9]b.bin", "a/b.bin", false)]

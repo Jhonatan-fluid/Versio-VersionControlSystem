@@ -73,6 +73,16 @@ public sealed class LargeFilePreflightGitAgreementTests : IDisposable
     [InlineData("v[z-a].bin filter=lfs\n", "va.bin")]
     [InlineData("v[!z-a].bin filter=lfs\n", "vz.bin")]
     [InlineData("v[!z-a].bin filter=lfs\n", "va.bin")]
+    // The third round's item 3: wildmatch walks the path's UTF-8 bytes, one per `?` or class.
+    [InlineData("?.bin filter=lfs\n", "ä.bin")]
+    [InlineData("??.bin filter=lfs\n", "ä.bin")]
+    [InlineData("[ä].bin filter=lfs\n", "ä.bin")]
+    [InlineData("ä.bin filter=lfs\n", "ä.bin")]
+    [InlineData("[a-ä].bin filter=lfs\n", "ä.bin")]
+    [InlineData("[a-ä].bin filter=lfs\n", "b.bin")]
+    [InlineData("?.bin filter=lfs\n", "😀.bin")]
+    [InlineData("????.bin filter=lfs\n", "😀.bin")]
+    [InlineData("*.bin filter=lfs\n?.bin -filter\n", "ä.bin")]
     public async Task The_preflight_agrees_with_check_attr(string gitattributes, string path)
     {
         Skip.IfNot(GitAvailable, "git not on PATH");
