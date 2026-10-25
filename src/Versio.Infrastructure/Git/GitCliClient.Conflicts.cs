@@ -76,8 +76,15 @@ public sealed partial class GitCliClient
         // Three dots: what THAT branch has done since the two parted, and not what this one
         // has. Two dots here would report this branch's own work as incoming and refuse a
         // merge over changes that are already present.
+        //
+        // -z, as every other path listing in this client has: without it git's default
+        // core.quotePath writes any non-ASCII name as "Pr\303\274fung.project", quotes and
+        // octal included, and that string equals no project path and starts with no mirror
+        // prefix. The merge guard then found no affected binding and the import protection
+        // was skipped for exactly the merges that touched a project with an umlaut in its
+        // name (the 2026-10-24 review's item 15). NUL-separated output is never quoted.
         var result = await RunAsync(
-            ["diff", "--name-only", $"HEAD...{branch}"], null, ct).ConfigureAwait(false);
+            ["diff", "--name-only", "-z", $"HEAD...{branch}"], null, ct).ConfigureAwait(false);
 
         if (!result.Success)
         {
@@ -86,8 +93,10 @@ public sealed partial class GitCliClient
             return null;
         }
 
+        // The runner appends a newline to stdout; TrimEntries drops it from the last field.
         return [.. result.StdOut
-            .Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)];
+            .Split('\0', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Where(p => p.Length > 0)];
     }
 
     /// <summary>Replay this branch onto the upstream.</summary>

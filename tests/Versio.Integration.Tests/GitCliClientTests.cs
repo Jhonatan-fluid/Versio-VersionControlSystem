@@ -287,6 +287,41 @@ public sealed class GitCliClientTests(ITestOutputHelper output) : IDisposable
     }
 
     [SkippableFact]
+    public async Task Incoming_paths_with_non_ascii_names_arrive_verbatim_not_quoted()
+    {
+        // The merge guard matches what a branch would bring against the tracked projects by
+        // string: an exact path, or a prefix under the mirror. git's default core.quotePath
+        // writes a non-ASCII name as "Pr\303\274fung.project" — quotes included — on any
+        // listing without -z, and that string matches no project and no mirror, so the guard
+        // reported "touches nothing" and the import protection was skipped. The 2026-10-24
+        // review's item 15.
+        Skip.IfNot(GitAvailable, "git not on PATH");
+        await InitAsync();
+
+        Write("a.txt", "a");
+        await Client.StageAsync(["a.txt"], CancellationToken.None);
+        await Client.CommitAsync("initial", CancellationToken.None);
+
+        var created = await Client.CreateBranchAsync("topic", checkout: true, CancellationToken.None);
+        Assert.True(created.Success, created.FailureReason);
+        Write("plc/Prüfung.project", "binary-ish");
+        Write("plc/Prüfung/Kühl.st", "PROGRAM Kühl\nEND_PROGRAM\n");
+        await Client.StageAsync(["plc"], CancellationToken.None);
+        await Client.CommitAsync("umlauts", CancellationToken.None);
+        Assert.True((await Client.CheckoutAsync("main", CancellationToken.None)).Success);
+
+        var incoming = await Client.IncomingPathsAsync("topic", CancellationToken.None);
+
+        Assert.NotNull(incoming);
+        Assert.Equal(["plc/Prüfung.project", "plc/Prüfung/Kühl.st"], incoming.Order());
+
+        var plan = MergePreflight.For(
+            "topic", incoming,
+            [new TrackedRoot { BindingId = "b1", Name = "Prüfung", ProjectPath = "plc/Prüfung.project", MirrorPath = "plc/Prüfung" }]);
+        Assert.Equal(MergeVerdict.TouchesTrackedProject, plan.Verdict);
+    }
+
+    [SkippableFact]
     public async Task A_file_the_working_tree_has_lost_is_still_readable_at_HEAD()
     {
         // The only source of a departed file's content. The import planner needs it to pair a
