@@ -2396,6 +2396,22 @@ public sealed class SyncOrchestrator
             var live = PayloadPath(binding);
             if (IsTreePayload(source) || IsTreePayload(live))
             {
+                // Exactly the tree that was saved. A copy over the live directory overlays
+                // it, and a file added since the backup — a block the bad import created —
+                // survived, so the result was neither the backup nor the damaged state (the
+                // 2026-10-24 review's item 21). Files the backup never had go first.
+                foreach (var file in _fs.EnumerateFiles(live).ToList())
+                {
+                    ct.ThrowIfCancellationRequested();
+                    var relative = Path.GetRelativePath(live, file);
+                    if (!_fs.FileExists(Path.Combine(source, relative)))
+                    {
+                        _fs.DeleteFile(file);
+                        _log.Debug(LogCategory.Sync,
+                            $"{bindingId}: removed {relative}, which the backup does not have");
+                    }
+                }
+
                 await _fs.CopyTreeAsync(source, live, ct).ConfigureAwait(false);
             }
             else

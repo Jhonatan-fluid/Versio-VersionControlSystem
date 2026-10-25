@@ -167,6 +167,38 @@ public sealed class TreePayloadTests
     }
 
     [Fact]
+    public async Task Restoring_a_tree_removes_files_the_backup_never_had()
+    {
+        // The restore overlaid the backup onto the live directory: a file added after the
+        // backup — a program block the bad import created, say — survived it, and the
+        // "restored" project was neither the backup nor the damaged state (the 2026-10-24
+        // review's item 21). A restore puts back exactly the tree that was saved.
+        var h = Harness.Create();
+        h.WritePayload("System/program.bin", "the good version");
+        h.Runner.EnqueueSuccess("plc/plant-export/Main.scl");
+        Assert.Equal(SyncVerdict.Completed, (await h.ProjectChanged()).Verdict);
+        await h.Orchestrator.ReleaseAfterPushAsync("c1", CancellationToken.None);
+
+        h.Fs.Write(Path.Combine(Root, "plc", "plant-export", "Main.scl"), "edited");
+        h.Runner.EnqueueSuccess();
+        Assert.Equal(SyncVerdict.Completed, (await h.TextChanged()).Verdict);
+        var backup = Assert.Single(h.Orchestrator.BackupsFor(BindingId));
+
+        h.WritePayload("System/program.bin", "damaged by the import");
+        h.WritePayload("System/added-by-the-import.bin", "new");
+
+        var outcome = await h.Orchestrator.RestoreBackupAsync(
+            BindingId, backup.Path, CancellationToken.None);
+
+        Assert.Equal(SyncVerdict.Completed, outcome.Verdict);
+        Assert.Equal(
+            "the good version",
+            await h.Fs.ReadAllTextAsync(h.PayloadFile("System/program.bin"), CancellationToken.None));
+        Assert.False(h.Fs.FileExists(h.PayloadFile("System/added-by-the-import.bin")),
+            "a file the backup never had survived the restore");
+    }
+
+    [Fact]
     public async Task A_file_payload_is_still_copied_as_one_file()
     {
         // The mutation check the other way: tree support must not rewrite the file path
