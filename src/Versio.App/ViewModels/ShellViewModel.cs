@@ -7627,7 +7627,14 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
             foreach (var each in source.Files)
             {
                 heads.Add(await _git.ShowAtHeadAsync(each, CancellationToken.None).ConfigureAwait(true));
-                nows.Add(File.ReadAllText(Path.Combine(root, each.Replace('/', Path.DirectorySeparatorChar))));
+
+                // A task deleted in the working tree is in the list with no file on disk
+                // (RenderChoice keeps it, review 2026-10-25, item 8): it reads as empty here,
+                // which is not what HEAD has, and the HEAD side is where the deletion is drawn.
+                // Read as a failure it warned and left the table unmarked — the deletion
+                // hidden a second way.
+                var now = Path.Combine(root, each.Replace('/', Path.DirectorySeparatorChar));
+                nows.Add(File.Exists(now) ? File.ReadAllText(now) : string.Empty);
             }
         }
         catch (Exception ex)

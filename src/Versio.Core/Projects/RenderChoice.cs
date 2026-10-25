@@ -1,3 +1,4 @@
+using Versio.Core.Git;
 using Versio.Core.Iec.Ladder;
 using Versio.Core.Plc;
 
@@ -443,14 +444,24 @@ public sealed record RenderChoice
 
             // A configuration saved as one file per task: its table is its children's tasks, in
             // the order the tree has them.
+            //
+            // A child the tree says is deleted, whose file is gone, is kept in Files with no
+            // task of its own: the committed copy is read through Reparse by that list, and a
+            // task deleted in the working tree is only ever in the committed copy. Dropping the
+            // child because its file could not be read built the committed catalog from the
+            // surviving files alone, so deleting VISU_TASK gave two catalogs that both held
+            // MainTask and a comparison with nothing to say (review 2026-10-25, item 8). Only a
+            // deleted child, and only beside a live task: a file unreadable for another reason
+            // is not a task that went away, and a block whose deleted child was a method is not
+            // a configuration. The cost, stated: a configuration whose every task was deleted
+            // has no live task to say what it is, and still draws as its own file.
             var children = node.Children
                 .Where(c => c.Files.Count > 0)
-                .Select(c => (File: c.Files[0], Text: read(c.Files[0])))
-                .Where(c => c.Text is not null)
-                .Select(c => (c.File, Task: format.TryParseTask(c.File, c.Text!)))
-                .Where(c => c.Task is not null)
+                .Select(c => (File: c.Files[0], Text: read(c.Files[0]), Deleted: c.Status == ChangeKind.Deleted))
+                .Select(c => (c.File, Task: c.Text is null ? null : format.TryParseTask(c.File, c.Text), Gone: c.Text is null && c.Deleted))
+                .Where(c => c.Task is not null || c.Gone)
                 .ToList();
-            if (children.Count > 0)
+            if (children.Any(c => c.Task is not null))
             {
                 var files = children.Select(c => c.File).ToList();
                 return new RenderChoice
@@ -464,7 +475,7 @@ public sealed record RenderChoice
                         Schema = 1,
                         Configuration = node.Name,
                         Path = node.Path,
-                        Tasks = children.Select(c => c.Task!).ToList(),
+                        Tasks = children.Where(c => c.Task is not null).Select(c => c.Task!).ToList(),
                     },
                     Reparse = heads => new TaskCatalog
                     {

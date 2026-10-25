@@ -1,3 +1,4 @@
+using Versio.Core.Git;
 using Versio.Core.Iec.Ladder;
 using Versio.Core.Plc;
 using Versio.Core.Projects;
@@ -190,6 +191,55 @@ public sealed class RenderChoiceTests
         // (never committed) is left out rather than read as a task named "".
         var head = Assert.IsType<TaskCatalog>(choice.Reparse!(["A1", null]));
         Assert.Equal(["A1"], head.Tasks.Select(t => t.Name));
+    }
+
+    [Fact]
+    public void A_task_deleted_in_the_working_tree_keeps_its_file_so_the_committed_copy_shows_the_deletion()
+    {
+        // Review 2026-10-25, item 8: deleting VISU_TASK gave a current catalog and a committed one
+        // that both held only MainTask. The deleted child's file could not be read, so the child
+        // was dropped before the file list the committed copies are read by was built, and the
+        // one thing the comparison existed to say was the one thing it could not.
+        var node = Object("Task Configuration", "p/Task Configuration.cfg") with
+        {
+            Children =
+            [
+                Object("MainTask", "p/MainTask.tsk"),
+                Object("VISU_TASK", "p/VISU_TASK.tsk") with { Status = ChangeKind.Deleted },
+            ],
+        };
+        var read = Reader(("p/Task Configuration.cfg", "<cfg/>"), ("p/MainTask.tsk", "MainTask"));
+
+        var choice = Decide(node, read);
+
+        Assert.Equal(RenderKind.TaskCatalog, choice.Kind);
+        Assert.Equal(["MainTask"], Assert.IsType<TaskCatalog>(choice.Model).Tasks.Select(t => t.Name));
+        Assert.Equal(["p/MainTask.tsk", "p/VISU_TASK.tsk"], choice.Files);
+
+        var head = Assert.IsType<TaskCatalog>(choice.Reparse!(["MainTask", "VISU_TASK"]));
+        Assert.Equal(["MainTask", "VISU_TASK"], head.Tasks.Select(t => t.Name));
+        var compared = CatalogDiff.Compare(head, (TaskCatalog)choice.Model);
+        Assert.Equal(MemberChange.Removed, Assert.Single(compared.Tasks, t => t.Name == "VISU_TASK").Mark.Change);
+    }
+
+    [Fact]
+    public void A_child_that_is_merely_unreadable_or_a_configuration_with_no_live_task_claims_no_deletion()
+    {
+        // The tree's word for a deletion is the child's status; a file that cannot be read for
+        // some other reason is not a task that went away, and a block whose deleted child was a
+        // method is not a task configuration.
+        var unreadable = Object("Task Configuration", "p/Task Configuration.cfg") with
+        {
+            Children = [Object("MainTask", "p/MainTask.tsk"), Object("Other", "p/Other.tsk")],
+        };
+        var block = Object("FB", "p/FB.st") with
+        {
+            Children = [Object("M_Gone", "p/FB.M_Gone.st") with { Status = ChangeKind.Deleted }],
+        };
+        var read = Reader(("p/Task Configuration.cfg", "<cfg/>"), ("p/MainTask.tsk", "MainTask"), ("p/FB.st", "FUNCTION_BLOCK FB"));
+
+        Assert.Equal(["p/MainTask.tsk"], Decide(unreadable, read).Files);
+        Assert.Equal(RenderKind.Source, Decide(block, read).Kind);
     }
 
     [Fact]
