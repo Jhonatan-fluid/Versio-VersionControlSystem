@@ -95,6 +95,25 @@ def normalize_decl_only(content):
     return (content or u"").replace(u"\r\n", u"\n").strip(WS) + u"\n"
 
 
+def read_textual(content, has_implementation):
+    """What one .st file on disk says for the object it belongs to: (declaration, impl).
+
+    Chosen by the OBJECT, not the file's suffix. The export writes a declaration-only
+    object (a DUT; its form is ST_DECL) with normalize_decl_only and never escapes it,
+    because there is no delimiter to protect. A plain .st suffix says nothing about that,
+    and the import used to read every plain .st through split_st: a DUT whose declaration
+    held a literal //!VERSIO-ESC!D was decoded into the delimiter and written back changed,
+    and one holding the literal delimiter line was cut at it and silently truncated - the
+    2026-10-24 review's item 5. An object with no textual implementation reads its file the
+    way the export wrote it; everything else is the escaped two-part form.
+
+    The declaration comes back the way apply_st compares it: stripped, no trailing newline.
+    """
+    if not has_implementation:
+        return normalize_decl_only(content).rstrip(u"\n"), u""
+    return split_st(content)
+
+
 # CODESYS native export writes a fresh Timestamp on every run. Scrubbing it is what
 # makes the export deterministic.
 #

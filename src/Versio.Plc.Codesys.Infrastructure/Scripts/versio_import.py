@@ -45,7 +45,7 @@ from versio_decl import (DUT_ALIAS, DUT_ENUM, DUT_STRUCT, DUT_UNION,  # noqa: E4
                          KIND_DUT, KIND_FUNCTION, KIND_FUNCTION_BLOCK,
                          KIND_INTERFACE, KIND_PROGRAM, parse_declaration)
 from versio_text import (WS, content_hash, join_st, normalize_decl_only,  # noqa: E402
-                         scrub_native_xml, split_st)
+                         read_textual, scrub_native_xml, split_st)
 from versio_types import (FORM_NATIVE_R, NATIVE_FORMS, can_verify,  # noqa: E402
                           is_versio_file)
 from versio_native_equiv import normalize  # noqa: E402
@@ -257,8 +257,14 @@ class Importer(object):
     def apply_st(self, obj, rel_path, abs_path, suffix):
         content = read_text(abs_path)
 
-        if suffix in (".gvl.st",):
-            # GVL: declaration only.
+        # A declaration-only object - a GVL by its suffix, a DUT by having no textual
+        # implementation - is read the way the export wrote it: normalised, never unescaped,
+        # never split. Reading a DUT's plain .st through split_st decoded a literal escape
+        # marker into the delimiter and cut the declaration at a literal delimiter line (the
+        # 2026-10-24 review's item 5). read_textual holds the rule; this branch is its
+        # declaration-only half.
+        has_impl = bool(safe(lambda: obj.has_textual_implementation, False))
+        if suffix in (".gvl.st",) or (suffix == ".st" and not has_impl):
             new_decl = normalize_decl_only(content)
             old = safe(lambda: obj.textual_declaration.text, None)
             if old is not None and normalize_decl_only(old) == new_decl:
@@ -282,7 +288,7 @@ class Importer(object):
             return
 
         # Full ST: declaration + implementation.
-        decl, impl = split_st(content)
+        decl, impl = read_textual(content, True)
         changed = False
 
         old_decl = safe(lambda: obj.textual_declaration.text, None)

@@ -1281,6 +1281,65 @@ public sealed class PythonFileNameParityTests(ITestOutputHelper output)
                 $"normalize_decl_only disagrees on '{corpus[i].Name}'");
         }
 
+        // ── three b: a declaration-only object's file is read as it was written ────
+        //
+        // The export writes a DUT with normalize_decl_only and never escapes it; the import
+        // read every plain .st through split_st, which unescapes and cuts at a delimiter.
+        // A DUT holding a literal escape marker came back changed and one holding the
+        // literal delimiter line was truncated (the 2026-10-24 review's item 5). The rule
+        // lives in read_textual and is chosen by the object: no implementation, no decoding.
+        var declOnly = corpus.Select(c => c.Declaration)
+            .Concat(
+            [
+                "TYPE Marker :\nSTRUCT\n  // a literal //!VERSIO-ESC!D in a comment\n  x : INT;\nEND_STRUCT\nEND_TYPE",
+                "TYPE Delim :\nSTRUCT\n  // --- BEGIN IMPLEMENTATION ---\n  y : INT;\nEND_STRUCT\nEND_TYPE",
+                "TYPE Both :\nSTRUCT\n  // //!VERSIO-ESC!E and //!VERSIO-ESC!D\nEND_STRUCT\nEND_TYPE",
+            ])
+            .ToList();
+
+        var pythonRead = RunPython(JsonSerializer.Serialize(declOnly), """
+            import json
+            import versio_text
+            out = [json.dumps(list(versio_text.read_textual(t, False))) for t in payload]
+            """);
+
+        for (var i = 0; i < declOnly.Count; i++)
+        {
+            var fromPython = JsonSerializer.Deserialize<string[]>(pythonRead[i])!;
+            var expected = StTextCodec.DeclarationOnly(declOnly[i]).TrimEnd('\n');
+
+            Assert.True(expected == fromPython[0],
+                $"read_textual(decl-only) disagrees with DeclarationOnly on payload {i}:\n"
+                + $"  C#     {Visible(expected)}\n"
+                + $"  python {Visible(fromPython[0])}");
+            Assert.Equal(string.Empty, fromPython[1]);
+
+            // And it is NOT what split_st would have made of it, for the three adversarial
+            // cases: that difference is the defect.
+            if (i >= corpus.Count)
+            {
+                var (split, _) = StTextCodec.Split(declOnly[i]);
+                Assert.True(split != fromPython[0],
+                    $"payload {i} reads the same through Split as through the declaration-only "
+                    + "reader, so this case no longer pins the asymmetry");
+            }
+        }
+
+        // With an implementation the file is the escaped two-part form, exactly as Split.
+        var pythonReadFull = RunPython(JsonSerializer.Serialize(csharpJoined), """
+            import json
+            import versio_text
+            out = [json.dumps(list(versio_text.read_textual(t, True))) for t in payload]
+            """);
+
+        for (var i = 0; i < csharpJoined.Count; i++)
+        {
+            var fromPython = JsonSerializer.Deserialize<string[]>(pythonReadFull[i])!;
+            var (declaration, implementation) = StTextCodec.Split(csharpJoined[i]);
+            Assert.True(declaration == fromPython[0] && implementation == fromPython[1],
+                $"read_textual(full) disagrees with Split on '{corpus[i].Name}'");
+        }
+
         // ── four: the round trip, on BOTH sides, over the same corpus ──────────────
         //
         // Agreeing with each other and being wrong together is a real outcome, and the two
