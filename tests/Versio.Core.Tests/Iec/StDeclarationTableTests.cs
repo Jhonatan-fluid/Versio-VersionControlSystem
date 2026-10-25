@@ -447,6 +447,27 @@ public class StDeclarationTableTests
     }
 
     [Fact]
+    public void A_semicolon_on_a_line_of_its_own_ends_the_declaration_above_it()
+    {
+        // Review 2026-10-25, third round, item 1: "a : INT", a line holding only ";", then
+        // "b : BOOL;" tabled one variable a of type "INT b : BOOL", and nothing said b was
+        // missing — a regression from the second round's item 9, whose pieces skipped an empty
+        // statement without closing the declaration still open above it.
+        var table = StDeclarationTable.Parse(
+            "FUNCTION_BLOCK B\nVAR\n\ta : INT\n\t; // ends a\n\tb : BOOL;\n\tc : INT\n\t; d : INT;\nEND_VAR", "x")!;
+
+        Assert.Equal(["[Static]", "a : INT", "b : BOOL", "c : INT", "d : INT"], Shape(table));
+
+        // The declaration ends on the semicolon's line, and that line's comment is its.
+        Assert.Equal(new LineSpan(3, 4), Row(table, "a").Lines);
+        Assert.Equal("ends a", Row(table, "a").Comment);
+        Assert.Equal(new LineSpan(5, 5), Row(table, "b").Lines);
+        Assert.Equal(new LineSpan(6, 7), Row(table, "c").Lines);
+        Assert.Equal(new LineSpan(7, 7), Row(table, "d").Lines);
+        Assert.Empty(table.Unshown);
+    }
+
+    [Fact]
     public void A_section_written_on_one_line_yields_its_rows_and_an_empty_one_is_framing()
     {
         // Review 2026-10-25, item 9: "VAR a : INT; END_VAR" on one line opened a section, drew no

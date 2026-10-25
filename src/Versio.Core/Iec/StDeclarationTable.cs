@@ -842,6 +842,17 @@ public static partial class StDeclarationTable
             {
                 pieces.Add(new Piece(statement, false, true));
             }
+            else if (open.Length > 0)
+            {
+                // A semicolon with nothing before it on its line ends the declaration left
+                // open above: an empty piece, complete, so the caller flushes what it holds.
+                // Skipping it as "no statement" left that declaration open, and the next
+                // line's was glued onto it — `a : INT`, then `;`, then `b : BOOL;` tabled one
+                // variable a of type `INT b : BOOL`, and nothing said b was missing. A
+                // regression from the pieces themselves (the 2026-10-25 review's item 9),
+                // found by that review's third round, item 1.
+                pieces.Add(new Piece("", false, true));
+            }
 
             code = code[(end + 1)..].Trim();
             open = "";
