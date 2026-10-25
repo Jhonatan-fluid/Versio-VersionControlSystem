@@ -117,6 +117,17 @@ public sealed class TreeRow : ObservableObject
     /// Identity is the node's path. A row never changes path — an object that moved is a
     /// different row — which is what makes a positional pass safe once the removals are done.
     /// </para>
+    /// <para>
+    /// <b>A row whose path is further down is moved up, not inserted again.</b> The pass used
+    /// to insert on every mismatch and never take the stale row out, so a level whose order
+    /// changed — [A,B] rebuilt as [B,A] — came out as [B,A,B]: a duplicate row that nothing
+    /// trimmed, holding a selection that pointed at the wrong one of the two. Reachable,
+    /// because this level's order is not the path's: the library level sorts system
+    /// libraries first and the rest by display name, and tasks follow the order the user
+    /// gave them in the IDE (the 2026-10-24 review's item 37). Moved rather than replaced
+    /// for the same reason <see cref="Adopt"/> exists — the instance is what WPF's selection
+    /// and expander state hang off.
+    /// </para>
     /// </remarks>
     public static void Reconcile(
         ObservableCollection<TreeRow> rows,
@@ -139,17 +150,45 @@ public sealed class TreeRow : ObservableObject
             if (i >= rows.Count)
             {
                 rows.Add(new TreeRow(fresh[i], depth, expansion));
+                continue;
             }
-            else if (!string.Equals(rows[i].Node.Path, fresh[i].Path,
-                                    StringComparison.OrdinalIgnoreCase))
+
+            if (!string.Equals(rows[i].Node.Path, fresh[i].Path,
+                               StringComparison.OrdinalIgnoreCase))
             {
-                rows.Insert(i, new TreeRow(fresh[i], depth, expansion));
+                var later = IndexOf(rows, fresh[i].Path, from: i + 1);
+                if (later < 0)
+                {
+                    rows.Insert(i, new TreeRow(fresh[i], depth, expansion));
+                    continue;
+                }
+
+                rows.Move(later, i);
             }
-            else
+
+            rows[i].Adopt(fresh[i]);
+        }
+
+        // Nothing past the fresh list belongs to it: a path listed twice by a builder would
+        // otherwise leave its second row standing, since the removal pass above keeps every
+        // row whose path is live.
+        while (rows.Count > fresh.Count)
+        {
+            rows.RemoveAt(rows.Count - 1);
+        }
+    }
+
+    private static int IndexOf(ObservableCollection<TreeRow> rows, string path, int from)
+    {
+        for (var j = from; j < rows.Count; j++)
+        {
+            if (string.Equals(rows[j].Node.Path, path, StringComparison.OrdinalIgnoreCase))
             {
-                rows[i].Adopt(fresh[i]);
+                return j;
             }
         }
+
+        return -1;
     }
 
     /// <summary>Nesting level, for the indent.</summary>

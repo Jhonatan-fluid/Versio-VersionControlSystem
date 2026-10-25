@@ -5255,7 +5255,7 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
     /// typed in their editor.
     /// </para>
     /// </remarks>
-    private static void ReconcileInto(
+    internal static void ReconcileInto(
         ObservableCollection<ChangeRow> rows, IReadOnlyList<FileChange> fresh)
     {
         var live = fresh.Select(c => c.Path).ToHashSet(StringComparer.Ordinal);
@@ -5279,15 +5279,43 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
                 continue;
             }
 
-            if (string.Equals(rows[i].Path, fresh[i].Path, StringComparison.Ordinal))
+            if (!string.Equals(rows[i].Path, fresh[i].Path, StringComparison.Ordinal))
             {
-                // Same row, possibly a different status. Updated in place so whatever the user
-                // has set on it survives.
-                rows[i].Update(fresh[i]);
-                continue;
+                // The row may simply be further down. Inserting on every mismatch, which this
+                // did, never took the stale row out — [a,b] against [b,a] gave [b,a,b], the
+                // tick on whichever copy the user had set it on — and only the callers sorting
+                // by path hid it here; the tree's level had the same pass with unsorted
+                // inputs (the 2026-10-24 review's item 37). A Move keeps the instance, so the
+                // tick and the list selection stay with it. OnStagingListChanged sees a Move
+                // as the same row leaving and arriving, which nets to no subscription change.
+                var later = -1;
+                for (var j = i + 1; j < rows.Count && later < 0; j++)
+                {
+                    if (string.Equals(rows[j].Path, fresh[i].Path, StringComparison.Ordinal))
+                    {
+                        later = j;
+                    }
+                }
+
+                if (later < 0)
+                {
+                    rows.Insert(i, new ChangeRow(fresh[i]));
+                    continue;
+                }
+
+                rows.Move(later, i);
             }
 
-            rows.Insert(i, new ChangeRow(fresh[i]));
+            // Same row, possibly a different status. Updated in place so whatever the user
+            // has set on it survives.
+            rows[i].Update(fresh[i]);
+        }
+
+        // Nothing past the fresh list belongs to it (a path git listed twice would leave a
+        // second row standing, since the removal pass keeps every row whose path is live).
+        while (rows.Count > fresh.Count)
+        {
+            rows.RemoveAt(rows.Count - 1);
         }
     }
 
