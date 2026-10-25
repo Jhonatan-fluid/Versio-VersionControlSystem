@@ -234,6 +234,68 @@ public sealed class AmendCommitTests
         // the thing, same argument the clipboard helper makes.
         Assert.Equal("rewritten anyway", shell.CommitMessage);
     }
+
+    [Fact]
+    public async Task A_commit_that_landed_while_the_dialog_was_open_is_not_the_one_rewritten()
+    {
+        // The dialog is modal and takes as long as a person takes; `commit --amend` rewrites
+        // whatever HEAD is when it runs. A commit from a terminal in between meant the
+        // rewrite hit a commit the dialog never named. The 2026-10-24 review's item 41. The
+        // Destructive stub IS the terminal here: it commits, then answers yes.
+        using var repo = new TempRepo(published: true);
+        using var shell = Shell();
+
+        await shell.OpenAsync(repo.Path);
+        repo.Commit("local work");
+        await shell.RefreshAsync();
+        Assert.True(shell.Remote.HeadIsUnpushed);
+
+        shell.Asked().Destructive = _ =>
+        {
+            repo.Commit("landed meanwhile");
+            return true;
+        };
+        shell.CommitMessage = "rewritten";
+
+        shell.AmendCommitCommand.Execute(null);
+        await Eventually.Until(
+            () => !shell.AmendCommitCommand.IsRunning, "the amend flow finished");
+
+        Assert.Equal("landed meanwhile", GitRead(repo.Path, "log -1 --format=%s"));
+        Assert.Equal("local work", GitRead(repo.Path, "log -1 --skip=1 --format=%s"));
+        Assert.Contains(shell.Notifications.Visible,
+                        c => c.Headline.Contains("Not amended", StringComparison.Ordinal));
+        Assert.Equal("rewritten", shell.CommitMessage);
+    }
+
+    [Fact]
+    public async Task A_push_that_landed_while_the_dialog_was_open_still_refuses()
+    {
+        // Same window, the other race: the pre-dialog rev-list said unpushed, the person
+        // thought for a minute, and the push landed from a terminal in between.
+        using var repo = new TempRepo(published: true);
+        using var shell = Shell();
+
+        await shell.OpenAsync(repo.Path);
+        repo.Commit("local work");
+        await shell.RefreshAsync();
+
+        shell.Asked().Destructive = _ =>
+        {
+            TempRepo.Git(repo.Path, "push -q");
+            return true;
+        };
+        shell.CommitMessage = "rewritten anyway";
+        var before = GitRead(repo.Path, "rev-parse HEAD");
+
+        shell.AmendCommitCommand.Execute(null);
+        await Eventually.Until(
+            () => !shell.AmendCommitCommand.IsRunning, "the amend flow finished");
+
+        Assert.Equal(before, GitRead(repo.Path, "rev-parse HEAD"));
+        Assert.Contains(shell.Notifications.Visible,
+                        c => c.Headline.Contains("Not amended", StringComparison.Ordinal));
+    }
 }
 
 /// <summary>

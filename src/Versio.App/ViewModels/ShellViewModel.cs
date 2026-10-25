@@ -3760,6 +3760,40 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
             }
         }
 
+        // THE COMMIT CONFIRMED IS THE ONLY COMMIT THAT MAY BE REWRITTEN.
+        //
+        // The dialog is modal and takes as long as a person takes; `commit --amend` rewrites
+        // whatever HEAD is when it runs. A commit landing from a terminal, a checkout, or a
+        // push between the question and the answer meant the rewrite hit a commit the user
+        // never saw named - and a pushed one would fork a history somebody else has. The
+        // 2026-10-24 review's item 41. So HEAD and the unpushed set are read again after
+        // the answer, and a HEAD that is not the one named in the dialog is refused.
+        var headNow = await _git.HeadCommitAsync(CancellationToken.None).ConfigureAwait(true);
+        if (!string.Equals(headNow, head, StringComparison.Ordinal))
+        {
+            _logger.Warn(LogCategory.Git,
+                $"amend refused: HEAD moved from {Short(head)} to {Short(headNow)} while the " +
+                "confirmation was open");
+            Notifications.Failure("Not amended.",
+                "The last commit changed while the question was open, so the one you " +
+                "confirmed is no longer the last. Nothing was rewritten.");
+            await RunRefreshAsync(RefreshTrigger.Manual, null).ConfigureAwait(true);
+            return;
+        }
+
+        var unpushedNow = await _git.UnpushedCommitIdsAsync(CancellationToken.None)
+            .ConfigureAwait(true);
+        if (!unpushedNow.Contains(headNow))
+        {
+            _logger.Warn(LogCategory.Git,
+                "amend refused: HEAD was pushed while the confirmation was open");
+            Notifications.Failure("Not amended.",
+                "The last commit was pushed while the question was open — rewriting it now " +
+                "would fork a history somebody else may already have. Nothing was rewritten.");
+            await RunRefreshAsync(RefreshTrigger.Manual, null).ConfigureAwait(true);
+            return;
+        }
+
         using var busy = Busy.Begin(WorkKind.GitWrite, "Amending…");
         var result = await _git.AmendCommitMessageAsync(CommitMessage, busy.Token)
             .ConfigureAwait(true);
