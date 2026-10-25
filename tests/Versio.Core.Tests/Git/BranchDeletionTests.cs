@@ -68,6 +68,35 @@ public sealed class BranchDeletionTests
         Assert.Equal("release/2026", combined[0].Name);
     }
 
+    /// <summary>
+    /// The same name on two remotes is still remote-only here.
+    /// </summary>
+    /// <remarks>
+    /// <c>origin/topic</c> inserted a remote-only row, and <c>upstream/topic</c> then found
+    /// that row by name and marked it Both without asking whether it had come from a local
+    /// branch. BranchDeletion.HasLocal then ran <c>git branch -d topic</c> on a branch this
+    /// clone never had, which failed and skipped the remote half of the delete. The
+    /// 2026-10-24 review's item 39.
+    /// </remarks>
+    [Fact]
+    public void The_same_name_on_two_remotes_is_one_remote_only_row()
+    {
+        var combined = BranchInventory.Combine([], ["origin/topic", "upstream/topic"]);
+
+        var topic = Assert.Single(combined);
+        Assert.Equal("topic", topic.Name);
+        Assert.Equal(BranchExistence.RemoteOnly, topic.Existence);
+        Assert.Equal("origin/topic", topic.RemoteRef);
+    }
+
+    [Fact]
+    public void A_local_branch_seen_on_two_remotes_is_still_both()
+    {
+        var combined = BranchInventory.Combine([Local("topic")], ["origin/topic", "upstream/topic"]);
+
+        Assert.Equal(BranchExistence.Both, Assert.Single(combined).Existence);
+    }
+
     [Fact]
     public void The_current_branch_leads_and_remote_only_branches_sort_last()
     {
