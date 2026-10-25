@@ -648,6 +648,56 @@ public sealed class TiaPortalMemberTableTests
     }
 
     /// <summary>
+    /// A comment that spells its line breaks as <c>&amp;#xA;</c> — which Openness does for a
+    /// multi-line comment — is one physical line. The span counted the value's newlines, so the
+    /// first member ran over the second's line, and the smallest-span rule that pins a comment
+    /// to a member handed the second member's line to the first whenever the second was the
+    /// longer of the two (the 2026-10-24 review's item 18).
+    /// </summary>
+    [Fact]
+    public void An_encoded_newline_in_a_comment_does_not_run_a_member_into_the_next()
+    {
+        var xml = """
+            <?xml version="1.0" encoding="utf-8"?>
+            <Document>
+              <SW.Blocks.GlobalDB ID="0">
+                <AttributeList>
+                  <Interface>
+                    <Sections xmlns="http://www.siemens.com/automation/Openness/SW/Interface/v5">
+                      <Section Name="Static">
+                        <Member Name="Low" Datatype="Real"><Comment><MultiLanguageText Lang="en-US">first&#xA;second&#xA;third</MultiLanguageText></Comment></Member>
+                        <Member Name="High" Datatype="Real">
+                          <StartValue>2900.0</StartValue>
+                          <Comment>
+                            <MultiLanguageText Lang="en-US">upper</MultiLanguageText>
+                          </Comment>
+                        </Member>
+                      </Section>
+                    </Sections>
+                  </Interface>
+                  <Name>Limits</Name>
+                </AttributeList>
+              </SW.Blocks.GlobalDB>
+            </Document>
+            """;
+
+        var rows = MustParse(xml).Members.ToDictionary(m => m.Path);
+        var low = rows["Low"].Lines!.Value;
+        var high = rows["High"].Lines!.Value;
+
+        Assert.Equal(low.Start, low.End);
+        Assert.True(low.End < high.Start, $"Low {low} runs into High {high}");
+
+        // What the anchor lookup does with them: the line High starts on is High's.
+        var candidates = new[] { ("Low", rows["Low"].Lines), ("High", rows["High"].Lines) }
+            .Select(c => new Versio.Core.Review.RenderedAnchor(
+                "row-" + c.Item1, "row", "block.xml", Versio.Core.Review.ReviewSide.New, "Limits", c.Item1, "fp", c.Item2))
+            .ToList();
+        var found = Versio.Core.Review.AnchorMatcher.ByLine("block.xml", Versio.Core.Review.ReviewSide.New, high.Start, candidates);
+        Assert.Equal("High", found?.Key);
+    }
+
+    /// <summary>
     /// The framing review coverage may vouch for through the table (docs/web/PLAN.md, C4): the markup
     /// around and between the rows. Not a row's line, not a value between tags, and nothing inside the
     /// block's ObjectList, whose compile units are the code and are no table's to vouch for.

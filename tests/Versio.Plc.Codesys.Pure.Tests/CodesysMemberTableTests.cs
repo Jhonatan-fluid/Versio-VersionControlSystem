@@ -157,6 +157,31 @@ public sealed class CodesysMemberTableTests
         Assert.StartsWith("// ", lines[span.Start - 1].TrimStart(), StringComparison.Ordinal);
     }
 
+    /// <summary>
+    /// The rows are numbered by splitting the decoded declaration, which is the file's numbering
+    /// only while every newline in the value is one in the file. A declaration that spells one
+    /// as <c>&amp;#10;</c> — not CODESYS's doing, but nothing stops a file saying it — put every
+    /// row after it on the wrong line (the 2026-10-24 review's item 18). The table is kept and
+    /// the lines are not: wrong lines would pin comments and vouch for coverage on the wrong
+    /// rows, and no lines do neither.
+    /// </summary>
+    [Fact]
+    public void A_declaration_with_an_encoded_newline_keeps_its_rows_and_loses_their_lines()
+    {
+        const string Relative = Fbs + "PersistentVars.varpersistent.xml.v3";
+        var text = FbsFile(Relative)
+            .Replace("VAR_GLOBAL PERSISTENT RETAIN\r\n", "VAR_GLOBAL PERSISTENT RETAIN&#10;")
+            .Replace("VAR_GLOBAL PERSISTENT RETAIN\n", "VAR_GLOBAL PERSISTENT RETAIN&#10;");
+        Assert.Contains("RETAIN&#10;", text, StringComparison.Ordinal);
+
+        var table = Table(Relative, text);
+
+        Assert.Equal("PersistentVars", table.Name);
+        Assert.Contains(table.Members, m => m.Datatype == "ST_AlarmSettings");
+        Assert.All(table.Members, m => Assert.Null(m.Lines));
+        Assert.Empty(table.Unshown);
+    }
+
     [Fact]
     public void A_visualisation_with_parameters_is_still_not_a_table()
     {

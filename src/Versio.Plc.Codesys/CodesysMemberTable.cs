@@ -89,10 +89,19 @@ public static class CodesysMemberTable
             var blob = CodesysLadderParser.Named(
                 CodesysLadderParser.Named(CodesysLadderParser.Named(owner, "Interface"), "TextDocument"),
                 "TextBlobForSerialisation");
-            // The declaration text begins on its element's own line; an XML entity never adds a
-            // line, so the rows' lines are the file's from there on.
+            // The declaration text begins on its element's own line, and the rows are numbered
+            // by splitting the decoded text — which is the file's numbering only while every
+            // newline in the value is a newline in the file. `&lt;` adds no line; `&#10;` adds
+            // one the file does not have, and every row after it would then name the wrong
+            // line (the 2026-10-24 review's item 18). CODESYS writes real newlines, so this is
+            // a hand-edited or foreign file; its rows are kept and their lines are not, which
+            // leaves nothing to pin a comment to by line and nothing for coverage to vouch
+            // for through — the safe direction, rather than vouching for the wrong lines.
             var offset = CodesysLadderParser.LineOffset(relativePath, content);
             var first = blob is null ? null : Versio.Core.Text.SafeXml.LinesOf(blob, offset);
+            var numbered = blob is null
+                || blob.Nodes().OfType<System.Xml.Linq.XText>()
+                    .All(t => Versio.Core.Text.SafeXml.HasEncodedLineBreaks(t) != true);
 
             // The markup around the declaration is framing review coverage may vouch for (C4);
             // the declaration's own text is the rows', and the Implementation is the ladder's,
@@ -102,6 +111,11 @@ public static class CodesysMemberTable
                 if (table is null)
                 {
                     return null;
+                }
+
+                if (!numbered)
+                {
+                    table = Unnumbered(table);
                 }
 
                 var drawn = new List<LineSpan>();
@@ -149,4 +163,21 @@ public static class CodesysMemberTable
     public static (int Start, int End)? CodeBody(string relativePath, string content) =>
         CodesysFileBasedSource.CodeBody(relativePath, content)
         ?? (relativePath.EndsWith(".st", StringComparison.OrdinalIgnoreCase) ? StDeclarationTable.SourceCodeBody(content) : null);
+
+    /// <summary>
+    /// The same table with every file line forgotten: rows, their attributes, the object's
+    /// attributes, the unshown lines and the framing inside the declaration. For a
+    /// declaration whose decoded lines are not the file's (see the caller).
+    /// </summary>
+    private static MemberTable Unnumbered(MemberTable table) => table with
+    {
+        Members = table.Members.Select(m => m with
+        {
+            Lines = null,
+            Attributes = m.Attributes.Select(a => a with { Lines = null }).ToList(),
+        }).ToList(),
+        Attributes = table.Attributes.Select(a => a with { Lines = null }).ToList(),
+        Unshown = [],
+        Structural = [],
+    };
 }
