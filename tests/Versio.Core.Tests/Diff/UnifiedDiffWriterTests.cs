@@ -83,6 +83,39 @@ public sealed class UnifiedDiffWriterTests
     }
 
     [Fact]
+    public void A_final_newline_taken_away_or_given_is_a_change_marked_as_git_marks_it()
+    {
+        // Review 2026-10-25, item 10: "value\n" against "value" wrote an empty patch, and the
+        // web's raw comparison said "No changes." over a file whose last byte had gone. git
+        // treats the unterminated last line as a different line and says so on the line after it.
+        Assert.Equal("@@ -1 +1 @@\n-value\n+value\n\\ No newline at end of file\n", UnifiedDiffWriter.Write("value\n", "value"));
+        Assert.Equal("@@ -1 +1 @@\n-value\n\\ No newline at end of file\n+value\n", UnifiedDiffWriter.Write("value", "value\n"));
+
+        // Unterminated on both sides is the same line, as git says.
+        Assert.Equal("", UnifiedDiffWriter.Write("a\nb", "a\nb"));
+        Assert.Equal("", UnifiedDiffWriter.Write("a\r\nb", "a\nb"));
+    }
+
+    [Fact]
+    public void The_marker_follows_the_line_it_describes_on_whichever_side_and_the_parser_reads_it()
+    {
+        // A context line, and a removed line whose replacement is terminated: git's shapes exactly.
+        Assert.Equal("@@ -1,3 +1,3 @@\n-x\n+X\n y\n z\n\\ No newline at end of file\n", UnifiedDiffWriter.Write("x\ny\nz", "X\ny\nz"));
+        Assert.Equal("@@ -1,2 +1,2 @@\n a\n-b\n\\ No newline at end of file\n+c\n", UnifiedDiffWriter.Write("a\nb", "a\nc\n"));
+
+        // Outside every hunk the marker is not written, as git does not write it.
+        Assert.Equal("@@ -1 +1 @@\n-a\n+A\n", UnifiedDiffWriter.Write("a\nb\nc\nd\ne", "A\nb\nc\nd\ne", context: 0));
+
+        var document = UnifiedDiffParser.Parse(UnifiedDiffWriter.Write("value\n", "value"));
+        Assert.Equal(
+            [DiffLineKind.HunkHeader, DiffLineKind.Removed, DiffLineKind.Added, DiffLineKind.NoNewline],
+            document.Lines.Select(l => l.Kind));
+        Assert.Equal(1, document.Added);
+        Assert.Equal(1, document.Removed);
+        Assert.DoesNotContain("No changes.", TextDiffHtml.Fragment(document, SyntaxLanguage.PlainText), StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void The_parser_numbers_the_lines_the_writer_meant()
     {
         var document = UnifiedDiffParser.Parse(UnifiedDiffWriter.Write(Lines(10), Lines(10, n => n == 5 ? "five" : $"line {n}")));

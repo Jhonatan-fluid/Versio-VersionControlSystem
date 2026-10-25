@@ -23,7 +23,16 @@ namespace Versio.Core.Diff;
 /// </para>
 /// <para>
 /// Bare hunks, no <c>diff --git</c> header: the caller knows the path and draws the title.
-/// A missing trailing newline is not reported; the mirror's writers always end files with one.
+/// </para>
+/// <para>
+/// <b>A missing final newline is a change</b>, said the way git says it: the unterminated last
+/// line is a different line from its terminated twin, and <c>\ No newline at end of file</c>
+/// follows it. Until the 2026-10-25 review's item 10 it was not reported at all, on the
+/// grounds that the mirror's writers always end a file with one — but the raw comparison
+/// also reads files no writer of Versio's made (a vendor's own JSON, a README), and
+/// <c>value\n</c> against <c>value</c> wrote an empty patch, which the page drew as "No
+/// changes." over a file whose last byte had gone. <see cref="UnifiedDiffParser"/> already
+/// read the marker out of git's own patches, so nothing downstream had to learn it.
 /// </para>
 /// </remarks>
 public static class UnifiedDiffWriter
@@ -38,9 +47,12 @@ public static class UnifiedDiffWriter
     /// </summary>
     public static string Write(string? oldText, string? newText, int context = DefaultContext)
     {
-        var oldLines = SplitLines(oldText);
-        var newLines = SplitLines(newText);
-        var steps = LineDiff.Compare(oldLines, newLines);
+        var (oldLines, oldUnterminated) = SplitLines(oldText);
+        var (newLines, newUnterminated) = SplitLines(newText);
+        // Compared with their terminators, as git compares them: a last line without its
+        // newline is not the same line as one with it, and only the keys know. The written
+        // lines never carry one.
+        var steps = LineDiff.Compare(Keyed(oldLines, oldUnterminated), Keyed(newLines, newUnterminated));
 
         var changed = new List<int>();
         for (var i = 0; i < steps.Count; i++)
@@ -70,7 +82,7 @@ public static class UnifiedDiffWriter
             }
 
             var to = Math.Min(steps.Count, last + context + 1);
-            Hunk(text, steps, from, to, oldLines, newLines);
+            Hunk(text, steps, from, to, oldLines, newLines, oldUnterminated, newUnterminated);
             c++;
         }
 
@@ -78,7 +90,8 @@ public static class UnifiedDiffWriter
     }
 
     private static void Hunk(
-        StringBuilder text, IReadOnlyList<LineStep> steps, int from, int to, List<string> oldLines, List<string> newLines)
+        StringBuilder text, IReadOnlyList<LineStep> steps, int from, int to, List<string> oldLines, List<string> newLines,
+        bool oldUnterminated, bool newUnterminated)
     {
         int oldStart = -1, newStart = -1, oldCount = 0, newCount = 0;
         for (var i = from; i < to; i++)
@@ -117,7 +130,30 @@ public static class UnifiedDiffWriter
                     text.Append('+').Append(newLines[s.NewIndex]).Append('\n');
                     break;
             }
+
+            // The marker goes right after the line it describes, on whichever side that line
+            // was written from; a context line is the same line on both sides, so one marker.
+            // Only inside a hunk: git says nothing about a last line it did not print.
+            var unterminated = s.Op == LineOp.Added
+                ? newUnterminated && s.NewIndex == newLines.Count - 1
+                : oldUnterminated && s.OldIndex == oldLines.Count - 1;
+            if (unterminated)
+            {
+                text.Append("\\ No newline at end of file\n");
+            }
         }
+    }
+
+    /// <summary>The lines as git compares them, each with its newline, the unterminated last one without.</summary>
+    private static List<string> Keyed(List<string> lines, bool unterminated)
+    {
+        var keys = new List<string>(lines.Count);
+        for (var i = 0; i < lines.Count; i++)
+        {
+            keys.Add(unterminated && i == lines.Count - 1 ? lines[i] : lines[i] + "\n");
+        }
+
+        return keys;
     }
 
     /// <summary>The 1-based number of the last line on one side before step <paramref name="from"/>, or 0.</summary>
@@ -140,20 +176,25 @@ public static class UnifiedDiffWriter
             ? start.ToString(CultureInfo.InvariantCulture)
             : string.Create(CultureInfo.InvariantCulture, $"{start},{count}");
 
-    /// <summary>The same split <c>StSourceLayout</c> makes: CRLF folded, no phantom last line.</summary>
-    private static List<string> SplitLines(string? content)
+    /// <summary>
+    /// The same split <c>StSourceLayout</c> makes, CRLF folded and no phantom last line, and
+    /// whether the last line lacked its newline. An empty file is no lines and is not
+    /// "unterminated": there is no line for the marker to follow.
+    /// </summary>
+    private static (List<string> Lines, bool Unterminated) SplitLines(string? content)
     {
         if (string.IsNullOrEmpty(content))
         {
-            return [];
+            return ([], false);
         }
 
         var lines = content.Replace("\r\n", "\n", StringComparison.Ordinal).Split('\n').ToList();
-        if (lines.Count > 1 && lines[^1].Length == 0)
+        var unterminated = lines[^1].Length > 0;
+        if (!unterminated)
         {
             lines.RemoveAt(lines.Count - 1);
         }
 
-        return lines;
+        return (lines, unterminated);
     }
 }
