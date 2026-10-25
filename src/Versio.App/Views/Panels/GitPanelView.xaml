@@ -206,7 +206,7 @@
                         Background="{DynamicResource Brush.Surface.Sunken}"
                         CornerRadius="{DynamicResource Radius.Control}"
                         Padding="10,8" Margin="0,0,0,10"
-                        Visibility="{Binding IsMidMerge,
+                        Visibility="{Binding ShowsConflicts,
                             Converter={StaticResource BoolToVisibility}}">
                     <StackPanel>
                         <TextBlock Text="{Binding ConflictHeadline}"
@@ -246,13 +246,21 @@
 
                             <!-- The way back. Offering an operation that can stop
                                  half-done without offering the undo is how somebody
-                                 ends up in a state they cannot describe. -->
+                                 ends up in a state they cannot describe.
+
+                                 Only while there IS an operation. Conflicts from a
+                                 stash apply have nothing behind them to abandon -
+                                 the section shows for them since the 2026-10-24
+                                 review's item 30 - and a disabled Abandon there
+                                 would promise a way back that does not exist. -->
                             <Button Content="Abandon" Padding="8,2" Margin="6,0,0,0"
                                     Height="{DynamicResource Size.Control.Compact}"
                                     Style="{StaticResource GhostButton}"
                                     Foreground="{DynamicResource Brush.Status.Deleted}"
                                     ToolTipService.ShowOnDisabled="True"
                                     ToolTip="Put the branch back where it was before this started"
+                                    Visibility="{Binding IsMidMerge,
+                                        Converter={StaticResource BoolToVisibility}}"
                                     Command="{Binding AbortMergeCommand}" />
                         </StackPanel>
                     </StackPanel>

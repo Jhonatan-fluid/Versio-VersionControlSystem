@@ -331,5 +331,82 @@ public sealed class ConflictFlowTests
         Assert.Empty(shell.Conflicted);
         Assert.Equal(string.Empty, shell.ConflictHeadline);
         Assert.False(shell.AbortMergeCommand.CanExecute(null));
+        Assert.False(shell.ShowsConflicts);
+    }
+
+    /// <summary>A stash whose apply conflicts with what was committed since.</summary>
+    private static TempRepo WithAConflictingStash()
+    {
+        var repo = new TempRepo();
+        File.WriteAllText(Path.Combine(repo.Path, "seed.txt"), "stashed\n");
+        repo.Git("stash push -q -m conflicting");
+        File.WriteAllText(Path.Combine(repo.Path, "seed.txt"), "committed\n");
+        repo.Git("commit -qam committed");
+        return repo;
+    }
+
+    [Fact]
+    public async Task A_stash_that_conflicts_shows_the_conflict_section_with_nothing_to_abandon()
+    {
+        // The section's visibility was IsMidMerge, and MergeStateAsync reads only the merge
+        // and rebase marker files. A stash apply that stopped at a conflict moved the file
+        // into Conflicted, the commit button said "Resolve the conflicts first", and the
+        // only buttons that could were hidden. The 2026-10-24 review's item 30.
+        using var repo = WithAConflictingStash();
+        using var shell = Shell();
+        await shell.OpenAsync(repo.Path);
+
+        var row = Assert.Single(shell.Stashes);
+        await Eventually.Press(row.ApplyCommand, "apply the stash");
+        await Eventually.Until(() => shell.Conflicted.Count > 0, "the stash apply stopped at a conflict");
+
+        Assert.True(shell.ShowsConflicts);
+        Assert.Equal(MergeState.Conflicts, shell.MergeState);
+        Assert.Contains("conflict", shell.ConflictHeadline);
+
+        // There is no operation behind it: nothing to finish, nothing to abandon.
+        Assert.False(shell.IsMidMerge);
+        Assert.False(shell.AbortMergeCommand.CanExecute(null));
+        Assert.True(shell.HasStashes);
+    }
+
+    [Fact]
+    public async Task Keep_theirs_under_a_stash_apply_takes_the_stash_s_version()
+    {
+        // The sides as git assigns them for a stash apply: --ours is HEAD, this branch, and
+        // --theirs is the stash. Only a rebase swaps them, and the mapping that got the
+        // rebase right (item 29) must not swap these.
+        using var repo = WithAConflictingStash();
+        using var shell = Shell();
+        await shell.OpenAsync(repo.Path);
+
+        await Eventually.Press(Assert.Single(shell.Stashes).ApplyCommand, "apply the stash");
+        await Eventually.Until(() => shell.Conflicted.Count > 0, "the stash apply stopped at a conflict");
+
+        shell.SelectedConflict = shell.Conflicted[0];
+        await Eventually.Press(shell.ResolveCommand, false, "keep theirs");
+        await Eventually.Until(() => shell.Conflicted.Count == 0, "the conflict to be resolved");
+
+        // Trimmed: git's autocrlf decides the ending on the way out, and the side is the point.
+        Assert.Equal("stashed", File.ReadAllText(Path.Combine(repo.Path, "seed.txt")).TrimEnd('\r', '\n'));
+        Assert.False(shell.ShowsConflicts);
+        Assert.Equal(MergeState.None, shell.MergeState);
+    }
+
+    [Fact]
+    public async Task Keep_mine_under_a_stash_apply_keeps_this_branch_s_version()
+    {
+        using var repo = WithAConflictingStash();
+        using var shell = Shell();
+        await shell.OpenAsync(repo.Path);
+
+        await Eventually.Press(Assert.Single(shell.Stashes).ApplyCommand, "apply the stash");
+        await Eventually.Until(() => shell.Conflicted.Count > 0, "the stash apply stopped at a conflict");
+
+        shell.SelectedConflict = shell.Conflicted[0];
+        await Eventually.Press(shell.ResolveCommand, true, "keep mine");
+        await Eventually.Until(() => shell.Conflicted.Count == 0, "the conflict to be resolved");
+
+        Assert.Equal("committed", File.ReadAllText(Path.Combine(repo.Path, "seed.txt")).TrimEnd('\r', '\n'));
     }
 }

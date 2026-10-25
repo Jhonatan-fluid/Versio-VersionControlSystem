@@ -2484,6 +2484,7 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
             if (SetProperty(ref _mergeState, value))
             {
                 OnPropertyChanged(nameof(IsMidMerge));
+                OnPropertyChanged(nameof(ShowsConflicts));
                 OnPropertyChanged(nameof(ConflictHeadline));
                 RaiseHealth();
                 RaiseGitCommandStates();
@@ -2491,7 +2492,24 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         }
     }
 
-    public bool IsMidMerge => _mergeState is not MergeState.None;
+    /// <summary>True while a merge or rebase is in progress — something that can be abandoned.</summary>
+    /// <remarks>
+    /// Deliberately not <see cref="MergeState.Conflicts"/>: that state has no operation
+    /// behind it, so there is nothing for Abandon to abort, and the merge-finishing paths
+    /// that key on this must not treat a conflicted stash apply as a merge to conclude.
+    /// </remarks>
+    public bool IsMidMerge => _mergeState is MergeState.Merging or MergeState.Rebasing;
+
+    /// <summary>Whether the conflict section is on screen.</summary>
+    /// <remarks>
+    /// The section was bound to <see cref="IsMidMerge"/>, and <c>MergeStateAsync</c> reads
+    /// only the merge and rebase marker files — so a stash apply that stopped at a conflict
+    /// moved its files into <see cref="Conflicted"/>, the commit button said "Resolve the
+    /// conflicts first", and the only buttons that could resolve them were hidden. The
+    /// 2026-10-24 review's item 30. Any unmerged path is reason enough to show the section;
+    /// the operation, when there is one, decides what else it offers.
+    /// </remarks>
+    public bool ShowsConflicts => IsMidMerge || Conflicted.Count > 0;
 
     /// <summary>The conflicted paths, as their own section.</summary>
     /// <remarks>
@@ -2506,6 +2524,15 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         get
         {
             var count = Conflicted.Count;
+
+            if (count > 0 && !IsMidMerge)
+            {
+                // No merge to finish and nothing to abandon: a stash apply stopped here
+                // (item 30). "Mine" is what this branch has, "theirs" what was being applied.
+                return count == 1
+                    ? "1 file conflicts. Keep mine is this branch's version, Keep theirs is the one being applied."
+                    : $"{count} files conflict. Keep mine is this branch's version, Keep theirs is the one being applied.";
+            }
 
             if (count > 0)
             {
@@ -3798,12 +3825,20 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
             return;
         }
 
+        // Under a stash apply (MergeState.Conflicts, item 30) the sides read as they do in
+        // a merge: --ours is HEAD, this branch; --theirs is the stash being applied. Only a
+        // rebase swaps them.
         var ours = _mergeState == MergeState.Rebasing ? !mine : mine;
+        var during = _mergeState switch
+        {
+            MergeState.Rebasing => "rebase",
+            MergeState.Merging => "merge",
+            _ => "stash apply",
+        };
         _logger.Click(mine ? "Git.ResolveMine" : "Git.ResolveTheirs");
         _logger.Info(LogCategory.Git,
             $"keeping {(mine ? "this branch's" : "the incoming")} {row.Path} during a " +
-            $"{(_mergeState == MergeState.Rebasing ? "rebase" : "merge")}: " +
-            $"git {(ours ? "--ours" : "--theirs")}");
+            $"{during}: git {(ours ? "--ours" : "--theirs")}");
         using var busy = Busy.Begin(WorkKind.GitWrite, $"Resolving {row.Path}…");
 
         var result = await _git.ResolveWithSideAsync(row.Path, ours, busy.Token)
@@ -4993,6 +5028,11 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
             _logger.Error(LogCategory.Git,
                 $"restoring auto-stash {Short(offer.Record.StashCommitId)} failed; the stash is " +
                 $"kept: {result.FailureReason}");
+
+            // A pop that stopped at a conflict has left both sides in the tree. Refreshed
+            // now rather than on the next poll, so the conflict section (item 30) shows the
+            // files while the summary above still says what happened.
+            await RunRefreshAsync(RefreshTrigger.Manual, null).ConfigureAwait(true);
             return;
         }
 
@@ -5215,6 +5255,7 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
             .OrderBy(c => c.Path, StringComparer.Ordinal)]);
 
         OnPropertyChanged(nameof(ConflictHeadline));
+        OnPropertyChanged(nameof(ShowsConflicts));
 
         _treeIsDirty = Pending.Count > 0 || Conflicted.Count > 0;
         OnPropertyChanged(nameof(IsWorkingTreeClean));
@@ -6160,10 +6201,17 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
             // Read whenever the tree has conflicts OR we thought it was mid-merge, so the
             // banner both appears and goes away. Skipped otherwise: it costs a rev-parse and
             // two file probes, and the overwhelmingly common answer is None.
-            if (status.HasConflicts || IsMidMerge)
+            if (status.HasConflicts || _mergeState is not MergeState.None)
             {
-                MergeState = await _git.MergeStateAsync(busy?.Token ?? CancellationToken.None)
+                var marked = await _git.MergeStateAsync(busy?.Token ?? CancellationToken.None)
                     .ConfigureAwait(true);
+
+                // Unmerged paths with no marker file behind them: a stash apply (or a
+                // cherry-pick or revert) stopped at a conflict. The marker files alone read
+                // that as None and hid the section with the Keep buttons - item 30.
+                MergeState = marked == MergeState.None && status.HasConflicts
+                    ? MergeState.Conflicts
+                    : marked;
             }
 
             UpdateStagingLists(status);
@@ -6425,18 +6473,27 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         var result = await _git.StashApplyAsync(entry.CommitId, drop: false, busy.Token)
             .ConfigureAwait(true);
 
-        if (!result.Success)
-        {
-            // Usually a conflict with the working tree, and git's own words say which file.
-            Notifications.Failure("Could not apply the stash.",
-                                  result.FailureReason ?? string.Empty);
-        }
-        else
+        // Refreshed before anything is said, because git exits 1 for an apply that stopped
+        // at a conflict as well as for one that did nothing, and only the status tells the
+        // two apart. The conflict is not a failure: the files are in the tree with both
+        // sides, and the conflict section now shows them (item 30).
+        await RunRefreshAsync(RefreshTrigger.Manual, null).ConfigureAwait(true);
+
+        if (result.Success)
         {
             Notifications.Success("Stash applied. It stays in the list until you drop it.");
         }
-
-        await RunRefreshAsync(RefreshTrigger.Manual, null).ConfigureAwait(true);
+        else if (Conflicted.Count > 0)
+        {
+            Notifications.Warning("The stash applied with conflicts.",
+                                  "Keep a side for each file below. The stash stays in the list.");
+        }
+        else
+        {
+            // Nothing applied at all, and git's own words say which file was in the way.
+            Notifications.Failure("Could not apply the stash.",
+                                  result.FailureReason ?? string.Empty);
+        }
     }
 
     /// <summary>Drop one stash, after a confirmation naming it.</summary>
