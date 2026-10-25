@@ -47,7 +47,7 @@ from versio_decl import (DUT_ALIAS, DUT_ENUM, DUT_STRUCT, DUT_UNION,  # noqa: E4
 from versio_text import (WS, content_hash, join_st, normalize_decl_only,  # noqa: E402
                          read_textual, scrub_native_xml, split_st)
 from versio_types import (FORM_NATIVE_R, NATIVE_FORMS, can_verify,  # noqa: E402
-                          is_versio_file)
+                          is_versio_file, type_of)
 from versio_native_equiv import normalize  # noqa: E402
 import versio_tree  # noqa: E402
 import versio_yaml  # noqa: E402
@@ -822,10 +822,21 @@ class Importer(object):
                   "moved": bool(rename.get("isMove"))})
 
             if old_name != new_name:
-                self.retarget_task_pous(old_name, new_name)
+                # Within the renamed object's own Application, never the whole project: a
+                # task entry is a bare name, and the same name in another Application is
+                # another program (the 2026-10-24 review's item 31).
+                scope = versio_tree.application_of(
+                    landed, safe,
+                    lambda o: type_of(safe(lambda: str(o.type), "")) == "APPLICATION")
+                if scope is None:
+                    self.warn("TASK_POU_RETARGET_SKIPPED", old_name,
+                              "the renamed object is not inside an Application, so no task "
+                              "list was retargeted; check the task configuration by hand")
+                else:
+                    self.retarget_task_pous(scope, old_name, new_name)
 
-    def retarget_task_pous(self, old_name, new_name):
-        """Point every task that ran `old_name` at `new_name`.
+    def retarget_task_pous(self, scope, old_name, new_name):
+        """Point every task under `scope` that ran `old_name` at `new_name`.
 
         WHY THIS IS NOT OPTIONAL. A task's POU list is stored BY NAME, and rename() does not
         rewrite it - measured: renaming Simulation to Renamed left MainTask listing
@@ -846,11 +857,13 @@ class Importer(object):
           - `replace(index, name)` works, and survives a save and reopen.
 
         BY NAME IS ALL THERE IS, so this is as exact as the toolchain allows: two objects
-        called Simulation in different folders are one entry in a task list, and nothing in
-        the list says which was meant. Renaming one retargets the entry either way - the same
-        ambiguity CODESYS itself has, not one added here.
+        called Simulation in different folders OF ONE APPLICATION are one entry in a task
+        list, and nothing in the list says which was meant. Renaming one retargets the entry
+        either way - the same ambiguity CODESYS itself has, not one added here. Across
+        Applications it is no ambiguity at all - each has its own namespace and its own
+        tasks - which is why `scope` is the renamed object's Application and not the project.
         """
-        for task in self.walk_tasks(self.proj):
+        for task in versio_tree.tasks_under(scope, safe):
             pous = safe(lambda: list(task.pous), None)
             if not pous:
                 continue
@@ -869,27 +882,6 @@ class Importer(object):
                 emit({"t": "task_pou_retargeted",
                       "task": safe(lambda: task.get_name(), ""),
                       "from": old_name, "to": new_name})
-
-    def walk_tasks(self, node, depth=0):
-        """Every object in the project that carries a POU list.
-
-        Found by probing for the attribute rather than by looking for a TASK type GUID. The
-        type table is incomplete by nature - that is written down in versio_types - and a
-        task under an unmapped container would be missed by a type walk while still holding
-        a reference this has to fix.
-
-        Depth-capped for the same reason the export's walk is: a cycle in the object tree
-        would otherwise hang an import with no output.
-        """
-        if depth > 32:
-            return
-
-        for child in safe(lambda: node.get_children(), []) or []:
-            if safe(lambda: child.pous, None) is not None:
-                yield child
-
-            for found in self.walk_tasks(child, depth + 1):
-                yield found
 
     def delete_planned(self):
         """Remove objects the mirror no longer has any file for.

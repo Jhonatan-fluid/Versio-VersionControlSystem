@@ -90,3 +90,51 @@ def find_by_path(proj, parts, safe):
         if node is None:
             return None
     return node
+
+
+def application_of(node, safe, is_application):
+    """The nearest enclosing Application of `node`, or None when it has none.
+
+    Walked through `parent`, the one upward link a ScriptObject offers, and capped like
+    every other walk here. `is_application` is the caller's type test, passed in so this
+    module keeps no type table of its own.
+
+    WHY THE QUESTION EXISTS. A task's POU list is kept BY NAME, and the name is unique
+    within one Application - not across a project. Two Applications in one project may
+    each own a program called Simulation and each run it from their own task, and renaming
+    one of them is nobody else's business. The retargeting that follows a rename used to
+    walk the WHOLE project and repoint every task entry carrying the old name, so renaming
+    ApplicationA's Simulation rewrote ApplicationB's task to call a program ApplicationB
+    does not have (the 2026-10-24 review's item 31). The walk starts here now.
+    """
+    current = node
+    for _ in range(64):
+        if current is None:
+            return None
+        if safe(lambda: bool(is_application(current)), False):
+            return current
+        current = safe(lambda: current.parent, None)
+    return None
+
+
+def tasks_under(node, safe, depth=0):
+    """Every object under `node` that carries a POU list.
+
+    Found by probing for the attribute rather than by looking for a TASK type GUID. The
+    type table is incomplete by nature - that is written down in versio_types - and a task
+    under an unmapped container would be missed by a type walk while still holding a
+    reference the importer has to fix.
+
+    Depth-capped for the same reason the export's walk is: a cycle in the object tree
+    would otherwise hang an import with no output. A nested Application is not descended
+    into: its tasks are its own.
+    """
+    if depth > 32:
+        return
+
+    for child in safe(lambda: node.get_children(), []) or []:
+        if safe(lambda: child.pous, None) is not None:
+            yield child
+
+        for found in tasks_under(child, safe, depth + 1):
+            yield found

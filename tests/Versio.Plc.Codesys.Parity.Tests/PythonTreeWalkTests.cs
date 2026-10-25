@@ -280,6 +280,70 @@ public sealed class PythonTreeWalkTests(ITestOutputHelper output)
         Assert.Equal("<none>", Walk(FolderChain(40, "Deep"), ["Deep"]));
     }
 
+    [SkippableFact]
+    public void A_rename_retargets_the_tasks_of_its_own_application_only()
+    {
+        // Two Applications, each with a program called Simulation and a task that runs it.
+        // The retargeting after a rename walked the whole project and repointed every task
+        // entry carrying the name, so renaming ApplicationA's Simulation rewrote
+        // ApplicationB's task to call a program it does not have (the 2026-10-24 review's
+        // item 31). The walk starts at the renamed object's own Application now, found
+        // through `parent`, and a nested Application's tasks are its own.
+        Skip.IfNot(CPythonHarness.PythonIsAvailable(), "python is not on PATH");
+
+        var produced = CPythonHarness.RunJson("{}", """
+            import versio_tree
+
+
+            class Node(object):
+                def __init__(self, name, kind="", children=None, pous=None):
+                    self.name = name
+                    self.type = kind
+                    self.kids = children or []
+                    self.pous = pous
+                    self.parent = None
+                    for k in self.kids:
+                        k.parent = self
+
+                def get_name(self):
+                    return self.name
+
+                def get_children(self):
+                    return self.kids
+
+
+            def safe(fn, default=None):
+                try:
+                    return fn()
+                except Exception:
+                    return default
+
+
+            sim_a = Node("Simulation", "POU")
+            task_a = Node("MainTask", "TASK", pous=["Simulation", "PLC_PRG"])
+            app_a = Node("ApplicationA", "APPLICATION", [Node("Folder", "FOLDER", [sim_a]), Node("Task Configuration", "TASKCONFIG", [task_a])])
+            task_b = Node("MainTask", "TASK", pous=["Simulation"])
+            nested_task = Node("ChildTask", "TASK", pous=["Simulation"])
+            app_b = Node("ApplicationB", "APPLICATION", [Node("Simulation", "POU"), task_b, Node("Child", "APPLICATION", [nested_task])])
+            project = Node("Project", "PROJECT", [Node("Device", "DEVICE", [Node("Plc Logic", "PLCLOGIC", [app_a, app_b])])])
+            loose = Node("Loose", "POU")
+            project.kids.append(loose); loose.parent = project
+
+            is_app = lambda o: o.type == "APPLICATION"
+            scope = versio_tree.application_of(sim_a, safe, is_app)
+            tasks = [t.get_name() + "@" + t.parent.parent.get_name() for t in versio_tree.tasks_under(scope, safe)]
+            none = versio_tree.application_of(loose, safe, is_app)
+            b_tasks = [t.get_name() for t in versio_tree.tasks_under(app_b, safe)]
+            out = "|".join([scope.get_name(), ",".join(tasks), "<none>" if none is None else none.get_name(), ",".join(b_tasks)])
+            """,
+            jsonOut: false);
+
+        output.WriteLine(produced);
+        // ApplicationA's task only; a loose object has no Application; ApplicationB's walk
+        // includes the nested Application's task (it is under B) but A's walk never saw B.
+        Assert.Equal("ApplicationA|MainTask@ApplicationA|<none>|MainTask,ChildTask", produced);
+    }
+
     /// <summary>A folder nested <paramref name="depth"/> times with one object at the bottom.</summary>
     private static object FolderChain(int depth, string leaf)
     {
