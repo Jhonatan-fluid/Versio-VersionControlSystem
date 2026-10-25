@@ -85,7 +85,15 @@ public sealed class FakeFileSystem : IFileSystem
             throw new IOException("the file is in use by another process");
         }
 
-        _files[destination] = _files.TryGetValue(source, out var b) ? b : [];
+        if (!_files.TryGetValue(source, out var b))
+        {
+            // As the real one: File.Copy of a missing source throws. The fake used to write
+            // an empty file instead, which turned "the restore source was pruned away" into
+            // a project silently emptied — the one answer a fake must never give.
+            throw new FileNotFoundException("the source does not exist", source);
+        }
+
+        _files[destination] = b;
         RememberAncestors(destination);
         return Task.CompletedTask;
     }

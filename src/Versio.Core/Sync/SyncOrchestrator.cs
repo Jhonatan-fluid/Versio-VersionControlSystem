@@ -2385,7 +2385,11 @@ public sealed class SyncOrchestrator
 
         // The state being left, kept before it is overwritten. This is what makes a restore
         // reversible, and it is the whole reason this method does not simply copy a file.
-        var safety = await BackUpProjectAsync(binding, ct).ConfigureAwait(false);
+        //
+        // The source is pinned through that copy's prune. Ten are kept; the safety copy
+        // made eleven, and the oldest — the one about to be restored — was deleted before it
+        // was read (the 2026-10-24 review's item 22).
+        var safety = await BackUpProjectAsync(binding, ct, keep: source).ConfigureAwait(false);
 
         using (BeginOwnWrite(bindingId, ChangeSource.Project))
         {
@@ -2728,7 +2732,10 @@ public sealed class SyncOrchestrator
     /// dangerous half of the operation having skipped the part that makes it recoverable.
     /// </para>
     /// </remarks>
-    private async Task<string?> BackUpProjectAsync(ProjectBinding binding, CancellationToken ct)
+    /// <param name="keep">A backup the prune must leave alone whatever its age: the one a
+    /// restore is about to read.</param>
+    private async Task<string?> BackUpProjectAsync(
+        ProjectBinding binding, CancellationToken ct, string? keep = null)
     {
         var source = PayloadPath(binding);
         if (!_fs.FileExists(source) && !_fs.DirectoryExists(source))
@@ -2765,7 +2772,7 @@ public sealed class SyncOrchestrator
             await _fs.CopyAsync(source, destination, ct).ConfigureAwait(false);
         }
 
-        PruneBackups(folder);
+        PruneBackups(folder, keep);
 
         _log.Info(LogCategory.Sync, $"{binding.Id}: project backed up to {destination}");
         return destination;
@@ -2779,13 +2786,15 @@ public sealed class SyncOrchestrator
     /// Immediate children only: a tree backup is itself a directory, and walking files
     /// underneath it would prune the newest copy from the inside.
     /// </remarks>
-    private void PruneBackups(string folder)
+    private void PruneBackups(string folder, string? keep = null)
     {
         try
         {
             var existing = ImmediateBackupEntries(folder)
                 .OrderByDescending(f => f, StringComparer.Ordinal)
                 .Skip(BackupsKept)
+                .Where(f => keep is null
+                            || !string.Equals(f, keep, StringComparison.OrdinalIgnoreCase))
                 .ToList();
 
             foreach (var stale in existing)
