@@ -38,8 +38,17 @@ public sealed class ToolchainProbeFailureTests
         using var shell = TestShell.Build(out var sink, toolchain: new ThrowingToolchain());
         await shell.OpenAsync(repo.Path);
 
-        // The attach got past the probe: the tree was built.
-        Assert.Contains(shell.Sync.Tree, r => r.IsProject);
+        // The attach got past the probe: the orchestrator was built and the watcher started,
+        // which are the two steps that followed the probe and were lost with it. Said by
+        // their own log lines rather than by the project row — this fixture is committed
+        // and in sync, so the changed-only tree hides its project row once the lock has
+        // taken it as exported, and a look at the row raced that (one run in ten).
+        string Log() => string.Join("\n", sink.Snapshot().Select(e => $"{e.Level} {e.Category} {e.Message}"));
+        await Eventually.Until(
+            () => sink.Snapshot().Any(e => e.Message.Contains("watching 1 tracked project(s)", StringComparison.Ordinal)),
+            "the watcher started after the probe",
+            Log);
+        Assert.Contains(sink.Snapshot(), e => e.Message.Contains("orchestrator ready", StringComparison.Ordinal));
 
         Assert.False(shell.Sync.ToolchainAvailable);
         Assert.Contains("probe failed", shell.Sync.ToolchainState);
