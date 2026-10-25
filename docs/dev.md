@@ -846,6 +846,12 @@ early gate returns "stop" or "keep going". Re-read the method if you reorder any
 7. **Unresolved conflicts**
 8. **Direction lock** (`SyncStateMachine` in [`SyncState.cs`](../src/Versio.Core/Sync/SyncState.cs)).
    There is no class named `DirectionLock`.
+   8b. **Pending mirror edit** (`MirrorEditStillPendingAsync`) — a project save on a
+   Clean binding whose mirror differs from the last synced mirror is refused
+   (`BlockedByPendingEdit`): the export would write over an edit nothing has imported,
+   and an uncommitted mirror edit has no backup. The lock cannot see this one, because
+   gates 9 and 10 refuse without claiming a direction. Confirm or discard the edit to
+   get past it. Since 2026-10-25.
 9. **Import confirmation** — `Confirmed = false` → banner, no write.
 10. **IDE occupancy** — import waits; export may copy (`ExportHeldViaCopy`).
 11. **Coalescer + 10 s minimum interval** — N saves cost one toolchain start. Skipped for
@@ -860,7 +866,7 @@ The lock is written to `.versio/local/state.json` **before** CODESYS starts.
 | `Clean` | Either side may be claimed |
 | `ProjectAuthoritative` | Project changed. Exports OK. Imports blocked. |
 | `TextAuthoritative` | Mirror changed. Imports OK. Exports blocked. |
-| `Conflict` | Both sides changed. Person picks. |
+| `Conflict` | Both sides changed. Person picks. **Nothing enters it**: `EnterConflict` has no caller, and "both sides changed" is answered by gate 8b without a persisted state — the two acts that resolve it (confirm, discard) already exist, a third does not. |
 | `Failed` | Last op failed. Acknowledge before retry. |
 
 Refused or coalesced work does **not** flash the progress bar. A real run announces

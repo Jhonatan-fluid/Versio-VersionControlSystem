@@ -39,6 +39,32 @@ public enum SyncVerdict
     AwaitingConfirmation,
 
     /// <summary>
+    /// The project changed while the mirror holds an edit nothing has imported, so the export
+    /// was refused: it would have written over that edit.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The "both sides changed" of <c>docs/dev.md</c>, without a persisted state for it. A
+    /// confirmation-gated import leaves the binding Clean on purpose — nothing has been
+    /// written, so nothing is owned — and Clean is also the state from which an export is
+    /// free to run. The hole between the two was that a project save after an unconfirmed
+    /// mirror edit exported straight over it, and an uncommitted mirror edit has no backup
+    /// anywhere (the 2026-10-24 review's item 3, left open; closed as the second round's
+    /// item 1).
+    /// </para>
+    /// <para>
+    /// <b>A wait, not a failure, and not a lock.</b> The person already has the two acts that
+    /// resolve it: confirm the import (text wins; the project save is backed up by the import
+    /// and overwritten) or discard the mirror edit (project wins; the save is exported on its
+    /// next event). Entering the <see cref="SyncDirection.Conflict"/> state instead would need
+    /// a third act nothing in the app offers, and the refusal is derived from durable facts —
+    /// the mirror on disk against the last synced hash — so it survives a restart without
+    /// being persisted. The direction lock is left alone and the breaker is not fed.
+    /// </para>
+    /// </remarks>
+    BlockedByPendingEdit,
+
+    /// <summary>
     /// The project is open in its vendor's IDE, so this direction cannot run yet.
     /// </summary>
     /// <remarks>

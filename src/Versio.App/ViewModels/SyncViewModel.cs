@@ -3594,7 +3594,11 @@ public sealed class SyncViewModel : ObservableObject
                 // because this is the only place that learns of it — the state machine is
                 // happy, nothing failed, and the row would otherwise say "text ahead" with no
                 // hint that anything is expected of anybody.
-                if (outcome.Verdict is SyncVerdict.AwaitingConfirmation)
+                //
+                // And the export that was refused because of it: the same import is what is
+                // waiting, and the banner is the one place that says how to get unstuck.
+                if (outcome.Verdict is SyncVerdict.AwaitingConfirmation
+                                    or SyncVerdict.BlockedByPendingEdit)
                 {
                     NotePendingImport(binding.Id);
                 }

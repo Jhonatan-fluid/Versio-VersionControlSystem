@@ -830,12 +830,14 @@ public class SyncOrchestratorTests
         Assert.Equal("edited A", await h.Fs.ReadAllTextAsync(Path.Combine(Root, "plc", "A", "Simulation.st"), CancellationToken.None));
     }
 
-    [Fact(Skip = "Known hole, found while fixing review item 3 on 2026-10-24: a Clean binding " +
-                 "with an unconfirmed mirror edit exports over it on the next project save. " +
-                 "dev.md promises a Conflict state for 'both sides changed'; nothing enters it. " +
-                 "Kept red-fenced until the owner decides how the engine should refuse.")]
+    [Fact]
     public async Task A_project_save_does_not_export_over_an_unconfirmed_mirror_edit()
     {
+        // Found while fixing the 2026-10-24 review's item 3 and left skipped: a Clean
+        // binding with an unconfirmed mirror edit exported over it on the next project
+        // save, because the confirmation gate refuses without claiming the direction and
+        // Clean is the state an export runs from. Closed for the second round's item 1: the
+        // export is refused, the lock stays Clean, and the edit is still there to confirm.
         var h = await SyncedWithTwoFiles(requireConfirmation: true);
         h.SetExportedText("edited A");
         Assert.Equal(SyncVerdict.AwaitingConfirmation, (await h.TextChanged(confirmed: false)).Verdict);
@@ -843,9 +845,70 @@ public class SyncOrchestratorTests
         h.SetProject("v2");
         var outcome = await h.ProjectChanged();
 
-        Assert.NotEqual(SyncVerdict.Completed, outcome.Verdict);
+        Assert.Equal(SyncVerdict.BlockedByPendingEdit, outcome.Verdict);
+        Assert.Equal(SyncDirection.Clean, h.Orchestrator.StateOf(BindingId));
         Assert.Single(h.Codesys.Jobs, j => j.Operation == PlcOperation.Export);
         Assert.Equal("edited A", await h.Fs.ReadAllTextAsync(Path.Combine(Root, "plc", "A", "Simulation.st"), CancellationToken.None));
+
+        // The two ways out are the two acts the person already has. Confirming imports the
+        // edit — text wins, and the project save goes under it with the import's backup.
+        Assert.Equal(SyncVerdict.Completed, (await h.TextChanged(confirmed: true)).Verdict);
+        Assert.Equal(SyncDirection.TextAuthoritative, h.Orchestrator.StateOf(BindingId));
+    }
+
+    [Fact]
+    public async Task Discarding_the_unconfirmed_edit_lets_the_project_save_export()
+    {
+        // The other way out: the mirror edit is discarded (git restore), the mirror is back
+        // at what was last synced, and the project save that was refused exports on its next
+        // event. Nothing was lost on either side, which is the point of refusing.
+        var h = await SyncedWithTwoFiles(requireConfirmation: true);
+        h.SetExportedText("edited A");
+        Assert.Equal(SyncVerdict.AwaitingConfirmation, (await h.TextChanged(confirmed: false)).Verdict);
+        h.SetProject("v2");
+        Assert.Equal(SyncVerdict.BlockedByPendingEdit, (await h.ProjectChanged()).Verdict);
+
+        h.SetExportedText("exported");
+        await h.Orchestrator.ReleaseAfterDiscardAsync(BindingId, CancellationToken.None);
+
+        Assert.Equal(SyncVerdict.Completed, (await h.ProjectChanged()).Verdict);
+        Assert.Equal(2, h.Codesys.Jobs.Count(j => j.Operation == PlcOperation.Export));
+    }
+
+    [Fact]
+    public async Task An_import_the_IDE_held_up_is_guarded_the_same_way()
+    {
+        // Not only confirmation leaves an un-imported edit in a Clean mirror: an import that
+        // waits for the IDE to let go (BlockedByOpenProject) claims no direction either, and a
+        // project save meanwhile exported over the edit by copy. The gate reads hashes, not
+        // the reason the import has not happened, so this is refused too.
+        var h = await SyncedWithTwoFiles(requireConfirmation: false);
+        h.Occupancy.Hold();
+        h.SetExportedText("edited A");
+        Assert.Equal(SyncVerdict.BlockedByOpenProject, (await h.TextChanged()).Verdict);
+        Assert.Equal(SyncDirection.Clean, h.Orchestrator.StateOf(BindingId));
+
+        h.SetProject("v2");
+        Assert.Equal(SyncVerdict.BlockedByPendingEdit, (await h.ProjectChanged()).Verdict);
+        Assert.Equal("edited A", await h.Fs.ReadAllTextAsync(Path.Combine(Root, "plc", "A", "Simulation.st"), CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task A_text_edit_the_lock_already_refused_does_not_stop_the_export()
+    {
+        // Under a ProjectAuthoritative lock the text event was refused out loud — "will not
+        // be imported until you push or discard" — and the export that follows is what that
+        // refusal promised. The pending-edit gate asks only a Clean binding.
+        var h = await SyncedWithTwoFiles(requireConfirmation: true);
+        h.SetProject("v2");
+        Assert.Equal(SyncVerdict.Completed, (await h.ProjectChanged()).Verdict);
+        Assert.Equal(SyncDirection.ProjectAuthoritative, h.Orchestrator.StateOf(BindingId));
+
+        h.SetExportedText("edited A");
+        Assert.Equal(SyncVerdict.BlockedByLock, (await h.TextChanged(confirmed: false)).Verdict);
+
+        h.SetProject("v3");
+        Assert.Equal(SyncVerdict.Completed, (await h.ProjectChanged()).Verdict);
     }
 
     [Fact]

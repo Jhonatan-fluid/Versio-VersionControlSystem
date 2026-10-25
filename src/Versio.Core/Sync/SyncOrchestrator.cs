@@ -1111,6 +1111,11 @@ public sealed class SyncOrchestrator
             return (locked, slotHeld);
         }
 
+        if (await MirrorEditStillPendingAsync(attempt, ct).ConfigureAwait(false) is { } pending)
+        {
+            return (pending, slotHeld);
+        }
+
         if (ImportNeedsConfirming(attempt) is { } unconfirmed)
         {
             return (unconfirmed, slotHeld);
@@ -1381,6 +1386,59 @@ public sealed class SyncOrchestrator
             // state that did the refusing as well as the sentence explaining it.
             : Refuse(LogLevel.Warning, SyncVerdict.BlockedByLock, attempt.Job.BindingId,
                 $"{transition.Reason} (lock is {attempt.State})", transition.State);
+
+    /// <summary>
+    /// 4b. Both sides changed: a project save while the mirror holds an edit nothing has
+    /// imported.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The direction lock cannot see this one. An import that waits for confirmation (gate 5)
+    /// or for the IDE to let go (gate 5b) refuses without claiming the direction — rightly,
+    /// since nothing was written — so the binding is still Clean, and from Clean the
+    /// transition table lets an export run. That export regenerates the whole mirror from the
+    /// project and the unconfirmed edit is gone, with no backup: an import backs the project
+    /// up first, an export backs nothing up, because the mirror is supposed to be in git. An
+    /// edit nobody has committed is not. Found while fixing the 2026-10-24 review's item 3 and
+    /// left as a skipped test; closed for the second round's item 1.
+    /// </para>
+    /// <para>
+    /// <b>After the lock, before confirmation.</b> After the lock because a held direction
+    /// has already answered the question — a text edit under <c>ProjectAuthoritative</c> was
+    /// refused out loud with "will not be imported", and the export that follows is what that
+    /// refusal promised. Before confirmation because this is a project job, which that gate
+    /// does not read. Only Clean is asked, and only against a mirror hash that has actually
+    /// been recorded: an empty record is a fresh clone that adoption has not reached yet, and
+    /// there is nothing to compare an edit with.
+    /// </para>
+    /// <para>
+    /// <b>A checkout does not trip it.</b> Git rewriting the tree leaves both hashes
+    /// different from the last synced ones, and <see cref="AdoptExternalStateAsync"/> moves
+    /// the record to what the new commit holds before any save is measured against it.
+    /// </para>
+    /// </remarks>
+    private async Task<SyncOutcome?> MirrorEditStillPendingAsync(Attempt attempt, CancellationToken ct)
+    {
+        if (attempt.Job.Source != ChangeSource.Project
+            || attempt.State != SyncDirection.Clean
+            || _locks[attempt.Job.BindingId].LastSynced.MirrorHash is not { Length: > 0 } synced)
+        {
+            return null;
+        }
+
+        var mirrorHash = await ExportTreeHashAsync(attempt.Binding, ct).ConfigureAwait(false);
+        if (mirrorHash == synced)
+        {
+            return null;
+        }
+
+        return Refuse(LogLevel.Warning, SyncVerdict.BlockedByPendingEdit, attempt.Job.BindingId,
+            $"the exported text of {ProjectName(attempt.Binding)} has an edit nobody has " +
+            $"imported (mirror {Short(mirrorHash)}, last synced {Short(synced)}); the project " +
+            "change was not exported, because the export would write over it. Confirm the " +
+            "import or discard the text edit first",
+            attempt.State);
+    }
 
     /// <summary>
     /// 5. Import is detected automatically but applied only on confirmation.

@@ -94,6 +94,13 @@ public static class SyncNarrative
         SyncVerdict.AwaitingConfirmation =>
             "The exported text changed. Review the diff and confirm before importing.",
 
+        // Leads with what did NOT happen: the person saved the project and sees no diff, and
+        // the pending-import banner alone reads as unrelated to that save.
+        SyncVerdict.BlockedByPendingEdit =>
+            "The project change was not exported: the exported text has an edit that is " +
+            "waiting to be imported, and the export would write over it. Confirm or discard " +
+            "that edit first.",
+
         SyncVerdict.BlockedByOpenProject => outcome.Explanation,
 
         // The explanation names the files, which is the part worth reading. The leading clause
