@@ -425,6 +425,60 @@ public class StDeclarationTableTests
     }
 
     [Fact]
+    public void Several_declarations_on_one_line_are_each_their_own_row()
+    {
+        // Review 2026-10-25, item 9: "a : INT; b : BOOL;" tabled one variable a of type
+        // "INT; b : BOOL", and nothing said b was missing. IEC 61131-3 puts no line breaks in its
+        // grammar; a statement ends at its semicolon, wherever the next one starts.
+        var table = StDeclarationTable.Parse(
+            "FUNCTION_BLOCK B\nVAR\n\ta : INT; b : BOOL; // both\n\tc : STRING := 'x;y'; d : ARRAY[0..1] OF INT;\n\te : INT; f :\n\t\tBOOL;\nEND_VAR", "x")!;
+
+        Assert.Equal(
+            ["[Static]", "a : INT", "b : BOOL", "c : STRING := 'x;y'", "d : ARRAY[0..1] OF INT", "e : INT", "f : BOOL"],
+            Shape(table));
+
+        // The line's comment is written beside both; the line is both rows'. A declaration that
+        // starts after another's semicolon and ends on the next line spans from where it started.
+        Assert.Equal("both", Row(table, "a").Comment);
+        Assert.Equal("both", Row(table, "b").Comment);
+        Assert.Equal(new LineSpan(3, 3), Row(table, "b").Lines);
+        Assert.Equal(new LineSpan(5, 6), Row(table, "f").Lines);
+        Assert.Empty(table.Unshown);
+    }
+
+    [Fact]
+    public void A_section_written_on_one_line_yields_its_rows_and_an_empty_one_is_framing()
+    {
+        // Review 2026-10-25, item 9: "VAR a : INT; END_VAR" on one line opened a section, drew no
+        // row, claimed the line as framing, and so reported nothing unshown either.
+        var table = StDeclarationTable.Parse(
+            "FUNCTION_BLOCK B\nVAR_INPUT x : INT; END_VAR\nVAR CONSTANT k : INT := 1; END_VAR\nVAR END_VAR\nVAR\n\ty : INT;\nEND_VAR", "x")!;
+
+        Assert.Equal(["[Input]", "x : INT", "[Constant]", "k : INT := 1", "[Static]", "y : INT"], Shape(table));
+        Assert.Equal(new LineSpan(2, 2), Row(table, "x").Lines);
+        Assert.Empty(table.Unshown);
+
+        // "VAR END_VAR" says nothing a row would draw: framing, like a VAR on a line of its own.
+        // And the END_VAR on the one-line section closed it: y is under the next VAR, not this one.
+        Assert.Contains(new LineSpan(4, 5), table.Structural);
+
+        var globals = StDeclarationTable.Parse("VAR_GLOBAL CONSTANT g : INT := 2; END_VAR", "Glob_Var")!;
+        Assert.Equal(["g : INT := 2"], Shape(globals));
+        Assert.Empty(globals.Unshown);
+    }
+
+    [Fact]
+    public void A_one_line_section_whose_declaration_draws_no_row_is_reported_not_shown()
+    {
+        // The section keyword claimed its whole line; on a line that also holds a declaration the
+        // table could not draw, that claim hid the declaration. Only a row may claim such a line.
+        var table = StDeclarationTable.Parse("FUNCTION_BLOCK B\nVAR x INT; END_VAR", "x")!;
+
+        Assert.DoesNotContain(table.Members, m => !m.IsSectionHeading);
+        Assert.Equal(["VAR x INT; END_VAR"], table.Unshown.Select(u => u.Text));
+    }
+
+    [Fact]
     public void Unshown_lines_are_numbered_as_file_lines()
     {
         var table = StDeclarationTable.Parse(UpdateMeta, "x", firstLine: 10)!;
