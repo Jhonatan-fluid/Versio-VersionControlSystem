@@ -544,23 +544,45 @@ public static partial class ApiEndpoints
                     : Refused(found.Failure, http);
             }
 
-            // One more than shown, the history idiom: the 51st only says the list was cut.
-            var rows = await source.GetPullRowsAsync(who.Value, owner, repo, query.State, query.Sort, query.Direction, ListLimit + 1, page ?? 1, ct).ConfigureAwait(false);
-            return rows.Ok
-                ? Results.Ok(new
+            // A page of exactly the size shown, then a one-row probe at the row after it. The
+            // history idiom (fetch one more than shown, the extra only says the list was cut) does
+            // not survive REST's paging, whose page is in units of per_page: 51 rows at page N
+            // showed 50, and page N+1 of 51 began at the 52nd, so every 51st pull request was
+            // never listed (the 2026-10-24 review's item 35). The probe is per_page=1 at page
+            // N*50+1, which is the 51st row of page N by GitHub's own arithmetic, and is only
+            // asked for when the page was full.
+            var at = page ?? 1;
+            var rows = await source.GetPullRowsAsync(who.Value, owner, repo, query.State, query.Sort, query.Direction, ListLimit, at, ct).ConfigureAwait(false);
+            if (!rows.Ok)
+            {
+                return Refused(rows.Failure, http);
+            }
+
+            var more = false;
+            if (rows.Value!.Count == ListLimit)
+            {
+                var probe = await source.GetPullRowsAsync(who.Value, owner, repo, query.State, query.Sort, query.Direction, 1, (at * ListLimit) + 1, ct).ConfigureAwait(false);
+                if (!probe.Ok)
                 {
-                    query = query.Normalized,
-                    // Without a token there is no search: the list is by state, the counts are of what was listed.
-                    searched = false,
-                    total = rows.Value!.Count > ListLimit ? (int?)null : rows.Value.Count,
-                    open = query.State == "open" ? rows.Value.Count : (int?)null,
-                    closed = query.State == "closed" ? rows.Value.Count : (int?)null,
-                    next = rows.Value.Count > ListLimit ? ((page ?? 1) + 1).ToString(System.Globalization.CultureInfo.InvariantCulture) : null,
-                    truncated = rows.Value.Count > ListLimit,
-                    writable,
-                    pulls = rows.Value.Take(ListLimit).Select(Row),
-                })
-                : Refused(rows.Failure, http);
+                    return Refused(probe.Failure, http);
+                }
+
+                more = probe.Value!.Count > 0;
+            }
+
+            return Results.Ok(new
+            {
+                query = query.Normalized,
+                // Without a token there is no search: the list is by state, the counts are of what was listed.
+                searched = false,
+                total = more ? (int?)null : rows.Value.Count,
+                open = query.State == "open" ? rows.Value.Count : (int?)null,
+                closed = query.State == "closed" ? rows.Value.Count : (int?)null,
+                next = more ? (at + 1).ToString(System.Globalization.CultureInfo.InvariantCulture) : null,
+                truncated = more,
+                writable,
+                pulls = rows.Value.Select(Row),
+            });
         });
 
         api.MapGet("/pulls/view", async (string owner, string repo, int? number, HttpContext http, AccessResolver access, IRepoSource source, IVersioLogger log, CancellationToken ct) =>

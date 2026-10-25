@@ -119,4 +119,35 @@ public sealed class PullSearchTests
         Assert.Equal(JsonValueKind.Null, second.GetProperty("next").ValueKind);
         (await host.GetAsync("/api/repos/acme/plant/pulls?after=" + Uri.EscapeDataString("not a cursor!"), alice)).AssertStatus(HttpStatusCode.NotFound);
     }
+
+    /// <summary>
+    /// Without a token the pages are REST's, in units of the page size. Asking for one row more
+    /// than shown at page N showed 50 and moved on to page N+1 of 51, so every 51st pull request
+    /// was never listed (the 2026-10-24 review's item 35).
+    /// </summary>
+    [Fact]
+    public async Task Anonymous_pages_follow_each_other_without_a_gap()
+    {
+        var github = Build(out var repo);
+        for (var i = 4; i <= 102; i++)
+        {
+            repo.Pulls.Add((new PullInfo(i, $"Change {i}", "jo", When.AddHours(i), "main", $"b{i}", new string('e', 40), false), "Why"));
+        }
+
+        // 101 open (pull 3 is merged), newest first: 102 … 53 | 52 … 4, 2 | 1.
+        await using var host = await TestHost.StartAsync(github);
+
+        var first = await Get(host, "/api/repos/acme/plant/pulls");
+        var second = await Get(host, "/api/repos/acme/plant/pulls?page=2");
+        var third = await Get(host, "/api/repos/acme/plant/pulls?page=3");
+
+        Assert.Equal(50, Numbers(first).Count());
+        Assert.Equal("2", first.GetProperty("next").GetString());
+        Assert.Equal(52, Numbers(second).First());
+        Assert.Equal(50, Numbers(second).Count());
+        Assert.Equal("3", second.GetProperty("next").GetString());
+        Assert.Equal([1], Numbers(third));
+        Assert.Equal(JsonValueKind.Null, third.GetProperty("next").ValueKind);
+        Assert.False(third.GetProperty("truncated").GetBoolean());
+    }
 }

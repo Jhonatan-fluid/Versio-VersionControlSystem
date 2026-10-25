@@ -304,10 +304,16 @@ public sealed class GitHubRepoSource(
                 Bool(info, "hasNextPage") ? Text(info, "endCursor") : null);
         }, ct);
 
-    /// <remarks>REST's list items carry the labels, the assignees and the dates, not the review decision or the checks: those stay null, and the page draws nothing for them.</remarks>
+    /// <remarks>
+    /// REST's list items carry the labels, the assignees and the dates, not the review decision or
+    /// the checks: those stay null, and the page draws nothing for them. The page bound is wide
+    /// because <paramref name="page"/> is in units of <paramref name="limit"/>: the list's one-row
+    /// probe for "is there a next page" asks for page N×50+1 at per_page=1, and a bound of 1000
+    /// would have answered page 20's probe with row 1000 (the 2026-10-24 review's item 35).
+    /// </remarks>
     public Task<RepoResult<IReadOnlyList<PullRow>>> GetPullRowsAsync(RepoAccess access, string owner, string repo, string state, string sort, string direction, int limit, int page, CancellationToken ct) =>
         GetJsonAsync<IReadOnlyList<PullRow>>(access,
-            $"repos/{E(owner)}/{E(repo)}/pulls?state={E(state)}&sort={E(sort == "comments" ? "popularity" : sort)}&direction={E(direction)}&per_page={Math.Clamp(limit, 1, 100).ToString(CultureInfo.InvariantCulture)}&page={Math.Clamp(page, 1, 1000).ToString(CultureInfo.InvariantCulture)}",
+            $"repos/{E(owner)}/{E(repo)}/pulls?state={E(state)}&sort={E(sort == "comments" ? "popularity" : sort)}&direction={E(direction)}&per_page={Math.Clamp(limit, 1, 100).ToString(CultureInfo.InvariantCulture)}&page={Math.Clamp(page, 1, 100_000).ToString(CultureInfo.InvariantCulture)}",
             root => root.EnumerateArray().Select(p =>
             {
                 var merged = p.TryGetProperty("merged_at", out var ma) && ma.ValueKind == JsonValueKind.String;
