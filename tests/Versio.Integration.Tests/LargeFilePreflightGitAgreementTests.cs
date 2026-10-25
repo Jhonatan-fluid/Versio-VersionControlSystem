@@ -60,6 +60,14 @@ public sealed class LargeFilePreflightGitAgreementTests : IDisposable
     [InlineData("huge\\*.bin filter=lfs\n", "huge*.bin")]
     [InlineData("huge\\*.bin filter=lfs\n", "hugeX.bin")]
     [InlineData("/huge.bin filter=lfs\n", "a/huge.bin")]
+    // The 2026-10-25 review's item 6: git's C-quoting, octal escapes included, and the
+    // short or unknown escapes that make git drop the line.
+    [InlineData("*.bin filter=lfs\n\"huge\\056bin\" -filter\n", "huge.bin")]
+    [InlineData("*.bin filter=lfs\n\"huge\\056bin\" -filter\n", "other.bin")]
+    [InlineData("*.bin filter=lfs\n\"huge\\56bin\" -filter\n", "huge.bin")]
+    [InlineData("*.bin filter=lfs\n\"huge\\qbin\" -filter\n", "huge.bin")]
+    [InlineData("\"hug\\145.bin\" filter=lfs\n", "huge.bin")]
+    [InlineData("\"\\303\\244.bin\" filter=lfs\n", "ä.bin")]
     public async Task The_preflight_agrees_with_check_attr(string gitattributes, string path)
     {
         Skip.IfNot(GitAvailable, "git not on PATH");

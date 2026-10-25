@@ -340,6 +340,25 @@ public sealed class LargeFilePreflightTests
         }
     }
 
+    /// <summary>
+    /// A quoted pattern with a C-style octal escape names the file git says it names.
+    /// </summary>
+    /// <remarks>
+    /// <c>"huge\056bin" -filter</c> is git's spelling of <c>huge.bin -filter</c>, and
+    /// git answers <c>unset</c> for huge.bin. The reader dropped the backslash and kept
+    /// the digits, so the override was a rule for a file called huge056bin and the lfs
+    /// rule stood. The 2026-10-25 review's item 6, seen from the preflight.
+    /// </remarks>
+    [Fact]
+    public void A_quoted_octal_escape_in_a_later_rule_takes_the_protection_away()
+    {
+        var offenders = LargeFilePreflight.Unprotected(
+            [("huge.bin", 20 * Mb), ("other.bin", 20 * Mb)],
+            "*.bin filter=lfs\n\"huge\\056bin\" -filter\n");
+
+        Assert.Equal("huge.bin", Assert.Single(offenders));
+    }
+
     [Fact]
     public void A_later_rule_git_can_never_match_changes_nothing()
     {
