@@ -149,12 +149,21 @@ export function MilestoneEditor(props: MetaProps & { summary: Summary }) {
   // snapped back to the old option the moment it was picked (review, 2026-10-24).
   const [picked, setPicked] = useState<string | null>(null);
   useEffect(() => setPicked(null), [current]);
+  async function pick(value: string) {
+    setPicked(value);
+    // A refused pick is let go: kept, the select showed the rejected option under a heading
+    // naming the real milestone, and picking that option again fired no change event, so the
+    // person could not try again (the 2026-10-24 review's item 7).
+    if (!(await write.run('/milestone', { number: value === '' ? null : Number(value) }))) {
+      setPicked(null);
+    }
+  }
   return (
     <div className="milestone-editor">
       {props.summary.milestone && <p><Icon name="milestone" className="text-muted" /> {props.summary.milestone}</p>}
       {milestones.state === 'ok' && (
         <select value={picked ?? (current === null ? '' : String(current))} disabled={write.busy} aria-label="Milestone"
-          onChange={(e) => { setPicked(e.target.value); write.run('/milestone', { number: e.target.value === '' ? null : Number(e.target.value) }); }}>
+          onChange={(e) => void pick(e.target.value)}>
           <option value="">No milestone</option>
           {(milestones.value.milestones ?? []).map((m) => <option key={m.number} value={m.number}>{m.title}</option>)}
           {milestones.value.truncated && <option value="" disabled>More milestones on GitHub than listed here</option>}

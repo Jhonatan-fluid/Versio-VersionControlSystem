@@ -1947,6 +1947,27 @@ describe('PullPage review writes', () => {
     act(() => root.unmount());
   });
 
+  // A refused pick stayed in the select while the heading showed the real milestone, and picking
+  // the same option again fired no change, so there was no retry (the 2026-10-24 review's item 7).
+  it('a refused milestone snaps the select back and can be picked again', async () => {
+    const refused = { status: 422, body: { error: 'github-refused', message: 'GitHub refused this.' } };
+    const { host, root } = await render('/acme/plant/pull/12', { writable: true, counts: live, writes: { '/milestone': refused } });
+    const select = () => host.querySelector<HTMLSelectElement>('.milestone-editor select')!;
+    await fill(select(), '5');
+    await settle(host, () => false);
+
+    expect(select().value).toBe('');
+    expect(host.querySelector('.milestone-editor .notice')?.textContent).toContain('GitHub refused this.');
+
+    await fill(select(), '5');
+    await settle(host, () => false);
+    expect(writes().map((w) => [w.url.slice(w.url.lastIndexOf('/')), w.body])).toMatchObject([
+      ['/milestone', { number: 5 }],
+      ['/milestone', { number: 5 }],
+    ]);
+    act(() => root.unmount());
+  });
+
   it('re-requests a reviewer who already reviewed, and withdraws a team by its slug', async () => {
     const reviewers = [{ login: 'kim', state: 'APPROVED' }, { login: 'Controls', state: 'REQUESTED', isTeam: true, slug: 'plc-controls' }];
     const { host, root } = await render('/acme/plant/pull/12', { writable: true, counts: { ...live, reviewers } });
