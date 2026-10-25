@@ -873,7 +873,37 @@ public sealed class SyncViewModel : ObservableObject
                 continue;
             }
 
-            var status = await toolchain.ProbeAsync(ct).ConfigureAwait(true);
+            PlcToolchainStatus status;
+            try
+            {
+                status = await toolchain.ProbeAsync(ct).ConfigureAwait(true);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                // One vendor's probe reads that vendor's install from disk, and a probe that
+                // throws is that vendor's defect, not the repository's: the CODESYS probe
+                // indexed an empty install list on a machine with only TIA Portal and took the
+                // whole attach down with it, before the vendors after it were asked at all
+                // (the 2026-10-24 review's item 36). Recorded as unavailable, said in the log
+                // with the stack, and the loop goes on to the next vendor.
+                _logger.Error(LogCategory.Plc,
+                    $"the {toolchain.Format.DisplayName} toolchain probe failed", ex);
+                status = new PlcToolchainStatus
+                {
+                    Available = false,
+                    Explanation =
+                        $"{toolchain.Format.DisplayName} unavailable: the probe failed " +
+                        $"({ex.GetType().Name}: {ex.Message})",
+                };
+
+                // Without the toolchain: a pack whose probe threw is not asked for a runner
+                // either, since CreateRunner reads the same install. RunnerFor builds the
+                // generic refusing runner from the explanation instead.
+                _probed[vendor] = new ProbedToolchain(null, status);
+                parts.Add(status.Explanation);
+                continue;
+            }
+
             _probed[vendor] = new ProbedToolchain(toolchain, status);
             parts.Add(status.Explanation
                       ?? (status.Available
@@ -934,8 +964,11 @@ public sealed class SyncViewModel : ObservableObject
                 });
             }
 
+            // A vendor with no pack registered, or one whose probe threw: the latter's status
+            // carries the reason, and "not exported yet" would misdescribe a defect as a gap.
             return new UnavailableToolchainRunner(
-                $"{vendor} projects can be tracked but not exported yet");
+                probed.Status?.Explanation
+                ?? $"{vendor} projects can be tracked but not exported yet");
         }
 
         var fallback = RunnerFor(_config.Bindings[0].Vendor);
