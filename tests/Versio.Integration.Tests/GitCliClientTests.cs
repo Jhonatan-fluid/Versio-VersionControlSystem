@@ -1,4 +1,5 @@
 using Versio.Core.Git;
+using Versio.Infrastructure.FileSystem;
 using Versio.Infrastructure.Git;
 using Versio.TestSupport;
 using Xunit.Abstractions;
@@ -119,6 +120,45 @@ public sealed class GitCliClientTests(ITestOutputHelper output) : IDisposable
 
         Assert.Equal(0, exit);
         Assert.Equal("src/My App/export/a.st: eol: lf", answer.Trim());
+    }
+
+    [SkippableFact]
+    public async Task The_exclude_rule_for_a_linked_worktree_lands_where_git_reads_it()
+    {
+        // git reads info/exclude from the common directory only. The shell handed
+        // LocalExclude the per-worktree directory (.git/worktrees/<name>, what
+        // --absolute-git-dir answers there), wrote the rule under it, and git never read it:
+        // .versio/local/ stayed untracked in every linked worktree and
+        // `stash push --include-untracked` swept the auto-stash record into the stash it
+        // described. The 2026-10-24 review's item 25. Asked of git with check-ignore, because
+        // where git looks is the only thing that matters.
+        Skip.IfNot(GitAvailable, "git not on PATH");
+        await InitAsync();
+
+        Write("a.txt", "a");
+        await Client.StageAsync(["a.txt"], CancellationToken.None);
+        await Client.CommitAsync("initial", CancellationToken.None);
+        await RunRawAsync("worktree", "add", "wt");
+
+        var worktree = Path.Combine(_repo, "wt");
+        var worktreeClient = new GitCliClient(worktree, logger: new TestLogger(output));
+
+        var perWorktree = await worktreeClient.GitDirectoryAsync(CancellationToken.None);
+        var common = await worktreeClient.CommonGitDirectoryAsync(CancellationToken.None);
+
+        // The per-worktree answer is still the per-worktree one: the merge-state reader
+        // depends on it and must not follow the exclude to the common directory.
+        Assert.EndsWith(Path.Combine("worktrees", "wt"), perWorktree.Replace('/', Path.DirectorySeparatorChar));
+        Assert.Equal(Path.GetFullPath(Path.Combine(_repo, ".git")),
+                     Path.GetFullPath(common));
+
+        await LocalExclude.EnsureAsync(common, new TestLogger(output), CancellationToken.None);
+
+        var (exit, _) = await RunRawOutputAsync(worktree, "check-ignore", "-q", ".versio/local/x");
+
+        Assert.Equal(0, exit);
+        Assert.False(File.Exists(Path.Combine(perWorktree, "info", "exclude")),
+                     "the rule was written under the per-worktree directory, where git does not read it");
     }
 
     [SkippableFact]

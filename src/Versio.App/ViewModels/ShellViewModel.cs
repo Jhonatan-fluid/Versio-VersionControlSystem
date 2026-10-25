@@ -2077,8 +2077,14 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         // Before anything is written into .versio/local/, and per clone rather than per
         // project: an auto-stash record that git can see is a record the NEXT auto-stash
         // swallows, leaving real work in the stash with nothing pointing at it.
+        //
+        // The COMMON git directory, not the per-worktree one. git reads info/exclude from
+        // $GIT_COMMON_DIR only; in a linked worktree GitDirectoryAsync answers
+        // .git/worktrees/<name>, and an exclude written there was never read - so
+        // .versio/local/ stayed untracked and the next auto-stash swept its own record. The
+        // 2026-10-24 review's item 25. In the main worktree the two are the same directory.
         await LocalExclude.EnsureAsync(
-            await client.GitDirectoryAsync(busy.Token).ConfigureAwait(true),
+            await client.CommonGitDirectoryAsync(busy.Token).ConfigureAwait(true),
             _logger,
             busy.Token).ConfigureAwait(true);
 

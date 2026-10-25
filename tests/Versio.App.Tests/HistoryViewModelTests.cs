@@ -249,6 +249,9 @@ internal sealed class CountingGitClient : IGitClient
     public Task<string> GitDirectoryAsync(CancellationToken ct) =>
         throw new NotSupportedException();
 
+    public Task<string> CommonGitDirectoryAsync(CancellationToken ct) =>
+        throw new NotSupportedException();
+
     public Task<GitResult> FetchAsync(IProgress<GitProgress>? progress, CancellationToken ct) =>
         throw new NotSupportedException();
 

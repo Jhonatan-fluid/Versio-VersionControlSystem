@@ -397,6 +397,22 @@ public interface IGitClient
     Task<string> GitDirectoryAsync(CancellationToken ct);
 
     /// <summary>
+    /// The absolute path of the directory git shares between every worktree of this
+    /// repository: <c>.git</c> itself, even when asked from a linked worktree.
+    /// </summary>
+    /// <remarks>
+    /// Distinct from <see cref="GitDirectoryAsync"/> on purpose. In a linked worktree that
+    /// answers <c>&lt;main&gt;/.git/worktrees/&lt;name&gt;</c>, which is where the per-worktree
+    /// state lives — <c>MERGE_HEAD</c>, <c>rebase-merge</c> — and is right for anything reading
+    /// that state. It is wrong for <c>info/exclude</c>, which git reads from the common
+    /// directory only: the exclude rule written beside the per-worktree state was never read,
+    /// <c>.versio/local/</c> stayed untracked there, and <c>stash push --include-untracked</c>
+    /// swept the auto-stash record into the stash it was meant to describe. The 2026-10-24
+    /// review's item 25.
+    /// </remarks>
+    Task<string> CommonGitDirectoryAsync(CancellationToken ct);
+
+    /// <summary>
     /// Fetch from the remote, dropping tracking refs for branches that are gone.
     /// </summary>
     /// <remarks>

@@ -93,6 +93,7 @@ public sealed class RemotePollerTests
         public Task<GitResult> VerifyRemoteAsync(string u, CancellationToken ct) => throw new NotSupportedException();
         public Task<string> RemoteUrlAsync(string r, CancellationToken ct) => throw new NotSupportedException();
         public Task<string> GitDirectoryAsync(CancellationToken ct) => throw new NotSupportedException();
+        public Task<string> CommonGitDirectoryAsync(CancellationToken ct) => throw new NotSupportedException();
         public Task<GitResult> FetchAsync(IProgress<GitProgress>? p, CancellationToken ct) => throw new NotSupportedException();
         public Task<GitResult> PullAsync(IProgress<GitProgress>? p, CancellationToken ct) => throw new NotSupportedException();
         public Task<GitResult> PushAsync(IProgress<GitProgress>? p, CancellationToken ct) => throw new NotSupportedException();

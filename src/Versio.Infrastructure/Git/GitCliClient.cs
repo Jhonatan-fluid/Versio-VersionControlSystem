@@ -301,6 +301,11 @@ public sealed partial class GitCliClient(
     }
 
     /// <summary>Where git keeps its own state for this working tree.</summary>
+    /// <remarks>
+    /// Per worktree: in a linked worktree this is <c>.git/worktrees/&lt;name&gt;</c>, which is
+    /// what the merge-state reader needs and what <c>info/exclude</c> must not be written
+    /// under — see <see cref="CommonGitDirectoryAsync"/>.
+    /// </remarks>
     public async Task<string> GitDirectoryAsync(CancellationToken ct)
     {
         var result = await RunAsync(
@@ -308,6 +313,33 @@ public sealed partial class GitCliClient(
             .ConfigureAwait(false);
 
         return result.Success ? result.StdOut.Trim() : string.Empty;
+    }
+
+    /// <summary>The directory every worktree of this repository shares.</summary>
+    /// <remarks>
+    /// <c>--path-format=absolute</c> is what makes the answer usable as a path from anywhere;
+    /// it arrived in git 2.31, and an older git ignores the option and answers relative to
+    /// the working tree (plain <c>.git</c> in the main worktree), so a relative answer is
+    /// resolved against the repository path here rather than handed on as-is. The 2026-10-24
+    /// review's item 25: the exclude rule was written under the per-worktree directory,
+    /// where git never reads it.
+    /// </remarks>
+    public async Task<string> CommonGitDirectoryAsync(CancellationToken ct)
+    {
+        var result = await RunAsync(
+            ["rev-parse", "--path-format=absolute", "--git-common-dir"], null, ct,
+            TimeSpan.FromSeconds(10))
+            .ConfigureAwait(false);
+
+        if (!result.Success)
+        {
+            return string.Empty;
+        }
+
+        var answer = result.StdOut.Trim();
+        return answer.Length == 0 || Path.IsPathRooted(answer)
+            ? answer
+            : Path.GetFullPath(Path.Combine(repositoryPath, answer));
     }
 
     /// <summary>Who git will attribute a commit to, as git itself resolves it.</summary>
