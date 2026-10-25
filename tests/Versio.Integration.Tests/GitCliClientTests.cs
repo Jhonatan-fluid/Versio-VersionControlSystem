@@ -287,6 +287,33 @@ public sealed class GitCliClientTests(ITestOutputHelper output) : IDisposable
     }
 
     [SkippableFact]
+    public async Task A_rename_survives_a_modified_file_whose_name_starts_with_R()
+    {
+        // The client scanned the -z fields itself and took any field starting with R as a
+        // rename status. A modified README.txt listed before the rename put "README.txt" in
+        // the status position, so the scan recorded R100 → plc/Old.st as the rename and lost
+        // the real one: the binding reported broken and the new path untracked. The
+        // 2026-10-24 review's item 4.
+        Skip.IfNot(GitAvailable, "git not on PATH");
+        await InitAsync();
+
+        Write("README.txt", "about");
+        Write("plc/Old.st", new string('x', 400));
+        await Client.StageAsync(["README.txt", "plc/Old.st"], CancellationToken.None);
+        await Client.CommitAsync("initial", CancellationToken.None);
+
+        Write("README.txt", "about, edited");
+        File.Move(Path.Combine(_repo, "plc/Old.st"), Path.Combine(_repo, "plc/New.st"));
+        await Client.StageAsync(["README.txt", "plc"], CancellationToken.None);
+
+        var renames = await Client.DetectRenamesAsync(CancellationToken.None);
+
+        var rename = Assert.Single(renames);
+        Assert.Equal("plc/Old.st", rename.Key);
+        Assert.Equal("plc/New.st", rename.Value);
+    }
+
+    [SkippableFact]
     public async Task Incoming_paths_with_non_ascii_names_arrive_verbatim_not_quoted()
     {
         // The merge guard matches what a branch would bring against the tracked projects by

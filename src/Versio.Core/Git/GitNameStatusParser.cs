@@ -101,6 +101,34 @@ public static class GitNameStatusParser
     }
 
     /// <summary>
+    /// The renames in a <c>--name-status -z</c> listing, old path → new path.
+    /// </summary>
+    /// <remarks>
+    /// Built on <see cref="Parse"/> rather than on a scan of its own, because the scan the
+    /// client used to run skipped a one-path record one field at a time and so read the
+    /// <i>path</i> of a modified <c>README.txt</c> as a status token: it began with
+    /// <c>R</c>, the two fields after it were taken as the pair, and the real rename behind
+    /// it was lost — the binding reported broken and the new project path untracked. The
+    /// 2026-10-24 review's item 4. Walking records by their own width is the only way to
+    /// know which field is a status, and <see cref="Parse"/> already does that. A copy is
+    /// not a rename: its source is still where it was, so nothing needs re-linking.
+    /// </remarks>
+    public static IReadOnlyDictionary<string, string> Renames(string? output)
+    {
+        var renames = new Dictionary<string, string>(StringComparer.Ordinal);
+
+        foreach (var file in Parse(output))
+        {
+            if (file.Kind == ChangeKind.Renamed && file.OriginalPath is { } original)
+            {
+                renames[original] = file.Path;
+            }
+        }
+
+        return renames;
+    }
+
+    /// <summary>
     /// One status letter, as a <see cref="ChangeKind"/>.
     /// </summary>
     /// <remarks>
