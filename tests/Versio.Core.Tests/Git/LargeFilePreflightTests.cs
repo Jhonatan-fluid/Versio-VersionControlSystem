@@ -286,6 +286,15 @@ public sealed class LargeFilePreflightTests
     [InlineData("v[*].bin", "v*.bin", true)]
     [InlineData("v[*].bin", "va.bin", false)]
     [InlineData("v[a-c].bin", "vB.bin", true)]
+    // A range written backwards is empty in wildmatch, but its low end was tested as a
+    // member before the dash was read, so `[z-a]` is `[z]` — and the negation excludes z.
+    // The matcher dropped the range and built `[]`, which .NET refuses, so preflight threw
+    // (the 2026-10-25 review's third round, item 2).
+    [InlineData("v[z-a].bin", "vz.bin", true)]
+    [InlineData("v[z-a].bin", "va.bin", false)]
+    [InlineData("v[z-a].bin", "v-.bin", false)]
+    [InlineData("v[!z-a].bin", "vz.bin", false)]
+    [InlineData("v[!z-a].bin", "va.bin", true)]
     // A class never matches a slash, even when the slash is listed or inside a range.
     [InlineData("a[/]b.bin", "a/b.bin", false)]
     [InlineData("a[+-9]b.bin", "a/b.bin", false)]

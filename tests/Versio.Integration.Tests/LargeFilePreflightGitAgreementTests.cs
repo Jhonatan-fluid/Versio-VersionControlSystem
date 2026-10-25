@@ -68,6 +68,11 @@ public sealed class LargeFilePreflightGitAgreementTests : IDisposable
     [InlineData("*.bin filter=lfs\n\"huge\\qbin\" -filter\n", "huge.bin")]
     [InlineData("\"hug\\145.bin\" filter=lfs\n", "huge.bin")]
     [InlineData("\"\\303\\244.bin\" filter=lfs\n", "ä.bin")]
+    // The third round's item 2: a range written backwards keeps its low end as a member.
+    [InlineData("v[z-a].bin filter=lfs\n", "vz.bin")]
+    [InlineData("v[z-a].bin filter=lfs\n", "va.bin")]
+    [InlineData("v[!z-a].bin filter=lfs\n", "vz.bin")]
+    [InlineData("v[!z-a].bin filter=lfs\n", "va.bin")]
     public async Task The_preflight_agrees_with_check_attr(string gitattributes, string path)
     {
         Skip.IfNot(GitAvailable, "git not on PATH");

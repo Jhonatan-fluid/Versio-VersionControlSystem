@@ -278,10 +278,11 @@ public static class LargeFilePreflight
     /// The shapes are wildmatch's, each checked against git: <c>!</c> or <c>^</c> first
     /// negates; a <c>]</c> first (after the negation) is a member, not the close; a
     /// <c>-</c> first or last is a member, not a range; a backslash escapes the next
-    /// character; <c>[:digit:]</c> and its siblings are the C <c>is*</c> sets. A range whose
-    /// ends are reversed matches nothing in git and would throw in .NET, so it is dropped
-    /// rather than passed through. The slash is kept out of every class by hand, because
-    /// the regex engine does not know it is a separator.
+    /// character; <c>[:digit:]</c> and its siblings are the C <c>is*</c> sets. A range's low
+    /// end is a member in its own right, so one written backwards (<c>[z-a]</c>) is its low
+    /// end alone — not nothing, and not the .NET parse error that dropping it produced. The
+    /// slash is kept out of every class by hand, because the regex engine does not know it
+    /// is a separator.
     /// </remarks>
     private static string? CharacterClass(string glob, ref int i)
     {
@@ -340,9 +341,16 @@ public static class LargeFilePreflight
                     j++;
                 }
 
-                if (c <= hi)
+                // wildmatch tests the low end as a member before it reads the dash, so a
+                // range is its low end plus everything up to its high end — and one written
+                // backwards is just its low end: `[z-a]` matches z and nothing else, and
+                // `[!z-a]` everything but z. The first version dropped a reversed range
+                // whole, which left `[]` for .NET to refuse, and preflight threw on the rule
+                // instead of weighing the commit (the 2026-10-25 review's third round, item 2).
+                sb.Append(ClassLiteral(c));
+                if (c < hi)
                 {
-                    sb.Append(ClassLiteral(c)).Append('-').Append(ClassLiteral(hi));
+                    sb.Append('-').Append(ClassLiteral(hi));
                 }
 
                 j += 3;
