@@ -93,6 +93,22 @@ one exception nobody had met.
   mirror. Both normalisers now cut a container's body into whole sibling elements by tag depth
   and sort those; six new parity corpus cases pin that the C# and the python cut alike (the
   python mutated back to a line sort diverges on the first). Commit `4b83f89`.
+  **The CODESYS gate found the fix's own hole on 2026-10-25** (53/55; the two red are
+  `An_import_and_a_re_export_leave_the_mirror_byte_identical` and
+  `A_member_inside_a_folder_round_trips_and_moves_nothing_else`, both on `Live_Visu.vis.xml`
+  and `Visualization.vis.xml`): masking runs before sorting and writes a GUID as
+  `<masked-guid>`, which the shared tag expression reads as an *open* tag. An unordered
+  container holding GUIDs therefore never returns to depth zero, its whole body is kept as one
+  unterminated chunk, nothing in it is sorted, and the vis files CODESYS re-mints on import
+  compare as changed — so the re-export writes them and the mirror churns, the exact thing the
+  normaliser exists to stop. `GlobalTextList.xml` holds seventeen GUID lines inside such
+  containers and still compared equivalent — with nothing sorted on either side, a file whose
+  siblings come back in the same order passes anyway, and the vis files are the ones CODESYS
+  reorders, which is what the sort was for. Reproduced without CODESYS by loading the embedded
+  python as plain CPython: two swapped siblings in a `Dictionary` compare equivalent with plain
+  values and not with GUIDs. The six parity cases and the new pure tests missed it because none
+  of them holds a GUID at all. The second review round's item 7 fixes it in both normalisers;
+  the two gate tests re-run once it lands.
 - **22 — restoring the oldest of ten backups deleted it first.** The safety copy made eleven,
   pruning ran inside it, and the restore source went before it was read. The source is pinned
   through the prune. The fake file system's `CopyAsync` used to write an empty file for a
@@ -107,7 +123,9 @@ one exception nobody had met.
   in a comment became the delimiter and a literal delimiter line truncated the type. The import
   now chooses by the object, as the export does — no textual implementation, no decoding —
   through `read_textual` in `versio_text`, pinned against `StTextCodec.DeclarationOnly` and
-  `Split` by the parity corpus plus three adversarial DUTs. Commit `192b5cf`. *CODESYS gate owed.*
+  `Split` by the parity corpus plus three adversarial DUTs. Commit `192b5cf`. ~~*CODESYS gate owed.*~~
+  *Passed under real CODESYS on 2026-10-25*
+  (`A_declaration_only_object_edited_in_the_mirror_reaches_the_project`).
 - **14 — a 600 KB manifest overflowed the stack.** An honest ownership chain four thousand
   generations long passed the cycle guard and `Attach` recursed once per generation. The walk
   records a depth per guid and lays anything past `MaxNesting` (64) flat; the 10,000-deep test
@@ -120,7 +138,8 @@ one exception nobody had met.
   `ide_pid`; `ChildProcess.KillOwned` kills that PID only after checking image name and start
   time, and no reported PID means nothing is reaped by name, said in the log. Three Integration
   tests on the decision (a decoy of the same name survives; red with the cross-check removed).
-  CODESYS was never affected. Commit `0e862de`. *TIA and TwinCAT gates owed for the emission.*
+  CODESYS was never affected. Commit `0e862de`. *TIA and TwinCAT gates owed for the emission —
+  neither ran on 2026-10-25: no XAE, and Portal refused the host (not an Openness member).*
 - **23 — a deleted TwinCAT body stayed in the project.** `SetTexts` skipped the implementation
   write whenever the file had none, right for a DUT and wrong for a cleared function block, and
   only the declaration was read back. `HostText.ImplementationWriteFor` tells the cases apart by
@@ -137,7 +156,10 @@ one exception nobody had met.
   bare names, unique within an Application; the retargeting walked the whole project. It starts
   at the renamed object's own Application now (`versio_tree.application_of`, through `parent`),
   and an object outside any Application retargets nothing and warns. A CPython parity test builds
-  two Applications each calling `Simulation`. Commit `228f2ef`. *CODESYS gate owed.*
+  two Applications each calling `Simulation`. Commit `228f2ef`. ~~*CODESYS gate owed.*~~ *Passed
+  under real CODESYS on 2026-10-25*
+  (`A_POU_renamed_in_the_mirror_keeps_its_identity_rather_than_being_rebuilt` asserts the task
+  list); the fixture has one Application, so the second-Application case stays parity-only.
 
 **Two traps the session itself fell into, for the next one.** `refs/stash` is shared across every
 worktree of a repository: a `git stash` in one worktree and a `git stash pop` in another swapped
@@ -318,10 +340,14 @@ cherry-picked):
 follow-up and this write-up); every suite without an IDE is green over all of them — Core 1,951
 (one skipped, the hole above), Integration 188, Arch 36, CODESYS pure 404 and parity 101, TIA
 pure 102, TwinCAT pure 27, Web 450, vitest 209, App 833 — and the TIA and TwinCAT gates skip
-cleanly here. **Five fixes still owe their IDE gate**: the CODESYS gate over items 5 and 31 (the
-import script and the task retargeting), the XAE gate over 23 (an empty `ImplementationText`)
+cleanly here. **Five fixes still owe their IDE gate**: ~~the CODESYS gate over items 5 and 31 (the
+import script and the task retargeting)~~ — **ran 2026-10-25 on `ba8dbdf`, 53/55 in 1 h 22 m
+on a loaded machine: 5 and 31 pass, and the two red are item 20's own hole, written up under
+it below** — the XAE gate over 23 (an empty `ImplementationText`)
 and the ide_pid half of 28, and the TIA gate over 27 (the 300-character Comment marker) and the
-other half of 28. **Two follow-ups are named and not done:** the unconfirmed-edit export under
+other half of 28 — neither IDE answers on the machine that ran the CODESYS gate (TwinCAT
+absent, 6 skipped in 4 s; TIA V20 and V21 installed but the account is not an Openness member,
+1 passed and 4 skipped in 3 m 1 s), so both are still owed. **Two follow-ups are named and not done:** the unconfirmed-edit export under
 item 3 (`EnterConflict` has no caller), and branch deletion still addressing the hardcoded
 "origin" after item 39. The reviewer's own validation ran no IDE gate either.
 

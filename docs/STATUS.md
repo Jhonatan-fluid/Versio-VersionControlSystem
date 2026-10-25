@@ -71,12 +71,12 @@ marking, duplicate-param keys, and the detail-pane lookup. All of them are in
 | `Versio.Plc.Codesys.Pure.Tests` | 404 | under a second | nothing |
 | `Versio.Plc.Codesys.Parity.Tests` | 101 | ~15 s | `python` on PATH — skips cleanly without it, so check the count |
 | `Versio.Plc.TiaPortal.Pure.Tests` | 102 | instant | nothing |
-| `Versio.Plc.TiaPortal.Tests` | 5 | seconds when skipped; minutes when Portal runs the import gate | **real TIA Portal** — skips without Openness membership or LFS content |
+| `Versio.Plc.TiaPortal.Tests` | 5 | seconds when skipped; 3 m 1 s on 2026-10-25 when Portal is there but refuses the host (1 passed, 4 skipped, not an Openness member); minutes when Portal runs the import gate | **real TIA Portal** — skips without Openness membership or LFS content |
 | `Versio.Plc.TwinCat.Pure.Tests` | 27 | instant | nothing — the host's text rules are compiled in as source |
-| `Versio.Plc.TwinCat.Tests` | 6 | seconds when skipped; ~5 min when XAE runs the import gate | **real TwinCAT XAE** — skips without `TcXaeShell.DTE.17.0` or the fixture |
+| `Versio.Plc.TwinCat.Tests` | 6 | seconds when skipped (4 s, 6 skipped, 2026-10-25); ~5 min when XAE runs the import gate | **real TwinCAT XAE** — skips without `TcXaeShell.DTE.17.0` or the fixture |
 | `Versio.Web.Tests` | 450 | ~40 s | nothing — GitHub is faked |
 | `web/` (vitest) | 209 | ~21 s on 2026-10-24 (the review page waits for its reads, not ticks; it was ~3 min) | the pinned Node in `web/.node` |
-| `Versio.Plc.Codesys.Tests` | 55 | **~30 min**; 41 m 14 s, 55/55, on 2026-10-11 on `WebViewer` | **real CODESYS** |
+| `Versio.Plc.Codesys.Tests` | 55 | **~30 min**; 41 m 14 s, 55/55, on 2026-10-11 on `WebViewer`; 1 h 22 m, 53/55, on 2026-10-25 on `VersioWeb` loaded (the two red are item 11's `<masked-guid>` regression) | **real CODESYS** |
 
 The first ten are the loop to work in — about thirty seconds plus the UI suite. The last is
 the CODESYS gate before a commit. `Versio.Plc.TiaPortal.Tests` and `Versio.Plc.TwinCat.Tests`
@@ -518,11 +518,33 @@ Close Versio **and** Portal before a host rebuild. Click **Yes to all** on Openn
 + hash — a rebuild drops the host off the AllowList).
 
 11. **The five IDE gates the review's fixes owe, and two follow-ups — 2026-10-24.** FINDINGS
-    2026-10-24 has the forty-one items. Owed: `Versio.Plc.Codesys.Tests` over items 5 (the
-    import reads a DUT as written) and 31 (task retargeting within the Application);
+    2026-10-24 has the forty-one items. Owed: ~~`Versio.Plc.Codesys.Tests` over items 5 (the
+    import reads a DUT as written) and 31 (task retargeting within the Application)~~ — **ran
+    2026-10-25 on `ba8dbdf`: 53/55 in 1 h 22 m**, loaded (the owner's CODESYS GUI, Portal and
+    the installed Versio stayed open; none holds the CODESYS mutex while idle). Items 5 and 31
+    pass under real CODESYS —
+    `A_declaration_only_object_edited_in_the_mirror_reaches_the_project` and
+    `A_POU_renamed_in_the_mirror_keeps_its_identity_rather_than_being_rebuilt`, which asserts
+    the task list names the renamed POU; the second-Application case of 31 stays parity-only.
+    **The two red are a regression from item 20's own fix** (`4b83f89`): both normalisers mask a
+    GUID to `<masked-guid>`, and the new sibling chunker reads that as an open tag, so an
+    unordered container holding GUIDs never closes, its children are never sorted, and the two
+    vis files CODESYS re-mints on import compare as changed —
+    `An_import_and_a_re_export_leave_the_mirror_byte_identical` (`Live_Visu.vis.xml`,
+    `Visualization.vis.xml`, then `_manifest.json`) and
+    `A_member_inside_a_folder_round_trips_and_moves_nothing_else` (the same two files).
+    Reproduced without CODESYS on the embedded python as plain CPython: two swapped siblings
+    compare equivalent with plain values and not with GUIDs. It is the second review round's
+    item 7, being fixed by that round's session in its own worktree; **those two tests and
+    items 5 and 31 want a re-run on the new embedded python once it lands.**
     `Versio.Plc.TwinCat.Tests` over 23 (does XAE accept an empty `ImplementationText`?) and the
-    `ide_pid` half of 28; `Versio.Plc.TiaPortal.Tests` over 27 (the Comment marker is 300
-    characters now) and the other half of 28. Follow-ups, named and not done: a Clean binding
+    `ide_pid` half of 28 — **cannot run here: 6 of 6 skipped in 4 s, no `TcXaeShell.DTE.17.0`
+    (2026-10-25)**; `Versio.Plc.TiaPortal.Tests` over 27 (the Comment marker is 300
+    characters now) and the other half of 28 — **cannot either: 1 passed, 4 skipped in 3 m 1 s
+    (2026-10-25)**; the locator passes because only V21's PublicAPI has a `net48` folder, and
+    each of the four Portal tests launched the host and was refused, the account not being in
+    the `Siemens TIA Openness` group. Both gates are still owed, on a machine that has the
+    IDE. Follow-ups, named and not done: a Clean binding
     with an **unconfirmed** mirror edit exports over it on the next project save
     (`A_project_save_does_not_export_over_an_unconfirmed_mirror_edit`, skipped in Core;
     `SyncStateMachine.EnterConflict` has no caller), and branch deletion still addresses the
