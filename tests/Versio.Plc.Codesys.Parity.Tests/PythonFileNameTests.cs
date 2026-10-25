@@ -773,6 +773,13 @@ public sealed class PythonFileNameParityTests(ITestOutputHelper output)
             "<List>\n</z>\n<a/>\n</List>",
             "<List>\n<!-- a comment -->\n<?pi x?>\n<a/>\n</List>",
 
+            // 3d. A GUID inside a sibling (second-round review item 7, 2026-10-25). The
+            //     mask used to be "<masked-guid>", which the depth count read as an element
+            //     that never closes, so with masking ON these two siblings became one chunk
+            //     and could not be reordered. The TEXT pins the placeholder's shape on both
+            //     sides: a side that still emits angle brackets cuts differently here.
+            "<List>\n<Single Name=\"B\">\n<Guid>6f9619ff-8b86-d011-b42d-00c04fc964ff</Guid>\n<Value>y</Value>\n</Single>\n<Single Name=\"A\">\n<Guid>0f8fad5b-d9cb-469f-a165-70867728950e</Guid>\n<Value>x</Value>\n</Single>\n</List>",
+
             // A self-closing container has no body to sort, and the test is on the whole
             // line rather than the tag, so this one is left alone by both sides.
             "<List/>",

@@ -237,7 +237,7 @@ CAN_VERIFY_FORMS = (FORM_ST_FULL, FORM_ST_DECL, FORM_ST_IMPL)
 # for.
 #
 # What it costs: an edit that changes GUID VALUES and nothing else would read as unchanged.
-# Masking is positional - each GUID becomes <masked-guid>, so an added or removed one still
+# Masking is positional - each GUID becomes {masked-guid}, so an added or removed one still
 # shows - and no realistic IDE edit changes only the value of an existing GUID. It is stated
 # here rather than glossed because it is the one way this check can be wrong, and being wrong
 # here destroys work nothing else holds a copy of.

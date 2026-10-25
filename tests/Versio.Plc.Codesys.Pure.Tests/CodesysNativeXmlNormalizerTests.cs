@@ -145,6 +145,46 @@ public class NativeXmlNormalizerTests
     }
 
     [Fact]
+    public void Reordered_siblings_that_carry_guids_are_not_a_change_with_masking_on()
+    {
+        // The GUID mask used to be "<masked-guid>", and the sibling sort counts tags by
+        // shape: it read the mask as an element that opens and never closes, every chunk
+        // after the first GUID was swallowed into one, and this pair compared different
+        // with masking on — the only setting an import's delete check uses — while
+        // comparing equivalent with masking off (the second-round review's item 7). A
+        // native object CODESYS had merely reordered was then refused as
+        // DELETE_CONTENT_CHANGED.
+        const string a = """
+            <List>
+            <Single Name="B">
+            <Guid>6f9619ff-8b86-d011-b42d-00c04fc964ff</Guid>
+            <Value>y</Value>
+            </Single>
+            <Single Name="A">
+            <Guid>0f8fad5b-d9cb-469f-a165-70867728950e</Guid>
+            <Value>x</Value>
+            </Single>
+            </List>
+            """;
+        const string b = """
+            <List>
+            <Single Name="A">
+            <Guid>0f8fad5b-d9cb-469f-a165-70867728950e</Guid>
+            <Value>x</Value>
+            </Single>
+            <Single Name="B">
+            <Guid>6f9619ff-8b86-d011-b42d-00c04fc964ff</Guid>
+            <Value>y</Value>
+            </Single>
+            </List>
+            """;
+
+        Assert.True(NativeXmlNormalizer.AreEquivalent(a, b, maskGuids: false));
+        Assert.True(NativeXmlNormalizer.AreEquivalent(a, b, maskGuids: true));
+        Assert.Equal(2, NativeXmlNormalizer.Normalize(a).GuidsMasked);
+    }
+
+    [Fact]
     public void A_container_nested_inside_a_sibling_is_sorted_too()
     {
         const string a = "<List>\n<Single Name=\"A\">\n<Properties>\n<b/>\n<a/>\n</Properties>\n</Single>\n</List>";

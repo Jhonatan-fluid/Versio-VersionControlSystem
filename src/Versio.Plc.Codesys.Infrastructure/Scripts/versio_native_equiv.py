@@ -233,9 +233,13 @@ def normalize(xml, mask_guids=True):
     text = _COUNTER_RE.sub(mask_counter, text)
 
     if mask_guids:
+        # Braces, not angle brackets, as in the C#. "<masked-guid>" read to _sorted_siblings
+        # as an element that opens and never closes, so every chunk after the first GUID was
+        # swallowed into one and a reordered payload compared different with masking on -
+        # the only setting the delete check uses (the second-round review's item 7).
         def mask_guid(match):
             guids[0] += 1
-            return u"<masked-guid>"
+            return u"{masked-guid}"
 
         text = _GUID_RE.sub(mask_guid, text)
 

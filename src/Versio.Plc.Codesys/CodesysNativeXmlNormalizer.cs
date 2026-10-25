@@ -80,10 +80,17 @@ public static partial class NativeXmlNormalizer
         var guids = 0;
         if (maskGuids)
         {
+            // Braces, not angle brackets. The placeholder used to be "<masked-guid>", which
+            // the sibling sort below reads as an element that opens and never closes: every
+            // chunk after the first GUID was swallowed into one, nothing could be reordered,
+            // and a payload CODESYS had merely reordered compared different — with masking on,
+            // the only setting an import's delete check uses — and equivalent with it off
+            // (the second-round review's item 7). The mask is only ever compared against
+            // another mask, so its shape is free; it must simply not look like a tag.
             text = AnyGuid().Replace(text, _ =>
             {
                 guids++;
-                return "<masked-guid>";
+                return "{masked-guid}";
             });
         }
 
