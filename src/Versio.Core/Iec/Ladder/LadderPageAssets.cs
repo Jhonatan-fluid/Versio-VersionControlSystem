@@ -119,62 +119,80 @@ public static class LadderPageAssets
     /// alive and stepping it on every press, and a second run over the same page stacked a second
     /// set of handlers on it (found in review). Each set kept its own position, so nothing moved
     /// twice on screen; the cost was a listener and a dead page per file viewed. A page already
-    /// marked <c>ld-scripted</c> is left alone, and the one keyboard listener is installed once and
-    /// steps whichever page is in the document now, through the step function that page carries.
+    /// marked <c>ld-scripted</c> is left alone, and the one keyboard listener is installed once.
+    /// </remarks>
+    /// <remarks>
+    /// <b>Every unscripted page in the document is set up, not the first.</b> The web viewer's
+    /// review page stacks one diagram per changed file, and the version above took
+    /// <c>document.querySelector('.ld-page')</c> — the first diagram — and returned once that one
+    /// was scripted, so every diagram after it had dead buttons; and a jump went through
+    /// <c>document.getElementById</c>, which every diagram's repeated row ids (<c>ld-new-3</c> in
+    /// each file's ladder) answer with the first diagram's row (the 2026-10-24 review's item 10).
+    /// A jump is resolved inside its own page now, and F7 steps the page last clicked or
+    /// focused, falling back to the first in the document, which is what a lone page always was.
     /// </remarks>
     public const string Script = """
         (() => {
-          const page = document.querySelector('.ld-page');
-          if (!page || page.classList.contains('ld-scripted')) return;
-          page.classList.add('ld-scripted');
-          const rows = [...page.querySelectorAll('.ld-row')];
-          const changed = rows.filter(r => r.dataset.change !== 'same');
-          let at = -1;
-          const show = (row) => {
-            rows.forEach(r => r.classList.remove('ld-current'));
-            row.classList.add('ld-current');
-            row.scrollIntoView({ block: 'center' });
-            at = changed.indexOf(row);
+          const setup = (page) => {
+            page.classList.add('ld-scripted');
+            const rows = [...page.querySelectorAll('.ld-row')];
+            const changed = rows.filter(r => r.dataset.change !== 'same');
+            let at = -1;
+            const show = (row) => {
+              rows.forEach(r => r.classList.remove('ld-current'));
+              row.classList.add('ld-current');
+              row.scrollIntoView({ block: 'center' });
+              at = changed.indexOf(row);
+            };
+            const step = (by) => {
+              if (!changed.length) return;
+              show(changed[(at + by + changed.length) % changed.length]);
+            };
+            page.addEventListener('click', (e) => {
+              const t = e.target.closest('[data-action],[data-jump]');
+              if (!t) return;
+              if (t.dataset.jump) {
+                const row = /^[\w-]+$/.test(t.dataset.jump) ? page.querySelector('#' + t.dataset.jump) : null;
+                if (row) show(row);
+              } else if (t.dataset.action === 'next') step(1);
+              else if (t.dataset.action === 'prev') step(-1);
+            });
+            const only = page.querySelector('[data-action="changes-only"]');
+            if (only) {
+              only.checked = page.dataset.changesOnly === 'true';
+              const apply = () => page.classList.toggle('ld-changes-only', only.checked);
+              only.addEventListener('change', apply);
+              apply();
+            }
+            page.ldStep = step;
+            rows.forEach((row) => {
+              const panes = row.querySelectorAll('.ld-scroll');
+              if (panes.length !== 2) return;
+              let syncing = false;
+              panes.forEach((pane, i) => pane.addEventListener('scroll', () => {
+                if (syncing) return;
+                syncing = true;
+                panes[1 - i].scrollLeft = pane.scrollLeft;
+                requestAnimationFrame(() => { syncing = false; });
+              }));
+            });
           };
-          const step = (by) => {
-            if (!changed.length) return;
-            show(changed[(at + by + changed.length) % changed.length]);
-          };
-          page.addEventListener('click', (e) => {
-            const t = e.target.closest('[data-action],[data-jump]');
-            if (!t) return;
-            if (t.dataset.jump) {
-              const row = document.getElementById(t.dataset.jump);
-              if (row) show(row);
-            } else if (t.dataset.action === 'next') step(1);
-            else if (t.dataset.action === 'prev') step(-1);
-          });
-          const only = page.querySelector('[data-action="changes-only"]');
-          if (only) {
-            only.checked = page.dataset.changesOnly === 'true';
-            const apply = () => page.classList.toggle('ld-changes-only', only.checked);
-            only.addEventListener('change', apply);
-            apply();
-          }
-          page.ldStep = step;
+          document.querySelectorAll('.ld-page:not(.ld-scripted)').forEach(setup);
           if (!window.ldKeys) {
             window.ldKeys = true;
+            let live = null;
+            const remember = (e) => {
+              const page = e.target instanceof Element ? e.target.closest('.ld-page') : null;
+              if (page) live = page;
+            };
+            document.addEventListener('click', remember, true);
+            document.addEventListener('focusin', remember, true);
             document.addEventListener('keydown', (e) => {
-              const live = document.querySelector('.ld-page.ld-scripted');
-              if (e.key === 'F7' && live && live.ldStep) { e.preventDefault(); live.ldStep(e.shiftKey ? -1 : 1); }
+              if (e.key !== 'F7') return;
+              const page = live && live.isConnected && live.ldStep ? live : document.querySelector('.ld-page.ld-scripted');
+              if (page && page.ldStep) { e.preventDefault(); page.ldStep(e.shiftKey ? -1 : 1); }
             });
           }
-          rows.forEach((row) => {
-            const panes = row.querySelectorAll('.ld-scroll');
-            if (panes.length !== 2) return;
-            let syncing = false;
-            panes.forEach((pane, i) => pane.addEventListener('scroll', () => {
-              if (syncing) return;
-              syncing = true;
-              panes[1 - i].scrollLeft = pane.scrollLeft;
-              requestAnimationFrame(() => { syncing = false; });
-            }));
-          });
         })();
         """;
 }

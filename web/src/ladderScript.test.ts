@@ -30,6 +30,22 @@ function current() {
   return document.querySelector('.ld-current')?.id;
 }
 
+/**
+ * One diagram as LadderHtml draws it, with the row ids every diagram shares (ld-new-N) and a
+ * jump to its own second row: the review page stacks one such page per changed file.
+ */
+function diagram(n: number) {
+  const rows = [0, 1, 2].map((i) => `<div class="ld-row" id="ld-new-${i}" data-change="changed"></div>`).join('');
+  return `<div class="ld-page" id="p${n}" data-changes-only="false"><button type="button" data-action="next">v</button>` +
+    `<label><input type="checkbox" data-action="changes-only"> Changes only</label>` +
+    `<a class="ld-count" data-jump="ld-new-1">1 changed</a>${rows}</div>`;
+}
+
+function placeTwo() {
+  document.body.innerHTML = diagram(1) + diagram(2);
+  return { p1: document.getElementById('p1')!, p2: document.getElementById('p2')! };
+}
+
 function f7() {
   document.dispatchEvent(new KeyboardEvent('keydown', { key: 'F7' }));
 }
@@ -52,7 +68,7 @@ describe('the ladder script, run once per placed fragment', () => {
   afterEach(() => vi.restoreAllMocks());
 
   it('is found in the C# source', () => {
-    expect(script).toContain("querySelector('.ld-page')");
+    expect(script).toContain(".ld-page:not(.ld-scripted)");
   });
 
   it('run twice over one page, sets the page up once', () => {
@@ -94,5 +110,57 @@ describe('the ladder script, run once per placed fragment', () => {
     only.checked = true;
     only.dispatchEvent(new Event('change'));
     expect(document.querySelector('.ld-page')?.classList.contains('ld-changes-only')).toBe(true);
+  });
+
+  // The review page stacks one diagram per changed file, and runs the script once per fragment.
+  // Only the first diagram was set up — the script took document.querySelector('.ld-page') and
+  // returned once that one was scripted — and a jump went through document.getElementById,
+  // which every diagram's repeated row ids answer with the FIRST diagram's row (the 2026-10-24
+  // review's item 10).
+  describe('with two diagrams in one document', () => {
+    it('sets up every diagram, and Next on the second marks a row inside the second', () => {
+      const { p1, p2 } = placeTwo();
+      run();
+      run();
+      expect(p1.classList.contains('ld-scripted')).toBe(true);
+      expect(p2.classList.contains('ld-scripted')).toBe(true);
+
+      (p2.querySelector('[data-action="next"]') as HTMLElement).click();
+      expect(p2.querySelector('.ld-current')?.id).toBe('ld-new-0');
+      expect(p1.querySelector('.ld-current')).toBeNull();
+    });
+
+    it('a jump in the second diagram lands on the second diagram’s row', () => {
+      const { p1, p2 } = placeTwo();
+      run();
+      (p2.querySelector('[data-jump]') as HTMLElement).click();
+      expect(p2.querySelector('#ld-new-1')?.classList.contains('ld-current')).toBe(true);
+      expect(p1.querySelector('.ld-current')).toBeNull();
+    });
+
+    it('the second diagram’s "Changes only" switch changes the second diagram alone', () => {
+      const { p1, p2 } = placeTwo();
+      run();
+      const only = p2.querySelector('[data-action="changes-only"]') as HTMLInputElement;
+      only.checked = true;
+      only.dispatchEvent(new Event('change'));
+      expect(p2.classList.contains('ld-changes-only')).toBe(true);
+      expect(p1.classList.contains('ld-changes-only')).toBe(false);
+    });
+
+    it('F7 steps the diagram last clicked, and the first until one is', () => {
+      const { p1, p2 } = placeTwo();
+      run();
+      f7();
+      expect(p1.querySelector('.ld-current')?.id).toBe('ld-new-0');
+
+      (p2.querySelector('#ld-new-2') as HTMLElement).click();
+      f7();
+      expect(p2.querySelector('.ld-current')?.id).toBe('ld-new-0');
+      f7();
+      expect(p2.querySelector('.ld-current')?.id).toBe('ld-new-1');
+      // The first diagram kept its own place; nothing stepped it.
+      expect(p1.querySelector('.ld-current')?.id).toBe('ld-new-0');
+    });
   });
 });
