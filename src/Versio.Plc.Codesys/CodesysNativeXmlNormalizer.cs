@@ -99,16 +99,30 @@ public static partial class NativeXmlNormalizer
                       StringComparison.Ordinal);
 
     /// <summary>
-    /// Sort sibling lines inside containers whose order is not meaningful.
+    /// Sort sibling <i>elements</i> inside containers whose order is not meaningful.
     /// </summary>
     /// <remarks>
+    /// <para>
     /// Deliberately line-based rather than a full XML parse: these payloads reach 2.5 MB
     /// and are compared on every import, and the reordering CODESYS performs is at the
-    /// level of whole sibling elements on their own lines.
+    /// level of whole sibling elements.
+    /// </para>
+    /// <para>
+    /// Whole siblings, not lines. The first version sorted the container's LINES, which
+    /// threw away which line belonged to which child: two multi-line children with their
+    /// values swapped between them sorted to the same bag of lines, read as equivalent, and
+    /// the export kept the old file on disk — a real change never reached the mirror (the
+    /// 2026-10-24 review's item 20). The body is cut into chunks by tag depth, one chunk
+    /// per sibling element, each chunk is normalised on its own (a container nested inside
+    /// a sibling is sorted too), and the chunks are sorted as units. A chunk's own lines
+    /// keep their order: a child's insides are ordered content.
+    /// </para>
     /// </remarks>
-    private static string SortUnorderedBlocks(string text)
+    private static string SortUnorderedBlocks(string text) =>
+        string.Join('\n', SortUnorderedBlocks(text.Split('\n')));
+
+    private static List<string> SortUnorderedBlocks(string[] lines)
     {
-        var lines = text.Split('\n');
         var result = new List<string>(lines.Length);
         var i = 0;
 
@@ -141,13 +155,74 @@ public static partial class NativeXmlNormalizer
             }
 
             result.Add(line);
-            var body = lines[(i + 1)..end].ToArray();
-            Array.Sort(body, StringComparer.Ordinal);
-            result.AddRange(body);
+            result.AddRange(SortedSiblings(lines[(i + 1)..end]));
             result.Add(lines[end]);
             i = end + 1;
         }
 
-        return string.Join('\n', result);
+        return result;
+    }
+
+    /// <summary>One tag, enough to count depth: a close, an open, or a self-closing one.</summary>
+    [GeneratedRegex("<(/?)[^\\s/>!?][^\\s/>]*[^>]*?(/?)>")]
+    private static partial Regex Tag();
+
+    /// <summary>
+    /// The lines of a container's body, regrouped into whole sibling elements and sorted as
+    /// such. Falls back to the old line sort when the body cannot be cut cleanly — a close
+    /// with no open, which only malformed input produces — so a strange payload degrades
+    /// to the previous answer rather than throwing.
+    /// </summary>
+    private static List<string> SortedSiblings(ReadOnlySpan<string> body)
+    {
+        var chunks = new List<List<string>>();
+        var current = new List<string>();
+        var depth = 0;
+
+        foreach (var line in body)
+        {
+            current.Add(line);
+            foreach (Match tag in Tag().Matches(line))
+            {
+                if (tag.Groups[2].Length > 0)
+                {
+                    continue;                       // <x/> opens and closes on the spot
+                }
+
+                depth += tag.Groups[1].Length > 0 ? -1 : 1;
+            }
+
+            if (depth < 0)
+            {
+                var flat = body.ToArray();
+                Array.Sort(flat, StringComparer.Ordinal);
+                return [.. flat];
+            }
+
+            if (depth == 0)
+            {
+                chunks.Add(current);
+                current = [];
+            }
+        }
+
+        if (current.Count > 0)
+        {
+            chunks.Add(current);                    // unterminated: kept whole, sorted with the rest
+        }
+
+        var sorted = chunks
+            .Select(c => c.Count > 1 ? SortUnorderedBlocks([.. c]) : c)
+            .Select(c => string.Join('\n', c))
+            .OrderBy(c => c, StringComparer.Ordinal)
+            .ToList();
+
+        var result = new List<string>(body.Length);
+        foreach (var chunk in sorted)
+        {
+            result.AddRange(chunk.Split('\n'));
+        }
+
+        return result;
     }
 }

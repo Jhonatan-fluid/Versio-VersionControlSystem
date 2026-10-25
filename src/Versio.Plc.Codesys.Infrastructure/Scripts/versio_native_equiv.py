@@ -90,14 +90,73 @@ def _ordinal_key(line):
     return line.encode("utf-16-be")
 
 
+# One tag, enough to count depth: a close, an open, or a self-closing one. The same
+# expression as the C#'s Tag(), and it has to stay the same: the chunking below is what
+# decides which lines travel together, and two normalisers that cut differently disagree
+# on the text while agreeing on every verdict the corpus happens to ask.
+_TAG_RE = re.compile(r"<(/?)[^\s/>!?][^\s/>]*[^>]*?(/?)>")
+
+
+def _sorted_siblings(body):
+    """The lines of a container's body, regrouped into whole sibling elements and sorted.
+
+    Falls back to the old line sort when the body cannot be cut cleanly - a close with no
+    open, which only malformed input produces - so a strange payload degrades to the
+    previous answer rather than throwing. Mirrors SortedSiblings in the C#.
+    """
+    chunks = []
+    current = []
+    depth = 0
+
+    for line in body:
+        current.append(line)
+        for match in _TAG_RE.finditer(line):
+            if match.group(2):
+                continue                        # <x/> opens and closes on the spot
+            depth += -1 if match.group(1) else 1
+
+        if depth < 0:
+            flat = list(body)
+            flat.sort(key=_ordinal_key)
+            return flat
+
+        if depth == 0:
+            chunks.append(current)
+            current = []
+
+    if current:
+        chunks.append(current)                  # unterminated: kept whole, sorted with the rest
+
+    joined = []
+    for chunk in chunks:
+        if len(chunk) > 1:
+            chunk = _sort_unordered_lines(chunk)
+        joined.append(u"\n".join(chunk))
+    joined.sort(key=_ordinal_key)
+
+    result = []
+    for chunk in joined:
+        result.extend(chunk.split(u"\n"))
+    return result
+
+
 def _sort_unordered_blocks(text):
-    """Sort sibling lines inside containers whose order is not meaningful.
+    """Sort sibling ELEMENTS inside containers whose order is not meaningful.
 
     Deliberately line-based rather than a full XML parse: these payloads reach 2.5 MB and are
     compared on every import, and the reordering CODESYS performs is at the level of whole
-    sibling elements on their own lines.
+    sibling elements.
+
+    Whole siblings, not lines. The first version sorted the container's LINES, which threw
+    away which line belonged to which child: two multi-line children with their values
+    swapped between them sorted to the same bag of lines, read as equivalent, and the export
+    kept the old file on disk - a real change never reached the mirror (the 2026-10-24
+    review's item 20). See _sorted_siblings.
     """
-    lines = text.split(u"\n")
+    return u"\n".join(_sort_unordered_lines(text.split(u"\n")))
+
+
+def _sort_unordered_lines(lines):
     result = []
     count = len(lines)
     i = 0
@@ -133,13 +192,11 @@ def _sort_unordered_blocks(text):
             continue
 
         result.append(line)
-        body = lines[i + 1:end]
-        body.sort(key=_ordinal_key)
-        result.extend(body)
+        result.extend(_sorted_siblings(lines[i + 1:end]))
         result.append(lines[end])
         i = end + 1
 
-    return u"\n".join(result)
+    return result
 
 
 def normalize(xml, mask_guids=True):

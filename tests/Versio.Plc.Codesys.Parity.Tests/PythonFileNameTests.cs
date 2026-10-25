@@ -760,6 +760,19 @@ public sealed class PythonFileNameParityTests(ITestOutputHelper output)
             //     thing for it to contain.
             "<List>\n<t>\U0001F600</t>\n<t>\uE000</t>\n</List>",
 
+            // 3c. Siblings are sorted as WHOLE elements, cut by tag depth (review item 20,
+            //     2026-10-24): two multi-line children keep their own lines together and in
+            //     order, a container nested inside a sibling is sorted on its own, a line
+            //     holding several tags counts each, an unterminated child is kept whole, and
+            //     a close with no open degrades to the old line sort. Any of these cut
+            //     differently on one side gives different TEXT while every verdict agrees.
+            "<List>\n<Single Name=\"B\">\n<Id>2</Id>\n<Value>y</Value>\n</Single>\n<Single Name=\"A\">\n<Id>1</Id>\n<Value>x</Value>\n</Single>\n</List>",
+            "<List>\n<Single Name=\"A\">\n<Properties>\n<b/>\n<a/>\n</Properties>\n</Single>\n</List>",
+            "<List>\n<b><c/></b>\n<a><d>\n</d></a>\n</List>",
+            "<List>\n<b>\n<a/>\n</List>",
+            "<List>\n</z>\n<a/>\n</List>",
+            "<List>\n<!-- a comment -->\n<?pi x?>\n<a/>\n</List>",
+
             // A self-closing container has no body to sort, and the test is on the whole
             // line rather than the tag, so this one is left alone by both sides.
             "<List/>",
