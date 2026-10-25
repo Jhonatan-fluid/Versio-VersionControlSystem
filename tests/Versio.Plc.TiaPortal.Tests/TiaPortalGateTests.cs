@@ -294,7 +294,11 @@ public sealed class TiaPortalGateTests
             var yaml = Directory.EnumerateFiles(export1, "*.devices.yaml", SearchOption.AllDirectories)
                 .FirstOrDefault();
             Skip.If(yaml is null, "export wrote no *.devices.yaml — cannot mutate Comment");
-            var hwMarker = "versio_hw_" + stamp;
+            // Longer than 240 characters on purpose: the host's attribute reader clipped
+            // every string to 240 for the probe's listing, so a long comment was exported
+            // cut, stored cut and verified against its own cut (the 2026-10-24 review's
+            // item 27). A marker this long survives only when the whole comment does.
+            var hwMarker = "versio_hw_" + stamp + "_" + new string('x', 300);
             MutateInPlace(yaml, text => SetStationComment(text, "CleaningStation", hwMarker));
 
             var fs = new WindowsFileSystem();
