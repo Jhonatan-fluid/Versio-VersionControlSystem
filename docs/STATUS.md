@@ -66,7 +66,7 @@ marking, duplicate-param keys, and the detail-pane lookup. All of them are in
 |---|---|---|---|
 | `Versio.Core.Tests` | 1,951 (one skipped on purpose: the unconfirmed-edit export, FINDINGS 2026-10-24 item 3) | under a second | nothing |
 | `Versio.Integration.Tests` | 188 | ~40 s (2 m 18 s loaded) | real git |
-| `Versio.App.Tests` | 833 (re-counted 2026-10-24) | 11 m 23 s on 2026-10-24 (loaded: three gates beside it; one 30 s catch-up wait failed and passed alone in 4 s) and 16 m 30 s the same day under three builds; 10 m 45 s (loaded: mutation checks ran beside it) and 10 m 36 s on 2026-10-23; 12 m 19 s, 10 m 42 s and 9 m 5 s on 2026-10-22; 10 m 46 s on 2026-10-19; 10 m 58 s on 2026-10-16; 6 m 35 s on 2026-10-10; 8 m 38 s on 2026-10-05; ~3.6 min on 2026-09-22 | nothing |
+| `Versio.App.Tests` | 833 (re-counted 2026-10-24) | **12 m 22 s, 833/833, idle, 2026-10-24**; 11 m 23 s the same day loaded (three gates beside it; one 30 s catch-up wait failed and passed alone in 4 s) and 16 m 30 s under three builds; 10 m 45 s (loaded: mutation checks ran beside it) and 10 m 36 s on 2026-10-23; 12 m 19 s, 10 m 42 s and 9 m 5 s on 2026-10-22; 10 m 46 s on 2026-10-19; 10 m 58 s on 2026-10-16; 6 m 35 s on 2026-10-10; 8 m 38 s on 2026-10-05; ~3.6 min on 2026-09-22 | nothing |
 | `Versio.Arch.Tests` | 36 | instant | nothing |
 | `Versio.Plc.Codesys.Pure.Tests` | 404 | under a second | nothing |
 | `Versio.Plc.Codesys.Parity.Tests` | 101 | ~15 s | `python` on PATH — skips cleanly without it, so check the count |
