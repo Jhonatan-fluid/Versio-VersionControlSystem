@@ -908,6 +908,15 @@ public class SyncOrchestratorTests
 
         Assert.Equal(LockRecovery.HeldByLiveSession,
             Assert.Single(decisions, d => d.BindingId == BindingId).Outcome);
+
+        // "Leaving it alone" has to mean the lock is still held in THIS engine. The live
+        // owner is usually this very process: the app rebuilds the orchestrator on a rescan
+        // (a new project appeared), and the decision above then fell through to a blank
+        // Clean lock — the project-ahead binding lost its direction and the opposite
+        // direction, an import over unpushed project work, was free to run (the 2026-10-24
+        // review's item 9).
+        Assert.Equal(SyncDirection.ProjectAuthoritative, h.Orchestrator.StateOf(BindingId));
+        Assert.True(h.Orchestrator.AnyLockHeld);
     }
 
     [Fact]

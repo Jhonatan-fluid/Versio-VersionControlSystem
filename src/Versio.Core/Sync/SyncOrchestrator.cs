@@ -455,6 +455,14 @@ public sealed class SyncOrchestrator
             {
                 LockRecovery.ReadoptedAfterRestart when persisted is not null => persisted,
 
+                // The owner is alive — and most often it is this process, rebuilding its
+                // engine on a rescan because a project appeared. "Leaving it alone" fell
+                // through to the blank-direction branch below and the held lock came back
+                // Clean: a project-ahead binding lost its direction mid-session and an
+                // import could run over work the project side had not pushed (the
+                // 2026-10-24 review's item 9). A lock a live session holds is kept as it is.
+                LockRecovery.HeldByLiveSession when persisted is not null => persisted,
+
                 // Releasing the DIRECTION is not the same as forgetting what was last
                 // exported, and conflating them cost an export on every single launch.
                 //
