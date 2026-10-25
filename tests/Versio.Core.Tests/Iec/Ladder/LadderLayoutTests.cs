@@ -123,6 +123,37 @@ public sealed class LadderLayoutTests
         Assert.True(Element(drawing, "x").Bounds.X > Element(drawing, "a").Bounds.Right, "the box is a column after its inputs");
     }
 
+    [Fact(Timeout = 10_000)]
+    public async Task An_element_wired_to_itself_is_refused_rather_than_reduced_forever()
+    {
+        // Async for the Timeout only: the unfixed reduction never returns.
+        await Task.Yield();
+        // Contact b takes power from the same net it gives power to: an edge from a net to
+        // itself. The series step then found that edge as both the one into the point and the
+        // one out of it, "merged" it with itself into a series twice as long, removed one
+        // edge, and went round again — the series doubled every pass until memory ran out,
+        // from three nodes of malformed vendor XML (the 2026-10-24 review's item 33).
+        var network = new LadderNetwork
+        {
+            Number = 1,
+            Nodes = [new LdLeftRail("rail"), No("a", "Start"), No("b", "Loop")],
+            Nets =
+            [
+                new LdNet([new("rail", LdPins.Out), new("a", LdPins.In)]),
+                new LdNet([new("b", LdPins.In), new("b", LdPins.Out)]),
+            ],
+        };
+
+        var structure = LadderStructure.Of(network);
+
+        Assert.Null(structure.Root);
+        Assert.Contains("itself", structure.FallbackReason, StringComparison.Ordinal);
+
+        var drawing = Lay(network);
+        Assert.NotNull(drawing.FallbackReason);
+        Assert.Equal(["a", "b"], drawing.Groups.Where(g => g.Key.Length > 0).Select(g => g.Key).Order());
+    }
+
     [Fact]
     public void An_empty_network_is_a_rail()
     {

@@ -208,6 +208,18 @@ public static class LadderStructure
                 to = sink;
             }
 
+            // An element whose in and out pins share a net is an edge from a net to itself.
+            // The series step below would find that one edge as both the way into the point
+            // and the way out of it, "merge" it with itself into a series twice as long,
+            // remove one edge, and go round again: the series doubled on every pass until
+            // memory ran out, from three nodes of malformed vendor XML (the 2026-10-24
+            // review's item 33). Power flow has no self-loops; this network is drawn flat.
+            if (from == to)
+            {
+                reason = $"element {node.Id} feeds itself";
+                return null;
+            }
+
             edges.Add(new Edge(from, to, new LdLeaf(node), order));
         }
 
@@ -249,6 +261,14 @@ public static class LadderStructure
                 }
 
                 var (a, b) = (into[0], outOf[0]);
+                if (ReferenceEquals(a, b))
+                {
+                    // The same edge both ways: a loop the parallel step could only have
+                    // produced from edges the guard above already refused. Never merge an
+                    // edge with itself — that is the doubling.
+                    reason = "power flow loops back on itself";
+                    return null;
+                }
                 var items = new List<LdBlock>();
                 items.AddRange(a.Block is LdSeries sa ? sa.Items : [a.Block]);
                 items.AddRange(b.Block is LdSeries sb ? sb.Items : [b.Block]);
