@@ -416,6 +416,16 @@ public static class ProjectTreeBuilder
     /// panel simply never appearing again.
     /// </para>
     /// </remarks>
+    /// <summary>
+    /// How many generations of ownership are nested before the rest is laid flat.
+    /// </summary>
+    /// <remarks>
+    /// Far above anything a project has — a property's accessor under a method under a block
+    /// is three — and far below the roughly four thousand generations at which the recursive
+    /// walkers over the finished tree overflow a 1 MB stack. See <c>Nest</c>.
+    /// </remarks>
+    public const int MaxNesting = 64;
+
     private static IReadOnlyList<Leaf> Nest(IReadOnlyList<Leaf> leaves)
     {
         var owners = new Dictionary<string, Leaf>(StringComparer.Ordinal);
@@ -443,17 +453,27 @@ public static class ProjectTreeBuilder
         // one honest member, the loop still vanished. Caught by a re-review that built
         // the mixed manifest; that shape is the pin now.
         //
-        // Memoised per guid: every guid on a walked chain shares the chain's verdict,
-        // so one deep honest chain costs one walk, not one per member.
-        var verdicts = new Dictionary<string, bool>(StringComparer.Ordinal);
+        // Memoised per guid as a DEPTH (generations below ground; -1 for a loop), so one
+        // deep honest chain costs one walk, not one per member — and so the cap below is a
+        // fact about each leaf rather than about whichever chain happened to walk through
+        // it first.
+        //
+        // The cap: an honest chain four thousand long passes the cycle guard, and Attach
+        // below recurses once per generation — on a 600 KB manifest that overflowed the
+        // stack and took the process down (the 2026-10-24 review's item 14). A leaf deeper
+        // than MaxNesting is treated as ungrounded: laid flat at the root with everything
+        // under it, nothing lost, nothing recursing past the cap. Attach alone on an
+        // explicit stack would not have been enough: MergeDeviceFolders, PruneUnchanged,
+        // ForSearch and the WPF tree all recurse over the same depth.
+        var depths = new Dictionary<string, int>(StringComparer.Ordinal);
 
-        bool Grounded(Leaf leaf)
+        int DepthOf(Leaf leaf)
         {
             var chain = new List<string>();
             var onChain = new HashSet<string>(StringComparer.Ordinal);
             if (leaf.Node.Guid is { Length: > 0 } own)
             {
-                if (verdicts.TryGetValue(own, out var knownOwn))
+                if (depths.TryGetValue(own, out var knownOwn))
                 {
                     return knownOwn;
                 }
@@ -462,19 +482,21 @@ public static class ProjectTreeBuilder
                 onChain.Add(own);
             }
 
+            // Walk up to ground or to a guid already measured; `below` is the depth of
+            // whatever the walk stopped at (0 for ground, -1 for a loop).
             var current = leaf;
-            var result = true;
+            var below = 0;
             while (current.Parent.Length > 0 && owners.TryGetValue(current.Parent, out var owner))
             {
                 if (owner.Node.Guid is not { Length: > 0 } guid || !onChain.Add(guid))
                 {
-                    result = false;
+                    below = -1;
                     break;
                 }
 
-                if (verdicts.TryGetValue(guid, out var known))
+                if (depths.TryGetValue(guid, out var known))
                 {
-                    result = known;
+                    below = known;
                     break;
                 }
 
@@ -482,12 +504,21 @@ public static class ProjectTreeBuilder
                 current = owner;
             }
 
-            foreach (var walked in chain)
+            // The chain was collected leaf-first; depths are assigned from the top down.
+            var depth = below;
+            for (var i = chain.Count - 1; i >= 0; i--)
             {
-                verdicts[walked] = result;
+                depth = depth < 0 ? -1 : depth + 1;
+                depths[chain[i]] = depth;
             }
 
-            return result;
+            return chain.Count == 0 ? below : depths[chain[0]];
+        }
+
+        bool Grounded(Leaf leaf)
+        {
+            var depth = DepthOf(leaf);
+            return depth >= 0 && depth <= MaxNesting;
         }
 
         var members = leaves

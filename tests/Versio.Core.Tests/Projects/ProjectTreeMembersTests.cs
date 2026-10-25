@@ -100,6 +100,43 @@ public sealed class ProjectTreeMembersTests
     }
 
     [Fact]
+    public async Task A_manifest_nested_thousands_deep_builds_without_overflowing_the_stack()
+    {
+        // The ownership chain is honest — no cycle — so the cycle guard let it through, and
+        // Attach recursed once per generation: four thousand of them overflowed the stack
+        // and took the process down, from a 600 KB manifest (the 2026-10-24 review's item
+        // 14). Past the cap the chain is laid flat; nothing is lost, and nothing recurses
+        // deeper than the cap — the walkers after Nest and the WPF tree itself recurse over
+        // the same depth, so an explicit stack in Attach alone would not have been enough.
+        const int depth = 10_000;
+        var objects = new ProjectObject[depth];
+        for (var i = 0; i < depth; i++)
+        {
+            objects[i] = Obj($"O{i}", $"O{i}.st", $"g{i}", "METHOD", parent: i == 0 ? "" : $"g{i - 1}");
+        }
+
+        // On a thread with the default 1 MB stack, as the UI thread has; the test runner's
+        // may be larger and hide the overflow.
+        ProjectTreeNode? tree = null;
+        var thread = new Thread(() => tree = Build(Manifest(objects)), 1024 * 1024);
+        thread.Start();
+        await Task.Run(thread.Join);
+
+        Assert.NotNull(tree);
+        var names = Flatten(tree).Select(n => n.Name).ToHashSet(StringComparer.Ordinal);
+        for (var i = 0; i < depth; i++)
+        {
+            Assert.Contains($"O{i}", names);
+        }
+
+        // Root, folder levels, then the nested generations: bounded by the cap, not by the manifest.
+        Assert.True(Depth(tree) <= ProjectTreeBuilder.MaxNesting + 8, $"the tree is {Depth(tree)} deep");
+
+        static int Depth(ProjectTreeNode node) =>
+            node.Children.Count == 0 ? 1 : 1 + node.Children.Max(Depth);
+    }
+
+    [Fact]
     public void An_edited_method_raises_the_badge_on_the_block_holding_it()
     {
         // The reason nesting cannot be cosmetic: a collapsed function block has to say that
