@@ -179,6 +179,67 @@ public sealed class AutoStashFlowTests : IDisposable
     }
 
     [SkippableFact]
+    public async Task A_stash_pushed_while_the_offer_is_open_is_not_the_one_discarded()
+    {
+        // The offer held stash@{0} across two dialogs. A stash pushed from a terminal in
+        // between took that position, so Discard dropped the terminal's stash and left the
+        // auto-stash in place — the wrong work gone, for good (the 2026-10-24 review's item
+        // 24). The ref is resolved from the SHA again at the moment of the drop.
+        Skip.IfNot(GitIsAvailable(), "git is not on PATH");
+
+        using var shell = await OpenWithDirtyTreeAsync();
+        shell.Asked().Guard = _ => GuardChoice.StashAndProceed;
+        await shell.SwitchBranchAsync(Other());
+        var ours = Assert.Single(Record().Entries).StashCommitId;
+
+        shell.Asked().StashedWork = _ =>
+        {
+            File.WriteAllText(Path.Combine(_path, "terminal.txt"), "pushed from a terminal\n");
+            Git("stash push -u -m terminal-work");
+            return StashedWorkChoice.Discard;
+        };
+        shell.Asked().Destructive = _ => true;
+
+        await shell.SwitchBranchAsync(MainBranch());
+
+        var remaining = Git("stash list --format=%H%x09%gs");
+        Assert.DoesNotContain(ours, remaining, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("terminal-work", remaining, StringComparison.Ordinal);
+        Assert.Empty(Record().Entries);
+    }
+
+    [SkippableFact]
+    public async Task A_stash_pushed_while_the_offer_is_open_is_not_the_one_restored()
+    {
+        // The same hole on Restore: pop by position would have put the terminal's stash into
+        // the tree and dropped it, with the auto-stash still waiting.
+        Skip.IfNot(GitIsAvailable(), "git is not on PATH");
+
+        using var shell = await OpenWithDirtyTreeAsync();
+        shell.Asked().Guard = _ => GuardChoice.StashAndProceed;
+        await shell.SwitchBranchAsync(Other());
+        var ours = Assert.Single(Record().Entries).StashCommitId;
+
+        shell.Asked().StashedWork = _ =>
+        {
+            File.WriteAllText(Path.Combine(_path, "terminal.txt"), "pushed from a terminal\n");
+            Git("stash push -u -m terminal-work");
+            return StashedWorkChoice.Restore;
+        };
+
+        await shell.SwitchBranchAsync(MainBranch());
+
+        Assert.Contains("half a thought",
+                        File.ReadAllText(Path.Combine(_path, "machine.st")),
+                        StringComparison.Ordinal);
+        Assert.False(File.Exists(Path.Combine(_path, "terminal.txt")));
+        var remaining = Git("stash list --format=%H%x09%gs");
+        Assert.DoesNotContain(ours, remaining, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("terminal-work", remaining, StringComparison.Ordinal);
+        Assert.Empty(Record().Entries);
+    }
+
+    [SkippableFact]
     public async Task Leaving_it_stashed_changes_nothing_and_offers_again()
     {
         Skip.IfNot(GitIsAvailable(), "git is not on PATH");

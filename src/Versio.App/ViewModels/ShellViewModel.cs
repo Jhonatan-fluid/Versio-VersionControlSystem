@@ -4837,11 +4837,13 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         // nothing on screen saying so. A stash somebody cannot reach is a stash they will
         // eventually stop believing in.
         //
-        // The list is re-read from the arrival snapshot rather than re-queried between
-        // answers: restoring one pops it, which renumbers every stash@{n} below it, and the
-        // refs held here would then name the wrong entries. RestoreStashAsync and the drop
-        // below both act on THIS binding's captured ref immediately, before anything else
-        // moves, which is what makes that safe.
+        // The refs in the arrival snapshot are positions, and a position is only good until
+        // the next thing that moves the list. Two modal dialogs sit between the snapshot and
+        // the act, and a stash pushed from a terminal while either is open takes stash@{0}:
+        // Discard then dropped the terminal's stash and left ours, and Restore popped the
+        // terminal's work into the tree (the 2026-10-24 review's item 24). So the drop and
+        // the pop below both resolve the ref again from the SHA, from a list read at that
+        // moment — ResolveStashRefAsync — and refuse when the SHA is no longer there.
         for (var i = 0; i < arrival.Restorable.Count; i++)
         {
             var offer = arrival.Restorable[i];
@@ -4870,7 +4872,29 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
                     return;
                 }
 
-                await _git.StashDropAsync(offer.Ref, CancellationToken.None).ConfigureAwait(true);
+                var current = await ResolveStashRefAsync(offer.Record.StashCommitId)
+                    .ConfigureAwait(true);
+                if (current is null)
+                {
+                    // Popped or dropped from a terminal while the dialog was open. Whatever
+                    // sits at its old position is somebody else's stash.
+                    state = AutoStash.Without(state, offer.Record.StashCommitId);
+                    await _autoStash.WriteAsync(state, CancellationToken.None).ConfigureAwait(true);
+                    Notifications.Warning("That stash is already gone.",
+                                          "Nothing was dropped.");
+                    return;
+                }
+
+                var dropped = await _git.StashDropAsync(current, CancellationToken.None)
+                    .ConfigureAwait(true);
+                if (!dropped.Success)
+                {
+                    StatusSummary = dropped.FailureReason ?? "the stash could not be dropped";
+                    _logger.Error(LogCategory.Git,
+                        $"dropping auto-stash {Short(offer.Record.StashCommitId)} failed; the " +
+                        $"record is kept: {dropped.FailureReason}");
+                    return;
+                }
 
                 state = AutoStash.Without(state, offer.Record.StashCommitId);
                 await _autoStash.WriteAsync(state, CancellationToken.None).ConfigureAwait(true);
@@ -4891,6 +4915,27 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         }
     }
 
+    /// <summary>
+    /// The positional ref that names a stash <i>right now</i>, or null when git no longer has it.
+    /// </summary>
+    /// <remarks>
+    /// <c>git stash drop</c> takes a position and not a SHA, and a position is only good until
+    /// the list moves. Every drop or pop here reads the list again at the moment of the act
+    /// and matches the SHA the record keeps; acting on a position captured before a dialog is
+    /// how the wrong stash gets dropped.
+    /// </remarks>
+    private async Task<string?> ResolveStashRefAsync(string stashCommitId)
+    {
+        if (_git is null)
+        {
+            return null;
+        }
+
+        var fresh = await _git.StashListAsync(CancellationToken.None).ConfigureAwait(true);
+        return fresh.FirstOrDefault(s =>
+            string.Equals(s.CommitId, stashCommitId, StringComparison.OrdinalIgnoreCase))?.Ref;
+    }
+
     /// <summary>Restore one stash, and the sync state that went with it.</summary>
     /// <remarks>
     /// <c>pop</c> rather than apply-then-drop, because git drops only when the restore
@@ -4907,11 +4952,24 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
 
         using var busy = Busy.Begin(WorkKind.GitWrite, "Restoring your stashed work…");
 
+        // By SHA, now — not the position captured before the dialog (see OfferStashedWorkAsync).
+        var current = await ResolveStashRefAsync(offer.Record.StashCommitId).ConfigureAwait(true);
+        if (current is null)
+        {
+            var gone = await _autoStash.ReadAsync(CancellationToken.None).ConfigureAwait(true);
+            await _autoStash.WriteAsync(
+                AutoStash.Without(gone, offer.Record.StashCommitId), CancellationToken.None)
+                .ConfigureAwait(true);
+            Notifications.Warning("That stash is already gone.",
+                                  "It was popped or dropped outside Versio; nothing was restored.");
+            return;
+        }
+
         GitResult result = default!;
         await Sync.WhileGitRewritesTheTreeAsync(
             "restoring an auto-stash",
             async () => result = await _git
-                .StashApplyAsync(offer.Ref, drop: true, busy.Token)
+                .StashApplyAsync(current, drop: true, busy.Token)
                 .ConfigureAwait(true))
             .ConfigureAwait(true);
 
