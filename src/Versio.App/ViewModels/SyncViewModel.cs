@@ -2634,13 +2634,18 @@ public sealed class SyncViewModel : ObservableObject
             {
                 _expansion.Restore(state);
                 _logger.Debug(LogCategory.App,
-                    $"restored tree expansion ({state.Opened.Count} open, " +
-                    $"{state.Closed.Count} closed) from {path}");
+                    $"restored tree expansion ({state.Opened?.Count ?? 0} open, " +
+                    $"{state.Closed?.Count ?? 0} closed) from {path}");
             }
         }
-        catch (Exception ex) when (ex is System.Text.Json.JsonException or IOException
-                                      or UnauthorizedAccessException)
+        catch (Exception ex) when (ex is not OperationCanceledException)
         {
+            // Every failure, not the three a torn or locked file raises. This caught only
+            // JsonException, IOException and UnauthorizedAccessException, so a well-formed
+            // `{}` — which deserialised to null lists and threw ArgumentNullException out of
+            // Restore — escaped it and ended the attach (the 2026-10-24 review's item 12).
+            // The summary above is the whole argument: nothing in this file is worth the
+            // repository not opening, so whatever reading it throws costs the defaults.
             _logger.Warn(LogCategory.App,
                 $"the tree expansion state at {path} is unreadable and was ignored: {ex.Message}");
         }

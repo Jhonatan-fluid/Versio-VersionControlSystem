@@ -90,9 +90,16 @@ public sealed class TreeExpansion
     /// </summary>
     public void Restore(State state)
     {
+        ArgumentNullException.ThrowIfNull(state);
         Clear();
-        _opened.UnionWith(state.Opened);
-        _closed.UnionWith(state.Closed);
+
+        // Either list is null when the file on disk left it out: System.Text.Json builds the
+        // positional record from `{}` or `{"opened":null}` with nulls, and UnionWith(null)
+        // threw ArgumentNullException out of the attach — past the catch that only expected
+        // a torn file — before the orchestrator was built or the watcher started (the
+        // 2026-10-24 review's item 12). A list that is not there is a list that is empty.
+        _opened.UnionWith(state.Opened ?? []);
+        _closed.UnionWith(state.Closed ?? []);
     }
 
     /// <summary>
