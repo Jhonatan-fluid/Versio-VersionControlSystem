@@ -58,6 +58,20 @@ public sealed class PullQueryTests
         Assert.Equal("repo:acme/plant is:pr is:open", PullQuery.WithState("repo:acme/plant is:pr", "open"));
     }
 
+    /// <summary>
+    /// The words may sit INSIDE a quoted value with spaces around them, where a boundary regex still
+    /// finds them: the first fix covered only a token touching the quotes (the 2026-10-24 review's item 8).
+    /// </summary>
+    [Fact]
+    public void The_state_inside_a_quoted_phrase_is_not_a_token_and_the_real_one_after_it_is()
+    {
+        const string search = "repo:acme/plant is:pr label:\"foo is:closed bar\" is:open sort:updated-desc";
+
+        Assert.Equal("repo:acme/plant is:pr label:\"foo is:closed bar\" is:closed sort:updated-desc", PullQuery.WithState(search, "closed"));
+        Assert.Equal(search, PullQuery.WithState(search, "open"));
+        Assert.Equal("repo:acme/plant is:pr milestone:\"is:open\" is:closed", PullQuery.WithState("repo:acme/plant is:pr milestone:\"is:open\"", "closed"));
+    }
+
     [Fact]
     public void An_empty_query_is_the_open_list()
     {

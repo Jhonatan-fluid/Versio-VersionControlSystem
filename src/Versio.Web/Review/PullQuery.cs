@@ -43,14 +43,32 @@ public static partial class PullQuery
     /// replaced by <c>is:<paramref name="state"/></c>, or that token added when there is none —
     /// by token, never by substring: a quoted value may contain the words (<c>label:"is:closed"</c>).
     /// </summary>
+    /// <remarks>
+    /// The tokens are the tokenizer's own (<see cref="Token"/>), the same walk <see cref="Parse"/>
+    /// makes, so a quoted phrase is one token however many spaces it holds. A boundary regex
+    /// (<c>(?&lt;=\s)is:closed(?=\s)</c>) was tried first and fixed only a value touching its quotes:
+    /// <c>label:"foo is:closed bar"</c> still had its label rewritten and its real state kept, so the
+    /// counts' queries named a label nobody has (the 2026-10-24 review's item 8).
+    /// </remarks>
     public static string WithState(string search, string state)
     {
         ArgumentNullException.ThrowIfNull(search);
-        return StateToken().IsMatch(search) ? StateToken().Replace(search, "is:" + state, 1) : $"{search} is:{state}";
-    }
+        foreach (Match m in Token().Matches(search))
+        {
+            if (!m.Groups["key"].Success || !m.Groups["key"].Value.Equals("is", StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
 
-    [GeneratedRegex(@"(?<=^|\s)is:(?:open|closed|merged)(?=\s|$)", RegexOptions.IgnoreCase)]
-    private static partial Regex StateToken();
+            var value = m.Groups["quoted"].Success ? m.Groups["quoted"].Value : m.Groups["value"].Value;
+            if (value.ToLowerInvariant() is "open" or "closed" or "merged")
+            {
+                return string.Concat(search.AsSpan(0, m.Index), "is:", state, search.AsSpan(m.Index + m.Length));
+            }
+        }
+
+        return $"{search} is:{state}";
+    }
 
     /// <summary>The parsed query, or null with the word that was refused.</summary>
     public static (Parsed? Query, string? Refused) Parse(string? q, string owner, string repo)
