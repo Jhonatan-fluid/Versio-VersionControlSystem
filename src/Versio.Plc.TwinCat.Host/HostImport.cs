@@ -309,11 +309,23 @@ internal static partial class HostApp
         SetTexts(item, decl, impl);
 
         var liveDecl = TryText(item, "DeclarationText") ?? "";
-        if (!liveDecl.Contains(FirstNonComment(decl), StringComparison.Ordinal)
-            && !string.IsNullOrEmpty(FirstNonComment(decl)))
+        if (!liveDecl.Contains(HostText.FirstNonComment(decl), StringComparison.Ordinal)
+            && !string.IsNullOrEmpty(HostText.FirstNonComment(decl)))
         {
             throw new InvalidOperationException(
                 "DeclarationText did not take the applied source for " + Path.GetFileName(abs));
+        }
+
+        // The implementation is checked as well as the declaration. It was not, and a
+        // body deleted in the mirror stayed in the project while the import reported
+        // success (the 2026-10-24 review's item 23): a cleared body must read back empty,
+        // a written one must contain its first code line.
+        if (!HostText.ImplementationTook(impl, TryText(item, "ImplementationText")))
+        {
+            throw new InvalidOperationException(
+                (impl.Length == 0 ? "ImplementationText did not clear for "
+                                  : "ImplementationText did not take the applied source for ")
+                + Path.GetFileName(abs));
         }
     }
 
@@ -367,14 +379,20 @@ internal static partial class HostApp
             throw new InvalidOperationException("DeclarationText set failed: " + Innermost(ex));
         }
 
-        if (string.IsNullOrEmpty(impl))
+        // An empty implementation in the file is two different things: a DUT, which has
+        // no body to write, or a POU whose body the engineer deleted. The first version
+        // returned here for both, and the deleted body stayed in the project (the
+        // 2026-10-24 review's item 23). HostText.ImplementationWriteFor tells them apart
+        // by what the object holds now.
+        var write = HostText.ImplementationWriteFor(impl, TryText(item, "ImplementationText"));
+        if (write == HostText.ImplementationWrite.Leave)
         {
             return;
         }
 
         try
         {
-            Com.Set(item, "ImplementationText", impl);
+            Com.Set(item, "ImplementationText", write == HostText.ImplementationWrite.Clear ? "" : impl);
         }
         catch (Exception ex)
         {
@@ -465,22 +483,6 @@ internal static partial class HostApp
         return parent;
     }
 
-    private static string FirstNonComment(string text)
-    {
-        foreach (var raw in text.Replace('\r', '\n').Split('\n'))
-        {
-            var line = raw.Trim();
-            if (line.Length == 0 || line.StartsWith("//", StringComparison.Ordinal)
-                || line.StartsWith("(*", StringComparison.Ordinal))
-            {
-                continue;
-            }
-
-            return line.Length > 40 ? line[..40] : line;
-        }
-
-        return "";
-    }
 
     private static string? Str(JsonElement el, string name) =>
         el.ValueKind == JsonValueKind.Object && el.TryGetProperty(name, out var v)

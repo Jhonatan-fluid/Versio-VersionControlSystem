@@ -475,6 +475,56 @@ public sealed class TwinCatImportPlannerTests
     }
 }
 
+public sealed class TwinCatHostTextTests
+{
+    [Fact]
+    public void An_empty_body_in_the_file_clears_a_body_the_object_still_has()
+    {
+        // The host skipped the write whenever the file had no body — right for a DUT,
+        // wrong for a function block whose body the engineer deleted: the old logic
+        // stayed in the project and the import reported success (the 2026-10-24 review's
+        // item 23).
+        Assert.Equal(Versio.Plc.TwinCat.Host.HostText.ImplementationWrite.Clear,
+            Versio.Plc.TwinCat.Host.HostText.ImplementationWriteFor("", "x := 1;"));
+        Assert.Equal(Versio.Plc.TwinCat.Host.HostText.ImplementationWrite.Leave,
+            Versio.Plc.TwinCat.Host.HostText.ImplementationWriteFor("", null));
+        Assert.Equal(Versio.Plc.TwinCat.Host.HostText.ImplementationWrite.Leave,
+            Versio.Plc.TwinCat.Host.HostText.ImplementationWriteFor("", "  \n"));
+        Assert.Equal(Versio.Plc.TwinCat.Host.HostText.ImplementationWrite.Set,
+            Versio.Plc.TwinCat.Host.HostText.ImplementationWriteFor("x := 2;", "x := 1;"));
+    }
+
+    [Fact]
+    public void The_read_back_checks_the_body_both_ways()
+    {
+        // A cleared body must read back empty; a written one must contain its first code
+        // line. The declaration was checked and the body was not, which is how a failed
+        // clear passed as success.
+        Assert.True(Versio.Plc.TwinCat.Host.HostText.ImplementationTook("", null));
+        Assert.True(Versio.Plc.TwinCat.Host.HostText.ImplementationTook("", ""));
+        Assert.False(Versio.Plc.TwinCat.Host.HostText.ImplementationTook("", "x := 1;"));
+        Assert.True(Versio.Plc.TwinCat.Host.HostText.ImplementationTook("// why\nx := 2;", "x := 2;\n"));
+        Assert.False(Versio.Plc.TwinCat.Host.HostText.ImplementationTook("x := 2;", "x := 1;"));
+        Assert.True(Versio.Plc.TwinCat.Host.HostText.ImplementationTook("// only a comment", "(* only a comment *)"));
+    }
+
+    [Fact]
+    public void The_host_codec_splits_exactly_as_the_core_codec_does()
+    {
+        // HostText duplicates StTextCodec's delimiter and escape because the host cannot
+        // reference Core; this is the check that the two have not drifted.
+        var packed = Versio.Core.Iec.StTextCodec.Join(
+            "FUNCTION_BLOCK FB\n// --- BEGIN IMPLEMENTATION ---\nVAR x : INT; END_VAR",
+            "x := 1; // //!VERSIO-ESC!D");
+        var core = Versio.Core.Iec.StTextCodec.Split(packed);
+        var host = Versio.Plc.TwinCat.Host.HostText.Split(packed);
+
+        Assert.Equal(core.Declaration, host.Declaration);
+        Assert.Equal(core.Implementation, host.Implementation);
+        Assert.Equal(packed, Versio.Plc.TwinCat.Host.HostText.Join(core.Declaration, core.Implementation));
+    }
+}
+
 public sealed class TwinCatProtocolTests
 {
     [Fact]

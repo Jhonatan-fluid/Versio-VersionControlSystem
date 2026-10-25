@@ -14,6 +14,13 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- The host is a net9 x64 exe that cannot be referenced by a test; its pure text
+         rules (the delimiter codec, the implementation-write decision) are compiled in
+         as source so they can be pinned without XAE. -->
+    <Compile Include="..\..\src\Versio.Plc.TwinCat.Host\HostText.cs" Link="Host\HostText.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\..\src\Versio.Core\Versio.Core.csproj" />
     <ProjectReference Include="..\..\src\Versio.Plc.TwinCat\Versio.Plc.TwinCat.csproj" />
     <ProjectReference Include="..\Versio.TestSupport\Versio.TestSupport.csproj" />
