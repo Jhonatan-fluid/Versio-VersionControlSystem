@@ -288,7 +288,11 @@ public sealed class PythonTreeWalkTests(ITestOutputHelper output)
         // entry carrying the name, so renaming ApplicationA's Simulation rewrote
         // ApplicationB's task to call a program it does not have (the 2026-10-24 review's
         // item 31). The walk starts at the renamed object's own Application now, found
-        // through `parent`, and a nested Application's tasks are its own.
+        // through `parent`, and a nested Application's tasks are its own — which the first
+        // walk said and did not do: it recursed into every child alike, so renaming the
+        // parent Application's Simulation repointed the nested Application's task as well
+        // (the second-round review's item 3). A nested Application is now skipped whole,
+        // and a rename inside it scopes to it and not to its parent.
         Skip.IfNot(CPythonHarness.PythonIsAvailable(), "python is not on PATH");
 
         var produced = CPythonHarness.RunJson("{}", """
@@ -323,25 +327,30 @@ public sealed class PythonTreeWalkTests(ITestOutputHelper output)
             task_a = Node("MainTask", "TASK", pous=["Simulation", "PLC_PRG"])
             app_a = Node("ApplicationA", "APPLICATION", [Node("Folder", "FOLDER", [sim_a]), Node("Task Configuration", "TASKCONFIG", [task_a])])
             task_b = Node("MainTask", "TASK", pous=["Simulation"])
+            sim_child = Node("Simulation", "POU")
             nested_task = Node("ChildTask", "TASK", pous=["Simulation"])
-            app_b = Node("ApplicationB", "APPLICATION", [Node("Simulation", "POU"), task_b, Node("Child", "APPLICATION", [nested_task])])
+            child_app = Node("Child", "APPLICATION", [sim_child, nested_task])
+            app_b = Node("ApplicationB", "APPLICATION", [Node("Simulation", "POU"), task_b, child_app])
             project = Node("Project", "PROJECT", [Node("Device", "DEVICE", [Node("Plc Logic", "PLCLOGIC", [app_a, app_b])])])
             loose = Node("Loose", "POU")
             project.kids.append(loose); loose.parent = project
 
             is_app = lambda o: o.type == "APPLICATION"
             scope = versio_tree.application_of(sim_a, safe, is_app)
-            tasks = [t.get_name() + "@" + t.parent.parent.get_name() for t in versio_tree.tasks_under(scope, safe)]
+            tasks = [t.get_name() + "@" + t.parent.parent.get_name() for t in versio_tree.tasks_under(scope, safe, is_app)]
             none = versio_tree.application_of(loose, safe, is_app)
-            b_tasks = [t.get_name() for t in versio_tree.tasks_under(app_b, safe)]
-            out = "|".join([scope.get_name(), ",".join(tasks), "<none>" if none is None else none.get_name(), ",".join(b_tasks)])
+            b_tasks = [t.get_name() for t in versio_tree.tasks_under(app_b, safe, is_app)]
+            child_scope = versio_tree.application_of(sim_child, safe, is_app)
+            child_tasks = [t.get_name() for t in versio_tree.tasks_under(child_scope, safe, is_app)]
+            out = "|".join([scope.get_name(), ",".join(tasks), "<none>" if none is None else none.get_name(), ",".join(b_tasks), child_scope.get_name(), ",".join(child_tasks)])
             """,
             jsonOut: false);
 
         output.WriteLine(produced);
         // ApplicationA's task only; a loose object has no Application; ApplicationB's walk
-        // includes the nested Application's task (it is under B) but A's walk never saw B.
-        Assert.Equal("ApplicationA|MainTask@ApplicationA|<none>|MainTask,ChildTask", produced);
+        // stops at the nested Application, whose Simulation scopes to it and whose task is
+        // the only one its own walk finds.
+        Assert.Equal("ApplicationA|MainTask@ApplicationA|<none>|MainTask|Child|ChildTask", produced);
     }
 
     /// <summary>A folder nested <paramref name="depth"/> times with one object at the bottom.</summary>

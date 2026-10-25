@@ -117,8 +117,8 @@ def application_of(node, safe, is_application):
     return None
 
 
-def tasks_under(node, safe, depth=0):
-    """Every object under `node` that carries a POU list.
+def tasks_under(node, safe, is_application, depth=0):
+    """Every object under `node` that carries a POU list, stopping at a nested Application.
 
     Found by probing for the attribute rather than by looking for a TASK type GUID. The
     type table is incomplete by nature - that is written down in versio_types - and a task
@@ -126,15 +126,25 @@ def tasks_under(node, safe, depth=0):
     reference the importer has to fix.
 
     Depth-capped for the same reason the export's walk is: a cycle in the object tree
-    would otherwise hang an import with no output. A nested Application is not descended
-    into: its tasks are its own.
+    would otherwise hang an import with no output.
+
+    A nested Application is not descended into: its tasks are its own, and a task entry is
+    a bare name that means a program OF THAT Application. The first version said so in
+    this docstring and did not do it - the recursion went into every child alike - so
+    renaming a parent Application's Simulation also repointed a nested Application's task
+    at a program it never had (the second-round review's item 3). `is_application` is the
+    caller's type test, passed in as application_of takes it, so this module keeps no type
+    table of its own.
     """
     if depth > 32:
         return
 
     for child in safe(lambda: node.get_children(), []) or []:
+        if safe(lambda: bool(is_application(child)), False):
+            continue
+
         if safe(lambda: child.pous, None) is not None:
             yield child
 
-        for found in tasks_under(child, safe, depth + 1):
+        for found in tasks_under(child, safe, is_application, depth + 1):
             yield found

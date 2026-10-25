@@ -825,17 +825,17 @@ class Importer(object):
                 # Within the renamed object's own Application, never the whole project: a
                 # task entry is a bare name, and the same name in another Application is
                 # another program (the 2026-10-24 review's item 31).
-                scope = versio_tree.application_of(
-                    landed, safe,
+                is_application = (
                     lambda o: type_of(safe(lambda: str(o.type), "")) == "APPLICATION")
+                scope = versio_tree.application_of(landed, safe, is_application)
                 if scope is None:
                     self.warn("TASK_POU_RETARGET_SKIPPED", old_name,
                               "the renamed object is not inside an Application, so no task "
                               "list was retargeted; check the task configuration by hand")
                 else:
-                    self.retarget_task_pous(scope, old_name, new_name)
+                    self.retarget_task_pous(scope, old_name, new_name, is_application)
 
-    def retarget_task_pous(self, scope, old_name, new_name):
+    def retarget_task_pous(self, scope, old_name, new_name, is_application):
         """Point every task under `scope` that ran `old_name` at `new_name`.
 
         WHY THIS IS NOT OPTIONAL. A task's POU list is stored BY NAME, and rename() does not
@@ -861,9 +861,11 @@ class Importer(object):
         list, and nothing in the list says which was meant. Renaming one retargets the entry
         either way - the same ambiguity CODESYS itself has, not one added here. Across
         Applications it is no ambiguity at all - each has its own namespace and its own
-        tasks - which is why `scope` is the renamed object's Application and not the project.
+        tasks - which is why `scope` is the renamed object's Application and not the project,
+        and why the walk stops at an Application nested inside it (the second-round review's
+        item 3: the first walk went into one and repointed its task too).
         """
-        for task in versio_tree.tasks_under(scope, safe):
+        for task in versio_tree.tasks_under(scope, safe, is_application):
             pous = safe(lambda: list(task.pous), None)
             if not pous:
                 continue
