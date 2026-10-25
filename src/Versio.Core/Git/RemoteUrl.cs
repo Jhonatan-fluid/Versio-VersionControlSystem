@@ -60,16 +60,36 @@ public sealed record RemoteUrl
     /// </summary>
     /// <remarks>
     /// <b>Deliberately not part of <see cref="Host"/>, and deliberately not thrown away either.</b>
-    /// Git scopes a stored credential to protocol and host, so the port must stay out of the
-    /// key that <c>git credential</c> is handed — but a self-hosted forge on
-    /// <c>https://git.acme.internal:8443/…</c> needs it back to build a link somebody can click,
-    /// and dropping it silently produced a URL that resolves to a different service or to
+    /// <see cref="Host"/> is what a sentence on screen names, and a self-hosted forge on
+    /// <c>https://git.acme.internal:8443/…</c> needs the port back to build a link somebody can
+    /// click — dropping it silently produced a URL that resolves to a different service or to
     /// nothing. Two readers, two questions, one parse.
+    /// <para>
+    /// This remark used to say the opposite about credentials: that git scopes a stored
+    /// credential to protocol and host, so the port had to stay <i>out</i> of the key
+    /// <c>git credential</c> is handed. That was wrong, and every credential call built on it
+    /// was wrong the same way — see <see cref="CredentialHost"/>.
+    /// </para>
     /// </remarks>
     public string Port { get; init; } = string.Empty;
 
     /// <summary>Host and port as a URL authority: <c>git.acme.internal:8443</c>.</summary>
     public string Authority => Port.Length == 0 ? Host : $"{Host}:{Port}";
+
+    /// <summary>
+    /// The <c>host=</c> value for <c>git credential</c>: host and port together.
+    /// </summary>
+    /// <remarks>
+    /// git's own credential requests carry <c>host=git.acme.internal:8443</c> — the port is
+    /// part of the key every helper stores under, and a lookup without it is a lookup for a
+    /// different entry. Handing <see cref="Host"/> alone to the three credential calls meant
+    /// that on a forge with a custom port the status read "none" while a credential was
+    /// stored, Sign in stored a second one under the wrong key that no push would ever use,
+    /// and Sign out exited 0 having erased nothing. The 2026-10-24 review's item 38. Named
+    /// separately from <see cref="Authority"/> so a reader at the call site sees why the
+    /// port is there.
+    /// </remarks>
+    public string CredentialHost => Authority;
 
     /// <summary>Everything between the host and the repository name, slash-separated.</summary>
     /// <remarks>

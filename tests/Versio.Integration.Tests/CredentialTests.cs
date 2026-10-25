@@ -146,4 +146,27 @@ public sealed class CredentialTests(ITestOutputHelper output) : IDisposable
         Assert.True(elapsed < TimeSpan.FromSeconds(60),
                     $"the fetch took {elapsed.TotalSeconds:F1}s, which suggests it waited on a prompt");
     }
+
+    [SkippableFact]
+    public async Task A_credential_stored_with_a_port_is_found_under_host_and_port_only()
+    {
+        // The `store` helper keys its entries by the whole authority, and so does every
+        // helper, because that is what git puts on the host= line of its own requests. The
+        // panel asked after the bare host and read "none" for a credential that was stored
+        // (the 2026-10-24 review's item 38); this pins what git actually keys by, so the
+        // view-model's choice of key is measured against git rather than against a fake.
+        //
+        // Its own store file under the temp repository, and the helper list reset first so
+        // the machine's real helper is never consulted for this host; .invalid cannot resolve.
+        Setup();
+        var store = Path.Combine(_repo, "credentials").Replace('\\', '/');
+        File.WriteAllText(store, "https://u:p@versio-port.invalid:8443\n");
+        Git("config credential.helper \"\"");
+        Git($"config --add credential.helper \"store --file={store}\"");
+
+        Assert.True(await Client.HasStoredCredentialAsync(
+            "https", "versio-port.invalid:8443", CancellationToken.None));
+        Assert.False(await Client.HasStoredCredentialAsync(
+            "https", "versio-port.invalid", CancellationToken.None));
+    }
 }

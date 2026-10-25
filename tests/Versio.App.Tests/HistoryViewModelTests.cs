@@ -167,8 +167,19 @@ internal sealed class CountingGitClient : IGitClient
     public Task<IReadOnlyList<string>> RemotesAsync(CancellationToken ct) =>
         throw new NotSupportedException();
 
-    public Task<bool> HasStoredCredentialAsync(string protocol, string host, CancellationToken ct) =>
-        throw new NotSupportedException();
+    /// <summary>The <c>host=</c> each credential call was handed, in order.</summary>
+    /// <remarks>
+    /// Recorded rather than thrown over, because the one thing CredentialFlowTests needs to
+    /// hold still is the key: the port had been stripped off it (the 2026-10-24 review's
+    /// item 38), and nothing on screen looks different when it is.
+    /// </remarks>
+    public List<string> CredentialHosts { get; } = [];
+
+    public Task<bool> HasStoredCredentialAsync(string protocol, string host, CancellationToken ct)
+    {
+        CredentialHosts.Add(host);
+        return Task.FromResult(false);
+    }
 
     public Task<RemoteBranchProbe> LsRemoteAsync(string remote, string branch, CancellationToken ct) =>
         throw new NotSupportedException();
@@ -182,11 +193,17 @@ internal sealed class CountingGitClient : IGitClient
         Task.FromResult(string.Empty);
 
 
-    public Task<GitResult> SignInAsync(string protocol, string host, CancellationToken ct) =>
-        throw new NotSupportedException();
+    public Task<GitResult> SignInAsync(string protocol, string host, CancellationToken ct)
+    {
+        CredentialHosts.Add(host);
+        return Task.FromResult(new GitResult { Success = true, ExitCode = 0 });
+    }
 
-    public Task<GitResult> SignOutAsync(string protocol, string host, CancellationToken ct) =>
-        throw new NotSupportedException();
+    public Task<GitResult> SignOutAsync(string protocol, string host, CancellationToken ct)
+    {
+        CredentialHosts.Add(host);
+        return Task.FromResult(new GitResult { Success = true, ExitCode = 0 });
+    }
 
     public Task<GitResult> PublishBranchAsync(
         string remote, string branch, IProgress<GitProgress>? progress, CancellationToken ct) =>

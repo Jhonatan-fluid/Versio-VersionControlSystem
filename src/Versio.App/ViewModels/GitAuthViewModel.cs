@@ -376,7 +376,10 @@ public sealed class GitAuthViewModel : ObservableObject
             return;
         }
 
-        var stored = await _git.HasStoredCredentialAsync(_remote.Protocol, _remote.Host, ct)
+        // CredentialHost, not Host: git keys a stored credential by host AND port, and the
+        // bare host asked after a credential that was never stored under it. The 2026-10-24
+        // review's item 38. Host stays for the sentences, where the port is noise.
+        var stored = await _git.HasStoredCredentialAsync(_remote.Protocol, _remote.CredentialHost, ct)
             .ConfigureAwait(true);
 
         AuthState = stored ? GitAuthState.Fine : GitAuthState.NoCredential;
@@ -472,7 +475,9 @@ public sealed class GitAuthViewModel : ObservableObject
 
         if (GitAuthClassifier.ShouldEraseFirst(_authState))
         {
-            await _git.SignOutAsync(_remote.Protocol, _remote.Host, CancellationToken.None)
+            // The same key git itself uses, port included (item 38): erasing under the bare
+            // host exits 0 and leaves the stale credential exactly where the next push finds it.
+            await _git.SignOutAsync(_remote.Protocol, _remote.CredentialHost, CancellationToken.None)
                 .ConfigureAwait(true);
         }
 
@@ -483,7 +488,7 @@ public sealed class GitAuthViewModel : ObservableObject
             WorkKind.GitRead,
             $"Signing in to {_remote.Host} — finish in the window that opened (check behind Versio)…");
 
-        var result = await _git.SignInAsync(_remote.Protocol, _remote.Host, busy.Token)
+        var result = await _git.SignInAsync(_remote.Protocol, _remote.CredentialHost, busy.Token)
             .ConfigureAwait(true);
 
         if (!result.Success)
@@ -516,7 +521,7 @@ public sealed class GitAuthViewModel : ObservableObject
         using var busy = _busy.Begin(
             WorkKind.GitRead, $"Forgetting the credential for {_remote.Host}…");
 
-        var result = await _git.SignOutAsync(_remote.Protocol, _remote.Host, busy.Token)
+        var result = await _git.SignOutAsync(_remote.Protocol, _remote.CredentialHost, busy.Token)
             .ConfigureAwait(true);
 
         if (!result.Success)

@@ -1,4 +1,5 @@
 using System.IO;
+using Versio.App.Mvvm;
 using Versio.App.ViewModels;
 using Versio.Core.Git;
 using Versio.Core.Logging;
@@ -140,5 +141,48 @@ public sealed class CredentialFlowTests
         Assert.Contains("signing in again will not change it",
                         GitAuthClassifier.Explain(GitAuthState.NotAuthorised, "github.com"),
                         StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
+    /// Every credential call is keyed the way git keys its own: host and port together.
+    /// </summary>
+    /// <remarks>
+    /// The three calls were handed <c>RemoteUrl.Host</c>, which has the port stripped for the
+    /// sentences on screen. git's own requests to the helper carry <c>host=h:8443</c>, so on a
+    /// forge with a custom port the status read "none" with a credential stored, Sign in
+    /// stored a second one under a key no push would use, and Sign out exited 0 having erased
+    /// nothing. The 2026-10-24 review's item 38. Through a recording fake, because nothing on
+    /// screen distinguishes the two keys — the sentence still names the bare host, as it should.
+    /// </remarks>
+    [Fact]
+    public async Task Credential_calls_carry_the_port_git_keys_the_store_by()
+    {
+        var logger = new VersioLogger(new SystemClock());
+        using var notifications = new NotificationCenter(new SystemClock(), logger, useTimer: false);
+        var git = new CountingGitClient();
+        var auth = new GitAuthViewModel(
+            logger, new BusyTracker(new SystemClock()), notifications, () => true, _ => { });
+
+        auth.AttachClient(git);
+        auth.SetRemote(RemoteUrl.Parse("https://h:8443/team/plc.git"));
+
+        await auth.CheckCredentialAsync(CancellationToken.None);
+
+        auth.SignOutCommand.Execute(null);
+        while (auth.SignOutCommand.IsRunning)
+        {
+            await Task.Delay(10);
+        }
+
+        auth.SignInCommand.Execute(null);
+        while (auth.SignInCommand.IsRunning)
+        {
+            await Task.Delay(10);
+        }
+
+        Assert.Equal("h", auth.RemoteHost);
+        Assert.NotEmpty(git.CredentialHosts);
+        Assert.All(git.CredentialHosts, host => Assert.Equal("h:8443", host));
+        Assert.Equal(3, git.CredentialHosts.Count);
     }
 }
