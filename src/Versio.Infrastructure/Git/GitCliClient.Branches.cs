@@ -127,8 +127,8 @@ public sealed partial class GitCliClient
     {
         var unified = $"-U{Math.Max(0, contextLines)}";
         string[] args = staged
-            ? ["diff", unified, "--cached", "--", path]
-            : ["diff", unified, "--", path];
+            ? [LiteralPathspecs, "diff", unified, "--cached", "--", path]
+            : [LiteralPathspecs, "diff", unified, "--", path];
 
         var result = await RunAsync(args, null, ct).ConfigureAwait(false);
         if (!string.IsNullOrWhiteSpace(result.StdOut))
@@ -169,7 +169,7 @@ public sealed partial class GitCliClient
         string path, string unified, CancellationToken ct)
     {
         // ls-files --error-unmatch fails precisely when the path is not in the index.
-        var tracked = await RunAsync(["ls-files", "--error-unmatch", "--", path], null, ct)
+        var tracked = await RunAsync([LiteralPathspecs, "ls-files", "--error-unmatch", "--", path], null, ct)
             .ConfigureAwait(false);
         if (tracked.Success)
         {
@@ -188,7 +188,7 @@ public sealed partial class GitCliClient
         }
 
         var result = await RunAsync(
-            ["diff", unified, "--no-index", "--", "/dev/null", path], null, ct)
+            [LiteralPathspecs, "diff", unified, "--no-index", "--", "/dev/null", path], null, ct)
             .ConfigureAwait(false);
 
         _log.Debug(LogCategory.Git,
@@ -380,7 +380,7 @@ public sealed partial class GitCliClient
         int contextLines = GitDiff.DefaultContext)
     {
         var result = await RunAsync(
-            ["show", "--format=", "--patch", $"-U{Math.Max(0, contextLines)}",
+            [LiteralPathspecs, "show", "--format=", "--patch", $"-U{Math.Max(0, contextLines)}",
              commit, "--", path], null, ct)
             .ConfigureAwait(false);
 

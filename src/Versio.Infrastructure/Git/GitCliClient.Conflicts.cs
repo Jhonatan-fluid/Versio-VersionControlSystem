@@ -26,7 +26,7 @@ public sealed partial class GitCliClient
         var side = ours ? "--ours" : "--theirs";
         _log.Info(LogCategory.Git, $"resolving {path} with {side}");
 
-        var taken = await RunAsync(["checkout", side, "--", path], null, ct,
+        var taken = await RunAsync([LiteralPathspecs, "checkout", side, "--", path], null, ct,
                                    TimeSpan.FromSeconds(30)).ConfigureAwait(false);
 
         if (!taken.Success)
@@ -34,7 +34,7 @@ public sealed partial class GitCliClient
             return taken;
         }
 
-        return await RunAsync(["add", "--", path], null, ct, TimeSpan.FromSeconds(30))
+        return await RunAsync([LiteralPathspecs, "add", "--", path], null, ct, TimeSpan.FromSeconds(30))
             .ConfigureAwait(false);
     }
 

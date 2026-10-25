@@ -601,9 +601,28 @@ public sealed partial class GitCliClient(
         string[] verb, IReadOnlyList<string> paths, CancellationToken ct)
     {
         var stdin = string.Join('\0', paths);
-        string[] args = [.. verb, "--pathspec-from-file=-", "--pathspec-file-nul"];
+        string[] args = [LiteralPathspecs, .. verb, "--pathspec-from-file=-", "--pathspec-file-nul"];
         return RunAsync(args, null, ct, stdin: stdin);
     }
+
+    /// <summary>
+    /// Put before the verb of any command whose operand is a file path.
+    /// </summary>
+    /// <remarks>
+    /// Every path this client hands git is a name somebody ticked or a path a binding
+    /// recorded — never a pattern. Git reads a pathspec as a glob unless told otherwise, so
+    /// <c>part[1].st</c> also matched <c>part1.st</c>: discarding the one file the owner
+    /// selected threw away the other file's edits, and staging or resolving it reached the same
+    /// way (the 2026-10-24 review's item 1). Literal pathspecs still match a directory's
+    /// contents by prefix, which is all the tree-staging calls rely on.
+    /// <para>
+    /// Per call, not <c>GIT_LITERAL_PATHSPECS</c> on every process: under that variable
+    /// <c>stash push --include-untracked</c> records the untracked file and then leaves it on
+    /// disk, because git's own clean step inside stash is written with pathspec magic. The
+    /// integration suite caught it on the first run.
+    /// </para>
+    /// </remarks>
+    private const string LiteralPathspecs = "--literal-pathspecs";
 
     /// <param name="stdin">
     /// Written to the child's standard input and then closed, for the commands that read a

@@ -385,6 +385,39 @@ public sealed class GitCliClientTests(ITestOutputHelper output) : IDisposable
     }
 
     [SkippableFact]
+    public async Task A_selected_path_is_a_name_and_never_a_pattern()
+    {
+        // Every path git takes is a pathspec, and a pathspec is a glob unless told otherwise:
+        // "part[1].st" matches part1.st as well. Discarding the one file the owner ticked then
+        // threw away another file's edits, and nothing in git's output said so (the
+        // 2026-10-24 review's item 1). Staging had the same reach; resolving a conflict too.
+        Skip.IfNot(GitAvailable, "git not on PATH");
+        await InitAsync();
+        Write("part[1].st", "bracket");
+        Write("part1.st", "plain");
+        await Client.StageAsync(["part[1].st", "part1.st"], CancellationToken.None);
+        await Client.CommitAsync("initial", CancellationToken.None);
+
+        Write("part[1].st", "bracket edited");
+        Write("part1.st", "plain edited");
+
+        // Stage: only the bracketed file goes in.
+        var staged = await Client.StageAsync(["part[1].st"], CancellationToken.None);
+        Assert.True(staged.Success, staged.FailureReason);
+        var status = await Client.StatusAsync(CancellationToken.None);
+        Assert.Equal(ChangeKind.Modified, Assert.Single(status.Changes, c => c.Path == "part[1].st").Staged);
+        Assert.Equal(ChangeKind.Unmodified, Assert.Single(status.Changes, c => c.Path == "part1.st").Staged);
+
+        // Discard: only the bracketed file's edit is lost.
+        await Client.UnstageAsync(["part[1].st"], CancellationToken.None);
+        var discard = await Client.DiscardAsync(["part[1].st"], CancellationToken.None);
+        Assert.True(discard.Success, discard.FailureReason);
+
+        Assert.Equal("bracket", File.ReadAllText(Path.Combine(_repo, "part[1].st")));
+        Assert.Equal("plain edited", File.ReadAllText(Path.Combine(_repo, "part1.st")));
+    }
+
+    [SkippableFact]
     public async Task An_empty_commit_message_is_refused_before_git_is_invoked()
     {
         Skip.IfNot(GitAvailable, "git not on PATH");
