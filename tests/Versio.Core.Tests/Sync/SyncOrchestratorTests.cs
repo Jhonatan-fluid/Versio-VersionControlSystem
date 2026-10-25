@@ -1454,6 +1454,36 @@ public class SyncOrchestratorTests
     }
 
     [Fact]
+    public async Task A_save_during_a_copy_export_is_not_recorded_as_exported()
+    {
+        // The IDE holds the project, so the export reads a copy. The hash recorded as
+        // "exported" was taken afterwards, from the LIVE file — so a save made while the
+        // toolchain was running was recorded against an export that never saw it. The next
+        // event answered NoChange and the commit gate called the mirror current (the
+        // 2026-10-24 review's item 2). The hash has to be the copy's.
+        var h = new Harness();
+        h.Occupancy.Hold();
+        h.Codesys.BeforeRun = job =>
+        {
+            if (job.Operation == PlcOperation.Export)
+            {
+                h.SetProject("saved in the IDE while the export ran");
+            }
+
+            return Task.CompletedTask;
+        };
+
+        Assert.Equal(SyncVerdict.Completed, (await h.ProjectChanged()).Verdict);
+
+        h.Codesys.BeforeRun = null;
+        var again = await h.ProjectChanged();
+
+        Assert.NotEqual(SyncVerdict.NoChange, again.Verdict);
+        Assert.Equal(SyncVerdict.Completed, again.Verdict);
+        Assert.Equal(2, h.Codesys.Jobs.Count(j => j.Operation == PlcOperation.Export));
+    }
+
+    [Fact]
     public async Task Waiting_for_the_IDE_does_not_feed_the_circuit_breaker()
     {
         // A breaker that counted these would trip after a few saves and halt the project for

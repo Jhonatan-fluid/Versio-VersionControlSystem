@@ -1593,6 +1593,18 @@ public sealed class SyncOrchestrator
         var started = _clock.UtcNow;
         var source = scratchProject ?? Absolute(binding.ProjectPath);
 
+        // When the export reads a copy, what it exports IS the copy, and the hash recorded as
+        // exported has to be the copy's — taken now, before the toolchain runs, because the run
+        // leaves its own sidecars in the scratch folder. The first version hashed the live
+        // file afterwards: a save made in the IDE while the toolchain ran was recorded against
+        // an export that never saw it, the next event answered NoChange, and the commit gate
+        // called the mirror current (the 2026-10-24 review's item 2).
+        var exportedHash = scratchProject is null
+            ? null
+            : await HashPayloadAsync(
+                binding, _formats(binding.ProjectPath)?.PayloadPathFor(scratchProject) ?? scratchProject,
+                ct).ConfigureAwait(false);
+
         var job = new PlcJob
         {
             Operation = PlcOperation.Export,
@@ -1704,7 +1716,7 @@ public sealed class SyncOrchestrator
             await WaitUntilProjectFreeAsync(binding, ct).ConfigureAwait(false);
         }
 
-        var projectHash = await ProjectHashAsync(binding, ct).ConfigureAwait(false);
+        var projectHash = exportedHash ?? await ProjectHashAsync(binding, ct).ConfigureAwait(false);
         await ApplyAsync(binding.Id, SyncTrigger.ExportSucceeded, projectHash, ct)
             .ConfigureAwait(false);
 
@@ -2815,9 +2827,16 @@ public sealed class SyncOrchestrator
             $"{binding.Id}: occupancy still held after waiting to hash; hashing anyway");
     }
 
-    private async Task<string> ProjectHashAsync(ProjectBinding binding, CancellationToken ct)
+    private Task<string> ProjectHashAsync(ProjectBinding binding, CancellationToken ct) =>
+        HashPayloadAsync(binding, PayloadPath(binding), ct);
+
+    /// <summary>
+    /// The content hash of a payload — the live one, or a scratch copy of it — with the
+    /// binding's format deciding which files count.
+    /// </summary>
+    private async Task<string> HashPayloadAsync(
+        ProjectBinding binding, string path, CancellationToken ct)
     {
-        var path = PayloadPath(binding);
         var format = _formats(binding.ProjectPath);
 
         if (IsTreePayload(path))
