@@ -61,6 +61,8 @@ public sealed class GitHubRepoSourceTests : IAsyncLifetime
             http.Request.Headers.Accept.ToString() == "application/vnd.github.sha"
                 ? Results.Text(new string('c', 40), "application/vnd.github.sha")
                 : Results.StatusCode(415));
+        // The commit list, empty: the test that calls it reads the wire, not the answer.
+        app.MapGet("/repos/acme/plant/commits", () => Results.Json(Array.Empty<object>()));
         app.MapGet("/repos/acme/plant/branches", (int per_page, int page) =>
             // 250 branches, in GitHub's pages.
             Results.Json(Enumerable.Range(0, 250).Skip((page - 1) * per_page).Take(per_page)
@@ -434,6 +436,29 @@ public sealed class GitHubRepoSourceTests : IAsyncLifetime
         var r = Assert.Single(releases.Value!);
         Assert.Equal(new ReleaseInfo("v2", "v2", "jo", new DateTimeOffset(2026, 10, 1, 0, 0, 0, TimeSpan.Zero), true), r);
         Assert.Equal("## Notes", release.Value!.Body);
+    }
+
+    /// <summary>
+    /// A ref travels to GitHub percent-encoded wherever it goes: in a query, a bare <c>+</c> would
+    /// be read as a space and a bare <c>ü</c> is not ASCII, and the path form has the same encoder.
+    /// Pinned because the API's ref gate admits these names since 2026-10-25 (review item 11), so
+    /// the encoding is now what keeps them from being misread by the far end.
+    /// </summary>
+    [Fact]
+    public async Task A_ref_reaches_GitHub_percent_encoded_in_the_path_and_in_the_query()
+    {
+        var source = Source();
+
+        await source.GetCommitsAsync(Alice, "acme", "plant", "release+hotfix", null, 10, CancellationToken.None);
+        await source.GetCommitsAsync(Alice, "acme", "plant", "Prüfung", "docs/Prüfung.md", 10, CancellationToken.None);
+        await source.ResolveCommitAsync(Alice, "acme", "plant", "release+hotfix", CancellationToken.None);
+
+        // The query is recorded as sent; the path is recorded decoded (ASP.NET unescapes a path
+        // segment before a handler sees it), so the last line can only say the name arrived whole.
+        var sent = _requests.Select(r => r.Path).ToList();
+        Assert.Contains("/repos/acme/plant/commits?sha=release%2Bhotfix&per_page=10", sent);
+        Assert.Contains("/repos/acme/plant/commits?sha=Pr%C3%BCfung&per_page=10&path=docs%2FPr%C3%BCfung.md", sent);
+        Assert.Contains("/repos/acme/plant/commits/release+hotfix", sent);
     }
 
     [Fact]

@@ -876,8 +876,50 @@ public static partial class ApiEndpoints
     /// <summary>A search cursor as GitHub hands them back: opaque, bounded, nothing but the characters a cursor has.</summary>
     internal static bool Cursor(string cursor) => cursor.Length is >= 1 and <= 256 && cursor.All(c => char.IsAsciiLetterOrDigit(c) || c is '+' or '/' or '=' or '_' or '-');
 
-    internal static bool ValidRef(string? reference) =>
-        reference is null || (reference.Length is > 0 and <= 250 && RefChars().IsMatch(reference) && !reference.Contains("..", StringComparison.Ordinal));
+    /// <summary>
+    /// A ref name as git itself admits one (<c>git check-ref-format</c>), absent meaning the
+    /// default branch. Until 2026-10-25 this was an allow-list of ASCII letters, digits and
+    /// <c>_ . / -</c>, which refused branches git is happy with — <c>release+hotfix</c>,
+    /// <c>Prüfung</c> — on every route that takes a ref, and at the same time admitted shapes
+    /// git refuses (<c>.hidden</c>, <c>a.lock</c>, <c>a//b</c>, a leading dash); the 2026-10-24
+    /// review's item 11. Git's rules are the right gate because the far end is git: a name git
+    /// would not create cannot name anything, and a name git did create must be reachable.
+    /// </summary>
+    /// <remarks>
+    /// Two refusals git does not make, kept on purpose. A leading dash, which git refuses only
+    /// for a branch: nothing here hands a ref to a process today (every ref goes to GitHub over
+    /// HTTP, percent-encoded), and a name that could be read as an option should never qualify
+    /// as a name, so the day one does reach a command line the gate is already in front of it.
+    /// And any control character, not only ASCII's, because every name shown is spelled
+    /// (rule 9) and a C1 control has no spelling worth drawing; <see cref="ValidPath"/> draws
+    /// the same line. Everything else is git's list verbatim: no space, no <c>~ ^ : ? * [ \</c>,
+    /// no <c>..</c>, no <c>@{</c>, not <c>@</c> alone, no component beginning with a dot or
+    /// ending in <c>.lock</c>, no leading, trailing or doubled slash, no trailing dot.
+    /// </remarks>
+    internal static bool ValidRef(string? reference)
+    {
+        if (reference is null)
+        {
+            return true;
+        }
+
+        if (reference.Length is 0 or > 250 || reference == "@" || reference[0] is '-' or '/' || reference[^1] is '/' or '.')
+        {
+            return false;
+        }
+
+        if (reference.Contains("..", StringComparison.Ordinal) || reference.Contains("@{", StringComparison.Ordinal) || reference.Contains("//", StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        if (reference.Any(c => char.IsControl(c) || c is ' ' or '~' or '^' or ':' or '?' or '*' or '[' or '\\'))
+        {
+            return false;
+        }
+
+        return !reference.Split('/').Any(component => component.StartsWith('.') || component.EndsWith(".lock", StringComparison.Ordinal));
+    }
 
     internal static bool ValidPath(string? path) =>
         path is { Length: > 0 and <= 1024 }
@@ -908,7 +950,4 @@ public static partial class ApiEndpoints
 
     [GeneratedRegex("^[A-Za-z0-9_.-]{1,100}$")]
     private static partial Regex Name();
-
-    [GeneratedRegex("^[A-Za-z0-9_./-]+$")]
-    private static partial Regex RefChars();
 }
