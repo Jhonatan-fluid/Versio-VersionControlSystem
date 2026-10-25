@@ -123,12 +123,16 @@ export function FragmentHost({ html, path, onOpenPath, line, onLine, annotations
           slot.className = 'thread-slot';
           (onLeft ? left : right).appendChild(slot);
         } else if (after instanceof HTMLTableRowElement || after.closest('tbody')) {
-          const row = document.createElement('tr');
-          row.className = 'thread-slot thread-row';
+          const slotRow = document.createElement('tr');
+          slotRow.className = 'thread-slot thread-row';
           const cell = document.createElement('td');
-          cell.colSpan = Math.max(1, (after as HTMLTableRowElement).cells?.length ?? 1);
-          row.appendChild(cell);
-          after.after(row);
+          // The span is the MEMBER row's column count, as the side-by-side branch reads its column
+          // from the line's row: for a second thread on one row, `after` is the first thread's
+          // one-cell slot row, and counting its cells put the second thread in one column of a
+          // four-column table (the 2026-10-24 review's item 17).
+          cell.colSpan = Math.max(1, row instanceof HTMLTableRowElement ? row.cells.length : 1);
+          slotRow.appendChild(cell);
+          after.after(slotRow);
           slot = cell;
         } else {
           slot = document.createElement('div');

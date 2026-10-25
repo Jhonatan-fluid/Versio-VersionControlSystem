@@ -58,4 +58,26 @@ describe('FragmentHost', () => {
     expect(unfold).toHaveBeenCalledTimes(1);
     act(() => root.unmount());
   });
+
+  // The slot row's cell spans the member row's columns. The count was read from the element the
+  // slot goes after, which for a SECOND thread on the same row is the first thread's one-cell slot
+  // row: the second thread sat in one column of a four-column table (the 2026-10-24 review's item 17).
+  it('every thread on one member row spans the row’s columns', () => {
+    const table =
+      '<div class="mt-page"><table class="mt-table"><tbody>' +
+      '<tr class="mt-row" data-path="run" data-anchors="r-new-0"><td class="mt-mark">M</td><td class="mt-name">run</td><td class="mt-type">BOOL</td><td class="mt-comment">x</td></tr>' +
+      '</tbody></table></div>';
+    const { host, root } = mount(
+      <FragmentHost html={table} path="src/Pump.xml" onOpenPath={() => {}} line={null} onLine={() => {}}
+        annotations={[
+          { key: 'a', selector: '[data-anchors~="r-new-0"]', content: <p>first</p> },
+          { key: 'b', selector: '[data-anchors~="r-new-0"]', content: <p>second</p> },
+        ]} />,
+    );
+
+    const cells = Array.from(host.querySelectorAll<HTMLTableCellElement>('tr.thread-row td'));
+    expect(cells.map((c) => c.textContent)).toEqual(['first', 'second']);
+    expect(cells.map((c) => c.colSpan)).toEqual([4, 4]);
+    act(() => root.unmount());
+  });
 });
