@@ -280,7 +280,8 @@ one exception nobody had met.
   python as plain CPython: two swapped siblings in a `Dictionary` compare equivalent with plain
   values and not with GUIDs. The six parity cases and the new pure tests missed it because none
   of them holds a GUID at all. The second review round's item 7 fixes it in both normalisers;
-  the two gate tests re-run once it lands.
+  the two gate tests passed on the re-run against `5cb51ef`, with the item 5 and 31 tests
+  beside them, 4/4 in 9 m 7 s on 2026-10-25.
 - **22 — restoring the oldest of ten backups deleted it first.** The safety copy made eleven,
   pruning ran inside it, and the restore source went before it was read. The source is pinned
   through the prune. The fake file system's `CopyAsync` used to write an empty file for a

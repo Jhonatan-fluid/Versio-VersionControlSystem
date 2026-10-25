@@ -537,8 +537,9 @@ Close Versio **and** Portal before a host rebuild. Click **Yes to all** on Openn
     `A_member_inside_a_folder_round_trips_and_moves_nothing_else` (the same two files).
     Reproduced without CODESYS on the embedded python as plain CPython: two swapped siblings
     compare equivalent with plain values and not with GUIDs. It is the second review round's
-    item 7, being fixed by that round's session in its own worktree; **those two tests and
-    items 5 and 31 want a re-run on the new embedded python once it lands.**
+    item 7, fixed by that round's session (`2d602ec`, the placeholder is `{masked-guid}` on
+    both sides); **re-run on `5cb51ef` with that python embedded: the two red tests and the
+    item 5 and 31 tests, 4/4 in 9 m 7 s.** The CODESYS gate is settled for the first round.
     `Versio.Plc.TwinCat.Tests` over 23 (does XAE accept an empty `ImplementationText`?) and the
     `ide_pid` half of 28 — **cannot run here: 6 of 6 skipped in 4 s, no `TcXaeShell.DTE.17.0`
     (2026-10-25)**; `Versio.Plc.TiaPortal.Tests` over 27 (the Comment marker is 300
@@ -557,8 +558,8 @@ Close Versio **and** Portal before a host rebuild. Click **Yes to all** on Openn
 12. **The review's second round, twelve items, all fixed — 2026-10-25.** FINDINGS 2026-10-25
     has the list. Two of them touch the embedded python and so the CODESYS gate: item 3 (the
     rename's task walk stops at a nested Application) and item 7 (the GUID mask no longer
-    breaks the sibling sort the delete check reads — the two red of item 11's 53/55). The gate session is re-running those two red tests, with item 11's 5 and 31, on the new
-    embedded python as this is written; item 11 carries the result.
+    breaks the sibling sort the delete check reads — the two red of item 11's 53/55). The gate session re-ran those two red tests, with item 11's 5 and 31, on the new
+    embedded python: 4/4 in 9 m 7 s on `5cb51ef`; item 11 carries the result.
     The TIA and TwinCAT gates owe nothing new; the TIA import Fact ran green over the branch
     in passing. Still not done: branch deletion addresses the hardcoded "origin" (the first
     round's item 39).
