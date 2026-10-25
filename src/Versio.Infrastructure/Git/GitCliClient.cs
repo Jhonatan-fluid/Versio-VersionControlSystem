@@ -104,6 +104,64 @@ public sealed partial class GitCliClient(
             : [];
     }
 
+    /// <summary>What the index holds for each path, in bytes. See the interface for why the index.</summary>
+    /// <remarks>
+    /// <para>
+    /// One <c>cat-file --batch-check</c> with every <c>:0:path</c> on standard input, LF
+    /// separated. Stage 0 is the entry a commit records; a conflicted path has stages 1–3
+    /// and no 0, and comes back <c>missing</c>, which is right — it cannot be committed as
+    /// it stands. The answers carry no path, so they are paired with the names by position,
+    /// and a count that does not match is treated as git not having answered rather than
+    /// guessed at: a size attributed to the wrong file would pass the preflight for the one
+    /// that mattered.
+    /// </para>
+    /// <para>
+    /// LF rather than NUL on the input because <c>-z</c> on <c>cat-file</c> arrived in git
+    /// 2.38 and was renamed <c>-Z</c> two releases later; a path with a newline in it is
+    /// already unreadable through this client's line-based stdout, so nothing is lost that
+    /// was ever had.
+    /// </para>
+    /// </remarks>
+    public async Task<IReadOnlyDictionary<string, long>?> IndexBlobSizesAsync(
+        IReadOnlyList<string> paths, CancellationToken ct)
+    {
+        var sizes = new Dictionary<string, long>(StringComparer.Ordinal);
+        if (paths.Count == 0)
+        {
+            return sizes;
+        }
+
+        var names = paths.Select(p => $":0:{p.Replace('\\', '/').TrimStart('/')}").ToList();
+        var result = await RunAsync(
+            ["cat-file", "--batch-check=%(objectsize) %(objecttype)"], null, ct,
+            TimeSpan.FromSeconds(30), stdin: string.Join('\n', names) + "\n")
+            .ConfigureAwait(false);
+
+        if (!result.Success)
+        {
+            return null;
+        }
+
+        var answers = ObjectSizeParser.Parse(result.StdOut);
+        if (answers.Count != paths.Count)
+        {
+            _log.Warn(LogCategory.Git,
+                $"cat-file answered {answers.Count} line(s) for {paths.Count} path(s); " +
+                "index sizes not trusted");
+            return null;
+        }
+
+        for (var i = 0; i < paths.Count; i++)
+        {
+            if (answers[i] is { } bytes)
+            {
+                sizes[paths[i]] = bytes;
+            }
+        }
+
+        return sizes;
+    }
+
     /// <summary>Local branches with their upstream and divergence counts.</summary>
     /// <remarks>Ahead/behind needs a second command per branch: <c>for-each-ref</c> cannot
     /// produce both counts in one pass consistently across git versions.</remarks>

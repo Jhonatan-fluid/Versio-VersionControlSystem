@@ -92,6 +92,37 @@ public interface IGitClient
     /// </remarks>
     Task<IReadOnlyList<string>> ListWorkingTreeAsync(CancellationToken ct);
 
+    /// <summary>
+    /// How many bytes the index holds for each path, for the paths it holds at all.
+    /// </summary>
+    /// <param name="paths">Repository-relative, forward slashes — git's own path shape.</param>
+    /// <returns>
+    /// Path to size for every path the index has a blob for. A path the index does not have
+    /// — never added, a directory, a conflict with no stage-0 entry — is simply absent.
+    /// <c>null</c> when git could not answer at all, which is distinct from "none of them":
+    /// a caller measuring what a commit is about to record must not read a failed probe as
+    /// "nothing large".
+    /// </returns>
+    /// <remarks>
+    /// <para>
+    /// <b>The index, not the working tree, because the commit records the index.</b> A file
+    /// staged at twenty megabytes and then overwritten on disk with five bytes weighs five
+    /// bytes to <c>FileInfo</c> and twenty megabytes to <c>git commit</c>; the large-file
+    /// preflight read the working copy and let the twenty megabytes through (the 2026-10-24
+    /// review's item 4, found right after the partly-staged commit fix made that state
+    /// ordinary). The same holds for a staged file deleted from disk, which still commits.
+    /// </para>
+    /// <para>
+    /// <c>cat-file --batch-check</c> over <c>:0:&lt;path&gt;</c> names on standard input:
+    /// git resolves that form literally — spaces, non-ASCII, a name starting with
+    /// <c>--</c> — and argv carries no paths at all, so the CreateProcess limit that
+    /// <c>--pathspec-from-file</c> exists for is never approached. <c>ls-files -s</c> was
+    /// the obvious alternative and does not take <c>--pathspec-from-file</c>.
+    /// </para>
+    /// </remarks>
+    Task<IReadOnlyDictionary<string, long>?> IndexBlobSizesAsync(
+        IReadOnlyList<string> paths, CancellationToken ct);
+
     Task<IReadOnlyList<BranchInfo>> BranchesAsync(CancellationToken ct);
 
     Task<GitResult> StageAsync(IReadOnlyList<string> paths, CancellationToken ct);

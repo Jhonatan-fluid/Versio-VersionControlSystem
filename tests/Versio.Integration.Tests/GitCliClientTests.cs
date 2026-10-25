@@ -494,6 +494,36 @@ public sealed class GitCliClientTests(ITestOutputHelper output) : IDisposable
     }
 
     [SkippableFact]
+    public async Task The_index_is_weighed_not_the_working_copy_that_replaced_it()
+    {
+        // The large-file preflight measured FileInfo, and the commit records the index: a
+        // blob staged at a megabyte and then overwritten on disk with five bytes weighed five
+        // bytes to the preflight and a megabyte to git (the 2026-10-24 review's item 4).
+        Skip.IfNot(GitAvailable, "git not on PATH");
+        await InitAsync();
+
+        const string path = "Device/Plc Logic/Kühlschrank Regelung.project";
+        var full = Path.Combine(_repo, path);
+        Directory.CreateDirectory(Path.GetDirectoryName(full)!);
+        File.WriteAllBytes(full, new byte[1024 * 1024]);
+        await Client.StageAsync([path], CancellationToken.None);
+
+        File.WriteAllText(full, "tiny!");
+        Write("plc/Never.st", "PROGRAM Never\n");
+
+        var sizes = await Client.IndexBlobSizesAsync(
+            [path, "plc/Never.st", "Device"], CancellationToken.None);
+
+        Assert.NotNull(sizes);
+        Assert.Equal(1024 * 1024, sizes[path]);
+
+        // Never staged, and a directory: neither has a blob in the index, and neither is a
+        // failure — absent, so the caller falls back to whatever it measures otherwise.
+        Assert.DoesNotContain("plc/Never.st", sizes.Keys);
+        Assert.DoesNotContain("Device", sizes.Keys);
+    }
+
+    [SkippableFact]
     public async Task Branches_are_listed_with_the_current_one_marked()
     {
         Skip.IfNot(GitAvailable, "git not on PATH");

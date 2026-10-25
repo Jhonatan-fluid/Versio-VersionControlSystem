@@ -5722,6 +5722,17 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
     /// preflight exists at all. Sizes are shown per file, because "large" is an argument
     /// and a number is a fact.
     /// </para>
+    /// <para>
+    /// <b>What is weighed is what the commit records.</b> For a path whose working copy
+    /// still matches the index that is the file on disk, read without a process. For one
+    /// where the two differ — staged and then edited, overwritten or deleted on disk, the
+    /// shape "Stage hunk" leaves and the shape the partly-staged commit leaves alone — the
+    /// disk says nothing about the commit: a file staged at twenty megabytes and replaced
+    /// with five bytes weighed five bytes here and went into history at twenty (the
+    /// 2026-10-24 review's item 4). Those are asked of the index. When git cannot answer,
+    /// the fallback is the disk reading, said so in the log, because a preflight that quietly
+    /// weighed nothing would be the first version over again.
+    /// </para>
     /// </remarks>
     private async Task<bool> ConfirmLargeFilesAsync()
     {
@@ -5731,12 +5742,34 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         }
 
         var status = await _git.StatusAsync(CancellationToken.None).ConfigureAwait(true);
+        var staged = status.Changes.Where(c => c.IsStaged).ToList();
+
+        var fromIndex = staged
+            .Where(c => c.Unstaged is not ChangeKind.Unmodified)
+            .Select(c => c.Path)
+            .ToList();
+        var indexSizes = fromIndex.Count == 0
+            ? new Dictionary<string, long>()
+            : await _git.IndexBlobSizesAsync(fromIndex, CancellationToken.None).ConfigureAwait(true);
+        if (indexSizes is null)
+        {
+            _logger.Warn(LogCategory.Git,
+                "large-file preflight: git did not say what the index holds for " +
+                $"{fromIndex.Count} staged path(s) changed again on disk; weighing their " +
+                "working copies instead");
+        }
 
         var sized = new List<(string Path, long Bytes)>();
-        foreach (var change in status.Changes.Where(c => c.IsStaged))
+        foreach (var change in staged)
         {
-            // A staged deletion has no file to weigh, and a file deleted between the
-            // status and here weighs nothing either way.
+            if (indexSizes is not null && indexSizes.TryGetValue(change.Path, out var inIndex))
+            {
+                sized.Add((change.Path, inIndex));
+                continue;
+            }
+
+            // A staged deletion has no file to weigh and nothing in the index either; a
+            // conflicted path has no stage-0 entry and cannot be committed as it stands.
             var info = new FileInfo(Path.Combine(
                 root, change.Path.Replace('/', Path.DirectorySeparatorChar)));
             if (info.Exists)

@@ -266,6 +266,10 @@ internal sealed class CountingGitClient : IGitClient
     public Task<IReadOnlyList<string>> ListWorkingTreeAsync(CancellationToken ct) =>
         Task.FromResult(WorkingTree);
 
+    public Task<IReadOnlyDictionary<string, long>?> IndexBlobSizesAsync(
+        IReadOnlyList<string> paths, CancellationToken ct) =>
+        Task.FromResult<IReadOnlyDictionary<string, long>?>(new Dictionary<string, long>());
+
     /// <summary>How many working-tree diffs were asked for.</summary>
     public int WorkingTreeDiffCalls { get; private set; }
 
