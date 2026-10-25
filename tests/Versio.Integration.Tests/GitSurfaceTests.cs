@@ -705,6 +705,43 @@ public sealed class GitSurfaceTests(ITestOutputHelper output) : IDisposable
         "line 16\nline 17\nline 18 CHANGED\nline 19\nline 20\n";
 
     [SkippableFact]
+    public async Task A_skipped_hunk_that_removes_a_dash_dash_line_does_not_break_the_patch()
+    {
+        // ST comments can start with "--" (the IEC 61131-3 line comment, in some dialects),
+        // and removing one puts "--- ..." in the diff body. The builder copied that line out
+        // of the skipped first hunk into the header of the second, and git apply refused
+        // the patch with "corrupt patch". The 2026-10-24 review's item 19. End to end, since
+        // whether git accepts the result is the only thing that matters.
+        Skip.IfNot(GitAvailable, "git not on PATH");
+        await InitAsync();
+
+        // The comment sits between line 1 and line 2; everything after is the usual twenty.
+        Write("a.st", "line 1\n-- a comment\n" + Original[7..]);
+        await RunRawAsync("add", "-A");
+        await RunRawAsync("commit", "-m", "first");
+
+        // Hunk 0 removes the comment; hunk 1 changes line 18.
+        Write("a.st", Original.Replace("line 18\n", "line 18 CHANGED\n"));
+
+        var diff = await Client.DiffAsync("a.st", staged: false, CancellationToken.None);
+        output.WriteLine(diff);
+        Assert.Equal(2, HunkPatchBuilder.Count(diff));
+        Assert.Contains("\n--- a comment\n", diff, StringComparison.Ordinal);
+
+        var patch = HunkPatchBuilder.Build(diff, 1);
+        Assert.NotNull(patch);
+        output.WriteLine("--- patch ---");
+        output.WriteLine(patch);
+
+        var applied = await Client.ApplyToIndexAsync(patch!, reverse: false, CancellationToken.None);
+        Assert.True(applied.Success, applied.FailureReason);
+
+        var staged = await Client.DiffAsync("a.st", staged: true, CancellationToken.None);
+        Assert.Contains("line 18 CHANGED", staged, StringComparison.Ordinal);
+        Assert.DoesNotContain("a comment", staged, StringComparison.Ordinal);
+    }
+
+    [SkippableFact]
     public async Task One_hunk_can_be_staged_leaving_the_other_in_the_working_tree()
     {
         // The feature, end to end: git produces the diff, the builder cuts one hunk out of
