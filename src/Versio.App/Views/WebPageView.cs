@@ -169,22 +169,32 @@ public sealed class WebPageView : Border
             }
         };
 
-        // Only the file this view was asked for may be navigated to. Anything else is a link
-        // pressed inside the page: handed to the real browser through the logged command.
+        // Only the file this view was asked for may be navigated to. A link the USER pressed
+        // inside the page is handed to the real browser through the logged command; anything
+        // the page starts by itself is refused. This forwarded every navigation, and a
+        // <meta http-equiv="refresh"> needs no script to start one — so a pushed page could
+        // launch the user's browser at any address on a row click (the 2026-10-24 review's
+        // item 40). The decision lives in WebPageNavigation, where the suite can pin it.
         core.NavigationStarting += (_, e) =>
         {
-            // Compared without the fragment, so an in-page "#section" link still scrolls.
-            if (_shown is { } shown
-                && string.Equals(e.Uri.Split('#', 2)[0], new Uri(shown).AbsoluteUri,
-                                 StringComparison.OrdinalIgnoreCase))
+            switch (WebPageNavigation.Decide(e.Uri, _shown, e.IsUserInitiated, e.IsRedirected))
             {
-                return;
-            }
+                case NavigationDecision.Allow:
+                    return;
 
-            e.Cancel = true;
-            if (LinkCommand is { } command && command.CanExecute(e.Uri))
-            {
-                command.Execute(e.Uri);
+                case NavigationDecision.Forward:
+                    e.Cancel = true;
+                    if (LinkCommand is { } command && command.CanExecute(e.Uri))
+                    {
+                        command.Execute(e.Uri);
+                    }
+
+                    return;
+
+                default:
+                    e.Cancel = true;
+                    Report($"web page view refused a navigation the page started itself: {e.Uri}");
+                    return;
             }
         };
 
