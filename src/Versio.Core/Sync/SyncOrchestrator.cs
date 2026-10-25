@@ -2248,11 +2248,41 @@ public sealed class SyncOrchestrator
         }
     }
 
-    public Task ReleaseAfterDiscardAsync(string bindingId, CancellationToken ct)
+    /// <summary>
+    /// Something under the mirror was discarded. Release the lock only when nothing is left
+    /// to guard.
+    /// </summary>
+    /// <remarks>
+    /// A discard is per file, and the owner may have discarded one of several edits. The
+    /// first version released unconditionally and recorded the mirror <i>as it now stood</i>
+    /// as the last synced state — the surviving edits included. From then on the text gate
+    /// said "no change" for them and the next project save exported straight over them (the
+    /// 2026-10-24 review's item 3). So, unless the project side holds the lock, the mirror is
+    /// hashed first: while it still differs from what was last synced, the discard changed
+    /// nothing about what the lock guards, and the lock and the record are kept as they are.
+    /// A project-held lock keeps the old release: the discard reverted an uncommitted export,
+    /// the empty project hash forces the next event to export again, and that is wanted.
+    /// </remarks>
+    public async Task ReleaseAfterDiscardAsync(string bindingId, CancellationToken ct)
     {
+        if (_locks.TryGetValue(bindingId, out var current)
+            && current.Direction != SyncDirection.ProjectAuthoritative
+            && _bindings.TryGetValue(bindingId, out var binding))
+        {
+            var mirrorHash = await ExportTreeHashAsync(binding, ct).ConfigureAwait(false);
+            if (mirrorHash != current.LastSynced.MirrorHash)
+            {
+                _log.Info(LogCategory.Lock,
+                    $"{bindingId}: changes discarded, but the mirror still differs from the " +
+                    $"last synced state; {current.Direction} is kept and nothing is recorded");
+                return;
+            }
+        }
+
         _log.Warn(LogCategory.Lock,
             $"{bindingId}: changes discarded; releasing the direction lock");
-        return ApplyAsync(bindingId, SyncTrigger.ChangesDiscarded, string.Empty, ct);
+        await ApplyAsync(bindingId, SyncTrigger.ChangesDiscarded, string.Empty, ct)
+            .ConfigureAwait(false);
     }
 
     /// <summary>

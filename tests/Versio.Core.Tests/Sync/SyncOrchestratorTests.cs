@@ -785,6 +785,118 @@ public class SyncOrchestratorTests
         Assert.Equal(SyncDirection.Clean, h.Orchestrator.StateOf(BindingId));
     }
 
+    /// <summary>A synced harness whose export writes two mirror files, so one can be
+    /// discarded while the other keeps an edit.</summary>
+    private static async Task<Harness> SyncedWithTwoFiles(bool requireConfirmation)
+    {
+        var h = new Harness(new OrchestratorOptions { RequireImportConfirmation = requireConfirmation });
+        h.Codesys.BeforeRun = job =>
+        {
+            if (job.Operation == PlcOperation.Export)
+            {
+                h.SetExportedText("exported");
+                h.SetExportedText("exported", "Other.st");
+            }
+
+            return Task.CompletedTask;
+        };
+
+        await h.ProjectChanged();
+        await h.Orchestrator.ReleaseAfterPushAsync("c1", CancellationToken.None);
+        Assert.Equal(SyncDirection.Clean, h.Orchestrator.StateOf(BindingId));
+        return h;
+    }
+
+    [Fact]
+    public async Task Discarding_one_of_two_unconfirmed_edits_does_not_record_the_other_as_synced()
+    {
+        // Two mirror files edited, neither imported yet (the import waits for confirmation,
+        // so the binding is still Clean). The owner discards ONE. The release used to record
+        // the mirror as it now stood — the surviving edit included — as the last synced
+        // state: the next project save then exported straight over it, and the next text
+        // event said "no change" (the 2026-10-24 review's item 3).
+        var h = await SyncedWithTwoFiles(requireConfirmation: true);
+        h.SetExportedText("edited A");
+        h.SetExportedText("edited B", "Other.st");
+        Assert.Equal(SyncVerdict.AwaitingConfirmation, (await h.TextChanged(confirmed: false)).Verdict);
+
+        // git restore --worktree plc/A/Other.st
+        h.SetExportedText("exported", "Other.st");
+        await h.Orchestrator.ReleaseAfterDiscardAsync(BindingId, CancellationToken.None);
+
+        // The edit to Simulation.st is still an edit nothing has imported: the next text
+        // event offers it again rather than answering "no change".
+        Assert.Equal(SyncVerdict.AwaitingConfirmation, (await h.TextChanged(confirmed: false)).Verdict);
+        Assert.Equal("edited A", await h.Fs.ReadAllTextAsync(Path.Combine(Root, "plc", "A", "Simulation.st"), CancellationToken.None));
+    }
+
+    [Fact(Skip = "Known hole, found while fixing review item 3 on 2026-10-24: a Clean binding " +
+                 "with an unconfirmed mirror edit exports over it on the next project save. " +
+                 "dev.md promises a Conflict state for 'both sides changed'; nothing enters it. " +
+                 "Kept red-fenced until the owner decides how the engine should refuse.")]
+    public async Task A_project_save_does_not_export_over_an_unconfirmed_mirror_edit()
+    {
+        var h = await SyncedWithTwoFiles(requireConfirmation: true);
+        h.SetExportedText("edited A");
+        Assert.Equal(SyncVerdict.AwaitingConfirmation, (await h.TextChanged(confirmed: false)).Verdict);
+
+        h.SetProject("v2");
+        var outcome = await h.ProjectChanged();
+
+        Assert.NotEqual(SyncVerdict.Completed, outcome.Verdict);
+        Assert.Single(h.Codesys.Jobs, j => j.Operation == PlcOperation.Export);
+        Assert.Equal("edited A", await h.Fs.ReadAllTextAsync(Path.Combine(Root, "plc", "A", "Simulation.st"), CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task Discarding_one_edit_under_a_text_lock_keeps_the_lock_while_another_remains()
+    {
+        // One edit imported (the binding is TextAuthoritative), a second file edited since
+        // and not yet imported. Discarding the first file released the lock to Clean, and
+        // the opposite direction — an export over the second file's edit — was open.
+        var h = await SyncedWithTwoFiles(requireConfirmation: false);
+        h.SetExportedText("edited A");
+        Assert.Equal(SyncVerdict.Completed, (await h.TextChanged()).Verdict);
+        Assert.Equal(SyncDirection.TextAuthoritative, h.Orchestrator.StateOf(BindingId));
+
+        h.SetExportedText("edited B", "Other.st");
+
+        // git restore --worktree plc/A/Simulation.st
+        h.SetExportedText("exported");
+        await h.Orchestrator.ReleaseAfterDiscardAsync(BindingId, CancellationToken.None);
+
+        Assert.Equal(SyncDirection.TextAuthoritative, h.Orchestrator.StateOf(BindingId));
+        h.SetProject("v2");
+        Assert.NotEqual(SyncVerdict.Completed, (await h.ProjectChanged()).Verdict);
+        Assert.Equal("edited B", await h.Fs.ReadAllTextAsync(Path.Combine(Root, "plc", "A", "Other.st"), CancellationToken.None));
+
+        // Discarding the imported edit as well takes the mirror back to HEAD, which is not
+        // the state the import synced either: the lock stays, and the text side — still the
+        // authoritative one — will carry that revert into the project on its next event
+        // rather than an export putting the discarded edit back into the mirror.
+        h.SetExportedText("exported", "Other.st");
+        await h.Orchestrator.ReleaseAfterDiscardAsync(BindingId, CancellationToken.None);
+        Assert.Equal(SyncDirection.TextAuthoritative, h.Orchestrator.StateOf(BindingId));
+    }
+
+    [Fact]
+    public async Task Discarding_the_only_unsynced_edit_releases_the_text_lock()
+    {
+        // The release that is still wanted: the mirror is back at exactly what was last
+        // imported, so nothing is left for the lock to guard.
+        var h = await SyncedWithTwoFiles(requireConfirmation: false);
+        h.SetExportedText("edited A");
+        Assert.Equal(SyncVerdict.Completed, (await h.TextChanged()).Verdict);
+        Assert.Equal(SyncDirection.TextAuthoritative, h.Orchestrator.StateOf(BindingId));
+
+        h.SetExportedText("edited B", "Other.st");
+        // git restore --worktree plc/A/Other.st
+        h.SetExportedText("exported", "Other.st");
+        await h.Orchestrator.ReleaseAfterDiscardAsync(BindingId, CancellationToken.None);
+
+        Assert.Equal(SyncDirection.Clean, h.Orchestrator.StateOf(BindingId));
+    }
+
     // --- crash and reboot ------------------------------------------------------
 
     [Fact]
