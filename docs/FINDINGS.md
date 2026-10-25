@@ -19,6 +19,317 @@ produce a diff touching everything else.
 
 ---
 
+### An external review's forty-one findings, verified one by one: sixteen ways to lose work, and the twenty-five behind them
+
+**2026-10-24, the owner pasted a reviewer's list with no other words** — forty-one numbered
+findings, sixteen marked P1 (work loss, wrong PLC content, a crash) and twenty-five P2, with the
+reviewer's own note that no fix had been applied. Every item was read against the code before
+anything was changed, reproduced with a failing test where a test could reach it, and fixed in
+its own commit; the few the test cannot reach without a real IDE say so below. **Forty of the
+forty-one are real.** The forty-first (28) is real for TIA and TwinCAT and refuted for CODESYS,
+whose runner kills its own child. One hole none of the forty-one named was found under item 3 and
+is left open, red-fenced, for the owner.
+
+The pattern across the sixteen P1s is worth naming before the list: in twelve of them the code
+was *right about the common case and silent about the other one*. A path is a name (until it has
+a bracket). The stash at position zero is ours (until a terminal pushes one). `--ours` is this
+branch (until a rebase). The live file is what was exported (until the IDE saves during the copy).
+Lines inside a container are unordered (until a child spans two). An empty implementation means a
+DUT (until it means a deleted body). None of these were guesses when written; each was a rule with
+one exception nobody had met.
+
+**The P1s, in the order they were fixed:**
+
+- **15 — a project with an umlaut in its name skipped the merge guard.** `IncomingPathsAsync` was
+  the one path listing in `GitCliClient` without `-z`; git's default `core.quotePath` wrote
+  `"Pr\303\274fung.project"`, quotes and octal included, which equals no project path and starts
+  with no mirror prefix, so `MergePreflight` found nothing affected and the import protection was
+  skipped. Listed with `-z` now. Commit `2a89ba2`.
+- **1 — discarding `part[1].st` discarded `part1.st`.** Every pathspec is a glob unless told
+  otherwise, and staging, discarding and resolving all passed the ticked name through.
+  `--literal-pathspecs` precedes every verb whose operand is a file path. **Not**
+  `GIT_LITERAL_PATHSPECS=1` on every process: the integration suite caught that on the first
+  run — under it `stash push --include-untracked` records the untracked file and then leaves it
+  on disk, because git's own clean step inside stash is written with pathspec magic. Commit
+  `9ba3374`.
+- **24 — the auto-stash offer dropped the wrong stash.** `stash@{n}` was resolved once and held
+  across two modal dialogs; a stash pushed from a terminal meanwhile took position zero, so
+  Discard dropped the terminal's stash and left ours, and Restore popped the terminal's work
+  into the tree. The comment above the loop said the captured ref was safe because nothing
+  else moved. Both the drop and the pop re-read the list and match the record's SHA at the
+  moment of the act, and refuse with "already gone" otherwise; the drop's result is checked
+  before the record is forgotten. Commit `8317c66`.
+- **29 — "Keep mine" took the upstream's file during a rebase.** The button's parameter went to
+  git as `--ours` unchanged, and under a rebase `--ours` is the upstream. The remark claimed
+  the view chose the labels from `MergeState`; the XAML has fixed labels. Mapped by merge state
+  now, and logged both ways. Commit `9b043f8`.
+- **9 — a rescan blanked a live lock.** `RecoverAsync` mapped only `ReadoptedAfterRestart` to
+  the persisted lock; `HeldByLiveSession` — usually this very process rebuilding its engine
+  because a project appeared — fell through to a blank `Clean`, and an import could run over
+  unpushed project work. The existing test asserted the decision and not the state, which is why
+  it stayed green. Commit `0ea364d`.
+- **3 — discarding one of two mirror edits recorded the other as synced.**
+  `ReleaseAfterDiscardAsync` released unconditionally and recorded the mirror as it stood,
+  surviving edits included: the text gate then said NoChange for them and the next project save
+  exported over them. Unless the project side holds the lock, the mirror is hashed first and
+  nothing is recorded while it still differs from the last synced state. Commit `a0302af`.
+  **Found alongside and left open:** a Clean binding with an *unconfirmed* mirror edit exports
+  over it on the next project save with or without a discard — `dev.md` promises a `Conflict`
+  state for "both sides changed" and nothing in the orchestrator enters it.
+  `A_project_save_does_not_export_over_an_unconfirmed_mirror_edit` is in the Core suite, skipped
+  with that sentence, until the owner decides how the engine should refuse.
+- **2 — a save during a copy export was recorded as exported.** When the IDE holds the project
+  the export reads a scratch copy, and the hash recorded as exported was taken afterwards from
+  the live file. The copy is hashed before the run (the run leaves sidecars in the scratch
+  folder) and that is what `ExportSucceeded` records. Commit `313071a`.
+- **33 — three nodes of malformed ladder XML ran the process out of memory.** A contact whose
+  in and out pins share a net is an edge from a net to itself; the series step found it as both
+  the way into the point and the way out, merged it with itself into a series twice as long,
+  removed one edge and went round again. Refused with "feeds itself"; the network draws flat.
+  The test timed out at ten seconds before. Commit `adcef1e`.
+- **20 — native XML equivalence sorted lines, and lost which child they belonged to.** Two
+  multi-line children with their values swapped sorted to the same bag of lines, compared
+  equivalent, and the export kept the old file on disk — a real change never reached the
+  mirror. Both normalisers now cut a container's body into whole sibling elements by tag depth
+  and sort those; six new parity corpus cases pin that the C# and the python cut alike (the
+  python mutated back to a line sort diverges on the first). Commit `4b83f89`.
+- **22 — restoring the oldest of ten backups deleted it first.** The safety copy made eleven,
+  pruning ran inside it, and the restore source went before it was read. The source is pinned
+  through the prune. The fake file system's `CopyAsync` used to write an empty file for a
+  missing source, which made this a silently emptied project in the suite; it throws now, as
+  `File.Copy` does. Commit `a0bd927`.
+- **21 — restoring a directory payload overlaid the backup.** A file added after the backup
+  survived the restore, so the result was neither the backup nor the damaged state. Files the
+  backup does not have are deleted before the copy, inside the own-write scope. Commit `adb34ef`.
+- **5 — a DUT holding a literal escape marker came back changed.** The export writes a
+  declaration-only object with `normalize_decl_only` and never escapes it; the import read every
+  plain `.st` through `split_st`, which unescapes and cuts at a delimiter, so `//!VERSIO-ESC!D`
+  in a comment became the delimiter and a literal delimiter line truncated the type. The import
+  now chooses by the object, as the export does — no textual implementation, no decoding —
+  through `read_textual` in `versio_text`, pinned against `StTextCodec.DeclarationOnly` and
+  `Split` by the parity corpus plus three adversarial DUTs. Commit `192b5cf`. *CODESYS gate owed.*
+- **14 — a 600 KB manifest overflowed the stack.** An honest ownership chain four thousand
+  generations long passed the cycle guard and `Attach` recursed once per generation. The walk
+  records a depth per guid and lays anything past `MaxNesting` (64) flat; the 10,000-deep test
+  runs on a 1 MB-stack thread and crashed the test host before. An explicit stack in `Attach`
+  alone was rejected: the later walkers and the WPF tree recurse over the same depth.
+  Commit `3a60d34`.
+- **28 — Stop killed a Portal the engineer had opened.** The TIA and TwinCAT runners reaped
+  every IDE process that was not running when the host started — a diff over the whole run.
+  Each host now measures the IDE's PID across the creation call alone and reports it as
+  `ide_pid`; `ChildProcess.KillOwned` kills that PID only after checking image name and start
+  time, and no reported PID means nothing is reaped by name, said in the log. Three Integration
+  tests on the decision (a decoy of the same name survives; red with the cross-check removed).
+  CODESYS was never affected. Commit `0e862de`. *TIA and TwinCAT gates owed for the emission.*
+- **23 — a deleted TwinCAT body stayed in the project.** `SetTexts` skipped the implementation
+  write whenever the file had none, right for a DUT and wrong for a cleared function block, and
+  only the declaration was read back. `HostText.ImplementationWriteFor` tells the cases apart by
+  what the object holds; the body is read back both ways. The host is an exe no test can
+  reference, so `HostText.cs` is compiled into the TwinCAT pure tests as a linked source — which
+  also pins, for the first time, that the host's codec splits exactly as `StTextCodec` does.
+  Commit `66697b7`. *XAE gate owed: whether it accepts an empty `ImplementationText`.*
+- **27 — a station comment over 240 characters round-tripped cut.** `TryAttribute` returned
+  every string through `Scalar`, the probe's 240-character display clip, and the device
+  catalog's export, before-write check and read-back all went through it. Strings come back
+  whole; the two listing sites clip for themselves; the gate's Comment marker is 300 characters
+  long. Commit `a22a430`. *TIA gate owed.*
+- **31 — renaming `ApplicationA/Simulation` rewrote ApplicationB's task.** Task POU lists are
+  bare names, unique within an Application; the retargeting walked the whole project. It starts
+  at the renamed object's own Application now (`versio_tree.application_of`, through `parent`),
+  and an object outside any Application retargets nothing and warns. A CPython parity test builds
+  two Applications each calling `Simulation`. Commit `228f2ef`. *CODESYS gate owed.*
+
+**Two traps the session itself fell into, for the next one.** `refs/stash` is shared across every
+worktree of a repository: a `git stash` in one worktree and a `git stash pop` in another swapped
+two uncommitted files between the trees, and only `git status` on both sides showed it. And
+`GIT_LITERAL_PATHSPECS` is not the same thing as `--literal-pathspecs` on the one command that
+needs it — see item 1.
+
+**The P2s in git and the git panel** (eleven, fixed in a worktree and cherry-picked):
+
+- **4 — a modified `README.txt` ahead of a rename lost the rename.** `DetectRenamesAsync`
+  scanned the `-z` fields of `diff --name-status --find-renames` itself and took any field
+  starting with `R` as a status: a one-path record was skipped a field at a time, `README.txt`
+  landed in the status slot and the map came back `{"R100" → "plc/Old.st"}`, so the renamed
+  project's binding reported broken and its new path untracked. `GitNameStatusParser.Renames`
+  in Core walks each record by its own width and the client has no scan left. Patching the
+  scan was rejected as a second parser of the same stream. Commit `16dc428`.
+- **13 — a later `-filter` override was read as "still LFS".** The preflight kept only rules
+  containing `filter=lfs` and asked whether any matched, so `*.bin filter=lfs` followed by
+  `huge.bin -filter` suppressed the warning for a large ordinary blob — a false negative in a
+  class whose remarks promised only spurious questions (`filter=lfsx` counted too). Every rule
+  that says anything about `filter` is kept in file order with its verdict, last match wins, and
+  a rule that does not mention `filter` is left out rather than recorded as "not lfs". Six Core
+  tests, four red before. Commit `b4c99a6`.
+- **26 — a mirror path with a space wrote a `.gitattributes` line git could not read.** Written
+  unquoted, `src/My App/export/** text eol=lf` splits on the space, so the mirror had no LF
+  rule (`check-attr` said `unspecified`), and `ExistingPatterns` read the first token, so the
+  rule never counted as present and every adoption appended another block. A new
+  `GitAttributesPattern` C-quotes a pattern with whitespace, `"` or `\` and reads a quoted token
+  back; the planner, the covered-check and the preflight all go through it. The Integration test
+  asks git itself (`check-attr eol` → `lf`). Commit `b10fa33`.
+- **39 — `origin/topic` plus `upstream/topic` invented a local `topic`.** `BranchInventory.Combine`
+  promoted any row found by name to Both when a second remote carried the same short name, so
+  deletion ran `git branch -d` on a branch the clone never had and skipped the remote half on
+  the failure. Only a LocalOnly row becomes Both now. Left for a follow-up: deletion still
+  addresses the hardcoded "origin", and `BranchInfo.RemoteRef` holds one remote. Commit `8e9fc8d`.
+- **38 — credentials for `host:8443` were asked for under `host`.** Git keys its store by
+  `host=h:8443`; the three credential calls passed the port-stripped `Host`, so the status
+  read "none", sign-in stored under a key no push used, and `credential reject` exited 0 having
+  erased nothing — the remark in `RemoteUrl` asserted the opposite. `RemoteUrl.CredentialHost`
+  (the authority, named for why) goes to all three; the Integration test stores a credential
+  under a private `store --file=` helper and measures what git keys by. Commit `b483d14`.
+- **25 — in a linked worktree the exclude rule went where git does not look.**
+  `rev-parse --absolute-git-dir` answers `.git/worktrees/<name>` there, and git reads
+  `info/exclude` from the common directory only, so `.versio/local/` stayed untracked and
+  `stash push --include-untracked` swept the auto-stash record — the hole FINDINGS already
+  describes for `.gitignore`, back through a worktree. `IGitClient.CommonGitDirectoryAsync`
+  (`--git-common-dir`) feeds the exclude; the per-worktree directory stays for the merge
+  markers, which live there. A new App class opens a linked worktree through the real shell,
+  because that one line had no test. Commit `1c4651b`.
+- **16 — the outgoing preview showed the previous branch's commits.** `NoteStatus` compared
+  ahead/behind only; two branches each one ahead of their own upstream have equal counts, so a
+  checkout left the old `PreviewCommits` under the new badge. The branch name and upstream
+  count as movement now. Commit `2ab84f0`.
+- **19 — a skipped hunk's removed `-- comment` became a second file header.** `HunkPatchBuilder`
+  ran every line of an unselected hunk through `IsFileHeader`, which matches `--- `; the
+  2026-09-21 fix (`a5e914f`) had given only the parser a line budget. The builder now reads the
+  `@@` counts through the parser's own header reader and treats a skipped hunk's lines as
+  content while it owes lines on either side; the Integration test applies hunk 1 of such a diff
+  with `git apply --cached`. Commit `88d051a`.
+- **30 — a conflicted stash apply had no conflict section.** Visibility was `IsMidMerge`, and the
+  merge state reads only merge and rebase markers, so the files moved into Conflicted, the
+  commit button said "Resolve the conflicts first", and the Keep buttons were hidden. A new
+  `MergeState.Conflicts` is set when the markers say None and the status has conflicts;
+  `ShowsConflicts` drives the section, Abandon is neither enabled nor shown (there is no
+  operation to abandon), and under a stash apply mine is HEAD and theirs is the stash. Applying
+  a stash with conflicts now raises a warning rather than a failure. Commit `8c3f7e6`.
+- **32 — "Stage hunk" and then Commit committed both hunks.** The commit re-added every included
+  path whole. A row that is staged and still changed in the working tree is `IsPartlyStaged`:
+  the commit leaves it as the index stands, says so before the press ("N partly staged file(s)
+  go in as staged") and after. A separate staged list with its own button was rejected: the
+  one-button shape was `CommitPlan`'s deliberate choice. Commit `23a5ea4`.
+- **41 — Amend rewrote whatever HEAD was after the dialog.** HEAD and the unpushed set were read
+  before the modal confirmation and `commit --amend` ran after it, so a commit, checkout or
+  push landing meanwhile rewrote a commit the dialog never named or one already pushed. Both
+  are re-read after the answer; a moved or pushed HEAD is refused with "Not amended." and the
+  typed message is kept. A compare-and-swap through `update-ref` was rejected: it closes
+  milliseconds, not the dialog, and spreads the amend over three calls. Commit `7f9819a`.
+
+**The P2s in the app, the watcher and the XML reader** (six, fixed in a worktree and
+cherry-picked):
+
+- **36 — a machine without CODESYS could not attach a repository.** `CodesysToolchain.ProbeAsync`
+  picked the install owning the resolved profile with `?? installs[0]`, which threw
+  `ArgumentOutOfRange` before `NoInstallFound` could be reported; the probe runs inside
+  `AttachAsync`, so a TIA-only machine lost the orchestrator and the watcher, and the vendors
+  after CODESYS were never probed. The owner is `FirstOrDefault` and only the resolved arm uses
+  it; `SyncViewModel` now catches a vendor's probe exception, logs it with the stack, records the
+  vendor as unavailable with the reason, and the refusing runner says that reason instead of "not
+  exported yet". A pure test probes an empty search root through a new internal constructor.
+  Commit `d462495`; a follow-up `215c2ff` makes the App test wait on the attach's own log lines
+  rather than a tree row that the lock races, one run in ten.
+- **12 — `{}` in `tree.json` stopped the repository opening.** The positional
+  `TreeExpansion.State` deserialised with null lists, `Restore` called `UnionWith(null)`, and the
+  catch covered only JSON, IO and access errors — a file documented as always safe to lose ended
+  `AttachAsync` before the orchestrator was built. `Restore` treats a missing list as empty and
+  the catch is every exception but cancellation. Measured: with only the catch widened the shell
+  cases stay green, so a direct `Restore(null, null)` test watches the `?? []`. Commit `37e59bf`.
+- **37 — reordering two tree rows produced three.** `TreeRow.Reconcile` inserted on every path
+  mismatch and never removed the stale row: `[A,B]` against `[B,A]` gave `[B,A,B]`, with WPF's
+  selection on whichever copy. Reachable through the library level (sorted by SystemLibrary and
+  display name while identity is the path) and the task level (the IDE's order).
+  `ShellViewModel.ReconcileInto` had the same pass, saved only by callers sorting by path. Both
+  now move the matching later row into place, so the instance — selection, expander, tick —
+  survives, and trim past `fresh.Count`. Five reorder cases red before. Commit `d858bc2`.
+- **40 — a pushed HTML file opened the browser by itself.** `WebPageView` forwarded every
+  navigation that was not the shown file to `OpenLink` without asking `IsUserInitiated`, and
+  `IsScriptEnabled = false` does not stop a `<meta http-equiv="refresh">`: clicking the file's
+  row launched the default browser at any address. The decision is a pure
+  `WebPageNavigation.Decide(uri, shown, isUserInitiated, isRedirected)` — Allow, Forward or
+  Refuse — tested six ways without WebView2; the handler forwards only a click and reports the
+  rest, as the Markdown and ladder views already did. Redirects that began with a click are
+  refused too: the user chose the link, not where a server sent it. Commit `be2f433`.
+- **18 — `&#10;` in a comment stretched a member's span into the next member's lines.**
+  `SafeXml.LinesOf` ended a span at the text's start line plus the newlines in its *decoded*
+  value, so an encoded line break on one physical line added a phantom line, `ByLine` (the
+  smallest span holding a line) could hand the next member's line to this one, and coverage
+  walked the same spans. Openness writes multi-line comments exactly this way; no fixture had
+  one. The parser keeps the source beside the document and counts the breaks the file holds
+  between the node's position and the next `<` (or `]]>` for CDATA). CODESYS numbers
+  declaration rows by splitting the decoded blob under a comment that said "an XML entity never
+  adds a line" — true of `&lt;`, false of `&#10;` — so a blob with encoded breaks keeps its rows
+  and loses their line numbers (`HasEncodedLineBreaks`): no line to pin rather than the wrong
+  one. Mapping decoded lines to physical ones was rejected as machinery for a file CODESYS never
+  writes. Commit `e2fb3f4`.
+- **11 — the mirror the first export created was never watched.** `WatchTree` on a missing
+  root warned and returned, and nothing called it again; the export's rename/rename/delete swap
+  moved the watcher's handle into `.versio_trash`. **The review's assumption corrected by the
+  test:** the rename raises nothing on the handle, but deleting the trash raises `Error`
+  ("Access is denied"), after which the old handler polled known paths once and kept the dead
+  handle. Each tree now keeps a sentinel watcher on its nearest existing ancestor and rebuilds
+  the tree watcher on whatever is at the path when the root appears, is renamed or deleted; an
+  `Error` rebuilds it too; the safety poll enumerates the roots. Two Integration tests on the
+  real file system, the poll an hour away so only a rebuilt watcher can deliver; both red
+  before. Re-watching from `SyncViewModel` after an export was rejected: it covers one of the
+  two ways a root changes under a watcher that can notice both itself. Commit `08efbae`.
+
+**The P2s in the web viewer** (seven, fixed in a worktree and cherry-picked; vitest 200 → 209,
+`Versio.Web.Tests` 448 → 450):
+
+- **6 — a release tagged `latest` never opened.** `ReleasesPage` folded the `/releases/latest`
+  route marker into the tag's own string, so `/releases/tag/latest` never fetched its notes and
+  was redirected to the newest release, or loaded forever. The redirect is keyed on the `latest`
+  prop and the fetch on the route parameter alone; a sentinel string was rejected because a tag
+  is any ref name. Commit `f9ac533`.
+- **7 — a refused milestone pick stayed selected.** The editor kept the picked option until the
+  poll agreed, and a refused write changes nothing to agree with, so the rejected value sat under
+  a heading naming the real milestone and re-picking it fired no change event. `write.run`'s
+  existing false answer lets the pick go; clearing on every run was rejected because that is the
+  snap-back the local pick was added for the same day. Commit `20ab639`.
+- **8 — the pull counts rewrote a quoted label.** `WithState` swapped the leftmost `is:` token
+  with a boundary regex, which the morning's fix stopped only when the token touched its quotes;
+  `label:"foo is:closed bar" is:open` had its label rewritten and its state kept. The swap now
+  walks the tokenizer's own matches, where a quoted phrase is one token, and the second regex is
+  gone — a second regex over the tokenizer's text was the drift. Commit `d9fd7a8`.
+- **10 — only the first ladder on a review page had working controls.** The script took
+  `document.querySelector('.ld-page')` and returned once that one was scripted; jumps resolved by
+  `getElementById` while row ids repeat per diagram; F7 always stepped the first. Every unscripted
+  page is set up, a jump resolves inside its page, and the keyboard steps the page last clicked
+  or focused. Unique ids per diagram were rejected: `LadderHtml` draws one diagram and does not
+  know it is one of several. Four tests over two diagrams sharing ids. Commit `0ce6fb0`.
+- **17 — a second thread under a member row spanned one column.** The slot's `colSpan` was read
+  from the element it goes after, which for a second thread is the first thread's one-cell slot
+  row — the shape fixed in the side-by-side branch on 2026-10-24 and missed in the table branch
+  beside it. The span is the member row's own `cells.length`. Commit `ffc6249`.
+- **34 — the fork-branch field could not be typed.** `value={fork ? form.head : ''}` emptied the
+  field on every keystroke until a colon existed, and each bare character became the head and
+  started a `/compare` of a branch called "b"; the existing test pasted `bob:feature` whole. The
+  field keeps its own text and commits to the form only with a colon in it; the test types one
+  character at a time and asserts no `/compare` was fetched. Commit `4852c53`.
+- **35 — every 51st anonymous pull request was never listed.** The list fetched `per_page=51` at
+  page N, showed fifty and said next was N+1 — REST pages are in units of `per_page`, so page 2
+  began at the 52nd; the fake did the same arithmetic. `per_page=50`, and a full page decides
+  `next` with a one-row probe at `page N·50+1`; the page clamp widened so the probe is not
+  clamped. The `Link` header was rejected as wider than the defect (the reader returns bodies).
+  Cost: one extra call per full page. Commit `abadbb4`.
+
+**Where it stands.** Forty-three commits on `VersioWeb`, one per item (plus one test-only
+follow-up and this write-up); every suite without an IDE is green over all of them — Core 1,951
+(one skipped, the hole above), Integration 188, Arch 36, CODESYS pure 404 and parity 101, TIA
+pure 102, TwinCAT pure 27, Web 450, vitest 209, App 833 — and the TIA and TwinCAT gates skip
+cleanly here. **Five fixes still owe their IDE gate**: the CODESYS gate over items 5 and 31 (the
+import script and the task retargeting), the XAE gate over 23 (an empty `ImplementationText`)
+and the ide_pid half of 28, and the TIA gate over 27 (the 300-character Comment marker) and the
+other half of 28. **Two follow-ups are named and not done:** the unconfirmed-edit export under
+item 3 (`EnterConflict` has no caller), and branch deletion still addressing the hardcoded
+"origin" after item 39. The reviewer's own validation ran no IDE gate either.
+
+The P2 write-ups were drafted by the three sessions that fixed them, in their own worktrees, and
+read here against the commits before being kept.
+
+---
+
 ### The owner's first look at the page: GitHub's mark where Versio's belonged, and a review that went read-only without a word
 
 **2026-10-24, the owner looked at the finished shape and said two things.** First: "looks so

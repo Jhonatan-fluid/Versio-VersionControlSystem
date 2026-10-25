@@ -947,7 +947,10 @@ sequenceDiagram
 
 - **Commit** does not release the lock.
 - **Push** calls `ReleaseAfterPushAsync` / `PushSucceeded`.
-- **Discard** of a mirror file can release too (`ReleaseAfterDiscardAsync`).
+- **Discard** of a mirror file releases too (`ReleaseAfterDiscardAsync`) — but only when
+  the mirror is back at the last synced state. A discard of one of several edits keeps the
+  lock and the record as they are; releasing unconditionally recorded the surviving edits
+  as synced and the next export wrote over them (FINDINGS 2026-10-24, item 3).
 
 **Commit gate** ([`CommitGate.cs`](../src/Versio.Core/Sync/CommitGate.cs)): if the project
 hash ≠ `LastSynced`, export and stage first. You cannot commit a project whose text

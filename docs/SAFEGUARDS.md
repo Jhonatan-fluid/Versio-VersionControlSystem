@@ -372,8 +372,11 @@ is orphaned — hidden, holding the project, and mid-write if it was importing.
   CODESYS tree deliberately rather than orphan it, and flush lock state so the next open recovers
   cleanly. A session Job Object with `KILL_ON_JOB_CLOSE` reaps CODESYS.exe and git.exe if Versio
   is Task-Manager-killed. Host.exe is not in that job; it watches the parent PID and Quits COM.
-  Stop also snapshots Portal/XAE PIDs before Host starts and reaps only the ones this run
-  created — `Kill(entireProcessTree)` on Host does not reach those COM servers.
+  Stop also reaps the one Portal/XAE PID the host reports as its own (`ide_pid`, measured
+  across the creation call) — `Kill(entireProcessTree)` on Host does not reach those COM
+  servers. ~~A snapshot of PIDs before Host starts, reaping everything new~~ killed an IDE
+  the engineer opened during the run (FINDINGS 2026-10-24, item 28); no reported PID now
+  means nothing is reaped by name, and the log says so.
 - On every path out, kill orphaned CODESYS children explicitly. `KillTree` already exists.
 
 ---

@@ -123,12 +123,17 @@ refuses a plan-less import instead of fabricating an empty plan. Findings, 2026-
 Since 2026-08-21 the wait honours cancel (`ChildProcess.WaitForExitOrKill`): Stop closes
 stdin so the host can `TryDispose` the portal, then kills leftovers. Host.exe is **not**
 in the kill-on-close Job Object — that would skip Quit. `VERSIO_PARENT_PID` plus a
-stdin-EOF watch: if Versio dies, the host Disposes COM and exits. Portal PIDs are
-snapshotted before Host starts (`Siemens.Automation.Portal`) so a cancel reaps only the
-instance this run created. The 15-minute mutex wait observes the token too. The log
+stdin-EOF watch: if Versio dies, the host Disposes COM and exits. The host measures
+`Siemens.Automation.Portal` PIDs across its `new TiaPortal(...)` call alone and reports
+the one that appeared as `ide_pid`; a cancel reaps that PID only, after checking its
+image name and start time (`ChildProcess.KillOwned`). ~~Snapshotted before Host starts~~
+reaped every Portal that appeared during the whole run, the engineer's included
+(FINDINGS 2026-10-24, item 28). The 15-minute mutex wait observes the token too. The log
 says `cancelled while waiting for the machine-wide TIA Portal lock`, or `closed stdin
-so the host can Quit COM`, and if Portal outlived Host, `reaped N leftover
-Siemens.Automation.Portal process(es) this run started`.
+so the host can Quit COM`, and if Portal outlived Host, `reaped the
+Siemens.Automation.Portal process this run started (pid N) — nothing else`; with no
+reported PID, `the host reported no Siemens.Automation.Portal pid; nothing was reaped by
+name`.
 
 The job schema (`TiaPortalJob` / `JobReader`):
 
