@@ -41,6 +41,38 @@ internal static partial class HostApp
             return;
         }
 
+        // Every file that targets a PLC must name a live one, checked BEFORE anything is
+        // written — renames included, which run first. This used to be `MatchPlc(...) ??
+        // plcs[0]` at the point of use: a plan for Device2/PLC2 whose device had been
+        // renamed in Portal since the export wrote Device2's payload into Device1 and saved
+        // (the fifth review's P1, reproduced against fakes in the pure tests). The whole plan
+        // is refused rather than the one file, because a plan is one unit: applying the half
+        // that resolves leaves the project in a state no plan described, and the remedy —
+        // export again, re-plan — is the same either way. A fatal, not a warning, because
+        // the runner turns a warning into "succeeded, with notes" and the lock moves to
+        // ImportSucceeded; the mirror's edit would then sit unapplied until the next export
+        // swept it away. Nothing has been written when this fires, so Save is not reached.
+        var unresolved = new List<string>();
+        foreach (var file in files)
+        {
+            var rel = Str(file, "path") ?? "";
+            if (IsSkip(Str(file, "action") ?? "") || !TargetsPlc(rel))
+            {
+                continue;
+            }
+
+            if (MatchPlc(plcs, Str(file, "resolve"), rel) is null)
+            {
+                unresolved.Add(rel);
+            }
+        }
+
+        if (unresolved.Count > 0)
+        {
+            EmitFatal(UnresolvedPlcRefusal(unresolved, plcs));
+            return;
+        }
+
         foreach (var rename in renames)
         {
             var guid = Str(rename, "guid");
@@ -71,8 +103,7 @@ internal static partial class HostApp
             var action = Str(file, "action") ?? "";
             var rel = Str(file, "path") ?? "";
             var abs = Path.Combine(srcDir, rel.Replace('/', Path.DirectorySeparatorChar));
-            if (action.Equals("skip", StringComparison.OrdinalIgnoreCase)
-                || action.Equals("Skip", StringComparison.Ordinal))
+            if (IsSkip(action))
             {
                 continue;
             }
@@ -83,16 +114,33 @@ internal static partial class HostApp
                 continue;
             }
 
-            var plc = MatchPlc(plcs, Str(file, "resolve"), rel) ?? plcs[0];
-            if (action is "text" or "ApplyText" or "create" or "Create")
+            if (!TargetsPlc(rel))
             {
-                if (rel.EndsWith(".devices.yaml", StringComparison.OrdinalIgnoreCase))
+                // A device catalog belongs to the project's stations, not to a PLC, which is
+                // why the pre-flight above does not ask it to name one.
+                if (action is "text" or "ApplyText" or "create" or "Create")
                 {
                     ApplyDeviceComments(project, abs);
                     Emit("object", "path", rel, "action", action);
-                    continue;
+                }
+                else
+                {
+                    // The planner never plans one, so this is a plan this host does not
+                    // understand — said rather than skipped.
+                    Emit("warning", "msg", "kept " + rel + ": a device catalog is applied as text, not as " + action);
                 }
 
+                continue;
+            }
+
+            // Never a fallback here: the pre-flight refused the plan if this could be null,
+            // so a null now is a bug in that check, and throwing turns it into a fatal that
+            // skips Save rather than a write into whichever PLC happens to be first.
+            var plc = MatchPlc(plcs, Str(file, "resolve"), rel)
+                      ?? throw new InvalidOperationException(
+                          "no live PLC for " + rel + " — the plan should have been refused before any write");
+            if (action is "text" or "ApplyText" or "create" or "Create")
+            {
                 // Throws rather than emitting success: import used to report the path
                 // in ChangedPaths after a generate that left the live block unchanged
                 // or unexportable. A throw skips Save, so the file on disk is intact.
@@ -914,14 +962,43 @@ internal static partial class HostApp
         }
     }
 
+    private static bool IsSkip(string action) =>
+        action.Equals("skip", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// Does this mirror file land on a PLC? Everything does except the device catalog,
+    /// which <see cref="ApplyDeviceComments"/> applies to the project's stations.
+    /// </summary>
+    private static bool TargetsPlc(string rel) =>
+        !rel.EndsWith(".devices.yaml", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// The live PLC a mirror path belongs to, or null when none does.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The export writes each PLC under <c>Sanitize(DeviceName)/Sanitize(PlcName)</c>, so the
+    /// path's first two segments are compared against the <b>sanitised</b> names — a device
+    /// called <c>Line:2</c> is the directory <c>Line_2</c>, and comparing the raw name would
+    /// miss every file of that PLC. A name with nothing to sanitise is unchanged by it, so
+    /// the plain case is covered too.
+    /// </para>
+    /// <para>
+    /// <b>One PLC resolves everything.</b> With a single PLC there is nowhere else a file
+    /// could belong: a path naming a device that is not there can only be a rename since the
+    /// export, and the edit still belongs to that PLC. The ambiguity the caller's refusal
+    /// exists for needs a second PLC — with two or more, a miss is a miss, and the caller
+    /// refuses the plan rather than guess. There is no other fallback.
+    /// </para>
+    /// </remarks>
     private static PlcRef? MatchPlc(IReadOnlyList<PlcRef> plcs, string? resolveJson, string rel)
     {
         var slash = rel.Replace('\\', '/').Split('/');
         if (slash.Length >= 2)
         {
             var hit = plcs.FirstOrDefault(p =>
-                string.Equals(p.DeviceName, slash[0], StringComparison.OrdinalIgnoreCase)
-                && string.Equals(p.PlcName, slash[1], StringComparison.OrdinalIgnoreCase));
+                string.Equals(Sanitize(p.DeviceName), slash[0], StringComparison.OrdinalIgnoreCase)
+                && string.Equals(Sanitize(p.PlcName), slash[1], StringComparison.OrdinalIgnoreCase));
             if (hit is not null)
             {
                 return hit;
@@ -930,6 +1007,32 @@ internal static partial class HostApp
 
         _ = resolveJson;
         return plcs.Count == 1 ? plcs[0] : null;
+    }
+
+    /// <summary>
+    /// The fatal's sentence: which targets are missing, which files wanted them, what is
+    /// actually there, and what to do. One line, because the protocol is one event per line.
+    /// </summary>
+    private static string UnresolvedPlcRefusal(IReadOnlyList<string> unresolved, IReadOnlyList<PlcRef> plcs)
+    {
+        var byTarget = unresolved
+            .GroupBy(rel =>
+            {
+                var slash = rel.Replace('\\', '/').Split('/');
+                return slash.Length >= 2 ? slash[0] + "/" + slash[1] : rel;
+            }, StringComparer.OrdinalIgnoreCase)
+            .Select(g =>
+            {
+                var sample = g.First();
+                var more = g.Count() - 1;
+                return g.Key + " (" + sample + (more > 0 ? ", +" + more + " more" : "") + ")";
+            });
+
+        var live = string.Join(", ", plcs.Select(p => p.DeviceName + "/" + p.PlcName));
+        return "refusing the plan: " + unresolved.Count + " file(s) target a PLC that is not in "
+               + "the project — " + string.Join("; ", byTarget) + "; live PLCs: " + live
+               + ". A device or PLC was renamed or removed in the IDE since the export; "
+               + "nothing was written — export again and re-plan";
     }
 
     private static string BlockType(object block)
