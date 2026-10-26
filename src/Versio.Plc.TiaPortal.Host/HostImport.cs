@@ -984,11 +984,15 @@ internal static partial class HostApp
     /// the plain case is covered too.
     /// </para>
     /// <para>
-    /// <b>One PLC resolves everything.</b> With a single PLC there is nowhere else a file
-    /// could belong: a path naming a device that is not there can only be a rename since the
-    /// export, and the edit still belongs to that PLC. The ambiguity the caller's refusal
-    /// exists for needs a second PLC — with two or more, a miss is a miss, and the caller
-    /// refuses the plan rather than guess. There is no other fallback.
+    /// <b>No fallback, not even with one PLC.</b> The first version of this kept one — "with
+    /// a single PLC there is nowhere else a file could belong" — and that mistook the common
+    /// case for the only case: one PLC is also what a project looks like after its other PLC
+    /// was removed in Portal, and an old import for the removed Device2 then wrote Device2's
+    /// blocks into Device1 and saved (the 2026-10-25 review's sixth round, item 2, P1; the
+    /// fifth round's item 3 had closed the two-PLC case the same way). A path that names no
+    /// live PLC is a miss however many PLCs remain, and the caller refuses the plan. A device
+    /// renamed in a one-PLC project costs a re-export, which is the remedy the fatal already
+    /// names; a block written into the wrong PLC costs the project.
     /// </para>
     /// </remarks>
     private static PlcRef? MatchPlc(IReadOnlyList<PlcRef> plcs, string? resolveJson, string rel)
@@ -1006,7 +1010,7 @@ internal static partial class HostApp
         }
 
         _ = resolveJson;
-        return plcs.Count == 1 ? plcs[0] : null;
+        return null;
     }
 
     /// <summary>

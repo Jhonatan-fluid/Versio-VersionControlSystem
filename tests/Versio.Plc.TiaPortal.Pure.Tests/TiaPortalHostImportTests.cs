@@ -134,22 +134,28 @@ namespace Versio.Plc.TiaPortal.Tests
         }
 
         [Fact]
-        public void With_one_PLC_every_file_is_its_file()
+        public void With_one_PLC_left_a_file_for_a_PLC_that_is_gone_is_still_refused()
         {
-            // Pinned on purpose, not by accident. With a single PLC there is nowhere else the
-            // file could belong: a path naming a device that is not there can only be a
-            // rename since the export, and the edit still belongs to the one PLC. Refusing
-            // here would make every device rename in a one-PLC project a failed import for
-            // no safety gained. The ambiguity the refusal exists for needs a second PLC.
+            // The sixth review round's item 2. The first fix kept a one-PLC fallback — "with a
+            // single PLC there is nowhere else the file could belong" — and that reasoning
+            // mistook the common case for the only case: it is also what a project looks like
+            // after its OTHER PLC was removed in Portal, and an old import for the removed
+            // Device2 then wrote Device2's blocks into Device1 and saved. A path that names no
+            // live PLC is refused however many PLCs are left; a renamed device in a one-PLC
+            // project costs a re-export, which is the remedy the fatal already names.
             var only = new FakePlc("PLC1");
-            var project = new FakeProject(new FakeDevice("Device1_renamed", only));
-            using var src = new MirrorDir(("Device1/PLC1/Program blocks/Pump.scl", "FUNCTION_BLOCK \"Pump\"\nEND_FUNCTION_BLOCK\n"));
-            var plan = Plan(ApplyText("Device1/PLC1/Program blocks/Pump.scl", "Device1/PLC1/FB/Pump#1"));
+            var project = new FakeProject(new FakeDevice("Device1", only));
+            using var src = new MirrorDir(("Device2/PLC2/Program blocks/Pump.scl", "FUNCTION_BLOCK \"Pump\"\nEND_FUNCTION_BLOCK\n"));
+            var plan = Plan(ApplyText("Device2/PLC2/Program blocks/Pump.scl", "Device2/PLC2/FB/Pump#1"));
 
-            var (output, _) = Import(project, src.Path, plan);
+            var (output, ex) = Import(project, src.Path, plan);
 
-            Assert.Null(output.Fatal);
-            Assert.Equal(new[] { "Pump.scl" }, only.Writes);
+            Assert.Empty(only.Writes);
+            Assert.Null(ex);
+            Assert.Equal(0, project.Saves);
+            var fatal = Assert.IsType<TiaPortalEvent>(output.Fatal);
+            Assert.Contains("Device2/PLC2", fatal.String("msg") ?? "", StringComparison.Ordinal);
+            Assert.Contains("Device1/PLC1", fatal.String("msg") ?? "", StringComparison.Ordinal);
         }
 
         [Fact]
