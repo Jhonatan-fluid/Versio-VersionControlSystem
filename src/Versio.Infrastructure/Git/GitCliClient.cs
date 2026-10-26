@@ -794,10 +794,17 @@ public sealed partial class GitCliClient(
     /// helper's own window - GCM, a browser for OAuth, a token box - is the entire point.
     /// </para>
     /// </param>
+    /// <param name="noEditor">
+    /// Tell git there is no editor, so a command that would open one on a message keeps the
+    /// message it already has. Only <c>rebase --continue</c> asks for this: every other command
+    /// here either takes its message as an argument or has none, and an editor under a
+    /// redirected console is a hang. <c>GIT_EDITOR</c> is the variable git reads before any
+    /// config or <c>VISUAL</c>/<c>EDITOR</c>, and <c>:</c> is its spelling for "none".
+    /// </param>
     private async Task<GitResult> RunAsync(
         string[] args, IProgress<GitProgress>? progress, CancellationToken ct,
         TimeSpan? timeout = null, string? stdin = null, bool allowPrompt = false,
-        bool quietFailure = false)
+        bool quietFailure = false, bool noEditor = false)
     {
         var psi = new ProcessStartInfo
         {
@@ -840,6 +847,12 @@ public sealed partial class GitCliClient(
             psi.Environment["GIT_TERMINAL_PROMPT"] = "0";
         }
         psi.Environment["GIT_OPTIONAL_LOCKS"] = "0";
+
+        if (noEditor)
+        {
+            psi.Environment["GIT_EDITOR"] = ":";
+        }
+
         GitExecutable.ApplyBundledDefaults(psi, gitExecutable);
 
         var stdout = new StringBuilder();

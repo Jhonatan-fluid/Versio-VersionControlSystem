@@ -205,6 +205,44 @@ public sealed partial class GitCliClient
         };
     }
 
+    /// <summary>Go on with the paused rebase, keeping each replayed commit's own message.</summary>
+    /// <remarks>
+    /// <para>
+    /// The state is read first, as the abort does: <c>git rebase --continue</c> outside a
+    /// rebase is an error in git's words, and this client would rather say so in its own than
+    /// hand a caller a message about a state it already knows it is not in.
+    /// </para>
+    /// <para>
+    /// <b>The editor is suppressed through <c>GIT_EDITOR</c>, not <c>-c core.editor</c>.</b>
+    /// After a resolved conflict the sequencer opens an editor on the commit's stored message;
+    /// with stdin and stdout redirected that is a process waiting on a console nobody can
+    /// see, until the ten-minute timeout kills it. Of the ways to turn it off, the environment
+    /// variable is the one git consults first — ahead of <c>core.editor</c>, <c>VISUAL</c> and
+    /// <c>EDITOR</c> — so a <c>-c</c> override would lose to a <c>GIT_EDITOR</c> the user's
+    /// shell exported, and Versio would hang exactly on the machine of somebody who had set
+    /// one up. <c>:</c> rather than <c>true</c>: git special-cases a colon as "no editor" and
+    /// never spawns anything, so there is no helper to fail to find.
+    /// </para>
+    /// </remarks>
+    public async Task<GitResult> ContinueRebaseAsync(CancellationToken ct)
+    {
+        var state = await MergeStateAsync(ct).ConfigureAwait(false);
+
+        if (state != MergeState.Rebasing)
+        {
+            _log.Warn(LogCategory.Git,
+                      $"rebase --continue refused: no rebase is in progress (state is {state})");
+            return new GitResult
+            {
+                Success = false, ExitCode = -1, StdErr = "no rebase is in progress",
+            };
+        }
+
+        _log.Info(LogCategory.Git, "continuing the rebase; each replayed commit keeps its own message");
+        return await RunAsync(["rebase", "--continue"], null, ct, TimeSpan.FromMinutes(10),
+                              noEditor: true).ConfigureAwait(false);
+    }
+
     /// <summary>Whether a merge or rebase is part-way through.</summary>
     /// <remarks>
     /// From git's own marker files rather than from the presence of unmerged paths. Resolving

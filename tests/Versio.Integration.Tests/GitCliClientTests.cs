@@ -945,6 +945,126 @@ public sealed class GitCliClientTests(ITestOutputHelper output) : IDisposable
         Assert.DoesNotContain(status.Changes, c => c.Path == path && c.IsConflicted);
     }
 
+    /// <summary>
+    /// A rebase of <c>feature</c> onto <c>main</c>, stopped at its one conflict and resolved,
+    /// with an editor configured that refuses to run.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The refusing editor is the point of the fixture. After a resolved conflict
+    /// <c>rebase --continue</c> opens the editor on the commit's message, and under Versio's
+    /// redirected console that is a hang; the client has to tell git there is no editor, and
+    /// in a way that wins over whatever the user has set. <c>false</c> is an editor that exits
+    /// non-zero — so a continuation that reached it fails in git's words, and one that did
+    /// not is the one under test.
+    /// </para>
+    /// <para>
+    /// <b>Set at both levels, and the environment is the one that matters.</b> The first
+    /// version set only <c>core.editor false</c>, and a mutant client that suppressed nothing
+    /// passed anyway: the shell this suite was run from exported <c>GIT_EDITOR=true</c>, the
+    /// test host inherited it, and git reads that variable ahead of any config. The same
+    /// precedence is why the client overrides the variable rather than passing <c>-c
+    /// core.editor</c>, so the fixture has to put a refusing editor where the client's answer
+    /// must beat it. <see cref="WithRefusingEditor"/> scopes that to the one test.
+    /// </para>
+    /// </remarks>
+    private async Task MakeAResolvedRebaseConflictAsync()
+    {
+        await InitAsync();
+        Write("seed.txt", "base\n");
+        await RunRawAsync("add", "--", "seed.txt");
+        await RunRawAsync("commit", "-m", "base");
+
+        await RunRawAsync("checkout", "-b", "feature");
+        Write("seed.txt", "mine\n");
+        await RunRawAsync("commit", "-am", "the feature's own message");
+
+        await RunRawAsync("checkout", "main");
+        Write("seed.txt", "theirs\n");
+        await RunRawAsync("commit", "-am", "upstream");
+
+        await RunRawAsync("checkout", "feature");
+        await RunRawAsync("config", "core.editor", "false");
+
+        // Expected to stop. That stop is the state under test.
+        await RunRawAsync("rebase", "main");
+        Assert.True(Directory.Exists(Path.Combine(_repo, ".git", "rebase-merge")),
+                    "the fixture did not pause a rebase");
+
+        // Under a rebase --theirs is the branch being replayed; its version differs from the
+        // upstream HEAD, so the continuation has something to commit.
+        await RunRawAsync("checkout", "--theirs", "--", "seed.txt");
+        await RunRawAsync("add", "--", "seed.txt");
+    }
+
+    /// <summary>
+    /// <c>GIT_EDITOR=false</c> for the duration of one test, whatever the host shell exported.
+    /// </summary>
+    /// <remarks>
+    /// Process-wide, because a child process inherits the environment and nothing narrower
+    /// reaches it. Tolerable here: the only git command that opens an editor is the one under
+    /// test, and for any other test running beside it the change can only turn a hang nobody
+    /// expected into a fast failure that names the editor.
+    /// </remarks>
+    private static IDisposable WithRefusingEditor()
+    {
+        var previous = Environment.GetEnvironmentVariable("GIT_EDITOR");
+        Environment.SetEnvironmentVariable("GIT_EDITOR", "false");
+        return new RestoreEditor(previous);
+    }
+
+    private sealed class RestoreEditor(string? previous) : IDisposable
+    {
+        public void Dispose() => Environment.SetEnvironmentVariable("GIT_EDITOR", previous);
+    }
+
+    [SkippableFact]
+    public async Task Continuing_a_rebase_keeps_the_replayed_commit_s_message_and_never_opens_the_editor()
+    {
+        Skip.IfNot(GitAvailable, "git not on PATH");
+        using var _ = WithRefusingEditor();
+        await MakeAResolvedRebaseConflictAsync();
+
+        // The fixture has to refuse a plain continuation, or the client's success below proves
+        // nothing about the editor. Git fails the commit, says so, and leaves the rebase paused
+        // with the resolution still staged, which is the state the client is then handed.
+        var (plainExit, _) = await RunRawOutputAsync(_repo, "rebase", "--continue");
+        Assert.NotEqual(0, plainExit);
+        Assert.True(Directory.Exists(Path.Combine(_repo, ".git", "rebase-merge")),
+                    "the fixture's editor did not refuse: a plain rebase --continue went through");
+
+        var result = await Client.ContinueRebaseAsync(CancellationToken.None);
+
+        Assert.True(result.Success, result.FailureReason);
+        Assert.False(Directory.Exists(Path.Combine(_repo, ".git", "rebase-merge")), "the rebase is still paused");
+        Assert.Equal(MergeState.None, await Client.MergeStateAsync(CancellationToken.None));
+
+        // Back on the branch, on top of the upstream, with the commit's own message: the
+        // editor that would have asked about it was never opened.
+        var (_, head) = await RunRawOutputAsync(_repo, "symbolic-ref", "-q", "HEAD");
+        Assert.Equal("refs/heads/feature", head.Trim());
+        var (_, log) = await RunRawOutputAsync(_repo, "log", "--format=%s");
+        Assert.Equal("the feature's own message\nupstream\nbase", log.Replace("\r\n", "\n").Trim());
+        Assert.Equal("mine\n", File.ReadAllText(Path.Combine(_repo, "seed.txt")).Replace("\r\n", "\n"));
+    }
+
+    [SkippableFact]
+    public async Task Continuing_outside_a_rebase_is_refused_rather_than_reported_as_done()
+    {
+        // The abort reads the state first for the same reason: a continuation that continued
+        // nothing and said it succeeded is the client lying about what it did.
+        Skip.IfNot(GitAvailable, "git not on PATH");
+        await InitAsync();
+        Write("seed.txt", "base\n");
+        await RunRawAsync("add", "--", "seed.txt");
+        await RunRawAsync("commit", "-m", "base");
+
+        var result = await Client.ContinueRebaseAsync(CancellationToken.None);
+
+        Assert.False(result.Success);
+        Assert.Contains("no rebase is in progress", result.FailureReason);
+    }
+
     private static bool GitAvailable
     {
         get

@@ -115,6 +115,9 @@ public sealed class RemotePollerTests
         public Task<GitResult> AbortMergeOrRebaseAsync(CancellationToken ct) =>
             throw new NotSupportedException();
 
+        public Task<GitResult> ContinueRebaseAsync(CancellationToken ct) =>
+            throw new NotSupportedException();
+
         public Task<MergeState> MergeStateAsync(CancellationToken ct) =>
             throw new NotSupportedException();
 

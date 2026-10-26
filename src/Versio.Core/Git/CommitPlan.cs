@@ -11,6 +11,12 @@ public enum CommitIntent
 
     /// <summary>Commit every changed file. Nothing ticked means the whole list.</summary>
     CommitAll,
+
+    /// <summary>
+    /// Finish the paused rebase instead of committing. The button's caption, tooltip and the
+    /// message requirement all change with it; the commit flow diverts to <c>rebase --continue</c>.
+    /// </summary>
+    ContinueRebase,
 }
 
 /// <summary>
@@ -50,6 +56,32 @@ public sealed record CommitPlan
 
     /// <summary>True when the button should be live, message and identity permitting.</summary>
     public bool CanCommit => Intent is not CommitIntent.Nothing;
+
+    /// <summary>Whether the button needs a message in the box before it may be pressed.</summary>
+    /// <remarks>
+    /// False for exactly one intent. A rebase replays commits that already have messages,
+    /// and <c>rebase --continue</c> keeps each one; the box is not the message of anything
+    /// here, so demanding one would make the user type text that goes nowhere.
+    /// </remarks>
+    public bool NeedsMessage => Intent is not CommitIntent.ContinueRebase;
+
+    /// <summary>
+    /// The button while a rebase is paused: it continues the rebase, and does not commit.
+    /// </summary>
+    /// <remarks>
+    /// Until 2026-10-25 the button stayed a plain <c>Commit</c> through a paused rebase, and
+    /// pressing it ran <c>git commit</c> on the detached HEAD a rebase works on: the branch was
+    /// unchanged, the later commits were never replayed, the rebase was still paused, and the
+    /// banner above had just said "Continue the rebase" (the review's sixth round, P2). A
+    /// caption that never lies about which operation it runs is the point of this type, so
+    /// the paused rebase gets its own plan rather than a flag on the commit one.
+    /// </remarks>
+    public static CommitPlan ContinuingRebase { get; } = new()
+    {
+        Intent = CommitIntent.ContinueRebase,
+        IncludeCount = 0,
+        Label = "Continue rebase",
+    };
 
     /// <summary>
     /// Work out what the button means right now.
@@ -119,7 +151,7 @@ public sealed record CommitPlan
             return "Set a name and email for git first.";
         }
 
-        return hasMessage ? string.Empty : "Write a commit message first.";
+        return hasMessage || !NeedsMessage ? string.Empty : "Write a commit message first.";
     }
 
     /// <summary>What the button will do, spelled out for its tooltip.</summary>
@@ -139,6 +171,12 @@ public sealed record CommitPlan
             IncludeCount == 1
                 ? "Commit the changed file."
                 : $"Commit all {IncludeCount} changed files.",
+
+        // Said plainly because the box is right beside the button: whatever is typed in it
+        // is neither used nor cleared, and the user should not have to find that out.
+        CommitIntent.ContinueRebase =>
+            "Continue the rebase. Each replayed commit keeps its own message; " +
+            "the message box is left as it is.",
 
         _ => "Nothing to commit.",
     };

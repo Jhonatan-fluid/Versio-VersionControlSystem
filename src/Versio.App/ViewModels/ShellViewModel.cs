@@ -2462,8 +2462,19 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
     /// <summary>
     /// What the commit button will do right now.
     /// </summary>
+    /// <remarks>
+    /// While a rebase is paused, the button continues the rebase and does not commit. A rebase
+    /// replays commits on a detached HEAD, and a plain <c>git commit</c> there made a stray
+    /// commit nothing pointed at, left the branch where it was and the rest unreplayed, and
+    /// kept the rebase paused — under a banner that said "Continue the rebase" (the 2026-10-25
+    /// review's sixth round, P2). Read from <see cref="MergeState"/>, which comes from git's
+    /// marker file, never from the presence of conflicts: the moment this matters is after the
+    /// last one is resolved.
+    /// </remarks>
     public CommitPlan Commit =>
-        CommitPlan.For(Pending.Count, PendingSelectedCount);
+        _mergeState == MergeState.Rebasing
+            ? CommitPlan.ContinuingRebase
+            : CommitPlan.For(Pending.Count, PendingSelectedCount);
 
     /// <summary>Why the commit button is dead, or empty when it is live.</summary>
     /// <remarks>
@@ -2498,6 +2509,14 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
     {
         get
         {
+            // A paused rebase commits nothing of the list's choosing, so a note about what
+            // the commit will do with a chosen row would describe a commit that is not
+            // happening.
+            if (Commit.Intent == CommitIntent.ContinueRebase)
+            {
+                return string.Empty;
+            }
+
             var count = Chosen(Pending).Count(r => r.IsPartlyStaged);
             return count == 0
                 ? string.Empty
@@ -2537,6 +2556,11 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
                 OnPropertyChanged(nameof(ShowsConflicts));
                 OnPropertyChanged(nameof(ConflictHeadline));
                 RaiseHealth();
+
+                // The commit button's plan reads this state (a paused rebase turns it into
+                // "Continue rebase"), so its caption and tooltip move with it, not only its
+                // enabled state.
+                RaiseCommitState();
                 RaiseGitCommandStates();
             }
         }
@@ -3427,7 +3451,7 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
     private bool CanCommit() =>
         Ready
         && Commit.CanCommit
-        && !string.IsNullOrWhiteSpace(CommitMessage)
+        && (!Commit.NeedsMessage || !string.IsNullOrWhiteSpace(CommitMessage))
         && Auth.Identity.IsComplete
         && !HasConflicts;
 
@@ -3525,6 +3549,18 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
     {
         if (_git is null)
         {
+            return;
+        }
+
+        // Before the ticked rows are read: a paused rebase is continued whether or not anything
+        // is listed, because what it commits is the conflicted commit's own content, not a
+        // selection. The plan already carries this decision (Commit.Label says "Continue
+        // rebase"), from the last refresh's reading of git's marker file; the client reads the
+        // marker again before running, so a rebase finished or abandoned from a terminal
+        // between that refresh and this press is refused rather than "continued".
+        if (Commit.Intent == CommitIntent.ContinueRebase)
+        {
+            await ContinueRebaseAsync().ConfigureAwait(true);
             return;
         }
 
@@ -4042,6 +4078,96 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
 
         Notifications.Success($"The {what} was abandoned.", "The branch is back where it was.");
         await RunRefreshAsync(RefreshTrigger.GitMetadata, null).ConfigureAwait(true);
+    }
+
+    /// <summary>
+    /// Go on with a rebase that stopped at a conflict, now that every conflict is resolved.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>This is what the commit button does while a rebase is paused.</b> Until 2026-10-25 it
+    /// ran the ordinary commit: <c>git commit</c> on the detached HEAD a rebase works on, which
+    /// recorded a commit nothing pointed at, left the branch ref untouched and the later commits
+    /// unreplayed, and kept the rebase paused — while the banner above the button said
+    /// "Continue the rebase" (the review's sixth round, P2). The reproduction is the first test
+    /// in <c>ConflictFlowTests</c> about continuing.
+    /// </para>
+    /// <para>
+    /// <b>No export gate, deliberately.</b> The gate exists so a project is never committed
+    /// beside a stale mirror; it runs CODESYS. The commit this makes is the replay of a commit
+    /// the user already made, whose project and mirror were exported together then, plus a
+    /// conflict resolution to the text. The rebase was started under its <see cref="MergePlan"/>
+    /// (<see cref="RewriteTreeUnderPlanAsync"/>): where it reached a tracked project the mirror
+    /// is authoritative and an import is owed, and an export here would write the project's
+    /// pre-rebase logic over the resolved text — the leak that plan exists to stop. The plan's
+    /// decision persists in the lock, so the continuation needs no second plan: the watcher is
+    /// held for the rewrite, and adopting afterwards skips any binding holding a lock.
+    /// </para>
+    /// <para>
+    /// <b>The message box is left exactly as it is.</b> Each replayed commit keeps its own
+    /// message (the client suppresses git's editor); the box is not the message of anything in
+    /// this operation, so it is neither used nor cleared, and the tooltip says so beforehand.
+    /// </para>
+    /// <para>
+    /// <b>A non-zero exit is not a failure until the tree has been read.</b> Git stops again
+    /// when the next commit to replay conflicts, and exits non-zero to say so. The refresh runs
+    /// first; new unmerged paths mean the rebase stopped at the next conflict and the section
+    /// shows them; no unmerged paths with the rebase still paused means git refused outright —
+    /// a resolution written to disk and never staged, say — so git's words and the way out
+    /// (abandon) are shown. A resolution that takes the upstream's side of everything a
+    /// commit touched is not a refusal: that commit has nothing of its own left, and git
+    /// (<c>--empty=drop</c>, its default) drops it from the replay and goes on, which the
+    /// second continuing test in <c>ConflictFlowTests</c> found out by expecting otherwise.
+    /// </para>
+    /// </remarks>
+    private async Task ContinueRebaseAsync()
+    {
+        if (_git is null)
+        {
+            return;
+        }
+
+        _logger.Click("Git.ContinueRebase");
+        using var scope = _logger.BeginOperation(LoggerExtensions.NewOperationId());
+        _logger.Info(LogCategory.Git,
+            "continuing the paused rebase; the message box is not used and is left as it is");
+
+        using var busy = Busy.Begin(WorkKind.GitWrite, "Continuing the rebase…");
+
+        // Same hold as the rebase itself and its abort: replaying the remaining commits
+        // rewrites the working tree wholesale, and an unheld watcher would report the result
+        // as an edit to the exported text and import it.
+        GitResult result = default!;
+
+        await Sync.WhileGitRewritesTheTreeAsync(
+            "rebase --continue",
+            async () => result = await _git.ContinueRebaseAsync(busy.Token)
+                .ConfigureAwait(true)).ConfigureAwait(true);
+
+        await RunRefreshAsync(RefreshTrigger.GitMetadata, null).ConfigureAwait(true);
+
+        if (result.Success)
+        {
+            _logger.Info(LogCategory.Git, "the rebase finished");
+            Notifications.Success("The rebase finished.",
+                "Every commit was replayed onto the upstream. Not pushed.");
+            return;
+        }
+
+        if (Conflicted.Count > 0)
+        {
+            _logger.Info(LogCategory.Git,
+                $"the rebase stopped again at the next commit: {Conflicted.Count} file(s) conflict");
+            Notifications.Warning(
+                "The rebase stopped at the next conflict.",
+                "Resolve the files below and continue again, or abandon it and nothing changes.");
+            return;
+        }
+
+        _logger.Warn(LogCategory.Git, $"the rebase could not be continued: {result.FailureReason}");
+        Notifications.Failure("Could not continue the rebase.",
+            $"{result.FailureReason ?? string.Empty} The rebase is still paused; abandon it to " +
+            "put the branch back where it was.");
     }
 
     /// <summary>

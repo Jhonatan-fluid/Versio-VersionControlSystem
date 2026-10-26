@@ -335,6 +335,37 @@ public interface IGitClient
     /// </remarks>
     Task<GitResult> AbortMergeOrRebaseAsync(CancellationToken ct);
 
+    /// <summary>
+    /// Go on with a rebase that stopped at a conflict, now that the conflict is resolved.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Not a commit, and the commit path must not stand in for it.</b> A rebase replays the
+    /// branch's commits onto the upstream one at a time on a detached HEAD, and <c>git
+    /// commit</c> there records a new commit on that detached HEAD and nothing else: the
+    /// rebase stays paused, the branch ref is where it was, the commits after the conflicted
+    /// one are never replayed. That is what the panel did until 2026-10-25 (the review's sixth
+    /// round, P2), while its own banner said "Continue the rebase".
+    /// </para>
+    /// <para>
+    /// <b>Each replayed commit keeps its own message.</b> <c>rebase --continue</c> opens an
+    /// editor on the conflicted commit's message by default, and under a redirected console an
+    /// editor is a hang with nothing on screen to say why. The implementation suppresses it and
+    /// git keeps the message the commit already had. Nothing the user typed into the panel's
+    /// message box is used — there is no commit of theirs being made.
+    /// </para>
+    /// <para>
+    /// The result is not the end of the rebase. The next commit to replay may conflict in its
+    /// turn, and git stops again with a non-zero exit; the caller reads the merge state and the
+    /// unmerged paths afterwards rather than taking the exit code as "done" or "broken".
+    /// </para>
+    /// </remarks>
+    /// <returns>
+    /// A failed result when no rebase is in progress, rather than success for a continuation
+    /// that continued nothing.
+    /// </returns>
+    Task<GitResult> ContinueRebaseAsync(CancellationToken ct);
+
     /// <summary>Whether a merge or rebase is part-way through right now.</summary>
     Task<MergeState> MergeStateAsync(CancellationToken ct);
 

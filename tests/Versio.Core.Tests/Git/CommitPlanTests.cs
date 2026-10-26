@@ -102,4 +102,46 @@ public sealed class CommitPlanTests
         Assert.Equal(string.Empty,
                      plan.BlockedReason(hasMessage: true, hasIdentity: true, hasConflicts: false));
     }
+
+    [Fact]
+    public void A_paused_rebase_is_continued_and_the_caption_says_so()
+    {
+        // The button read "Commit" through a paused rebase and ran `git commit` on the detached
+        // HEAD a rebase works on: a stray commit, the branch unchanged, the rest unreplayed
+        // (the 2026-10-25 review's sixth round, P2). The caption is the safeguard here as it
+        // is for the ticked commit: it has to name the operation that will actually run.
+        var plan = CommitPlan.ContinuingRebase;
+
+        Assert.Equal(CommitIntent.ContinueRebase, plan.Intent);
+        Assert.True(plan.CanCommit);
+        Assert.Equal("Continue rebase", plan.Label);
+        Assert.Contains("message box is left as it is", plan.Explanation);
+    }
+
+    [Fact]
+    public void Continuing_a_rebase_needs_no_message_but_still_needs_conflicts_resolved_and_an_identity()
+    {
+        // Each replayed commit keeps its own message, so the box is the message of nothing and
+        // demanding one would have the user type text that goes nowhere. The other two gates
+        // stand: git refuses to continue over an unmerged path, and the replayed commits are
+        // re-committed under the current identity.
+        var plan = CommitPlan.ContinuingRebase;
+
+        Assert.False(plan.NeedsMessage);
+        Assert.Equal(string.Empty,
+                     plan.BlockedReason(hasMessage: false, hasIdentity: true, hasConflicts: false));
+        Assert.Equal("Resolve the conflicts first.",
+                     plan.BlockedReason(hasMessage: false, hasIdentity: true, hasConflicts: true));
+        Assert.Equal("Set a name and email for git first.",
+                     plan.BlockedReason(hasMessage: false, hasIdentity: false, hasConflicts: false));
+    }
+
+    [Fact]
+    public void An_ordinary_commit_still_needs_its_message()
+    {
+        // The relaxation above is the rebase's alone; a plain commit with an empty box is
+        // still refused here rather than by git's editor that never opens.
+        Assert.True(CommitPlan.For(3, 0).NeedsMessage);
+        Assert.True(CommitPlan.For(3, 2).NeedsMessage);
+    }
 }
