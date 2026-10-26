@@ -19,6 +19,86 @@ produce a diff touching everything else.
 
 ---
 
+### The review's third round: four more, two of them what the fixes before had left
+
+**2026-10-25, the reviewer re-ran at `9d9a0dd` — all twelve second-round reproducers pass,
+the data-loss case among them — and sent four confirmed P2 items, no new P1.** Same method as
+the two rounds before: every claim read against the code, a failing test first, one commit per
+item, the fix mutated away and the test watched go red, then restored. **All four are real and
+all four are fixed**; none is refuted and none is deferred. Two of the four are the previous
+rounds' fixes seen from one step further: the second round's item 9 taught the declaration
+table to read a line in pieces and skipped an empty one (1); the first round's item 20 and the
+second's item 7 each changed the normaliser without asking what had been *recorded* under the
+old one (4). The other two are the same matcher as the second round's items 5 and 6, still
+reading a .NET string where git walks bytes (2, 3). The shape worth naming this time: a change
+to how something is *read* has to be checked against everything that was *written* under the
+old reading — the manifests on disk, the ST a person types — and the rounds before checked it
+against the cases in front of them.
+
+- **1 — a semicolon on a line of its own merged two declarations.** `a : INT`, then a line
+  holding only `;`, then `b : BOOL;` tabled one variable `a` of type `INT b : BOOL`, and
+  nothing said `b` was missing. A regression from the second round's item 9: `Pieces` skipped
+  an empty statement as "nothing here", and a semicolon alone after an open declaration is
+  exactly an empty statement, so the declaration stayed open and the next line's was glued on.
+  An empty statement that arrives while a declaration is open is now a complete, empty piece
+  — the caller flushes what it holds, the row ends on the semicolon's line and takes that
+  line's comment — and one with nothing open is still nothing. One Core test over four such
+  rows, red before with "a : INT b : BOOL" and "c : INT d : INT". Commit `78e10bf`.
+- **2 — a range written backwards made the preflight throw.** `v[z-a].bin filter=lfs` built
+  the regex `(?!/)[]`, which .NET refuses with `RegexParseException`, so the commit dialog died
+  on the rule instead of weighing the commit. The matcher's remark said git matches nothing on a
+  reversed range and dropped it whole; git does not: wildmatch tests a range's low end as a
+  member before it reads the dash, so `[z-a]` matches `z` and nothing else, and `[!z-a]`
+  everything but `z` — asked of `git check-attr` before it was written down. The low end is
+  always a member now and the dash-to-high-end only when the range runs forwards. Five rows in
+  the Core theory and four in the Integration agreement test, whose expectation git computes at
+  test time; three Core rows were red with the exception. Commit `e8cec65`.
+- **3 — a non-ASCII file name was matched as characters, and git matches bytes.** `?.bin`
+  does not cover `ä.bin` under git — `?` takes one byte of the path's UTF-8 and ä is two — so
+  git commits it in full; the preflight matched one `?` to one UTF-16 character, read the rule
+  as protection and suppressed the warning. The other direction too: `?.bin -filter` after
+  `*.bin filter=lfs`, which git ignores for `ä.bin`, took its protection away here. `[ä]` is two
+  members to git and matches neither byte sequence; 😀 is four bytes and `????`. Pattern and
+  path now pass through one `ByteForm` before matching — ASCII bytes as themselves, 0x80–0xFF as
+  U+E080–U+E0FF, the private-use area rather than Latin-1 because `IgnoreCase` folds Latin-1
+  letters and git's folding is ASCII-only, and the area has no case and keeps the bytes' order,
+  so a range across 0x80 still compares as git's bytes do. Ten Core rows and nine Integration
+  rows against real git, six of each red before, in both directions. **Rejected:** a byte-aware
+  class for `?` alone, which leaves `[ä]` and ranges reading characters. Commit `c71662d`.
+- **4 — the delete check could no longer read the `nhash` every existing mirror carries.**
+  `why_not_delete` re-exports a native object, normalises it and compares the hash with the
+  manifest's. The normaliser changed twice in two days — the sibling sort replaced the line sort
+  (2026-10-24, item 20) and the GUID placeholder changed shape (2026-10-25, item 7) — and each
+  change made every hash recorded before it unreproducible, so an unchanged object exported by
+  an older Versio was refused as `DELETE_CONTENT_CHANGED`, "edited since the export", when
+  nothing had touched it. Measured before fixing: every native record of both committed fixture
+  mirrors, eighteen of eighteen, matches an older form and none the current one; all of them the
+  line-sort era. `versio_native_equiv.normalized_forms` now gives the three comparison forms an
+  `nhash` may have been taken over, current first, and the check accepts a match under any. The
+  live side is not widened by it: a recorded hash came from exactly one form, and agreement
+  under another is a SHA-256 collision; what an older form cannot see (the line sort's
+  blindness to swapped values, item 20) it could not see when that hash was recorded either,
+  and the next export records the current form, which closes that for that mirror. A match
+  under an older form travels on the `removed` event as `olderHash` and the runner puts it on
+  the log line, so a deletion vouched for by an older export's hash is one the log can explain.
+  Two parity tests load the real importer under CPython — its trailer runs `main()`, so the
+  module is the text above it, with a stub `scriptengine` for the one class that inherits from
+  it — and run the real `why_not_delete`: over every native fixture record, each passing only
+  through an older form and each edited copy refused; and over the baseline `GlobalTextList`
+  capture with the three forms' hashes pinned, taken once from an independent re-implementation
+  of the two older forms and once from `normalized_forms`, which agreed. Four mutants (one form
+  only, line sort forgotten, flag never set, mismatch not refused) each turned both tests red.
+  **Rejected:** a version number beside `nhash` — it changes the manifest's shape for every
+  reader and still needs these three functions for the hashes already written. Under real CODESYS, on `85f88d1` with this python embedded: the four tests the gate session re-ran for the second round and the three that drive the delete check (`An_object_whose_file_is_deleted_leaves_the_project_and_an_edited_one_does_not`, `Deleting_a_GVLs_declaration_removes_it_and_its_one_way_half_does_not_veto`, `A_native_deletion_with_nothing_to_check_it_against_is_refused`), 7/7 in 22 m 34 s, the owner's IDEs open.
+  Commit `85f88d1`.
+
+**The runs.** Over the landed tree, `85f88d1`: Core 2,066 (nothing skipped), Integration 228, Arch 36, CODESYS pure 405, parity 103, TIA pure 102, TwinCAT pure 27, Web 495, vitest 210; App 836 — 835/836 in 13 m 29 s with the CODESYS run beside it, the one red a 21 s catch-up wait (`SourceProjectTests.A_program_with_no_variables_is_still_an_empty_table_over_its_code`) that passed alone in 4 s, the same shape as the two days before on a different test. 4,364 across the twelve projects; the toolchain-gated counts (TIA 5, TwinCAT 6, CODESYS 55) are from their last gate runs.
+
+**Still not done**, carried from the first round: branch deletion addresses the hardcoded
+"origin" after item 39.
+
+---
+
 ### The review's second round: eleven more, the one hole left open, and the shape they share
 
 **2026-10-25, the reviewer read `ba8dbdf` and the forty-four commits under it and sent eleven

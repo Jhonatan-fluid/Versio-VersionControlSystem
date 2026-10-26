@@ -563,7 +563,9 @@ flowchart TB
 6. **Deletes last.** `remove()` takes a referenced object out with no exception, no
    cascade, no warning. Last means the project is otherwise complete. Before removing, the
    script checks the live object still matches the last export: ST is compared byte for
-   byte; native is compared by **`nhash`** (normalised hash). An object edited in the IDE
+   byte; native is compared by **`nhash`** (normalised hash — under the current normalisation
+   and each older one an export may have recorded it with, `normalized_forms`, since the
+   normaliser changed on 2026-10-24 and 2026-10-25). An object edited in the IDE
    since export is **kept**. A missing file says a file was deleted, not that the object
    was abandoned.
 7. Unknown plan actions → `UNKNOWN_PLAN_ACTION`. A newer C# verb must be heard refusing,

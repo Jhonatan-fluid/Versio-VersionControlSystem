@@ -252,12 +252,12 @@ stays that way.
 
 | Suite | Count | Time | Needs |
 |---|---|---|---|
-| `Versio.Core.Tests` | 2,050 | under a second | nothing |
-| `Versio.Integration.Tests` | 215 | ~55 s | real git |
-| `Versio.App.Tests` | 836 | 13 m 9 s on 2026-10-25 (loaded, 835/836; the 30 s catch-up wait passed alone), 11 m 23 s on 2026-10-24 (loaded), ~3.6 min on 2026-09-22, 8 m 38 s on 2026-10-05, 10 m 46 s on 2026-10-19, 10 m 42 s on 2026-10-22, 10 m 36 s on 2026-10-23 (idleness not checked); STA, no window shown; it was ~50 s once | nothing |
+| `Versio.Core.Tests` | 2,066 | under a second | nothing |
+| `Versio.Integration.Tests` | 228 | ~55 s | real git |
+| `Versio.App.Tests` | 836 | 13 m 29 s on 2026-10-25 (loaded, 835/836; a 21 s catch-up wait passed alone), 13 m 9 s on 2026-10-25 (loaded, 835/836; the 30 s catch-up wait passed alone), 11 m 23 s on 2026-10-24 (loaded), ~3.6 min on 2026-09-22, 8 m 38 s on 2026-10-05, 10 m 46 s on 2026-10-19, 10 m 42 s on 2026-10-22, 10 m 36 s on 2026-10-23 (idleness not checked); STA, no window shown; it was ~50 s once | nothing |
 | `Versio.Arch.Tests` | 36 | instant | nothing — it reads assembly metadata, IL and the `.csproj` files |
 | `Versio.Plc.Codesys.Pure.Tests` | 405 | under a second | nothing — the planner, the codecs, the protocol |
-| `Versio.Plc.Codesys.Parity.Tests` | 101 | ~15 s | `python` on PATH — **skips cleanly without it, so check the count, not the colour** |
+| `Versio.Plc.Codesys.Parity.Tests` | 103 | ~15 s | `python` on PATH — **skips cleanly without it, so check the count, not the colour** |
 | `Versio.Plc.TiaPortal.Pure.Tests` | 102 | instant | nothing — format, planner, protocol, LAD and FBD parser |
 | `Versio.Plc.TiaPortal.Tests` | 5 | seconds when skipped; 3 m 1 s on 2026-10-25 when Portal is installed but refuses the host (1 passed, 4 skipped, not an Openness member); minutes when Portal runs the import gate | **real TIA Portal** — skips cleanly without Openness membership or LFS content. Import Fact is green |
 | `Versio.Plc.TwinCat.Pure.Tests` | 27 | instant | nothing — format, planner, protocol, and the host's text rules compiled in as source |

@@ -405,12 +405,12 @@ dotnet test tests/Versio.Core.Tests
 
 | Suite | Tests | Needs | Runs in |
 |---|---|---|---|
-| `Versio.Core.Tests` | 2,050 | nothing — pure, no IO, no clock, no UI | ~0.3 s |
-| `Versio.Integration.Tests` | 215 | a real `git.exe` and the real filesystem | ~55 s |
+| `Versio.Core.Tests` | 2,066 | nothing — pure, no IO, no clock, no UI | ~0.3 s |
+| `Versio.Integration.Tests` | 228 | a real `git.exe` and the real filesystem | ~55 s |
 | `Versio.Arch.Tests` | 36 | nothing — it reads assembly metadata, IL, and the project files | instant |
 | `Versio.App.Tests` | 836 | Windows (WPF). Builds the real dialogs against the real stylesheet on an STA thread; **no window is ever shown**. One test runs the web viewer too, over every fixture row, and references `Versio.Web.Tests` for its fake GitHub | ~3.6–11 min |
 | `Versio.Plc.Codesys.Pure.Tests` | 405 | nothing — the vendor's planner, codecs, protocol, LD/FBD parser and File-Based Storage layout, pure | under a second |
-| `Versio.Plc.Codesys.Parity.Tests` | 101 | `python` on PATH, no CODESYS — **skips cleanly without python, so check the count** | ~15 s |
+| `Versio.Plc.Codesys.Parity.Tests` | 103 | `python` on PATH, no CODESYS — **skips cleanly without python, so check the count** | ~15 s |
 | `Versio.Plc.TiaPortal.Pure.Tests` | 102 | nothing — format, planner, protocol, scrubber, member table, LAD and FBD parser | instant |
 | `Versio.Plc.TiaPortal.Tests` | 5 | **a real TIA Portal**; skips cleanly without Openness membership | seconds when skipped |
 | `Versio.Plc.TwinCat.Pure.Tests` | 27 | nothing — the vendor's planner, format and protocol, and the host's text rules compiled in as source | instant |
