@@ -1456,14 +1456,18 @@ public sealed class SyncViewModel : ObservableObject
     /// Whether the state git leaves behind may be taken as the synced truth.
     /// </param>
     /// <remarks>
-    /// <b><paramref name="adoptResult"/> is false for exactly one caller, and it is the reason
-    /// this parameter exists.</b> Adopting is right after a checkout, a pull or a stash: all
-    /// three arrive from a single commit the gate already vetted, so the project and its mirror
+    /// <b><paramref name="adoptResult"/> is false for exactly one path — a merge or rebase
+    /// whose preflight found a tracked project in what it brings — and it is the reason this
+    /// parameter exists.</b> Adopting is right after a checkout, a pull or a stash: all three
+    /// arrive from a single commit the gate already vetted, so the project and its mirror
     /// agree. A <b>merge</b> is the one operation whose working tree came from no commit — the
     /// binary project keeps one side while the mirror three-way merges and keeps both — so
     /// adopting there writes a <c>LastSynced</c> that claims they agree when they do not. On a
     /// merge that stopped on a conflict it is worse still: the mirror on disk holds conflict
-    /// markers at that moment, and adopt would record <i>those</i> as the synced state.
+    /// markers at that moment, and adopt would record <i>those</i> as the synced state. The
+    /// named merge was that one caller from the start; the upstream merge and rebase reached
+    /// this with the adopting default until 2026-10-25 (the review's fourth round, item 2),
+    /// and both go through <c>ShellViewModel.RewriteTreeUnderPlanAsync</c> now.
     /// <para>
     /// Nothing is lost either way, because the caller then makes the mirror authoritative and
     /// the export gate is refused. What this avoids is a false record living in the lock file

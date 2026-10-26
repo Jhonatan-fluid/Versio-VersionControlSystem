@@ -4021,6 +4021,17 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
     /// been told what it means. The guard runs first, so a held direction lock or an open
     /// project refuses it exactly as it refuses a branch switch — both rewrite the working tree.
     /// </para>
+    /// <para>
+    /// <b>And judged like a named merge.</b> The upstream is asked what it would bring, three
+    /// dots, and when that reaches a tracked project the result is not adopted: the mirror is
+    /// put in charge and an import is raised, exactly as <see cref="MergeBranchAsync"/> does
+    /// (<see cref="RewriteTreeUnderPlanAsync"/>). Until 2026-10-25 only the named merge had that
+    /// protection, and this one adopted the result: the merged mirror held the upstream's logic,
+    /// the binary project kept this branch's, the engine recorded them as synced and answered
+    /// NoChange, and the next project save exported over the incoming logic (the review's fourth
+    /// round, item 2). A rebase replays this branch onto the same upstream and arrives at the
+    /// same tree, so it is asked the same question.
+    /// </para>
     /// </remarks>
     private async Task ReconcileAsync(bool rebase)
     {
@@ -4032,6 +4043,33 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         var what = rebase ? "rebase" : "merge";
         _logger.Click(rebase ? "Git.Rebase" : "Git.Merge");
         using var scope = _logger.BeginOperation(LoggerExtensions.NewOperationId());
+
+        // What the upstream would bring, from the merge base — the same question the named
+        // merge asks, with the upstream's name in the sentence. An empty answer (nothing to
+        // bring, so nothing tracked to protect) is left to git, which says so in its own
+        // words; an unanswerable one is refused, because nothing can be decided about it.
+        var upstream = Branches.FirstOrDefault(b => b.IsCurrent)?.Tracking ?? "the upstream";
+        var incoming = await _git.IncomingPathsAsync("@{u}", CancellationToken.None)
+            .ConfigureAwait(true);
+        var plan = MergePreflight.For(upstream, incoming, Sync.TrackedRoots());
+
+        if (plan.Verdict == MergeVerdict.CannotTell)
+        {
+            _logger.Warn(LogCategory.Git, $"{what} refused: {plan.Verdict}");
+            Notifications.Failure($"Did not {what}.", plan.Explanation);
+            return;
+        }
+
+        // Asked before the guard and before the tree is rewritten, as the named merge asks:
+        // the consequence — a project a step behind its own text until an import — is cheap
+        // to decline here and expensive to undo after.
+        if (plan.NeedsImport
+            && !AskToMerge(rebase ? $"Rebase onto {upstream}?" : $"Merge {upstream}?",
+                           rebase ? "Rebase" : "Merge", plan))
+        {
+            _logger.Info(LogCategory.Git, $"{what} declined at the import warning");
+            return;
+        }
 
         // Guarded like a pull — all three rewrite the project and its mirror together, which
         // is the scenario SAFEGUARDS §5.A calls able to corrupt a project through no user
@@ -4047,8 +4085,8 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
 
         GitResult result = default!;
 
-        await Sync.WhileGitRewritesTheTreeAsync(
-            what,
+        await RewriteTreeUnderPlanAsync(
+            what, plan,
             async () => result = rebase
                 ? await _git.RebaseOntoUpstreamAsync(null, busy.Token).ConfigureAwait(true)
                 : await _git.MergeUpstreamAsync(null, busy.Token).ConfigureAwait(true))
@@ -4059,7 +4097,18 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         if (result.Success)
         {
             Auth.NoteAuthSuccess();
-            Notifications.Success($"The {what} finished.");
+            if (plan.NeedsImport)
+            {
+                Notifications.Warning(
+                    $"The {what} finished. The project still needs the merged text.",
+                    "Review the changes and press Review and import. Exports are held off " +
+                    "until you do, so nothing overwrites them.");
+            }
+            else
+            {
+                Notifications.Success($"The {what} finished.");
+            }
+
             return;
         }
 
@@ -4185,7 +4234,7 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         // consequence and it is cheap to decline BEFORE the tree has been rewritten - after it
         // the only way back is `git merge --abort`, which this panel does offer but which is a
         // worse place to make the decision from.
-        if (plan.NeedsImport && !AskToMerge(chosen, plan))
+        if (plan.NeedsImport && !AskToMerge($"Merge {chosen}?", "Merge", plan))
         {
             _logger.Info(LogCategory.Git, $"merge of {chosen} declined at the import warning");
             return;
@@ -4200,63 +4249,12 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         using var busy = Busy.Begin(WorkKind.GitWrite, $"Merging {chosen}…");
 
         GitResult result = default!;
-        IReadOnlyList<string> unprotected = [];
 
-        // THE HOLD, THE ADOPT DECISION, AND THE MARKING - IN A try/finally, WHICH IS THE
-        // FOURTH THING A RE-READ FOUND WRONG HERE.
-        //
-        // The watcher hold is the same one a pull takes: the watcher cannot know which paths
-        // a merge will touch until it has touched them, and unheld it would report the
-        // rewrite as edits to the exported text.
-        //
-        // NOT ADOPTED WHEN AN IMPORT IS OWED. Adopting takes the project and the mirror as
-        // jointly true, which is right for a checkout or a pull - both arrive from one commit
-        // the gate vetted - and wrong for a merge, where the binary project keeps one side
-        // and the mirror keeps both. Adopting would write a LastSynced claiming they agree;
-        // on a merge that stopped on a conflict it would record the conflict markers
-        // themselves as the synced state.
-        //
-        // AND THE MARKING IS IN A finally BECAUSE THE HAPPY PATH IS NOT THE DANGEROUS ONE.
-        // MergeBranchAsync can throw rather than return a failed GitResult - busy.Token is
-        // cancellable, and a cancelled merge can leave the tree part-way through with the
-        // mirror already rewritten. On that path the exception ran straight past the marking
-        // to AsyncCommand's error handler, leaving the merged text open to the commit gate's
-        // export. The trade is deliberate: a lock taken over a merge that turned out to touch
-        // nothing is recoverable - abandoning releases it, and so does discarding - while an
-        // unprotected merged mirror is not.
-        try
-        {
-            await Sync.WhileGitRewritesTheTreeAsync(
-                "merge",
-                async () => result = await _git.MergeBranchAsync(chosen, null, busy.Token)
-                    .ConfigureAwait(true),
-                adoptResult: !plan.NeedsImport)
-                .ConfigureAwait(true);
-        }
-        finally
-        {
-            // Before the refresh, deliberately: RunRefreshAsync re-reads the tree and
-            // re-evaluates the gate, and it must find the lock already moved.
-            if (plan.NeedsImport)
-            {
-                unprotected = await Sync
-                    .NoteMergedTextAsync([.. plan.Affected.Select(a => a.BindingId)])
-                    .ConfigureAwait(true);
-            }
-        }
-
-        if (unprotected.Count > 0)
-        {
-            // LOUD, BECAUSE THE ONE GUARANTEE THIS PATH RESTS ON DID NOT HOLD. The state
-            // machine blocks TextChanged from ProjectAuthoritative - a project that already
-            // had unexported edits - so the merged text is open to the commit gate's export
-            // with nothing else on screen to say so. Sticky, like every other Failure.
-            Notifications.Failure(
-                "The merged text is not protected.",
-                $"{unprotected.Count} project(s) already had unsynced work, so Versio could " +
-                "not put the merged text in charge. Export or discard that work before " +
-                "committing, or the next export will overwrite what the merge brought in.");
-        }
+        await RewriteTreeUnderPlanAsync(
+            "merge", plan,
+            async () => result = await _git.MergeBranchAsync(chosen, null, busy.Token)
+                .ConfigureAwait(true))
+            .ConfigureAwait(true);
 
         if (result.Success)
         {
@@ -4283,17 +4281,94 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         await RunRefreshAsync(RefreshTrigger.Manual, null).ConfigureAwait(true);
     }
 
+    /// <summary>
+    /// Run a merge or a rebase under the protection its <see cref="MergePlan"/> calls for: the
+    /// watcher held, the result adopted only when no import is owed, and the merged text put
+    /// in charge otherwise — whatever way the operation ends.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// THE HOLD, THE ADOPT DECISION, AND THE MARKING - IN A try/finally, WHICH IS THE FOURTH
+    /// THING A RE-READ FOUND WRONG HERE.
+    /// </para>
+    /// <para>
+    /// The watcher hold is the same one a pull takes: the watcher cannot know which paths a
+    /// merge will touch until it has touched them, and unheld it would report the rewrite as
+    /// edits to the exported text.
+    /// </para>
+    /// <para>
+    /// NOT ADOPTED WHEN AN IMPORT IS OWED. Adopting takes the project and the mirror as jointly
+    /// true, which is right for a checkout or a pull - both arrive from one commit the gate
+    /// vetted - and wrong for a merge, where the binary project keeps one side and the mirror
+    /// keeps both. Adopting would write a LastSynced claiming they agree; on a merge that
+    /// stopped on a conflict it would record the conflict markers themselves as the synced
+    /// state.
+    /// </para>
+    /// <para>
+    /// AND THE MARKING IS IN A finally BECAUSE THE HAPPY PATH IS NOT THE DANGEROUS ONE. The git
+    /// call can throw rather than return a failed GitResult - the busy token is cancellable, and
+    /// a cancelled merge can leave the tree part-way through with the mirror already rewritten.
+    /// On that path the exception ran straight past the marking to AsyncCommand's error
+    /// handler, leaving the merged text open to the commit gate's export. The trade is
+    /// deliberate: a lock taken over a merge that turned out to touch nothing is recoverable -
+    /// abandoning releases it, and so does discarding - while an unprotected merged mirror is
+    /// not.
+    /// </para>
+    /// <para>
+    /// ONE PLACE FOR BOTH BUTTONS. This block was <c>MergeBranchAsync</c>'s alone, and the
+    /// upstream merge and rebase ran the same operation through the adopting default: the
+    /// mirror came back holding the upstream's logic, the project kept its own, the engine
+    /// recorded the two as synced and answered NoChange, and the next project save exported
+    /// over what the upstream had brought (the 2026-10-25 review's fourth round, item 2). The
+    /// hazard is the merge's, not the button's, so the protection is now where every merge
+    /// passes through.
+    /// </para>
+    /// </remarks>
+    private async Task RewriteTreeUnderPlanAsync(string what, MergePlan plan, Func<Task> operation)
+    {
+        IReadOnlyList<string> unprotected = [];
+
+        try
+        {
+            await Sync.WhileGitRewritesTheTreeAsync(what, operation, adoptResult: !plan.NeedsImport)
+                .ConfigureAwait(true);
+        }
+        finally
+        {
+            // Before the refresh, deliberately: RunRefreshAsync re-reads the tree and
+            // re-evaluates the gate, and it must find the lock already moved.
+            if (plan.NeedsImport)
+            {
+                unprotected = await Sync
+                    .NoteMergedTextAsync([.. plan.Affected.Select(a => a.BindingId)])
+                    .ConfigureAwait(true);
+            }
+        }
+
+        if (unprotected.Count > 0)
+        {
+            // LOUD, BECAUSE THE ONE GUARANTEE THIS PATH RESTS ON DID NOT HOLD. The state
+            // machine blocks TextChanged from ProjectAuthoritative - a project that already
+            // had unexported edits - so the merged text is open to the commit gate's export
+            // with nothing else on screen to say so. Sticky, like every other Failure.
+            Notifications.Failure(
+                "The merged text is not protected.",
+                $"{unprotected.Count} project(s) already had unsynced work, so Versio could " +
+                "not put the merged text in charge. Export or discard that work before " +
+                $"committing, or the next export will overwrite what the {what} brought in.");
+        }
+    }
+
     /// <summary>The one question a merge into a tracked project has to ask first.</summary>
     /// <remarks>
     /// Through <c>AskingSomething</c> like every other prompt in this file: it is what stops a
     /// background refresh landing under an open dialog and moving what the user is reading.
     /// </remarks>
-    private bool AskToMerge(string branch, MergePlan plan)
+    private bool AskToMerge(string headline, string verb, MergePlan plan)
     {
         using (AskingSomething())
         {
-            return Prompts.ConfirmDestructive(
-                new DestructivePrompt($"Merge {branch}?", plan.Explanation, "Merge"));
+            return Prompts.ConfirmDestructive(new DestructivePrompt(headline, plan.Explanation, verb));
         }
     }
 
