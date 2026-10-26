@@ -398,13 +398,26 @@ public sealed class RepoModelLoader(IRepoSource source, IMemoryCache cache, IVer
 
         try
         {
-            // The desktop's own reader, so a committed file means the same thing in both.
-            return RepoConfigStore.Parse(Encoding.UTF8.GetString(bytes.Value!));
+            // The desktop's own reader, so a committed file means the same thing in both - the
+            // defaults it fills in for a null list included, said on the page and in the log as
+            // the desktop says them, because a bindings list read as empty is a page with no
+            // projects and nothing else to explain why.
+            var config = RepoConfigStore.Parse(Encoding.UTF8.GetString(bytes.Value!), out var repairs);
+            foreach (var repair in repairs)
+            {
+                problems.Add($"{ConfigPath}: {repair}.");
+                log.Warn(LogCategory.Web, $"{owner}/{repo}: {ConfigPath}: {repair}");
+            }
+
+            return config;
         }
-        catch (JsonException)
+        catch (JsonException ex)
         {
-            problems.Add($"{ConfigPath} is not valid JSON; the repository is shown as plain folders.");
-            log.Warn(LogCategory.Web, $"{owner}/{repo}: {ConfigPath} is corrupt; shown as plain folders");
+            // The reason travels with the problem: the store refuses a file for its shape as well
+            // as its syntax, and "not valid JSON" would send a reader of the page hunting for a
+            // missing comma in a file whose only fault is a null where a binding belongs.
+            problems.Add($"{ConfigPath} could not be read as a Versio configuration ({ex.Message}); the repository is shown as plain folders.");
+            log.Warn(LogCategory.Web, $"{owner}/{repo}: {ConfigPath} is corrupt ({ex.Message}); shown as plain folders");
             return null;
         }
     }
