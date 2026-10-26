@@ -19,6 +19,95 @@ produce a diff touching everything else.
 
 ---
 
+### The review's sixth round: five more, three of them the fifth round's fixes one case short
+
+**2026-10-25, the reviewer read `2d2937e` and sent five confirmed items — two P1, three P2 —
+three of them the fifth round's fixes seen from one step further and two new.** Same method as
+every round before: every claim read against the code, a failing test first, one commit per
+item, the fix mutated away and the test watched go red, then restored. **All five are real and
+all five are fixed**; none is refuted and none is deferred. No python is touched, so the
+CODESYS gate owes nothing new. The three follow-ups share one shape: each fifth-round fix drew
+its boundary where the reported case was — the *tracked* neighbour, the *two*-PLC project, the
+*same-suffix* rename — and the reviewer stepped one case past it. The lesson is the one written
+under the third round, read again: a refusal protects exactly what it is written against, and
+"the common case" is not "the only case".
+
+**The P1s:**
+
+- **1 — adoption still let an export delete an untracked project.** The fifth round refused an
+  export root nested in another *binding's*, and on a fresh scan there are no bindings yet:
+  `A.project` was adopted first, `A/B.project` was then refused for sitting inside `A`'s export
+  root, and `A`'s export deleted it all the same — the refusal protected the inner project from
+  being tracked, not from being overwritten. `Adoption.Plan` now takes every project the scan
+  found, tracked or not (source-project folders included), and refuses a root that would contain
+  any of them, whichever is adopted first; the inner project adopts on its own, and the outer
+  one waits for the inner to be moved — the outer, because the outer is the one whose export
+  destroys. `RepoSetup.AdoptAsync` hands the caller's scan through and scans for itself when a
+  caller has none, so no caller can leave the question unasked; the App's auto-adoption passes
+  its snapshot. A four-row Core theory and an Integration test on a real directory with no scan
+  handed over; the check neutralised turned two rows and the Integration test red. Commit
+  `9bc72ae`.
+- **2 — the TIA host still wrote into the wrong PLC when one was left.** The fifth round's
+  refusal kept a one-PLC fallback on the reasoning that with a single PLC there is nowhere else
+  a file could belong. One PLC is also what a project looks like after its *other* PLC was
+  removed in Portal, and an old import for the removed Device2 then wrote Device2's blocks into
+  Device1 and saved. `MatchPlc` has no fallback now: a path that names no live PLC is a miss
+  however many PLCs remain, and the pre-flight refuses the plan; a device renamed in a one-PLC
+  project costs a re-export, which the fatal already names. The test that pinned the fallback
+  is rewritten to the reviewer's case and was red with the write landing in the survivor. The
+  real TIA gate still owes the refusal on a live Portal. Commit `7cc4309`.
+
+**The P2s:**
+
+- **3 — some renamed files still hid their removed content.** The old path reached the
+  renderer after the fifth round, and the renderer then paired every layer — the one the caller
+  had just named included — by everything after the file name's first dot, so `old.txt` →
+  `new.md` and `Old.Name.st` → `New.st` found no counterpart and drew additions without
+  removals. The pair the caller named now decides its own layer outright; the object's other
+  layers follow the pair by the stems it reveals (`GVL_Alarm.gvl.xml` follows `GVL_Alarm.gvl.st`
+  → `GVL.Alarm2.gvl.st`), and only a sibling the pair cannot place falls back to the suffix. The
+  old remark said the pairing was "after the object's name" while the code paired after the
+  first dot — the reviewer's example is exactly that gap. A two-case Web theory red with the
+  reviewer's numbers and a two-layer rename test; disabling the stem pairing alone turned
+  exactly the latter red. Commit `c8324b1`.
+- **4 — a conflicted rebase could not be continued through the app.** The banner said
+  "Continue the rebase" and the button ran a plain `git commit`: a detached commit, the rebase
+  still paused, the branch unchanged, later commits unreplayed. `IGitClient.ContinueRebaseAsync`
+  runs `rebase --continue` with `GIT_EDITOR=:` (the environment variable, because git reads it
+  ahead of all config) so each replayed commit keeps its own message; while a rebase is paused
+  the commit button's plan is `CommitPlan.ContinuingRebase` — captioned "Continue rebase", no
+  message needed, the message box left as typed, refused while conflicts remain — and a rebase
+  that stops at the next commit's conflict is shown as such rather than reported finished.
+  Three App tests against a real diverged upstream with two local commits (red before: caption
+  "Commit", button never live), two Integration tests, three Core tests on the plan. One mutant
+  survived at first: a shell exporting `GIT_EDITOR` made the editor-suppression test vacuous,
+  so the fixture now sets a refusing editor itself and asserts the raw command fails before the
+  client succeeds. Commit `bc2e5d0`.
+- **5 — `repo.json` with null collections crashed past validation.** `{"bindings":null}`,
+  `{"bindings":[null]}` and `{"ignore":null}` deserialised and then threw
+  `NullReferenceException` wherever the lists were read. One rule, in `RepoConfigStore.Parse`,
+  which both the desktop store and the web viewer go through: a null where the model has a
+  default reads as the default and is reported (a Warn per repair on the desktop, a problem on
+  the web page); a null where the model requires a value — a null binding, a null id or path, a
+  null ignore glob, a file holding `null` — refuses the whole file, as System.Text.Json already
+  does when the same path is *absent*. Whole-file rather than drop-the-element, because a
+  dropped binding is a project no longer protected while the panel looks healthy. Ten
+  Integration tests and two Web tests, eight and two red before. Commit `749e3a1`.
+
+**The runs.** Over the landed tree, `bc2e5d0`: Core 2,079 (nothing skipped), Integration 249, Arch 36, CODESYS pure 405, parity 104, TIA pure 108, TwinCAT pure 27, Web 504, vitest 211; App 845 — 845/845 in 12 m 15 s, nothing else of this session running, the clipboard tests green again. 4,423 across the twelve projects; the toolchain-gated counts (TIA 5, TwinCAT 6, CODESYS 55) are from their last gate runs, and none of this round's commits reaches them.
+
+**Still not done**, carried from the first round: branch deletion addresses the hardcoded
+"origin" after item 39. Named this round and left alone: **finishing a merge after "Keep mine"
+on a single-file conflict** leaves the index equal to HEAD, so the commit plan says "Nothing to
+commit" while the banner says "Commit to finish the merge" — the merge counterpart of item 4,
+found by its agent, unfixed; a rebase conflict resolved wholly in the upstream's favour makes
+git drop the emptied commit and the panel reports "finished" one commit short with nothing
+naming it; the branch compare's file list still detects no renames and the pull page's stale
+rename notice still stands (from the fifth round); the `SourceProjectTests` watch item from the
+fourth round.
+
+---
+
 ### The review's fifth round: six more, one of them a hole the third round's own fix opened
 
 **2026-10-25, the reviewer read `f30af09` and sent six confirmed items — three P1, three P2.**
