@@ -8,7 +8,15 @@ namespace Versio.Plc.TiaPortal.Host;
 
 internal static partial class HostApp
 {
-    private static void Import(object project, string srcDir, JsonElement plan, bool save)
+    /// <summary>
+    /// Apply a confirmed plan to the open project.
+    /// </summary>
+    /// <remarks>
+    /// Internal, not private, so the pure tests — which compile this file in — can drive
+    /// it against fakes shaped like the Openness objects it reads. Nothing else in the exe
+    /// calls it but <see cref="Run"/>.
+    /// </remarks>
+    internal static void Import(object project, string srcDir, JsonElement plan, bool save)
     {
         if (plan.ValueKind != JsonValueKind.Object)
         {
