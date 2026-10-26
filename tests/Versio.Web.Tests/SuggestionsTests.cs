@@ -21,6 +21,26 @@ public sealed class SuggestionsTests
         Assert.Null(Suggestions.Read(null));
     }
 
+    /// <summary>
+    /// A CRLF-formatted comment (a body written in a Windows tool, or pasted through one) is a
+    /// suggestion all the same. Its closing fence is followed by "\r\n", and .NET's <c>$</c> under
+    /// <c>(?m)</c> matches before '\n' only — so the LF body and the CRLF body with no newline after
+    /// the fence were read while this one, the usual CRLF shape, came back as "no suggestion"
+    /// (review, 2026-10-25). Read and Without see the same fence either way.
+    /// </summary>
+    [Fact]
+    public void A_crlf_body_whose_closing_fence_ends_the_line_is_read_like_the_lf_one()
+    {
+        Assert.Equal("a\nb\n", Suggestions.Read("```suggestion\r\na\r\nb\r\n```\r\n"));
+        Assert.Equal("  run : BOOL := TRUE;\n", Suggestions.Read("Use the default.\r\n\r\n```suggestion\r\n  run : BOOL := TRUE;\r\n```\r\n\r\nand then"));
+        Assert.Equal("", Suggestions.Read("Drop it.\r\n```suggestion\r\n```\r\n"));
+        Assert.Equal("x\n\n", Suggestions.Read("```suggestion\r\nx\r\n\r\n```\r\n"));
+        // The closing fence's own "\r\n" is the prose's line break, not the fence's: taken out, the
+        // body reads as the LF one does, with its own endings kept.
+        Assert.Equal("Use the default.", Suggestions.Without("Use the default.\r\n\r\n```suggestion\r\n  run : BOOL := TRUE;\r\n```\r\n"));
+        Assert.Equal("Before\r\n\r\nAfter", Suggestions.Without("Before\r\n```suggestion\r\nx\r\n```\r\nAfter"));
+    }
+
     /// <summary>The prose is drawn without the fence, which the page draws as the widget: shown once, as on github.com.</summary>
     [Fact]
     public void The_body_without_its_suggestion_is_the_prose_alone()

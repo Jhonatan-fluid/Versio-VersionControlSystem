@@ -12,7 +12,9 @@ namespace Versio.Web.Review;
 /// <para>
 /// <b>Only the first fence counts</b>, as on github.com, where a comment with two suggestion blocks
 /// applies the first. The fence's text is taken as-is, newlines normalised to the file's own, and a
-/// fence with no lines at all means "delete these lines" — GitHub's reading too.
+/// fence with no lines at all means "delete these lines" — GitHub's reading too. The comment body
+/// itself may be LF or CRLF (GitHub stores what the client sent; a Windows tool sends CRLF), and the
+/// fence is found either way — <see cref="Fence"/> says what that cost once.
 /// </para>
 /// <para>
 /// <b>The file's line endings are kept, line by line.</b> A suggestion typed on github.com arrives
@@ -164,7 +166,19 @@ public static partial class Suggestions
         return crlf > 0 && crlf >= lf ? "\r\n" : "\n";
     }
 
-    /// <summary>A fenced block whose info string is exactly <c>suggestion</c>; the body up to the closing fence.</summary>
-    [GeneratedRegex(@"(?m)^[ \t]*```+[ \t]*suggestion[ \t]*\r?\n(.*?)^[ \t]*```+[ \t]*$", RegexOptions.Singleline)]
+    /// <summary>
+    /// A fenced block whose info string is exactly <c>suggestion</c>; the body up to the closing fence.
+    /// </summary>
+    /// <remarks>
+    /// Both fence lines allow a CRLF end. The opening one always did (<c>\r?\n</c>); the closing one
+    /// ended in <c>$</c>, which under <c>(?m)</c> matches before <c>\n</c> only in .NET — so a CRLF
+    /// body whose closing fence ended its line, the usual shape of a comment written in a Windows
+    /// tool, matched nothing and was "no suggestion", while the same body with no newline after the
+    /// fence matched at end-of-string (review, 2026-10-25). The <c>\r</c> is a lookahead rather than
+    /// consumed: <see cref="Without"/> takes the match out and the <c>\r\n</c> after the fence is the
+    /// prose's own line break, as the <c>\n</c> is in an LF body — eating half of it left a bare
+    /// <c>\n</c> in a CRLF text. The captured body is normalised to <c>\n</c> by <see cref="Read"/>.
+    /// </remarks>
+    [GeneratedRegex(@"(?m)^[ \t]*```+[ \t]*suggestion[ \t]*\r?\n(.*?)^[ \t]*```+[ \t]*(?=\r?$)", RegexOptions.Singleline)]
     private static partial Regex Fence();
 }
