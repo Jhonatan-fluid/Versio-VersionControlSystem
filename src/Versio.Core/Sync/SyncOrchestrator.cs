@@ -1153,10 +1153,57 @@ public sealed class SyncOrchestrator
         //
         // The slot is completed by the caller, which is the only place that can act on
         // "a follow-up must start now" — it has to await one.
-        var outcome = await ClaimTheDirectionAndRunAsync(
-            attempt, trigger, transition, scratchProject, operationId, ct).ConfigureAwait(false);
+        try
+        {
+            var outcome = await ClaimTheDirectionAndRunAsync(
+                attempt, trigger, transition, scratchProject, operationId, ct).ConfigureAwait(false);
 
-        return (outcome, !job.Synchronous);
+            return (outcome, !job.Synchronous);
+        }
+        catch (Exception ex)
+        {
+            // The caller completes the slot only on an outcome it was handed, so a throw from
+            // in here left the slot held for good: every later change on the binding answered
+            // Coalesced, and nothing ever ran again until a restart. Two bindings persisting
+            // their claims through one state.json.tmp at the same moment was the throw that
+            // found it (the 2026-10-25 review's seventh round, item 2; the fourth round's item
+            // 5 was the same shape, for a cancelled read). The slot is reset here — a change
+            // that queued behind the failed run is dropped with it, and the next watcher event
+            // is judged on its own — and the failure is recorded as any other, so Try again
+            // lights. The record is written with a live token and under its own guard: the
+            // store that just refused one write may refuse this one too, and that must not
+            // turn a recorded failure into a second escape.
+            _log.Error(LogCategory.Sync,
+                $"{job.BindingId}: the run threw before it could answer — {ex.Message}; the " +
+                "slot is released and the failure recorded");
+            if (granted)
+            {
+                _coalescers[job.BindingId].Reset();
+            }
+
+            var fail = job.Source == ChangeSource.Project
+                ? SyncTrigger.ExportFailed
+                : SyncTrigger.ImportFailed;
+            try
+            {
+                await ApplyAsync(job.BindingId, fail, string.Empty, CancellationToken.None,
+                        reason: FailedBecause(job.Source == ChangeSource.Project ? "export" : "import", ex.Message))
+                    .ConfigureAwait(false);
+            }
+            catch (Exception persist)
+            {
+                _log.Error(LogCategory.Sync,
+                    $"{job.BindingId}: the failure could not be recorded either — {persist.Message}");
+            }
+
+            return (new SyncOutcome
+            {
+                Verdict = SyncVerdict.Failed,
+                BindingId = job.BindingId,
+                Explanation = ex.Message,
+                State = StateOf(job.BindingId),
+            }, false);
+        }
     }
 
     /// <summary>

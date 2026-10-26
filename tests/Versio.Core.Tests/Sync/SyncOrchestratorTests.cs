@@ -1659,6 +1659,35 @@ public class SyncOrchestratorTests
     }
 
     [Fact]
+    public async Task A_run_that_throws_releases_its_slot_and_records_the_failure()
+    {
+        // Review 2026-10-25, seventh round, item 2: two bindings persisting their claims through
+        // one state.json.tmp at the same moment made the store throw a sharing violation, the
+        // throw escaped the run, and the slot the run held was never completed — every later
+        // change on the binding answered Coalesced until a restart. The fourth round's item 5
+        // was the same shape for a cancelled read.
+        var h = new Harness();
+        h.SetProject("v2");
+        h.Locks.ThrowOnNextWrite = new IOException("The process cannot access the file because it is being used by another process.");
+
+        // A watcher job, not a synchronous one: the coalescer's slot is the point.
+        var outcome = await h.Orchestrator.HandleChangeAsync(
+            new SyncJob { BindingId = BindingId, Source = ChangeSource.Project }, CancellationToken.None);
+
+        Assert.Equal(SyncVerdict.Failed, outcome.Verdict);
+        Assert.Equal(SyncDirection.Failed, outcome.State);
+        Assert.Contains("being used by another process", outcome.Explanation);
+        Assert.Empty(h.Codesys.Jobs);
+
+        // The next change is judged on its own, not queued behind a slot nobody completes.
+        h.SetProject("v3");
+        var later = await h.Orchestrator.HandleChangeAsync(
+            new SyncJob { BindingId = BindingId, Source = ChangeSource.Project }, CancellationToken.None);
+
+        Assert.NotEqual(SyncVerdict.Coalesced, later.Verdict);
+    }
+
+    [Fact]
     public async Task Two_held_exports_do_not_share_a_scratch_folder()
     {
         // The commit gate is synchronous and skips the coalescer, so a second

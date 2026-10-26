@@ -228,11 +228,23 @@ public sealed class InMemoryLockStore : ILockStore
     public LockState? State { get; set; }
     public int Writes { get; private set; }
 
+    /// <summary>
+    /// Thrown by the next write and then cleared, standing in for the real store refusing a
+    /// write — two bindings persisting into one temp file at the same moment was the case.
+    /// </summary>
+    public Exception? ThrowOnNextWrite { get; set; }
+
     public Task<LockState?> ReadAsync(CancellationToken ct) => Task.FromResult(State);
 
     public Task WriteAsync(LockState state, CancellationToken ct)
     {
         ct.ThrowIfCancellationRequested();
+        if (ThrowOnNextWrite is { } failure)
+        {
+            ThrowOnNextWrite = null;
+            throw failure;
+        }
+
         State = state;
         Writes++;
         return Task.CompletedTask;
