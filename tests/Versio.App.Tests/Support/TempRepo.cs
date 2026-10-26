@@ -47,13 +47,18 @@ public sealed class TempRepo : IDisposable
     /// </param>
     /// <param name="unstagedFiles">How many changed files to leave in the working tree.</param>
     /// <param name="stagedFiles">How many of those to stage.</param>
+    /// <param name="unborn">
+    /// Leave the first commit unmade: an identity, a staged seed file, and no HEAD. The first
+    /// day of a real repository, where everything that reads HEAD has to cope without one.
+    /// </param>
     public TempRepo(
         bool identity = true,
         bool withRemote = false,
         bool published = false,
         string? originUrl = null,
         int unstagedFiles = 0,
-        int stagedFiles = 0)
+        int stagedFiles = 0,
+        bool unborn = false)
     {
         _root = System.IO.Path.Combine(
             System.IO.Path.GetTempPath(), "versio-t-" + Guid.NewGuid().ToString("N")[..8]);
@@ -82,7 +87,7 @@ public sealed class TempRepo : IDisposable
         File.WriteAllText(System.IO.Path.Combine(Path, "seed.txt"), "seed\n");
         Git(Path, "add .");
 
-        if (identity)
+        if (identity && !unborn)
         {
             Git(Path, "commit -qm first");
         }

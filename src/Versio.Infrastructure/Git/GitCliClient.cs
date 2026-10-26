@@ -250,10 +250,72 @@ public sealed partial class GitCliClient(
             : RunWithPathspecsAsync(["add"], paths, ct);
 
     /// <summary>Remove the given paths from the index, leaving the working tree alone.</summary>
-    public Task<GitResult> UnstageAsync(IReadOnlyList<string> paths, CancellationToken ct) =>
-        paths.Count == 0
-            ? Task.FromResult(NoOp())
-            : RunWithPathspecsAsync(["restore", "--staged"], paths, ct);
+    /// <remarks>
+    /// <c>restore --staged</c> puts the index entry back to what HEAD has, and a repository
+    /// with no commit yet has no HEAD to read: <c>fatal: could not resolve 'HEAD'</c>. The
+    /// commit button hit that on the first day of a repository — two files staged, one
+    /// ticked, and unstaging the other failed the whole commit (the 2026-10-25 review's P2).
+    /// Before the first commit the index is a diff against the empty tree, so that is the tree
+    /// restored from; the command is otherwise the same one, which is the point.
+    /// <para>
+    /// <c>git rm --cached</c> was the other candidate and was rejected: it refuses a path whose
+    /// working copy has been edited since it was staged ("staged content different from both
+    /// the file and the HEAD") unless given <c>-f</c>, and a line reading <c>rm -f</c> in the
+    /// log of an unstage is the wrong thing to make a reader of this log reason about, even
+    /// though <c>--cached</c> keeps it off the working tree.
+    /// </para>
+    /// <para>
+    /// A repository with a HEAD runs exactly what it ran before — the one extra
+    /// <c>rev-parse</c> is the whole cost, on a user-pressed action, never on a poll.
+    /// </para>
+    /// </remarks>
+    public async Task<GitResult> UnstageAsync(IReadOnlyList<string> paths, CancellationToken ct)
+    {
+        if (paths.Count == 0)
+        {
+            return NoOp();
+        }
+
+        if (await HasHeadAsync(ct).ConfigureAwait(false))
+        {
+            return await RunWithPathspecsAsync(["restore", "--staged"], paths, ct)
+                .ConfigureAwait(false);
+        }
+
+        var emptyTree = await EmptyTreeIdAsync(ct).ConfigureAwait(false);
+        if (!emptyTree.Success)
+        {
+            return emptyTree;
+        }
+
+        _log.Info(LogCategory.Git,
+            $"unstaging {paths.Count} path(s) on an unborn branch: restoring from the empty tree");
+        return await RunWithPathspecsAsync(
+                ["restore", "--staged", $"--source={emptyTree.StdOut.Trim()}"], paths, ct)
+            .ConfigureAwait(false);
+    }
+
+    /// <summary>Whether HEAD names a commit — false on an unborn branch.</summary>
+    /// <remarks>
+    /// Quiet: <c>--verify -q</c> exits 1 and prints nothing when there is no HEAD, and that
+    /// is the answer being asked for, not a fault to put a <c>WRN</c> in the log over.
+    /// </remarks>
+    private async Task<bool> HasHeadAsync(CancellationToken ct)
+    {
+        var result = await RunAsync(
+            ["rev-parse", "--verify", "-q", "HEAD"], null, ct, quietFailure: true)
+            .ConfigureAwait(false);
+        return result.Success;
+    }
+
+    /// <summary>The id of the empty tree, asked of git rather than hard-coded.</summary>
+    /// <remarks>
+    /// It is a well-known constant for SHA-1 repositories and a different one under
+    /// <c>--object-format=sha256</c>; hashing an empty tree object is the one form that is
+    /// right in both without this client knowing which it is in.
+    /// </remarks>
+    private Task<GitResult> EmptyTreeIdAsync(CancellationToken ct) =>
+        RunAsync(["hash-object", "-t", "tree", "--stdin"], null, ct, stdin: string.Empty);
 
     /// <summary>Commit whatever is staged.</summary>
     /// <remarks>An empty message is refused here rather than by git, so the user gets a

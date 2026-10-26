@@ -127,6 +127,14 @@ public interface IGitClient
 
     Task<GitResult> StageAsync(IReadOnlyList<string> paths, CancellationToken ct);
 
+    /// <summary>Take the given paths out of the index, leaving the working tree alone.</summary>
+    /// <remarks>
+    /// <b>Works before the first commit.</b> The commit button unstages whatever was not
+    /// ticked, and the first commit of a repository is exactly when several files are staged
+    /// and only some are wanted. An implementation that restores from HEAD has no HEAD to
+    /// restore from there, and the whole commit failed on it once (the 2026-10-25 review's
+    /// P2) — the empty tree is what an unborn branch's index is a diff against.
+    /// </remarks>
     Task<GitResult> UnstageAsync(IReadOnlyList<string> paths, CancellationToken ct);
 
     Task<GitResult> CommitAsync(string message, CancellationToken ct);

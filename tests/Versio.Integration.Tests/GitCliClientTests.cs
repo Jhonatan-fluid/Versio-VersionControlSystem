@@ -592,6 +592,60 @@ public sealed class GitCliClientTests(ITestOutputHelper output) : IDisposable
     }
 
     [SkippableFact]
+    public async Task Unstaging_works_before_the_first_commit_and_leaves_the_other_staged_file_alone()
+    {
+        // `git restore --staged` restores the index entry from HEAD, and a repository with no
+        // commit yet has no HEAD to restore from: "fatal: could not resolve 'HEAD'". So on the
+        // first day of a repository, ticking one of two staged files and pressing Commit
+        // failed at the unstage and committed nothing (the 2026-10-25 review's P2). Before
+        // the first commit the index is a diff against the empty tree, which is what the
+        // client restores from instead.
+        //
+        // a.txt is edited AFTER it was staged. That is the state `git rm --cached` refuses
+        // without -f ("staged content different from both the file and the HEAD"), and the
+        // reason it was not the fix: a flag spelled "force" on an unstage would be the wrong
+        // thing to find in the log of a tool whose whole point is not losing work.
+        Skip.IfNot(GitAvailable, "git not on PATH");
+        await InitAsync();
+        Write("a.txt", "a");
+        Write("b.txt", "b");
+        await Client.StageAsync(["a.txt", "b.txt"], CancellationToken.None);
+        Write("a.txt", "a edited after staging");
+
+        var result = await Client.UnstageAsync(["a.txt"], CancellationToken.None);
+        Assert.True(result.Success, result.FailureReason);
+
+        var status = await Client.StatusAsync(CancellationToken.None);
+        Assert.True(status.Branch.IsUnborn);
+        Assert.Equal(ChangeKind.Untracked, Assert.Single(status.Changes, c => c.Path == "a.txt").Unstaged);
+        Assert.Equal(ChangeKind.Added, Assert.Single(status.Changes, c => c.Path == "b.txt").Staged);
+
+        // Unstaging is about the index only: the working file keeps the edit.
+        Assert.Equal("a edited after staging", File.ReadAllText(Path.Combine(_repo, "a.txt")));
+    }
+
+    [SkippableFact]
+    public async Task Unstaging_several_paths_before_the_first_commit_takes_them_all_out_in_one_call()
+    {
+        // The shell hands over a list — a staged rename is unstaged by both of its paths —
+        // and the unborn-branch form has to take a list the way the ordinary one does.
+        Skip.IfNot(GitAvailable, "git not on PATH");
+        await InitAsync();
+        Write("a.txt", "a");
+        Write("b.txt", "b");
+        Write("c.txt", "c");
+        await Client.StageAsync(["a.txt", "b.txt", "c.txt"], CancellationToken.None);
+
+        var result = await Client.UnstageAsync(["a.txt", "c.txt"], CancellationToken.None);
+        Assert.True(result.Success, result.FailureReason);
+
+        var status = await Client.StatusAsync(CancellationToken.None);
+        Assert.Equal(ChangeKind.Untracked, Assert.Single(status.Changes, c => c.Path == "a.txt").Unstaged);
+        Assert.Equal(ChangeKind.Added, Assert.Single(status.Changes, c => c.Path == "b.txt").Staged);
+        Assert.Equal(ChangeKind.Untracked, Assert.Single(status.Changes, c => c.Path == "c.txt").Unstaged);
+    }
+
+    [SkippableFact]
     public async Task An_empty_commit_message_is_refused_before_git_is_invoked()
     {
         Skip.IfNot(GitAvailable, "git not on PATH");
