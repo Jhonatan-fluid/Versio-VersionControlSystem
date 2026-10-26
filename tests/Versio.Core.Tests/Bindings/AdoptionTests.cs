@@ -169,6 +169,33 @@ public sealed class AdoptionTests
         Assert.Contains("delete", decision.Explanation);
     }
 
+    [Theory]
+    [InlineData("plc/A/B.project", false)]
+    [InlineData("plc/A/Deep/C.fbsproj", false)]
+    [InlineData("plc/AB.project", true)]
+    [InlineData("other/D.project", true)]
+    public void A_project_whose_export_directory_would_contain_an_untracked_project_is_refused(
+        string discovered, bool ready)
+    {
+        // Review 2026-10-25, sixth round, item 1: the fifth round's check read the bindings,
+        // and on a fresh scan there are none — A.project was adopted first, A/B.project was then
+        // refused, and A's export deleted it anyway. The scan's projects count, tracked or not.
+        var decision = Adoption.Plan(
+            "plc/A.project", new RepoConfig(), Format, "b1",
+            otherProjects: ["plc/A.project", discovered]);
+
+        if (ready)
+        {
+            Assert.Equal(AdoptionVerdict.Ready, decision.Verdict);
+        }
+        else
+        {
+            Assert.Equal(AdoptionVerdict.ExportPathTaken, decision.Verdict);
+            Assert.Contains(discovered, decision.Explanation);
+            Assert.Contains("not tracked", decision.Explanation);
+        }
+    }
+
     [Fact]
     public void A_sibling_whose_name_merely_starts_the_same_way_is_not_nested()
     {

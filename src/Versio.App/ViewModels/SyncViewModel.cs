@@ -3430,6 +3430,13 @@ public sealed class SyncViewModel : ObservableObject
         var setup = new RepoSetup(_repositoryRoot, format: null);
         var adopted = 0;
 
+        // The whole scan travels with each adoption, so an export root is checked against
+        // the projects that are not tracked (yet, or ever) and not only against the bindings
+        // — on a fresh scan there are none, and A.project adopted ahead of A/B.project used
+        // to export over it (the 2026-10-25 review's sixth round, item 1). Handed over rather
+        // than left to RepoSetup's own scan, which it would otherwise run once per project.
+        IReadOnlyCollection<string> discovered = [.. snapshot.ProjectFiles, .. snapshot.SourceProjects];
+
         foreach (var project in snapshot.ProjectFiles.OrderBy(p => p, StringComparer.Ordinal))
         {
             if (IsTemplate(project) ||
@@ -3439,7 +3446,7 @@ public sealed class SyncViewModel : ObservableObject
                 continue;
             }
 
-            var result = await setup.AdoptAsync(project, _git, ProfileFor(project), ct)
+            var result = await setup.AdoptAsync(project, _git, ProfileFor(project), ct, discovered)
                 .ConfigureAwait(true);
             if (result.Adopted)
             {
