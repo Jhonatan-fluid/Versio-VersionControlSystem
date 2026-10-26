@@ -19,6 +19,117 @@ produce a diff touching everything else.
 
 ---
 
+### The review's fourth round: seven more, two of them ways to lose a project
+
+**2026-10-25, the reviewer read `9d9a0dd` again and sent seven confirmed items — two P1, five
+P2 — in files the third round had not touched.** Same method as the rounds before: every claim
+read against the code, a failing test first, one commit per item, the fix mutated away and the
+test watched go red, then restored. **All seven are real and all seven are fixed**; none is
+refuted and none is deferred. None reaches the embedded python, so the CODESYS gate owes
+nothing new. The two P1s share a shape with the second round's item 1: a safety mechanism that
+was right for the case it was built around and silently wrong one case over — a backup is a
+copy, and a copy can be half there; a merge that reaches a tracked project is protected, and
+"merge upstream" is a merge.
+
+**The P1s:**
+
+- **1 — a backup whose copy stopped partway restored as if it were whole.** A directory
+  project's backup is a tree copy, and a tree copy can stop halfway — a locked file, a full
+  disk, a killed process. The half that landed was a directory in the backup folder like any
+  other, so the catalog listed it and the restore put it back like any other; and a restore
+  deletes what the backup does not have (the first round's item 21), so restoring half a tree
+  deleted the other half of the live project and reported success — the reviewer watched a
+  live program file vanish. A marker now sits beside the copy from before its first byte until
+  after its last (`BackupCatalog.PartialMarkerSuffix`): while it stands the copy is not listed,
+  a restore asked for it by path is refused by name, and the next completed copy's prune
+  removes copy and marker together, safe there because the prune runs from the writer that has
+  just taken its own marker down and a binding has one writer at a time. Old backups carry no
+  marker and are listed as before. One Core test walks the whole arc — the import fails and
+  the project is untouched, the half-copy is on disk and unlisted, the restore is refused and
+  the program survives, the next import sweeps it away — red before at the listing; a
+  `FailCopyAt` on the fake filesystem, because `FailCopyTimes` fails the first copies and
+  leaves nothing behind. **Rejected:** copy under a temporary name and rename on completion —
+  the filesystem seam has no rename, and the marker keeps the directory the only record, which
+  `BackupCatalog` insists on. Commit `40f2bd8`.
+- **2 — "merge upstream" recorded mismatched PLC content as synchronised.** A named merge asks
+  what it would bring and, when that reaches a tracked project, does not adopt the result: the
+  binary project keeps one side while the mirror keeps both, so the mirror is put in charge and
+  an import is raised (`MergePreflight`'s measurement, P-M1). The upstream merge ran the same
+  merge through `WhileGitRewritesTheTreeAsync` with the adopting default, so the disagreement
+  was recorded as synced, the engine answered NoChange, and the next project save exported over
+  the logic the upstream had brought. `ReconcileAsync` now asks the upstream what it brings
+  (three dots against `@{u}`), refuses when git cannot say, asks the same import question
+  before the tree is rewritten, and runs through `RewriteTreeUnderPlanAsync` — the try/finally
+  that was `MergeBranchAsync`'s alone, moved whole with its reasoning. A rebase replays this
+  branch onto the same upstream and arrives at the same tree, so it is asked the same question.
+  Three App tests against a real remote: a diverged upstream whose commit edits the mirror,
+  merged and rebased, leaves the project untouched and the import pending (both red before,
+  the merge landing and no import raised); one whose commit touches nothing tracked is adopted
+  as before, which is the mutation the other way. The first version of the test failed for the
+  wrong reason — an unanswered tree-rewrite guard cancels the merge without a word — and now
+  waits for the merge to land before it asks about protection. Commit `b57935a`.
+
+**The P2s:**
+
+- **3 — excluding a staged rename committed its deletion.** A rename is one row and two index
+  entries; `git restore --staged new.st` removes the addition and leaves the deletion where it
+  was, so leaving the rename out of a commit committed `old.st`'s removal and added nothing in
+  its place. `ChangeRow.RenamedFrom` names the origin for a rename only — a copy's source is
+  still its own index entry and possibly its own ticked row — and `UnstageForCommitAsync`
+  unstages both paths and says so in the log. An App test against real git ticks one file
+  beside a staged rename and commits: HEAD gains the file alone, keeps `old.st`, and the rename
+  is whole and pending in the working tree; red before with `old.st` in the commit. Staging the
+  other way is not the same defect: git never reports an unstaged rename as one row. Commit
+  `b2602dc`.
+- **4 — a modify/delete conflict could not keep the deleted side.** `checkout --ours` for the
+  side that deleted the file exits 1, "does not have our version", so choosing the deletion
+  from the panel left the conflict standing. `ResolveWithSideAsync` reads the unmerged stages
+  (`ls-files -u -z`); when the chosen side has none, the resolution is `git rm`, which takes
+  the file out of the tree and stages the removal in one step — not `rm --cached`, which would
+  leave the other side's bytes on disk untracked. Two Integration theories in both directions
+  against real git, two of four rows red before. `rm` without `-f` is not a safeguard on an
+  unmerged path, and the remark says so, so nobody assumes a protection that is not there.
+  Commit `71c7473`.
+- **5 — a Stop during the scratch copy's hash left automatic sync stuck.** The copy's hash is
+  taken after the direction is claimed and before the toolchain runs (the first round's item
+  2), and that read sat outside both the runner's cancellation handler and the scratch folder's
+  finally. A cancelled read escaped the run whole: the binding stayed ProjectAuthoritative with
+  no Try again, the copy stayed on disk, and the coalescer's slot was never completed, so every
+  later watcher job answered Coalesced until a restart. The hash is taken inside the try beside
+  the run, still before it. One Core test with a hook on the fake filesystem that cancels from
+  inside a read, red before with the exception escaping `HandleChangeAsync`, checking all
+  three leftovers. Commit `9156361`.
+- **6 — applying a suggestion rewrote the lines nobody selected.** `Apply` chose one line
+  ending for the whole file and `TrimEnd('\r')`-ed every line, so in a file of mixed endings
+  every line of the minority kind changed, and a `\r` that was content went with it. Each line
+  now keeps its own terminator and only the selected range is rebuilt; the inserted lines take
+  the ending of the first line they replace, then the file's dominant one, then `\n`, and the
+  final newline's presence is kept as the byte it is. Two Web tests over mixed endings, lone
+  CRs and the ending rules, red before. One deliberate edge change, stated in the commit:
+  deleting a bare final line leaves the line above it with its own newline, as git would show
+  it. Commit `e358f5b`.
+- **7 — a CRLF suggestion whose closing fence ended its line was "no suggestion".** .NET's `$`
+  under `(?m)` matches before `\n` only, so a closing fence followed by `\r\n` matched nothing
+  while the same body with no newline after it matched at end-of-string. The fence ends in a
+  lookahead for `\r?$` rather than consuming the `\r`, because `Without` removes the match and
+  the `\r\n` after the fence is the prose's own line break. One Web test over four CRLF bodies
+  and two `Without` shapes, red before with null; the consuming variant was tried as a mutant
+  and left a bare `\n` in CRLF prose. The React page never parses a fence, so there is no twin
+  there. Commit `b4340a1`.
+
+**The runs.** Over the landed tree, `b4340a1`: Core 2,068 (nothing skipped), Integration 232, Arch 36, CODESYS pure 405, parity 103, TIA pure 102, TwinCAT pure 27, Web 498, vitest 210; App 841 — 840/841 in 12 m 49 s with no other build or test of this session beside it, the one red `SourceProjectTests.A_program_with_no_variables_is_still_an_empty_table_over_its_code` after 13 s, green alone (3 s) and in its class (10/10, 35 s). The same test was the one red of the third round's full run; two full runs out of three today, so it is named below as a watch item rather than filed as load. 4,378 across the twelve projects; the toolchain-gated counts (TIA 5, TwinCAT 6, CODESYS 55) are from their last gate runs, and none of this round's commits reaches them.
+
+**Still not done**, carried from the first round: branch deletion addresses the hardcoded
+"origin" after item 39. Named by the fourth round's agents and left alone: the discard flow
+was not audited for the rename shape of item 3 (it never unstages); the panel's "keeping"
+wording for a resolution that deletes is accurate and slightly odd. **A watch item:**
+`SourceProjectTests.A_program_with_no_variables_is_still_an_empty_table_over_its_code` was the
+one red of two of today's three full App runs (13 s and 21 s, a render after `RefreshAsync`),
+and green alone and in its class every time; nothing in today's commits touches what it
+renders, and it has not been looked into.
+
+---
+
 ### The review's third round: four more, two of them what the fixes before had left
 
 **2026-10-25, the reviewer re-ran at `9d9a0dd` — all twelve second-round reproducers pass,

@@ -252,9 +252,9 @@ stays that way.
 
 | Suite | Count | Time | Needs |
 |---|---|---|---|
-| `Versio.Core.Tests` | 2,066 | under a second | nothing |
-| `Versio.Integration.Tests` | 228 | ~55 s | real git |
-| `Versio.App.Tests` | 836 | 13 m 29 s on 2026-10-25 (loaded, 835/836; a 21 s catch-up wait passed alone), 13 m 9 s on 2026-10-25 (loaded, 835/836; the 30 s catch-up wait passed alone), 11 m 23 s on 2026-10-24 (loaded), ~3.6 min on 2026-09-22, 8 m 38 s on 2026-10-05, 10 m 46 s on 2026-10-19, 10 m 42 s on 2026-10-22, 10 m 36 s on 2026-10-23 (idleness not checked); STA, no window shown; it was ~50 s once | nothing |
+| `Versio.Core.Tests` | 2,068 | under a second | nothing |
+| `Versio.Integration.Tests` | 232 | ~1 m | real git |
+| `Versio.App.Tests` | 841 | 12 m 49 s on 2026-10-25 (840/841; the same `SourceProjectTests` wait red for the second full run today, green alone), 13 m 29 s on 2026-10-25 (loaded, 835/836; a 21 s catch-up wait passed alone), 13 m 9 s on 2026-10-25 (loaded, 835/836; the 30 s catch-up wait passed alone), 11 m 23 s on 2026-10-24 (loaded), ~3.6 min on 2026-09-22, 8 m 38 s on 2026-10-05, 10 m 46 s on 2026-10-19, 10 m 42 s on 2026-10-22, 10 m 36 s on 2026-10-23 (idleness not checked); STA, no window shown; it was ~50 s once | nothing |
 | `Versio.Arch.Tests` | 36 | instant | nothing — it reads assembly metadata, IL and the `.csproj` files |
 | `Versio.Plc.Codesys.Pure.Tests` | 405 | under a second | nothing — the planner, the codecs, the protocol |
 | `Versio.Plc.Codesys.Parity.Tests` | 103 | ~15 s | `python` on PATH — **skips cleanly without it, so check the count, not the colour** |
@@ -262,7 +262,7 @@ stays that way.
 | `Versio.Plc.TiaPortal.Tests` | 5 | seconds when skipped; 3 m 1 s on 2026-10-25 when Portal is installed but refuses the host (1 passed, 4 skipped, not an Openness member); minutes when Portal runs the import gate | **real TIA Portal** — skips cleanly without Openness membership or LFS content. Import Fact is green |
 | `Versio.Plc.TwinCat.Pure.Tests` | 27 | instant | nothing — format, planner, protocol, and the host's text rules compiled in as source |
 | `Versio.Plc.TwinCat.Tests` | 6 | seconds when skipped (4 s, 6 skipped, 2026-10-25); ~5 min when XAE runs the import gate | **real TwinCAT XAE** — skips cleanly without `TcXaeShell.DTE.17.0` or the fixture. Import Fact is green |
-| `Versio.Web.Tests` | 495 | ~25 s | nothing — GitHub is faked; one test starts the built server as its own process |
+| `Versio.Web.Tests` | 498 | ~25 s | nothing — GitHub is faked; one test starts the built server as its own process |
 | `web/` (vitest) | 210 | ~20 s | the pinned Node in `web/.node` (`dotnet build src/Versio.Web -p:BuildWeb=true` fetches it), then `npm test` in `web/` |
 | `Versio.Plc.Codesys.Tests` | 55 | **~30 min**; 41 m 14 s, 55/55, on 2026-10-11; 1 h 22 m, 53/55, on 2026-10-25 with the owner's IDEs open (STATUS item 11 names the two red) | **real CODESYS** — every test launches it, which is the whole cost |
 
