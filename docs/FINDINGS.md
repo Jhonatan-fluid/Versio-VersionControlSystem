@@ -19,6 +19,106 @@ produce a diff touching everything else.
 
 ---
 
+### The review's fifth round: six more, one of them a hole the third round's own fix opened
+
+**2026-10-25, the reviewer read `f30af09` and sent six confirmed items — three P1, three P2.**
+Same method as the four rounds before: every claim read against the code, a failing test
+first, one commit per item, the fix mutated away and the test watched go red, then restored.
+**All six are real and all six are fixed**; none is refuted and none is deferred. The one that
+matters most for this log is item 1: the third round's item 4 taught the delete check to accept
+the hash an older export recorded, and in accepting the oldest normalisation it accepted a lossy
+one — a fix for "refuses everything" that opened "permits a deletion it should not". The shape
+is the second round's: a fix that closes the reported case and opens the one beside it, and
+the test that would have caught it is the one the first round wrote for item 20 (two values
+swapped between two children), run against the compatibility path rather than the current one.
+
+**The P1s:**
+
+- **1 — the legacy-hash fallback let a modified native object be deleted.** The oldest
+  normalisation sorted a container's LINES; swap two values between two multi-line children
+  and the bag of lines is the same, so the old hash is reproduced by a modified object. The
+  check took the match as proof, removed the object and wrote `olderHash: true` on the log.
+  `form_can_vouch` now decides per object: the current form and the 2026-10-24 chunker are
+  permutation-insensitive and nothing else (a sibling keeps its own lines in order; the old
+  placeholder only ever made the chunker stricter), so a match under either proves the object
+  unchanged. The line sort vouches only where it is lossless for the payload at hand — every
+  unordered container holding single-line siblings and nothing else, where the bag of lines
+  IS the set of siblings — and anywhere else a match under it is `DELETE_UNVERIFIABLE`: the
+  object waits for the next export, which records a hash that can tell, and the warning says
+  so. Measured against the fixtures: of eighteen native records, eleven flat property and
+  signal files are still vouched for through the chunker form; the seven visualisations and
+  text lists, line-sort only, now wait for a re-export rather than being deletable — the
+  honest answer for them. One parity test runs the reviewer's exploit (unverifiable, not
+  deleted; red before as ok with `olderHash`) beside the lossless shape (single-line
+  GUID-bearing siblings: unchanged and reordered vouched for, an edited value refused); the
+  round-three tests now expect the wait for the lossy records. Under real CODESYS, the seven
+  tests of the earlier re-runs on `ef3b469` with this python embedded — the four from the
+  gate session's list and the three that drive the delete check — 7/7 in 26 m 33 s, the
+  owner's IDEs open. **Rejected:** comparing the live object against the
+  mirror's last export under the new normalisation — that file is the one that was deleted,
+  and the python has no git to find it in. Commit `ef3b469`.
+- **2 — nested export roots were accepted, and the outer export deleted the inner project.**
+  The collision check compared export directories for equality, so `A.project` (exporting
+  to `A`) and `A/B.project` (exporting to `A/B`) were both tracked; an export replaces its
+  whole directory, so the next export of `A` deleted `A/B.project` and its mirror together.
+  Adoption now refuses, at the one gate every adoption passes, an export root inside or
+  containing another binding's, an export root that would contain another binding's project
+  file, and a project file inside another binding's export root, each with a sentence naming
+  what the next export would delete; a directory boundary, not a prefix, so `plc/AB` is not
+  under `plc/A`. Three Core theory rows red before and a sibling-prefix control. Commit
+  `8d1af02`.
+- **3 — the TIA host wrote a plan's payload into the first PLC when its target was gone.**
+  `MatchPlc(...) ?? plcs[0]` substituted another PLC when a device had been renamed in Portal
+  since the export, so Device2's blocks were generated into Device1 and saved. The host had
+  no test seam, so one commit compiles its sources into the pure test project (it is
+  reflection-only against Openness, so they compile unchanged, as the TwinCAT host's text
+  rules already do) and the next refuses the whole plan before any write when any file
+  targets a PLC that is not there — a fatal, not a warning, because a warning becomes
+  "succeeded, with notes" and the lock moves to ImportSucceeded with the mirror's edit
+  unapplied. `MatchPlc` also compares against the sanitised names the export wrote (a device
+  `Line:2` is the directory `Line_2`), a miss the fallback had hidden; the one-PLC rule is
+  kept and pinned. Six pure tests with fakes built from the host's own reads, three red
+  before; the real TIA gate still owes the refusal on a live two-PLC Portal, on a machine in
+  the Openness group. DRIVING.md's §4.3 has the row. Commits `9c2bb8b`, `432d73e`.
+
+**The P2s:**
+
+- **4 — a selected-file first commit failed on "could not resolve HEAD".** Unstaging the
+  unticked files used `restore --staged`, which restores from HEAD, and the first commit of a
+  repository has none. Before the first commit the index is a diff against the empty tree, so
+  that is what is restored from — `--source=<empty tree>`, the id asked of git rather than
+  hard-coded because it differs under SHA-256 — and a repository with a HEAD runs exactly
+  what it ran before. `git rm --cached` was rejected: it refuses a path edited after staging
+  unless forced. Two Integration tests and one App test against real git, red before with the
+  reviewer's message; `TempRepo` can now be born unborn. Commit `efc58f2`.
+- **5 — the commit page drew a renamed-and-edited file as wholly added.** The page had the
+  previous path and no way to send it, and the server's compare view took none, so a rename
+  with one edited line read as two additions and no removal; the pull-request view already did
+  it right. Both ends now carry `from`, refused with a 404 on a `..` segment as the pull route
+  does. One Web test over the existing renamed fixture (red with the reviewer's numbers, 2 and
+  0) and one vitest asserting the request. Noted, not fixed: the pull page shows a stale "does
+  not yet compare against the old path" notice while doing exactly that, and the branch
+  compare's file list detects no renames at all. Commit `fbc8c60`.
+- **6 — one malformed `_manifest.json` aborted repository discovery.** `TryGetProperty` on a
+  non-object root and `GetString()` on a number both throw an exception the catch was never
+  written for, so a manifest holding `null`, `[]` or a numeric id took every other project in
+  the repository down with it. The kinds are checked first: a wrong-shaped manifest costs
+  exactly what a corrupt one does — its own tree reads as unidentified, named at Warn with
+  what it held — and an absent or null id stays quiet as before. Two Integration tests, one red
+  before with the reviewer's exception. Widening the catch was rejected: it would report the
+  framework's words instead of the file's. Commit `cb045e7`.
+
+**The runs.** Over the landed tree, `efc58f2`: Core 2,072 (nothing skipped), Integration 236, Arch 36, CODESYS pure 405, parity 104, TIA pure 108, TwinCAT pure 27, Web 499, vitest 211; App 842 — 838/842 in 9 m 3 s with the CODESYS run beside it, the four red all `OpenClipboard Failed (CLIPBRD_E_CANT_OPEN)` (three `HistoryCopyTests`, one `LogPanelInteractionTests`), red alone afterwards too and, per the item-4 agent, red on the untouched `5b0e63b` in the same shell — the clipboard flake this file already names, held this evening by another program on the desktop; green in this morning's full runs. 4,395 across the twelve projects; the toolchain-gated counts (TIA 5, TwinCAT 6, CODESYS 55) are from their last gate runs.
+
+**Still not done**, carried from the first round: branch deletion addresses the hardcoded
+"origin" after item 39. Named this round and left alone: the pull page's stale rename notice
+and the branch compare's missing rename detection (5); `HeadCommitAsync` logs a warning per
+call on an unborn branch (4); the TIA host saves even when every file was a missing-file
+warning, and its `resolve` argument is unused (3); the `SourceProjectTests` watch item from the
+fourth round stands.
+
+---
+
 ### The review's fourth round: seven more, two of them ways to lose a project
 
 **2026-10-25, the reviewer read `9d9a0dd` again and sent seven confirmed items — two P1, five

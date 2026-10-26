@@ -17,8 +17,9 @@ eyeballing of the desktop.** An external review's forty-one findings — sixteen
 lose work — were verified and fixed on 2026-10-24, forty-three commits, and the reviewer's second
 round of twelve (three of them fixes to the first round's fixes) on 2026-10-25, twelve commits
 more, a third round of four the same day (two of them what the earlier fixes had left),
-four commits, and a fourth round of seven the same evening (two of them ways to lose a
-project), seven commits; FINDINGS has all four lists, newest first. Item 1 is done:
+four commits, a fourth round of seven the same evening (two of them ways to lose a
+project), seven commits, and a fifth of six (three P1, one of them a hole the third round's
+own fix opened), six commits; FINDINGS has all five lists, newest first. Item 1 is done:
 `Versio.Plc.Codesys.Tests` ran on `Siemens2` on 2026-08-19 evening — **54/54 green in
 39 m 33 s, zero skips**, on an idle machine with the IDE closed, over the Core seam
 changes (`ExportHeldViaCopy`, the held-wait, occupancy-then-hash, the locked-pointer
@@ -28,8 +29,8 @@ UX remainder) is built and tested as of 2026-08-25** — UX-6 find boxes, UX-7 `
 Escape, UX-8 copy-a-commit, UX-12 amend-while-unpushed — and its visual half joins the
 eyeball list in item 2. Do not start from `archive/` or a handoff.
 
-**Tests:** 4,378 across twelve projects (plus 210 vitest in `web/`), last counted 2026-10-25
-on `VersioWeb` after the review's fourth round (Core 2,068, App 841, Web 498) — re-derived by summing the table below; the toolchain-gated
+**Tests:** 4,395 across twelve projects (plus 211 vitest in `web/`), last counted 2026-10-25
+on `VersioWeb` after the review's fifth round (Core 2,072, App 842, Web 499) — re-derived by summing the table below; the toolchain-gated
 counts (TIA 5, TwinCAT 6, CODESYS 55) are from their last gate runs, not re-run for the count. **The Rendered view of an ST object reads like the IDE (2026-09-20):** no
 `@@` line, one gutter, a Declaration / Implementation divider, and the implementation
 numbered from 1 so a compile error's line number can be found — FINDINGS 2026-09-20. **With TIA Portal open, a commit no longer records a stale mirror**: the
@@ -68,18 +69,18 @@ marking, duplicate-param keys, and the detail-pane lookup. All of them are in
 
 | Project | Tests | Time | Needs |
 |---|---|---|---|
-| `Versio.Core.Tests` | 2,068 (nothing skipped) | under a second | nothing |
-| `Versio.Integration.Tests` | 232 | ~1 m (2 m 18 s loaded) | real git |
-| `Versio.App.Tests` | 841 (re-counted 2026-10-25) | 12 m 49 s, 840/841, 2026-10-25 evening (nothing else of this session running; `SourceProjectTests.A_program_with_no_variables…` red after 13 s for the second full run today, green alone and in its class — a watch item, FINDINGS 2026-10-25 fourth round); 13 m 29 s, 835/836, loaded, 2026-10-25 (the third round's CODESYS run beside it; a 21 s catch-up wait in `SourceProjectTests` failed and passed alone in 4 s); 13 m 9 s, 835/836, loaded, 2026-10-25 (the CODESYS gate ran beside it; the one 30 s catch-up wait failed and passed alone in 4 s); **12 m 22 s, 833/833, idle, 2026-10-24**; 11 m 23 s the same day loaded (three gates beside it; one 30 s catch-up wait failed and passed alone in 4 s) and 16 m 30 s under three builds; 10 m 45 s (loaded: mutation checks ran beside it) and 10 m 36 s on 2026-10-23; 12 m 19 s, 10 m 42 s and 9 m 5 s on 2026-10-22; 10 m 46 s on 2026-10-19; 10 m 58 s on 2026-10-16; 6 m 35 s on 2026-10-10; 8 m 38 s on 2026-10-05; ~3.6 min on 2026-09-22 | nothing |
+| `Versio.Core.Tests` | 2,072 (nothing skipped) | under a second | nothing |
+| `Versio.Integration.Tests` | 236 | ~1 m (2 m 18 s loaded) | real git |
+| `Versio.App.Tests` | 842 (re-counted 2026-10-25) | 9 m 3 s, 838/842, 2026-10-25 night (the CODESYS run beside it; the four red are the clipboard tests, `CLIPBRD_E_CANT_OPEN`, red alone and on the untouched base too — another program held the clipboard; FINDINGS 2026-10-25 fifth round); 12 m 49 s, 840/841, 2026-10-25 evening (nothing else of this session running; `SourceProjectTests.A_program_with_no_variables…` red after 13 s for the second full run today, green alone and in its class — a watch item, FINDINGS 2026-10-25 fourth round); 13 m 29 s, 835/836, loaded, 2026-10-25 (the third round's CODESYS run beside it; a 21 s catch-up wait in `SourceProjectTests` failed and passed alone in 4 s); 13 m 9 s, 835/836, loaded, 2026-10-25 (the CODESYS gate ran beside it; the one 30 s catch-up wait failed and passed alone in 4 s); **12 m 22 s, 833/833, idle, 2026-10-24**; 11 m 23 s the same day loaded (three gates beside it; one 30 s catch-up wait failed and passed alone in 4 s) and 16 m 30 s under three builds; 10 m 45 s (loaded: mutation checks ran beside it) and 10 m 36 s on 2026-10-23; 12 m 19 s, 10 m 42 s and 9 m 5 s on 2026-10-22; 10 m 46 s on 2026-10-19; 10 m 58 s on 2026-10-16; 6 m 35 s on 2026-10-10; 8 m 38 s on 2026-10-05; ~3.6 min on 2026-09-22 | nothing |
 | `Versio.Arch.Tests` | 36 | instant | nothing |
 | `Versio.Plc.Codesys.Pure.Tests` | 405 | under a second | nothing |
-| `Versio.Plc.Codesys.Parity.Tests` | 103 | ~15 s | `python` on PATH — skips cleanly without it, so check the count |
-| `Versio.Plc.TiaPortal.Pure.Tests` | 102 | instant | nothing |
+| `Versio.Plc.Codesys.Parity.Tests` | 104 | ~15 s | `python` on PATH — skips cleanly without it, so check the count |
+| `Versio.Plc.TiaPortal.Pure.Tests` | 108 | instant | nothing |
 | `Versio.Plc.TiaPortal.Tests` | 5 | seconds when skipped; 3 m 1 s on 2026-10-25 when Portal is there but refuses the host (1 passed, 4 skipped, not an Openness member); minutes when Portal runs the import gate | **real TIA Portal** — skips without Openness membership or LFS content |
 | `Versio.Plc.TwinCat.Pure.Tests` | 27 | instant | nothing — the host's text rules are compiled in as source |
 | `Versio.Plc.TwinCat.Tests` | 6 | seconds when skipped (4 s, 6 skipped, 2026-10-25); ~5 min when XAE runs the import gate | **real TwinCAT XAE** — skips without `TcXaeShell.DTE.17.0` or the fixture |
-| `Versio.Web.Tests` | 498 | ~25 s | nothing — GitHub is faked |
-| `web/` (vitest) | 210 | ~21 s on 2026-10-24 (the review page waits for its reads, not ticks; it was ~3 min) | the pinned Node in `web/.node` |
+| `Versio.Web.Tests` | 499 | ~25 s | nothing — GitHub is faked |
+| `web/` (vitest) | 211 | ~21 s on 2026-10-24 (the review page waits for its reads, not ticks; it was ~3 min) | the pinned Node in `web/.node` |
 | `Versio.Plc.Codesys.Tests` | 55 | **~30 min**; 41 m 14 s, 55/55, on 2026-10-11 on `WebViewer`; 1 h 22 m, 53/55, on 2026-10-25 on `VersioWeb` loaded (the two red are item 11's `<masked-guid>` regression) | **real CODESYS** |
 
 The first ten are the loop to work in — about thirty seconds plus the UI suite. The last is
@@ -544,7 +545,9 @@ Close Versio **and** Portal before a host rebuild. Click **Yes to all** on Openn
     item 5 and 31 tests, 4/4 in 9 m 7 s.** The CODESYS gate is settled for the first round.
     **Re-run once more on `85f88d1` — the third round's item 4 changed the delete check's
     python — with the three real-CODESYS deletion tests beside those four: 7/7 in 22 m 34 s,
-    the owner's IDEs open (FINDINGS 2026-10-25, the third round's item 4).**
+    the owner's IDEs open (FINDINGS 2026-10-25, the third round's item 4).** **And once more on `ef3b469` — the fifth round's item 1 changed the delete check's
+    python again — the same seven: 7/7 in 26 m 33 s, the owner's IDEs open (FINDINGS
+    2026-10-25, the fifth round's item 1).**
     `Versio.Plc.TwinCat.Tests` over 23 (does XAE accept an empty `ImplementationText`?) and the
     `ide_pid` half of 28 — **cannot run here: 6 of 6 skipped in 4 s, no `TcXaeShell.DTE.17.0`
     (2026-10-25)**; `Versio.Plc.TiaPortal.Tests` over 27 (the Comment marker is 300
@@ -589,6 +592,18 @@ Close Versio **and** Portal before a host rebuild. Click **Yes to all** on Openn
     and a CRLF suggestion whose fence ended its line was not recognised. Nothing touches the
     embedded python, so the CODESYS gate owes nothing new. Still not done: branch deletion
     addresses the hardcoded "origin" (the first round's item 39).
+
+15. **The review's fifth round, six items, all fixed — 2026-10-25.** FINDINGS 2026-10-25,
+    the newest entry, has the list. Three P1: the third round's legacy-hash fallback let
+    the lossy line-sort hash authorise the deletion of a modified object (an older hash now
+    vouches only where its normalisation was lossless for that object; the rest wait for a
+    re-export — item 11 carries the CODESYS re-run), nested export roots were accepted and
+    the outer export deleted the inner project, and the TIA host wrote a plan's payload into
+    the first PLC when its target could not be found. Three P2: a selected-file first commit
+    failed on `restore --staged` with no HEAD, the commit page drew a renamed-and-edited file
+    as wholly added, and one malformed `_manifest.json` aborted repository discovery. The
+    TIA gate is still owed on a machine in the Openness group. Still not done: branch
+    deletion addresses the hardcoded "origin" (the first round's item 39).
 
 ---
 
