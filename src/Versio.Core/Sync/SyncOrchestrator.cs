@@ -2441,6 +2441,16 @@ public sealed class SyncOrchestrator
                 $"that backup is no longer on disk: {backupPath}");
         }
 
+        if (_fs.FileExists(BackupCatalog.PartialMarkerFor(source)))
+        {
+            // Not listed, so only reachable by a path remembered from before — and still
+            // refused, because the restore below deletes what the backup does not have, and
+            // half a backup does not have the other half of the live project.
+            return Refuse(LogLevel.Warning, SyncVerdict.Failed, bindingId,
+                $"that backup was never finished — the copy that made it stopped partway — so " +
+                $"restoring it would replace the project with part of one: {backupPath}");
+        }
+
         var occupancy = _occupancy is null
             ? ProjectOccupancy.Free
             : await _occupancy.CheckAsync(binding, Absolute(binding.ProjectPath), ct)
@@ -2844,21 +2854,41 @@ public sealed class SyncOrchestrator
 
         _fs.CreateDirectory(folder);
 
-        if (IsTreePayload(source))
+        var tree = IsTreePayload(source);
+        if (tree)
         {
             // A tree copy must be a directory of its own. Enumerating files under the
             // backup folder would otherwise list every inner file of the newest copy,
             // parse none of them as stamps, and prune the inside of the thing we just
             // wrote.
-            var treeName = Path.GetFileNameWithoutExtension(name);
-            destination = UniqueBackupPath(folder, $"{stamp}-{treeName}");
-            await _fs.CopyTreeAsync(source, destination, ct).ConfigureAwait(false);
+            destination = UniqueBackupPath(folder, $"{stamp}-{Path.GetFileNameWithoutExtension(name)}");
         }
         else
         {
             destination = UniqueBackupPath(folder, $"{stamp}-{name}");
+        }
+
+        // The marker goes down before the first byte and comes up after the last. A tree copy
+        // that stops partway — a locked file in the middle, a full disk, a killed process —
+        // used to leave a directory that the catalog listed like any other and the restore
+        // put back like any other: a restore deletes what the backup does not have (the
+        // 2026-10-24 review's item 21), so half a backup restored deleted the other half of
+        // the live project and reported success (the 2026-10-25 review's fourth round, item
+        // 1). While the marker stands the copy is neither listed nor restorable, and the next
+        // completed copy's prune removes it.
+        var marker = BackupCatalog.PartialMarkerFor(destination);
+        await _fs.WriteAllTextAsync(marker, string.Empty, ct).ConfigureAwait(false);
+
+        if (tree)
+        {
+            await _fs.CopyTreeAsync(source, destination, ct).ConfigureAwait(false);
+        }
+        else
+        {
             await _fs.CopyAsync(source, destination, ct).ConfigureAwait(false);
         }
+
+        _fs.DeleteFile(marker);
 
         PruneBackups(folder, keep);
 
@@ -2889,6 +2919,27 @@ public sealed class SyncOrchestrator
             {
                 DeleteBackupEntry(stale);
                 _log.Info(LogCategory.Sync, $"pruned old project backup {stale}");
+            }
+
+            // A copy that never finished, with it the marker that says so. Safe to remove
+            // here and nowhere else: this runs from the writer that has just completed its
+            // own copy and taken its own marker down, and a binding has one writer at a
+            // time, so a marker still standing belongs to a copy nobody is writing. Never
+            // listed, never restorable, and left alone it would sit there for good.
+            foreach (var marker in _fs.EnumerateFiles(folder)
+                         .Where(f => PathsAreEqual(Path.GetDirectoryName(f), folder)
+                                     && BackupCatalog.IsPartialMarker(f))
+                         .ToList())
+            {
+                var unfinished = marker[..^BackupCatalog.PartialMarkerSuffix.Length];
+                if (_fs.FileExists(unfinished) || _fs.DirectoryExists(unfinished))
+                {
+                    DeleteBackupEntry(unfinished);
+                }
+
+                _fs.DeleteFile(marker);
+                _log.Info(LogCategory.Sync,
+                    $"removed the project backup {unfinished}, whose copy never finished");
             }
         }
         catch (IOException ex)
@@ -3018,11 +3069,17 @@ public sealed class SyncOrchestrator
     private bool IsTreePayload(string payload) =>
         _fs.DirectoryExists(payload) && !_fs.FileExists(payload);
 
+    /// <summary>
+    /// The copies in a backup folder: its immediate children, less the markers and less any
+    /// copy whose marker still stands (<see cref="BackupCatalog.PartialMarkerSuffix"/>).
+    /// </summary>
     private IEnumerable<string> ImmediateBackupEntries(string folder)
     {
         var files = _fs.EnumerateFiles(folder)
             .Where(f => PathsAreEqual(Path.GetDirectoryName(f), folder));
-        return _fs.EnumerateDirectories(folder).Concat(files);
+        return _fs.EnumerateDirectories(folder).Concat(files)
+            .Where(e => !BackupCatalog.IsPartialMarker(e)
+                        && !_fs.FileExists(BackupCatalog.PartialMarkerFor(e)));
     }
 
     private static bool PathsAreEqual(string? left, string right) =>

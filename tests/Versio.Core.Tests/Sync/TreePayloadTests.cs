@@ -199,6 +199,61 @@ public sealed class TreePayloadTests
     }
 
     [Fact]
+    public async Task A_backup_whose_copy_did_not_finish_is_neither_listed_nor_restorable()
+    {
+        // Review 2026-10-25, fourth round, item 1: a tree copy that stopped partway left a
+        // directory the catalog listed like any other, and restoring it put back half a project
+        // — the restore deletes what the backup does not have (item 21 of the first round), so
+        // a live program file vanished and the restore reported success.
+        var h = Harness.Create();
+        h.WritePayload("System/program.bin", "the good version");
+        h.Runner.EnqueueSuccess("plc/plant-export/Main.scl");
+        Assert.Equal(SyncVerdict.Completed, (await h.ProjectChanged()).Verdict);
+        await h.Orchestrator.ReleaseAfterPushAsync("c1", CancellationToken.None);
+
+        h.Fs.Write(Path.Combine(Root, "plc", "plant-export", "Main.scl"), "edited");
+        h.Runner.EnqueueSuccess();
+
+        // The pointer is copied; the program is not.
+        h.Fs.FailCopyAt = 2;
+        var import = await h.TextChanged();
+
+        // A failed backup stops the import, and the project is untouched.
+        Assert.Equal(SyncVerdict.Failed, import.Verdict);
+        Assert.Equal(
+            "the good version",
+            await h.Fs.ReadAllTextAsync(h.PayloadFile("System/program.bin"), CancellationToken.None));
+
+        // The half-copy is on disk, and it is not a backup.
+        var folder = Path.Combine(Root, ".versio", "local", "backups", BindingId);
+        var partial = Assert.Single(h.Fs.EnumerateDirectories(folder));
+        Assert.True(h.Fs.FileExists(Path.Combine(partial, "Station.treeproj")));
+        Assert.False(h.Fs.FileExists(Path.Combine(partial, "System", "program.bin")));
+        Assert.Empty(h.Orchestrator.BackupsFor(BindingId));
+
+        // Asked for by path all the same, it is refused and the program survives.
+        var restore = await h.Orchestrator.RestoreBackupAsync(
+            BindingId, Path.GetRelativePath(Root, partial).Replace('\\', '/'), CancellationToken.None);
+
+        Assert.Equal(SyncVerdict.Failed, restore.Verdict);
+        Assert.Contains("never finished", restore.Explanation);
+        Assert.Equal(
+            "the good version",
+            await h.Fs.ReadAllTextAsync(h.PayloadFile("System/program.bin"), CancellationToken.None));
+
+        // The next completed copy sweeps it away, marker and all.
+        await h.Orchestrator.AcknowledgeFailureAsync(BindingId, CancellationToken.None);
+        h.Fs.Write(Path.Combine(Root, "plc", "plant-export", "Main.scl"), "edited again");
+        h.Runner.EnqueueSuccess();
+        Assert.Equal(SyncVerdict.Completed, (await h.TextChanged()).Verdict);
+
+        var listed = Assert.Single(h.Orchestrator.BackupsFor(BindingId));
+        Assert.False(h.Fs.DirectoryExists(partial), "the unfinished copy was kept");
+        Assert.DoesNotContain(h.Fs.EnumerateFiles(folder), f => f.EndsWith(".partial", StringComparison.Ordinal));
+        Assert.NotEqual(partial, Path.Combine(Root, listed.Path.Replace('/', Path.DirectorySeparatorChar)));
+    }
+
+    [Fact]
     public async Task A_file_payload_is_still_copied_as_one_file()
     {
         // The mutation check the other way: tree support must not rewrite the file path

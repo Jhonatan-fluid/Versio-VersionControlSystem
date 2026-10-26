@@ -16,6 +16,16 @@ public sealed class FakeFileSystem : IFileSystem
     public int FailCopyTimes { get; set; }
 
     /// <summary>
+    /// Make the Nth copy from now fail (1-based; 0 never), standing in for a tree copy that
+    /// stops partway — a locked file in the middle of a directory project, a full disk.
+    /// <see cref="FailCopyTimes"/> fails the FIRST copies, which leaves nothing behind; a
+    /// backup that is half there needs the first file to land and a later one to fail.
+    /// </summary>
+    public int FailCopyAt { get; set; }
+
+    private int _copies;
+
+    /// <summary>
     /// Paths that throw on read, standing in for a pointer the toolchain still holds
     /// after the export child has exited.
     /// </summary>
@@ -89,6 +99,12 @@ public sealed class FakeFileSystem : IFileSystem
 
     public Task CopyAsync(string source, string destination, CancellationToken ct)
     {
+        if (FailCopyAt > 0 && ++_copies == FailCopyAt)
+        {
+            FailCopyAt = 0;
+            throw new IOException("the file is in use by another process");
+        }
+
         if (FailCopyTimes > 0)
         {
             FailCopyTimes--;
