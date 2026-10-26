@@ -97,13 +97,9 @@ def _ordinal_key(line):
 _TAG_RE = re.compile(r"<(/?)[^\s/>!?][^\s/>]*[^>]*?(/?)>")
 
 
-def _sorted_siblings(body):
-    """The lines of a container's body, regrouped into whole sibling elements and sorted.
-
-    Falls back to the old line sort when the body cannot be cut cleanly - a close with no
-    open, which only malformed input produces - so a strange payload degrades to the
-    previous answer rather than throwing. Mirrors SortedSiblings in the C#.
-    """
+def _chunks(body):
+    """The lines of a container's body cut into whole sibling elements, or None when the body
+    cannot be cut cleanly - a close with no open, which only malformed input produces."""
     chunks = []
     current = []
     depth = 0
@@ -116,9 +112,7 @@ def _sorted_siblings(body):
             depth += -1 if match.group(1) else 1
 
         if depth < 0:
-            flat = list(body)
-            flat.sort(key=_ordinal_key)
-            return flat
+            return None
 
         if depth == 0:
             chunks.append(current)
@@ -126,6 +120,21 @@ def _sorted_siblings(body):
 
     if current:
         chunks.append(current)                  # unterminated: kept whole, sorted with the rest
+
+    return chunks
+
+
+def _sorted_siblings(body):
+    """The lines of a container's body, regrouped into whole sibling elements and sorted.
+
+    Falls back to the old line sort when the body cannot be cut cleanly, so a strange payload
+    degrades to the previous answer rather than throwing. Mirrors SortedSiblings in the C#.
+    """
+    chunks = _chunks(body)
+    if chunks is None:
+        flat = list(body)
+        flat.sort(key=_ordinal_key)
+        return flat
 
     joined = []
     for chunk in chunks:
@@ -159,8 +168,12 @@ def _sort_unordered_blocks(text, whole_siblings=True):
     return u"\n".join(_sort_unordered_lines(text.split(u"\n"), whole_siblings))
 
 
-def _sort_unordered_lines(lines, whole_siblings=True):
-    result = []
+def _container_bodies(lines):
+    """Each (opening index, closing index) of an unordered container with a body to sort.
+
+    The one walk both the sorter and the losslessness check make, so the two cannot disagree
+    about which containers exist.
+    """
     count = len(lines)
     i = 0
 
@@ -177,7 +190,6 @@ def _sort_unordered_lines(lines, whole_siblings=True):
         # on the tag, matching the C#: a line carrying both an opening container and some
         # self-closing element is left alone by both sides.
         if container is None or u"/>" in line:
-            result.append(line)
             i += 1
             continue
 
@@ -190,12 +202,21 @@ def _sort_unordered_lines(lines, whole_siblings=True):
         # opening line is emitted as ordinary content and the scan resumes just after it,
         # so a missing close costs one unsorted block rather than the rest of the file.
         if end >= count:
-            result.append(line)
             i += 1
             continue
 
-        result.append(line)
-        body = lines[i + 1:end]
+        yield (i, end)
+        i = end + 1
+
+
+def _sort_unordered_lines(lines, whole_siblings=True):
+    result = []
+    i = 0
+
+    for start, end in _container_bodies(lines):
+        result.extend(lines[i:start + 1])
+        i = end + 1
+        body = lines[start + 1:end]
         if whole_siblings:
             result.extend(_sorted_siblings(body))
         else:
@@ -206,8 +227,8 @@ def _sort_unordered_lines(lines, whole_siblings=True):
             body.sort(key=_ordinal_key)
             result.extend(body)
         result.append(lines[end])
-        i = end + 1
 
+    result.extend(lines[i:])
     return result
 
 
@@ -267,6 +288,48 @@ def normalized_forms(xml):
         _normalize(xml, True, _LEGACY_MASKED_GUID, True)[0],
         _normalize(xml, True, _LEGACY_MASKED_GUID, False)[0],
     ]
+
+
+# Indexes into normalized_forms, so the delete check can say which one matched.
+CURRENT_FORM = 0
+LEGACY_CHUNKER_FORM = 1
+LEGACY_LINE_SORT_FORM = 2
+
+
+def form_can_vouch(xml, form):
+    """Whether a match of the live object under that form proves it unchanged.
+
+    The current form and the 2026-10-24 chunker are permutation-insensitive and nothing
+    else: a sibling keeps its own lines in their order, so two payloads with the same text
+    under them hold the same siblings. (The chunker with the old placeholder failed to cut a
+    body holding a GUID and left it in file order - stricter than the current form, never
+    looser.) The line sort is looser: it sorts the body's LINES, so a multi-line sibling's
+    lines lose their owner, and swapping two values between two children gives the same bag
+    of lines and the same hash - the first round's item 20, which is why the sort was
+    replaced. A match under it proves nothing for such a payload, and the fifth round's item
+    1 walked through that door: two values swapped between their owners, the old hash
+    reproduced, the modified object deleted with olderHash on the log.
+
+    So the line sort vouches only where it is lossless for the payload at hand: every
+    unordered container holds single-line siblings and nothing else, in which case the bag
+    of lines IS the set of siblings and no reordering can hide an edit. Anything else that
+    was recorded under it is unverifiable until the next export records a hash that can
+    tell - a wait, said as one, rather than a deletion on evidence that cannot carry it.
+    """
+    if form != LEGACY_LINE_SORT_FORM:
+        return True
+    return _line_sort_is_lossless(xml)
+
+
+def _line_sort_is_lossless(xml):
+    # Over the current form's text: masking first, because an unmasked GUID is what broke
+    # the old chunker, and sorting whole siblings leaves each sibling's line count alone.
+    lines = _normalize(xml, True, MASKED_GUID, True)[0].split(u"\n")
+    for start, end in _container_bodies(lines):
+        chunks = _chunks(lines[start + 1:end])
+        if chunks is None or any(len(chunk) != 1 for chunk in chunks):
+            return False
+    return True
 
 
 def _normalize(xml, mask_guids, placeholder, whole_siblings):

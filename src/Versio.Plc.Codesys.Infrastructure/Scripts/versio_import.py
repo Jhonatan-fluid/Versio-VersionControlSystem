@@ -48,7 +48,7 @@ from versio_text import (WS, content_hash, join_st, normalize_decl_only,  # noqa
                          read_textual, scrub_native_xml, split_st)
 from versio_types import (FORM_NATIVE_R, NATIVE_FORMS, can_verify,  # noqa: E402
                           is_versio_file, type_of)
-from versio_native_equiv import normalized_forms  # noqa: E402
+from versio_native_equiv import form_can_vouch, normalized_forms  # noqa: E402
 import versio_tree  # noqa: E402
 import versio_yaml  # noqa: E402
 
@@ -986,16 +986,26 @@ class Importer(object):
                             % (form, self.reexport_error or "no reason reported"))
 
                 # Under every normalisation the recorded hash may have been taken over, the
-                # current one first. A match under an older one is still a match - the hash
-                # was recorded by that Versio and no later edit could reproduce it - and it
-                # is said on the removed event, so the log names whose normalisation vouched.
-                # Comparing under the current one alone refused every native deletion in
-                # every mirror exported before 2026-10-25 as "edited since the export" (the
-                # third review round's item 4; the reasoning is on normalized_forms).
+                # current one first. Comparing under the current one alone refused every
+                # native deletion in every mirror exported before 2026-10-25 as "edited since
+                # the export" (the third review round's item 4; the reasoning is on
+                # normalized_forms). A match under an older one is a match only where that
+                # normalisation can tell an edit from a reordering for this object's shape:
+                # the line sort cannot, for a container with multi-line children, and taking
+                # its word deleted a modified object (the fifth round's item 1; the reasoning
+                # is on form_can_vouch). Such an object waits for the next export, and says
+                # so. A match under an older form that CAN vouch is said on the removed event,
+                # so the log names whose normalisation did.
                 matched = [k for k, text in enumerate(normalized_forms(live))
                            if content_hash(text) == nrecorded]
                 if not matched:
                     return changed
+                if not form_can_vouch(live, matched[0]):
+                    return ("DELETE_UNVERIFIABLE",
+                            "its %s file was recorded by an older Versio whose hash cannot "
+                            "tell a reordering from an edit for an object of this shape, so "
+                            "whether it changed since the export is unknowable; export the "
+                            "project again and the hash it records can" % form)
                 if matched[0] > 0:
                     self.older_nhash = True
                 continue

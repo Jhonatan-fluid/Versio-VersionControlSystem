@@ -76,13 +76,23 @@ public sealed class PythonNativeHashCompatibilityTests(ITestOutputHelper output)
         // not pass this vacuously.
         Assert.True(lines.Count >= 10, $"only {lines.Count} native records with an nhash");
 
-        // Every unchanged object passes; every edited copy is still refused — the older forms
-        // widen what a RECORDED hash can be, not what a live object may have become.
-        Assert.All(lines, l => Assert.Contains("|verdict=ok|", l));
+        // Every unchanged object is either vouched for by an older form that can tell an edit
+        // from a reordering (the chunker, form 1) or waits for the next export: none is called
+        // changed, and none is deleted on the line sort's word alone, which for a container
+        // with multi-line children cannot tell the two apart (the fifth round's item 1). Every
+        // edited copy is still refused — the older forms widen what a RECORDED hash can be,
+        // not what a live object may have become.
+        Assert.All(lines, l => Assert.True(
+            l.Contains("|verdict=ok|older=True|forms=1,2|", StringComparison.Ordinal)
+            || l.Contains("|verdict=DELETE_UNVERIFIABLE|older=False|forms=2|", StringComparison.Ordinal),
+            l));
         Assert.All(lines, l => Assert.EndsWith("|edited=DELETE_CONTENT_CHANGED", l));
 
-        // And each passed only through an older form, which is said on the removed event.
-        Assert.All(lines, l => Assert.Contains("|older=True|", l));
+        // Both outcomes occur in the fixtures: the flat property files are vouched for, the
+        // visualisations and text lists wait. If a re-export ever makes every record current,
+        // these two lines retire and the pinned test below keeps the rule.
+        Assert.Contains(lines, l => l.Contains("|verdict=ok|older=True|", StringComparison.Ordinal));
+        Assert.Contains(lines, l => l.Contains("|verdict=DELETE_UNVERIFIABLE|", StringComparison.Ordinal));
         Assert.DoesNotContain(lines, l => l.Contains("|forms=0", StringComparison.Ordinal));
     }
 
@@ -132,12 +142,81 @@ public sealed class PythonNativeHashCompatibilityTests(ITestOutputHelper output)
             output.WriteLine(line);
         }
 
+        // The line-sort hash is reproduced (forms=2) and does not vouch: a text list has
+        // multi-line children, so that hash would also match a copy with two texts swapped
+        // between their owners. Unverifiable until the next export, not changed.
         Assert.Equal(
             [
                 "recorded-0|verdict=ok|older=False|forms=0|edited=DELETE_CONTENT_CHANGED",
                 "recorded-1|verdict=ok|older=True|forms=1|edited=DELETE_CONTENT_CHANGED",
-                "recorded-2|verdict=ok|older=True|forms=2|edited=DELETE_CONTENT_CHANGED",
+                "recorded-2|verdict=DELETE_UNVERIFIABLE|older=False|forms=2|edited=DELETE_CONTENT_CHANGED",
                 "recorded-3|verdict=DELETE_CONTENT_CHANGED|older=False|forms=|edited=DELETE_CONTENT_CHANGED",
+            ],
+            lines);
+    }
+
+    /// <summary>
+    /// The line sort's hash vouches for an object only where that sort could not have hidden an
+    /// edit: every unordered container holding single-line siblings and nothing else.
+    /// </summary>
+    /// <remarks>
+    /// The 2026-10-25 review's fifth round, item 1: the third round taught the delete check to
+    /// accept the hash an older export recorded, and the oldest normalisation sorted a
+    /// container's LINES. Swap two values between two multi-line children and the bag of lines
+    /// is the same, so the old hash is reproduced by a modified object — and the reviewer
+    /// watched that object deleted with <c>olderHash: true</c> on the log. For single-line
+    /// siblings the bag of lines is the set of siblings, so a swap there is a reordering, which
+    /// an unordered container is allowed, and an edit to a value is a different bag.
+    /// </remarks>
+    [SkippableFact]
+    public void The_line_sort_vouches_only_where_it_could_not_have_hidden_an_edit()
+    {
+        Skip.IfNot(CPythonHarness.PythonIsAvailable(), "python is not on PATH");
+
+        var lines = RunDeleteCheck(
+            "null",
+            """
+            # What the exporter recorded: the hash over the SCRUBBED text, as versio_export
+            # writes it and as reexported_native_of reads the live object back.
+            def old(xml):
+                return content_hash(ne.normalized_forms(scrub_native_xml(xml)[0])[ne.LEGACY_LINE_SORT_FORM])
+
+            # Two multi-line children: the line sort cannot tell their values apart.
+            lossy = u"<Root>\n<List>\n<A>\n<v>1</v>\n</A>\n<B>\n<v>2</v>\n</B>\n</List>\n</Root>"
+            swapped = u"<Root>\n<List>\n<A>\n<v>2</v>\n</A>\n<B>\n<v>1</v>\n</B>\n</List>\n</Root>"
+            out.append(check("lossy-unchanged", "NATIVE", old(lossy), lossy))
+            out.append(check("lossy-swapped", "NATIVE", old(lossy), swapped))
+
+            # Single-line siblings carrying GUIDs: the bag of lines is the set of siblings.
+            flat = (u"<Root>\n<List>\n"
+                    u"<S id=\"11111111-2222-3333-4444-555555555555\" v=\"1\"/>\n"
+                    u"<S id=\"66666666-7777-8888-9999-000000000000\" v=\"2\"/>\n"
+                    u"</List>\n</Root>")
+            reordered = (u"<Root>\n<List>\n"
+                         u"<S id=\"66666666-7777-8888-9999-000000000000\" v=\"2\"/>\n"
+                         u"<S id=\"11111111-2222-3333-4444-555555555555\" v=\"1\"/>\n"
+                         u"</List>\n</Root>")
+            edited = flat.replace(u"v=\"2\"", u"v=\"3\"")
+            out.append(check("flat-unchanged", "NATIVE", old(flat), flat))
+            out.append(check("flat-reordered", "NATIVE", old(flat), reordered))
+            out.append(check("flat-edited", "NATIVE", old(flat), edited))
+            """);
+
+        foreach (var line in lines)
+        {
+            output.WriteLine(line);
+        }
+
+        Assert.Equal(
+            [
+                "lossy-unchanged|verdict=DELETE_UNVERIFIABLE|older=False|forms=2|edited=DELETE_CONTENT_CHANGED",
+                "lossy-swapped|verdict=DELETE_UNVERIFIABLE|older=False|forms=2|edited=DELETE_CONTENT_CHANGED",
+                "flat-unchanged|verdict=ok|older=True|forms=1,2|edited=DELETE_CONTENT_CHANGED",
+                // Only the line sort reproduces a reordering here: the old chunker could not
+                // cut a body holding a GUID and kept file order. So this is the case where the
+                // line sort alone vouches, and may, because every sibling is one line.
+                "flat-reordered|verdict=ok|older=True|forms=2|edited=DELETE_CONTENT_CHANGED",
+                "flat-edited|verdict=DELETE_CONTENT_CHANGED|older=False|forms=|edited=DELETE_CONTENT_CHANGED",
             ],
             lines);
     }
@@ -154,7 +233,7 @@ public sealed class PythonNativeHashCompatibilityTests(ITestOutputHelper output)
             import os, types
             import versio_native_equiv as ne
             import versio_types
-            from versio_text import content_hash
+            from versio_text import content_hash, scrub_native_xml
 
             # The importer is a script: everything above its trailer is the module.
             stub = types.ModuleType("scriptengine")
@@ -179,7 +258,8 @@ public sealed class PythonNativeHashCompatibilityTests(ITestOutputHelper output)
                 files = [{"form": form, "path": label, "hash": "sha256:0", "nhash": nhash}]
                 verdict = imp.why_not_delete(Obj(xml), label, files)
                 older = imp.older_nhash
-                forms = [k for k, t in enumerate(ne.normalized_forms(xml)) if content_hash(t) == nhash]
+                # Over the scrubbed text, as the check itself reads the live object back.
+                forms = [k for k, t in enumerate(ne.normalized_forms(scrub_native_xml(xml)[0])) if content_hash(t) == nhash]
                 at = xml.rfind(u"</")
                 edited = imp.why_not_delete(Obj(xml[:at] + u"<Edited/>" + xml[at:]), label, files)
                 return u"%s|verdict=%s|older=%s|forms=%s|edited=%s" % (
