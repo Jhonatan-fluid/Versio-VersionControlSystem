@@ -15,9 +15,12 @@ namespace Versio.Web.Review;
 /// fence with no lines at all means "delete these lines" — GitHub's reading too.
 /// </para>
 /// <para>
-/// <b>The file's line endings are kept.</b> A suggestion typed on github.com arrives with
-/// <c>\n</c>; writing that into a CRLF file would turn one changed line into a whole-file diff on the
-/// next export, which is exactly the kind of noise this project exists to avoid.
+/// <b>The file's line endings are kept, line by line.</b> A suggestion typed on github.com arrives
+/// with <c>\n</c>; writing that into a CRLF file would turn one changed line into a whole-file diff on
+/// the next export, which is exactly the kind of noise this project exists to avoid. The same goes
+/// for the lines the suggestion does not touch: a file of mixed endings keeps each one as it was, and
+/// only the replaced lines are rewritten — "the file's ending" is not one thing when the file disagrees
+/// with itself, and choosing one for the whole file rewrote the lines nobody selected (review, 2026-10-25).
 /// </para>
 /// </remarks>
 public static partial class Suggestions
@@ -52,15 +55,13 @@ public static partial class Suggestions
             return null;
         }
 
-        var eol = text.Contains("\r\n", StringComparison.Ordinal) ? "\r\n" : "\n";
-        var endsWithNewline = text.EndsWith('\n');
-        var lines = text.Split('\n').Select(l => l.TrimEnd('\r')).ToList();
-        if (endsWithNewline)
-        {
-            // The split leaves an empty entry after the final newline; it is not a line.
-            lines.RemoveAt(lines.Count - 1);
-        }
-
+        // Each line keeps its own terminator, so a line outside the range is copied back as the
+        // bytes it was. The first version split on '\n', TrimEnd('\r')-ed every line and rejoined
+        // with one ending chosen for the whole file: in a file of mixed endings that rewrote every
+        // line of the minority kind, and a '\r' that was content — one before the ending, or one
+        // closing a final line with no newline — went with it (review, 2026-10-25). Both are the
+        // whole-file noise the class remarks say it exists to avoid, on the lines nobody selected.
+        var lines = SplitKeepingEndings(text);
         if (endLine > lines.Count)
         {
             return null;
@@ -70,20 +71,97 @@ public static partial class Suggestions
         // a blank line before that IS one, as on github.com — TrimEnd('\n') took every trailing
         // blank line with it (review, 2026-10-24).
         var body = suggestion.EndsWith('\n') ? suggestion[..^1] : suggestion;
-        var replacement = suggestion.Length == 0 ? [] : body.Split('\n').ToList();
-        lines.RemoveRange(startLine - 1, endLine - startLine + 1);
-        lines.InsertRange(startLine - 1, replacement);
-        var result = new StringBuilder();
-        for (var i = 0; i < lines.Count; i++)
+        var replacement = suggestion.Length == 0 ? [] : body.Split('\n');
+
+        // A fence typed on github.com says nothing about endings (Read normalised them to '\n'), so
+        // the inserted lines take the ending of the first line they replace — the one reading as
+        // "this line, changed". That line has none only when it is the file's last and the file has
+        // no final newline; then the dominant ending stands in, and '\n' for a file with no endings.
+        var ending = EndingOf(lines[startLine - 1]);
+        if (ending.Length == 0)
+        {
+            ending = DominantEnding(lines);
+        }
+
+        // Whether the file's final line ends with a newline is a byte like any other: a range that
+        // reaches the end of the file leaves its last inserted line bare only when the file was.
+        var finalLineEnds = EndingOf(lines[^1]).Length > 0;
+        var result = new StringBuilder(text.Length + suggestion.Length);
+        for (var i = 0; i < startLine - 1; i++)
         {
             result.Append(lines[i]);
-            if (i < lines.Count - 1 || endsWithNewline)
+        }
+
+        for (var i = 0; i < replacement.Length; i++)
+        {
+            result.Append(replacement[i]);
+            if (i < replacement.Length - 1 || endLine < lines.Count || finalLineEnds)
             {
-                result.Append(eol);
+                result.Append(ending);
             }
         }
 
+        for (var i = endLine; i < lines.Count; i++)
+        {
+            result.Append(lines[i]);
+        }
+
         return result.ToString();
+    }
+
+    /// <summary>
+    /// The text as lines, each with the terminator it has — <c>\n</c>, <c>\r\n</c>, or none for a
+    /// final line with no newline. An empty text is one bare line, as <c>Split</c> read it before,
+    /// so a suggestion on line 1 of an empty file still applies; text ending in a newline has no
+    /// empty line after it, since that newline closes the last line rather than opening another.
+    /// </summary>
+    private static List<string> SplitKeepingEndings(string text)
+    {
+        var lines = new List<string>();
+        var start = 0;
+        while (start < text.Length)
+        {
+            var newline = text.IndexOf('\n', start);
+            if (newline < 0)
+            {
+                lines.Add(text[start..]);
+                break;
+            }
+
+            lines.Add(text[start..(newline + 1)]);
+            start = newline + 1;
+        }
+
+        if (text.Length == 0)
+        {
+            lines.Add("");
+        }
+
+        return lines;
+    }
+
+    /// <summary>The terminator a line of <see cref="SplitKeepingEndings"/> carries; empty for none.</summary>
+    private static string EndingOf(string line) =>
+        line.EndsWith("\r\n", StringComparison.Ordinal) ? "\r\n" : line.EndsWith('\n') ? "\n" : "";
+
+    /// <summary>
+    /// The ending most of the file's lines use; CRLF on a tie, which is what the first version chose
+    /// whenever a CRLF was present at all, and '\n' for a file with no line endings in it.
+    /// </summary>
+    private static string DominantEnding(List<string> lines)
+    {
+        var crlf = 0;
+        var lf = 0;
+        foreach (var line in lines)
+        {
+            switch (EndingOf(line))
+            {
+                case "\r\n": crlf++; break;
+                case "\n": lf++; break;
+            }
+        }
+
+        return crlf > 0 && crlf >= lf ? "\r\n" : "\n";
     }
 
     /// <summary>A fenced block whose info string is exactly <c>suggestion</c>; the body up to the closing fence.</summary>

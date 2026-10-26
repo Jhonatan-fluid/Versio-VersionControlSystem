@@ -46,6 +46,50 @@ public sealed class SuggestionsTests
         Assert.Equal("a\nx\nc\n", Suggestions.Apply("a\nb\nc\n", 2, 2, "x"));
     }
 
+    /// <summary>
+    /// Only the selected lines change. A file with mixed endings (a CRLF export with one LF line
+    /// pasted in, or the other way round) used to come back rebuilt with one ending throughout,
+    /// so the commit changed lines the reviewer never selected — the whole-file noise this class
+    /// says it exists to avoid; and a lone <c>\r</c> that was content, not an ending, was trimmed
+    /// off with it (review, 2026-10-25).
+    /// </summary>
+    [Fact]
+    public void Applying_leaves_every_unselected_line_byte_for_byte_as_it_was()
+    {
+        // Mixed endings: line 2 is replaced, lines 1 and 3 keep their own.
+        Assert.Equal("a\r\nX\nc\r\n", Suggestions.Apply("a\r\nb\nc\r\n", 2, 2, "X\n"));
+        Assert.Equal("a\nX\r\nc\n", Suggestions.Apply("a\nb\r\nc\n", 2, 2, "X\n"));
+        // A '\r' before the ending is content, as is one ending a final line with no newline.
+        Assert.Equal("a\r\r\nX\r\n", Suggestions.Apply("a\r\r\nb\r\n", 2, 2, "X\n"));
+        Assert.Equal("X\nb\r", Suggestions.Apply("a\nb\r", 1, 1, "X\n"));
+        // A lone CR in the middle of a line is content too, on both sides of the selection.
+        Assert.Equal("a\rb\nX\nc\rd\n", Suggestions.Apply("a\rb\nY\nc\rd\n", 2, 2, "X\n"));
+    }
+
+    /// <summary>
+    /// The lines a suggestion inserts take the ending of the first line they replace, since a fence
+    /// typed on github.com says nothing about endings; a replaced final line with no newline keeps
+    /// having none, and the file's dominant ending decides when that first line had no ending of its own.
+    /// </summary>
+    [Fact]
+    public void Inserted_lines_take_the_ending_of_the_first_line_they_replace()
+    {
+        Assert.Equal("a\nx\r\ny\r\nc\n", Suggestions.Apply("a\nb\r\nc\n", 2, 2, "x\ny\n"));
+        Assert.Equal("a\r\nx\ny\nd\r\n", Suggestions.Apply("a\r\nb\nc\r\nd\r\n", 2, 3, "x\ny\n"));
+        // The final line had no newline: the first inserted line takes the dominant ending, the last stays bare.
+        Assert.Equal("a\r\nb\r\nx\r\ny", Suggestions.Apply("a\r\nb\r\nc", 3, 3, "x\ny\n"));
+        Assert.Equal("a\nb\r\nc\nx\ny", Suggestions.Apply("a\nb\r\nc\nd", 4, 4, "x\ny\n"));
+        // A tie goes to CRLF, as the first version chose whenever one was present at all.
+        Assert.Equal("a\r\nb\nx\r\ny", Suggestions.Apply("a\r\nb\nc", 3, 3, "x\ny\n"));
+        // A final line that did end with a newline is replaced by one that does.
+        Assert.Equal("a\nx\n", Suggestions.Apply("a\nb\n", 2, 2, "x\n"));
+        Assert.Equal("a\r\nx\r\ny\r\n", Suggestions.Apply("a\r\nb\r\n", 2, 2, "x\ny\n"));
+        // An empty file is one bare line; with nothing to copy, the inserted lines take '\n'.
+        Assert.Equal("x\ny", Suggestions.Apply("", 1, 1, "x\ny\n"));
+        // Deleting the final bare line leaves the line before it with the ending it already had.
+        Assert.Equal("a\nb\n", Suggestions.Apply("a\nb\nc", 3, 3, ""));
+    }
+
     [Fact]
     public void Lines_outside_the_file_or_a_backwards_range_apply_nothing()
     {
