@@ -131,6 +131,74 @@ public sealed class CommitPlanFlowTests
         Assert.Equal(["file2.st"], committed);
     }
 
+    [Fact]
+    public async Task Excluding_a_staged_rename_leaves_both_of_its_paths_out_of_the_commit()
+    {
+        // `git mv old.st new.st` is one row in the panel and two entries in the index: new.st
+        // added, old.st deleted. Leaving that row out of the commit unstaged only the row's
+        // own path, so new.st came out of the index and old.st's deletion stayed in — and
+        // the commit of "just the other file" quietly deleted old.st without adding
+        // anything in its place. The 2026-10-25 review's P2, confirmed with real git.
+        using var repo = new TempRepo(unstagedFiles: 1);
+        File.WriteAllText(Path.Combine(repo.Path, "old.st"), "PROGRAM Old\n");
+        repo.Git("add old.st");
+        repo.Git("commit -qm old");
+        repo.Git("mv old.st new.st");
+
+        using var shell = Shell();
+        await shell.OpenAsync(repo.Path);
+
+        var rename = shell.Pending.Single(r => r.Path == "new.st");
+        Assert.True(rename.IsStaged);
+        Assert.Equal(ChangeKind.Renamed, rename.Kind);
+
+        shell.Pending.Single(r => r.Path == "file0.st").IsSelected = true;
+        Assert.Equal("Commit (1)", shell.Commit.Label);
+
+        shell.CommitMessage = "just the other file";
+        await Eventually.Press(shell.CommitCommand, "commit");
+        await Eventually.Until(
+            () => GitOutput(repo, "log -1 --pretty=%s").Trim() == "just the other file",
+            "the commit landed");
+
+        // The commit touched the ticked file and nothing else: old.st is still in HEAD,
+        // new.st is not.
+        Assert.Equal(["file0.st"], FilesInHead(repo));
+        var tree = GitOutput(repo, "ls-tree --name-only HEAD");
+        Assert.Contains("old.st", tree, StringComparison.Ordinal);
+        Assert.DoesNotContain("new.st", tree, StringComparison.Ordinal);
+
+        // And the rename is still the user's to commit next time: nothing of it is in the
+        // index, both halves are in the working tree, and the panel lists both.
+        Assert.Equal(string.Empty, GitOutput(repo, "diff --cached --name-status").Trim());
+        var status = GitOutput(repo, "status --porcelain");
+        Assert.Contains(" D old.st", status, StringComparison.Ordinal);
+        Assert.Contains("?? new.st", status, StringComparison.Ordinal);
+        await Eventually.Until(
+            () => shell.Pending.Any(r => r.Path == "old.st") && shell.Pending.Any(r => r.Path == "new.st"),
+            "both halves of the rename to be listed");
+    }
+
+    [Fact]
+    public void A_row_names_the_path_a_staged_rename_came_from_and_nothing_else()
+    {
+        // The unstage above reads RenamedFrom. A copy also carries an original path, but its
+        // source is still its own index entry — possibly its own ticked row — so unstaging it
+        // on the copy's behalf would undo that row's choice. Only a rename's source is fair
+        // game, because a rename's source is gone from the index.
+        static ChangeRow Row(ChangeKind staged, string? from) => new(new FileChange
+        {
+            Path = "new.st",
+            Staged = staged,
+            Unstaged = ChangeKind.Unmodified,
+            OriginalPath = from,
+        });
+
+        Assert.Equal("old.st", Row(ChangeKind.Renamed, "old.st").RenamedFrom);
+        Assert.Null(Row(ChangeKind.Copied, "old.st").RenamedFrom);
+        Assert.Null(Row(ChangeKind.Added, null).RenamedFrom);
+    }
+
     /// <summary>What git prints for one read-only command in the repository.</summary>
     private static string GitOutput(TempRepo repo, string arguments)
     {

@@ -242,6 +242,27 @@ public sealed class ChangeRow(FileChange change) : ObservableObject
         ? string.Empty
         : $"← {_change.OriginalPath}";
 
+    /// <summary>
+    /// The path a staged rename took this file from, or null for anything else.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// A rename is one row and two index entries: the new path added, the old one deleted.
+    /// Anything that takes this row out of the index has to name both, because
+    /// <c>git restore --staged new.st</c> removes the addition and leaves the deletion
+    /// where it was — so excluding a rename from a commit deleted <c>old.st</c> from the
+    /// repository and added nothing in its place. The 2026-10-25 review's P2.
+    /// </para>
+    /// <para>
+    /// Only a <b>rename</b>, not a copy, though both carry an original path. A copy's source is
+    /// still in the index as its own entry, possibly as its own row with its own tick, and
+    /// unstaging it on the copy's behalf would undo a choice made on that row. A rename's
+    /// source has no row to clash with: it is gone from the index, which is the whole point.
+    /// </para>
+    /// </remarks>
+    public string? RenamedFrom =>
+        _change.Staged == ChangeKind.Renamed ? _change.OriginalPath : null;
+
     public bool IsStaged => _change.IsStaged;
 
     private bool _isSelected;
@@ -3838,6 +3859,15 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         return false;
     }
 
+    /// <summary>Take the staged rows the commit plan left out back out of the index, so
+    /// nothing unticked rides along.</summary>
+    /// <remarks>
+    /// A staged rename is unstaged by <b>both</b> of its paths. The row is keyed by the new
+    /// path, and <c>git restore --staged new.st</c> on its own puts new.st back to untracked
+    /// and leaves old.st's deletion staged — so "leave the rename out" committed half of it,
+    /// the half that deletes. Confirmed with real git on 2026-10-25; the test is
+    /// <c>CommitPlanFlowTests.Excluding_a_staged_rename_leaves_both_of_its_paths_out_of_the_commit</c>.
+    /// </remarks>
     private async Task<bool> UnstageForCommitAsync(IReadOnlyList<ChangeRow> rows)
     {
         if (_git is null || rows.Count == 0)
@@ -3845,8 +3875,17 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
             return true;
         }
 
+        var paths = rows
+            .SelectMany<ChangeRow, string>(r => r.RenamedFrom is { } from ? [r.Path, from] : [r.Path])
+            .ToList();
+        var renames = rows.Count(r => r.RenamedFrom is not null);
+
+        _logger.Info(LogCategory.Git,
+            $"{Commit.Label}: unstaging {rows.Count} file(s) left out of the commit" +
+            (renames == 0 ? string.Empty : $", {renames} of them renames unstaged by both paths"));
+
         var result = await _git
-            .UnstageAsync([.. rows.Select(r => r.Path)], CancellationToken.None)
+            .UnstageAsync(paths, CancellationToken.None)
             .ConfigureAwait(true);
 
         if (result.Success)
