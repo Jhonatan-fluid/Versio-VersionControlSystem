@@ -38,6 +38,33 @@ public sealed class BrowseTests
     private static IEnumerable<JsonElement> Flatten(JsonElement nodes) =>
         nodes.EnumerateArray().SelectMany(n => new[] { n }.Concat(Flatten(n.GetProperty("children"))));
 
+    /// <summary>
+    /// Review, 2026-10-25 (P2): the commit page's comparison took no old path, so a file GitHub
+    /// reported renamed (and edited) was drawn as wholly added — here two additions and no removal,
+    /// where the pull request's view, told the old path, draws the one line that changed. The route
+    /// now takes <c>from</c> as the pull request's does; an old path that is not a path is refused,
+    /// not read.
+    /// </summary>
+    [Fact]
+    public async Task A_renamed_file_compared_from_its_old_path_shows_the_one_line_that_changed()
+    {
+        await using var host = await TestHost.StartAsync(Build(out _, out var start, out var head));
+        var route = $"/api/repos/acme/plant/compare/view?base={start}&head={head}&path=src%2FNew.st&view=raw";
+
+        var cold = Json(await (await host.GetAsync(route)).Body()).GetProperty("html").GetString()!;
+        var toldResponse = await host.GetAsync(route + "&from=src%2FOld.st");
+        toldResponse.AssertStatus(HttpStatusCode.OK);
+        var told = Json(await toldResponse.Body()).GetProperty("html").GetString()!;
+
+        static int Count(string html, string mark) => html.Split(mark).Length - 1;
+        Assert.Equal((2, 0), (Count(cold, "cd-added"), Count(cold, "cd-removed")));
+        Assert.Equal((1, 1), (Count(told, "cd-added"), Count(told, "cd-removed")));
+        // The removed row is the old path's text (one row per line; the keyword is highlighted apart from the name).
+        Assert.Matches("cd-removed[^\n]*Old", told);
+        Assert.Matches("cd-added[^\n]*New", told);
+        (await host.GetAsync(route + "&from=..%2Fsrc%2FOld.st")).AssertStatus(HttpStatusCode.NotFound);
+    }
+
     [Fact]
     public async Task The_tree_compared_with_a_base_marks_each_row_rolls_folders_up_and_lists_the_deleted_file_struck()
     {

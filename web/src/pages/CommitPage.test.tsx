@@ -13,6 +13,8 @@ import { CommitPage } from './CommitPage';
 const sha = 'd'.repeat(40);
 const parent = 'c'.repeat(40);
 let urls: string[] = [];
+/** When set, the commit also renames a file (and edits it), as GitHub reports with previous_filename. */
+let renamed = false;
 
 function answer(url: string): unknown {
   if (url.includes('/commit?')) {
@@ -22,6 +24,7 @@ function answer(url: string): unknown {
       files: [
         { path: 'src/Pump.st', label: 'src/Pump.st', status: 'modified', additions: 1, deletions: 1, previousPath: null, previousLabel: null },
         { path: 'src/New.st', label: 'src/New.st', status: 'added', additions: 1, deletions: 0, previousPath: null, previousLabel: null },
+        ...(renamed ? [{ path: 'src/Valve.st', label: 'src/Valve.st', status: 'renamed', additions: 1, deletions: 1, previousPath: 'src/OldValve.st', previousLabel: 'src/OldValve.st' }] : []),
       ],
     };
   }
@@ -87,6 +90,24 @@ describe('CommitPage', () => {
     document.body.innerHTML = '';
     sessionStorage.clear();
     postAnswer = { outcome: 'done', id: 'CC_3' };
+    renamed = false;
+  });
+
+  // Review, 2026-10-25 (P2): the page received a renamed file's previous path and asked for the
+  // comparison with the new path only, so a renamed-and-edited file was drawn wholly added — two
+  // additions, no removals. The old path goes with the request, as the pull request page sends it,
+  // and a file that was not renamed sends none.
+  it('asks for a renamed file compared from its old path, and for the others from none', async () => {
+    renamed = true;
+    const { host, root } = await render(`/acme/plant/commit/${sha}`);
+
+    const compares = urls.filter((u) => u.includes('/compare/view')).map((u) => decodeURIComponent(u));
+    const valve = compares.find((u) => u.includes('path=src/Valve.st'));
+    expect(valve).toContain('from=src/OldValve.st');
+    expect(compares.filter((u) => !u.includes('path=src/Valve.st'))).toHaveLength(2);
+    expect(compares.filter((u) => !u.includes('path=src/Valve.st')).some((u) => u.includes('from='))).toBe(false);
+    expect(host.querySelector('[data-file="src/Valve.st"] .pane-title')?.textContent).toContain('renamed from src/OldValve.st');
+    act(() => root.unmount());
   });
 
   it('draws the card: message and body, both people, the signature, the stats, the parent, Browse files', async () => {

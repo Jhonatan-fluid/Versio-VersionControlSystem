@@ -40,7 +40,7 @@ export function ComparePage({ me }: { me: Me | null }) {
   const comparison = useAsync((s) => (parsed ? api.compare(owner, repo, base, head, s) : Promise.reject(new Error('Pick two versions to compare.'))), [owner, repo, base, head]);
   const tree = useAsync((s) => (parsed ? api.tree(owner, repo, head, s, base, true) : new Promise<never>(() => {})), [owner, repo, base, head]);
   const pane = useAsync(
-    (s) => (parsed && path ? api.compareView(owner, repo, base, head, path, view, layout, s, full) : new Promise<never>(() => {})),
+    (s) => (parsed && path ? api.compareView(owner, repo, base, head, path, view, layout, undefined, s, full) : new Promise<never>(() => {})),
     [owner, repo, base, head, path, view, layout, full],
   );
 

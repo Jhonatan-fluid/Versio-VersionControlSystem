@@ -257,7 +257,10 @@ function CommitFile({ owner, repo, base, head, file, view, layout, onView, onLay
     observer.observe(section.current);
     return () => observer.disconnect();
   }, [near]);
-  const result = useAsync((s) => (near && !folded ? api.compareView(owner, repo, base, head, file.path, view, layout, s, full) : new Promise<never>(() => {})), [near, folded, owner, repo, base, head, file.path, view, layout, full]);
+  // A renamed file is compared from its old path (review, 2026-10-25): without it the server has
+  // nothing on the older side and draws the whole file as added, hiding what the edit removed.
+  const from = file.previousPath ?? undefined;
+  const result = useAsync((s) => (near && !folded ? api.compareView(owner, repo, base, head, file.path, view, layout, from, s, full) : new Promise<never>(() => {})), [near, folded, owner, repo, base, head, file.path, from, view, layout, full]);
   const name = file.label.slice(file.label.lastIndexOf('/') + 1);
   const folder = file.label.slice(0, Math.max(0, file.label.lastIndexOf('/')));
   return (

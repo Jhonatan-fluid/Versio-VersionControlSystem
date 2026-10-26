@@ -751,9 +751,14 @@ export const api = {
     get<Usages>(`${repoBase(owner, repo)}/usages${query({ ref, path })}`, signal),
   compare: (owner: string, repo: string, base: string, head: string, signal?: AbortSignal) =>
     get<Comparison>(`${repoBase(owner, repo)}/compare${query({ base, head })}`, signal),
-  /** `full`: the desktop pane's Show full file; without it a comparison is folded to its changes, as the desktop opens. */
-  compareView: (owner: string, repo: string, base: string, head: string, path: string, view: PaneView, layout: Layout, signal?: AbortSignal, full?: boolean) =>
-    get<View>(`${repoBase(owner, repo)}/compare/view${query({ base, head, path, view, layout, full: full ? '1' : undefined })}`, signal),
+  /**
+   * `from`: a renamed file's old path, when the caller was told one (a commit's files carry GitHub's
+   * previous_filename), so the server compares the object with itself across the rename instead of
+   * drawing it wholly added — the same `from` the review's fileView sends.
+   * `full`: the desktop pane's Show full file; without it a comparison is folded to its changes, as the desktop opens.
+   */
+  compareView: (owner: string, repo: string, base: string, head: string, path: string, view: PaneView, layout: Layout, from?: string, signal?: AbortSignal, full?: boolean) =>
+    get<View>(`${repoBase(owner, repo)}/compare/view${query({ base, head, path, from, view, layout, full: full ? '1' : undefined })}`, signal),
   history: (owner: string, repo: string, ref: string, path?: string, signal?: AbortSignal) =>
     get<Commit[]>(`${repoBase(owner, repo)}/history${query({ ref, path })}`, signal),
   pulls: (owner: string, repo: string, signal?: AbortSignal, q?: string, after?: string) =>

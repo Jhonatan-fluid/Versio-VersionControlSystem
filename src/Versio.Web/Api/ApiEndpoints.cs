@@ -369,10 +369,15 @@ public static partial class ApiEndpoints
             });
         });
 
-        api.MapGet("/compare/view", async (string owner, string repo, string? @base, string? head, string? path, string? view, string? layout, string? full,
+        // "from" is a renamed file's old path, as the commit's file list reported it (from GitHub's
+        // previous_filename): the drawing compares the object with itself across the rename rather
+        // than as a delete and an add. The pull request's files/view has taken it since review
+        // slice 1; this route did not until the review of 2026-10-25, so the commit page drew a
+        // renamed-and-edited file as wholly added — every line an addition, the removed ones gone.
+        api.MapGet("/compare/view", async (string owner, string repo, string? @base, string? head, string? path, string? from, string? view, string? layout, string? full,
             HttpContext http, Loader load, ViewService views, IVersioLogger log, CancellationToken ct) =>
         {
-            if (!ValidPath(path))
+            if (!ValidPath(path) || (from is not null && !ValidPath(from)))
             {
                 return Results.NotFound();
             }
@@ -389,7 +394,7 @@ public static partial class ApiEndpoints
                 return Refused(newer.Failure, http);
             }
 
-            var result = await views.CompareAsync(newer.Value!.Access, older.Value!.Model, newer.Value.Model, path!, Pane(view), SideBySide(layout), ct, fullFile: FullFile(full)).ConfigureAwait(false);
+            var result = await views.CompareAsync(newer.Value!.Access, older.Value!.Model, newer.Value.Model, path!, Pane(view), SideBySide(layout), ct, from, FullFile(full)).ConfigureAwait(false);
             Audit(log, newer.Value.Access, newer.Value.Model, path!, $"compare {view}");
             return result.Ok ? Results.Ok(result.Value) : Refused(result.Failure, http);
         });
