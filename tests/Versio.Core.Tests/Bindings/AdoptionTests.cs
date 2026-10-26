@@ -135,6 +135,58 @@ public sealed class AdoptionTests
         Assert.Contains("b-other", decision.Explanation);
     }
 
+    [Theory]
+    // The reviewer's case, in both orders: A.project exports to A, and A/B.project to A/B.
+    // An export replaces its whole directory, so exporting A deletes A/B.project and A/B.
+    [InlineData("plc/A/B.project", "plc/A/B", "plc/A.project")]
+    [InlineData("old/A.project", "plc/A", "plc/A/B.project")]
+    // The other binding's project file inside the new export root, with its own export
+    // elsewhere.
+    [InlineData("plc/A/Other.project", "mirrors/Other", "plc/A.project")]
+    public void A_project_whose_export_directory_would_nest_another_binding_s_is_refused(
+        string existingProject, string existingExport, string newProject)
+    {
+        // Review 2026-10-25, fifth round, item 2: the collision check compared export
+        // directories for equality only, so one nested in another was accepted and the
+        // next export of the outer project deleted the inner one, project file and all.
+        var config = new RepoConfig
+        {
+            Bindings =
+            [
+                new ProjectBinding
+                {
+                    Id = "b-other",
+                    ProjectPath = existingProject,
+                    ExportPath = existingExport,
+                },
+            ],
+        };
+
+        var decision = Plan(newProject, config);
+
+        Assert.Equal(AdoptionVerdict.ExportPathTaken, decision.Verdict);
+        Assert.Contains("b-other", decision.Explanation);
+        Assert.Contains("delete", decision.Explanation);
+    }
+
+    [Fact]
+    public void A_sibling_whose_name_merely_starts_the_same_way_is_not_nested()
+    {
+        // plc/AB is not inside plc/A: the boundary is a directory separator, not a prefix.
+        var config = new RepoConfig
+        {
+            Bindings =
+            [
+                new ProjectBinding
+                {
+                    Id = "b-other", ProjectPath = "old/AB.project", ExportPath = "plc/AB",
+                },
+            ],
+        };
+
+        Assert.Equal(AdoptionVerdict.Ready, Plan("plc/A.project", config).Verdict);
+    }
+
     [Fact]
     public void A_non_project_file_is_refused()
     {

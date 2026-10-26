@@ -167,14 +167,51 @@ public static class Adoption
         }
 
         var exportPath = Normalize(format.ConventionalExportPath(path));
-        var collision = config.Bindings.FirstOrDefault(b =>
-            string.Equals(Normalize(b.ExportPath), exportPath, StringComparison.OrdinalIgnoreCase));
-        if (collision is not null)
+        foreach (var other in config.Bindings)
         {
-            return AdoptionDecision.ExportPathTaken(
-                $"'{exportPath}' is already the export directory for binding " +
-                $"'{collision.Id}'; two projects exporting into one tree would overwrite " +
-                "each other silently");
+            var otherExport = Normalize(other.ExportPath);
+            var otherProject = Normalize(other.ProjectPath);
+
+            if (string.Equals(otherExport, exportPath, StringComparison.OrdinalIgnoreCase))
+            {
+                return AdoptionDecision.ExportPathTaken(
+                    $"'{exportPath}' is already the export directory for binding " +
+                    $"'{other.Id}'; two projects exporting into one tree would overwrite " +
+                    "each other silently");
+            }
+
+            // Not only the same directory: one inside the other, in either direction, and a
+            // project file inside the other's export tree. An export replaces its whole
+            // directory — the new tree is written beside the old one and swapped in — so a
+            // root that contains another binding's export root or project file deletes it
+            // on the next export, and a root inside another's is deleted by that one's.
+            // `A.project` with `A/B.project` was accepted and did exactly that (the
+            // 2026-10-25 review's fifth round, item 2). Checked here, at the one gate every
+            // adoption passes, rather than in the export, where the only answer left would
+            // be to refuse a sync somebody had already been promised.
+            if (IsUnder(exportPath, otherExport) || IsUnder(otherExport, exportPath))
+            {
+                return AdoptionDecision.ExportPathTaken(
+                    $"'{exportPath}' and binding '{other.Id}''s export directory " +
+                    $"'{otherExport}' would be one inside the other; an export replaces its " +
+                    "whole directory, so one would delete the other's tree");
+            }
+
+            if (IsUnder(otherProject, exportPath))
+            {
+                return AdoptionDecision.ExportPathTaken(
+                    $"'{exportPath}' would contain the project file of binding '{other.Id}' " +
+                    $"('{otherProject}'); an export replaces its whole directory and would " +
+                    "delete that project");
+            }
+
+            if (IsUnder(path, otherExport))
+            {
+                return AdoptionDecision.ExportPathTaken(
+                    $"'{path}' sits inside the export directory of binding '{other.Id}' " +
+                    $"('{otherExport}'); an export of that project replaces its whole " +
+                    "directory and would delete this one");
+            }
         }
 
         return new AdoptionDecision(
@@ -184,4 +221,9 @@ public static class Adoption
     }
 
     private static string Normalize(string p) => p.Replace('\\', '/').TrimStart('/');
+
+    /// <summary>Whether <paramref name="path"/> is strictly beneath <paramref name="root"/>: a
+    /// directory boundary, so <c>plc/AB</c> is not under <c>plc/A</c>.</summary>
+    private static bool IsUnder(string path, string root) =>
+        path.StartsWith(root.TrimEnd('/') + "/", StringComparison.OrdinalIgnoreCase);
 }
