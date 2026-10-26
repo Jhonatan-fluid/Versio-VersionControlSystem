@@ -507,6 +507,7 @@ friendlier hat.
 | `stash push` fails, or creates nothing | Abort the switch. Never fall through to checkout or discard. |
 | Nothing to stash (clean tree) | The guard never asks in the first place — `WorkingTreeSnapshot` says the tree is clean and the verdict is `Proceed`. |
 | **`pop` conflicts** | Git leaves the stash in place and marks paths unmerged. **Keep the sidecar entry** — the work still exists and is still ours. Report the conflict, and let §5.B refuse both sync directions until it is resolved. |
+| **`pop` succeeds** | **Not adopted.** The tree before the pop is HEAD, which the arrival adopted; what the pop puts back is work in flight, judged by the hashes as it was before the stash. A mirror edit that owed an import owes it again — the restore asks the orchestrator and raises the banner. Until 2026-10-25 the restore adopted the tree, which recorded the edit as synced and let the next save export over it (the review's seventh round, item 1). |
 | Stash popped or dropped from a terminal | SHA is gone from the list. Clear the entry, log at Info, stay quiet. |
 | Branch deleted while its stash is held | Orphaned entry. **Never auto-drop** — surface it in `Findings`, which already exists for exactly this class of "needs a human". |
 | Stash taken on a detached HEAD | Key on `detached@<sha>`; offer restore when HEAD returns to that commit. Refusing to stash mid-switch is worse than an imperfect key. |

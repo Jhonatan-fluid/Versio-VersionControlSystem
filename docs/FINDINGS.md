@@ -19,6 +19,84 @@ produce a diff touching everything else.
 
 ---
 
+### The review's seventh round: three more, one of them a restore that adopted what it put back
+
+**2026-10-25, the reviewer read `749e3a1` and sent three confirmed items — one P1, two P2.**
+Same method as every round before: every claim read against the code, a failing test first,
+one commit per idea, the fix mutated away and the test watched go red, then restored. **All
+three are real and all three are fixed**; none is refuted and none is deferred. No python is
+touched, so the CODESYS gate owes nothing new. Item 2 came in two commits because it was two
+ideas — the engine surviving a throw from its store, and the store not throwing — and its test
+found a third thing on the way (a transient access-denied on the final replace) that the old
+code had been exposed to all along.
+
+**The P1:**
+
+- **1 — restoring an auto-stash adopted the restored edit as synced.** Switching branches
+  stashed an unconfirmed mirror edit; restoring it on the way back popped the stash and then
+  adopted the tree, as a checkout or a pull is adopted. The restored edit was thereby recorded
+  as synced: the banner was gone, the gate beside the direction lock (the second round's item
+  1) compared the mirror against a record that now matched it, and the next project save
+  exported over the one copy of the edit anywhere. The restore no longer adopts — the tree
+  before the pop is HEAD, which the arrival already adopted, and what the pop adds is work in
+  flight, judged by the hashes as it was before the stash — and it asks the orchestrator,
+  binding by binding, whether the exported text holds an edit nobody has imported
+  (`HasUnimportedMirrorEditAsync`, the gate's own question made callable) and raises the import
+  for each that does, since the pop ran under the watcher hold and no text event would have.
+  One App test against real git over the whole arc, red before with the banner gone after the
+  restore; the first version of the test failed for another reason — the rules the shell
+  writes on open left the tree dirty and the pop stopped short — and the fixture commits them
+  first, which is worth knowing for the next test of this shape. Commit `49d73b2`.
+
+**The P2s:**
+
+- **2 — two bindings persisting at once left automatic sync stuck.** Two causes. The
+  coalescer's slot is completed by the caller on the outcome it is handed, so a throw from
+  inside the run left the slot held for good and every later change answered Coalesced until a
+  restart — the fourth round's item 5 was the same shape for a cancelled read, closed for that
+  path only. The attempt now catches whatever the claim-and-run throws, resets the slot,
+  records the failure so Try again lights, and answers Failed with the exception's words; the
+  existing test that pinned the throw escaping pins the Failed answer now, and says why the
+  contract moved (`a4e8d52`). And the throw itself: both bindings wrote `state.json.tmp`, and
+  the second open was a sharing violation. `JsonFile` serialises writers of one file within the
+  process and gives each a temp name of its own, so another process cannot collide either. The
+  test for that found more: under a loaded suite the final replace failed one run in three with
+  "access to the path is denied" — a file just written is briefly open elsewhere on Windows,
+  the scanner or the indexer — so the replace is tried six times with short waits before it is
+  allowed to fail, the remedy `WindowsFileSystem` already uses for its copies; the old code had
+  that exposure too, and one such miss was a stuck binding (`c2b4418`). A Core test with a
+  store that refuses one write and an Integration test writing thirty-two states at once, ten
+  rounds, on a real disk; each red before with the sharing violation.
+- **3 — moving a mirror subfolder out triggered no sync.** Two causes again, one per tier: the
+  tree watcher asked for no `DirectoryName` events, and Windows reports a folder renamed, moved
+  or deleted as one event about the folder and none for the files under it; and the safety
+  poll skipped a tracked file that no longer existed, so the fallback tier never reported the
+  disappearance either. The watcher now listens for directory events and turns each into the
+  tracked files it carried (a deleted or moved-out folder: its files; a renamed folder: its
+  old files and everything now under the new name; a folder moved in: its files), the root
+  sentinel re-checks the files under an old root the same way, and the poll reports a tracked
+  file that is gone once, at Warn, and then forgets it. A single-file watcher enqueues a
+  rename's old path only when it is tracked, because the IDE's heartbeat renames a temp onto
+  the project file and an unconditional version raised a change per heartbeat for a path nobody
+  tracked — found on the second-pass read and pinned. Four Integration tests on a real
+  directory and a real watcher; three red at their timeouts with an empty watcher log, and six
+  mutants each turned a different one red. The tests name the tracked file deliberately:
+  Windows owes only the one folder event, and deriving the files from it is the thing under
+  test. Commit `01523ff`.
+
+**The runs.** Over the landed tree, `01523ff`: Core 2,080 (nothing skipped), Integration 254, Arch 36, CODESYS pure 405, parity 104, TIA pure 108, TwinCAT pure 27, Web 504, vitest 211; App 846 — 843/846 in 10 m 57 s, the three red all catch-up waits (`CommitWhileIdeHoldsProjectTests`, `SourceProjectTests` — both named before — and `StagingSelectionFlowTests.The_master_checkbox_ticks_and_clears_the_list`, a new name), all three green alone and in their classes (10/10 in 18 s). Three in one run is more than the one-a-run of the earlier rounds, so the watch item below widens to the suite's waits under load rather than one test. 4,430 across the twelve projects; the toolchain-gated counts (TIA 5, TwinCAT 6, CODESYS 55) are from their last gate runs.
+
+**Still not done**, carried: branch deletion addresses the hardcoded "origin" (the first round's
+item 39); the merge twin of the sixth round's item 4 (finishing a merge after "Keep mine" says
+"Nothing to commit"); the sixth round's other notes. Named this round and left alone: a
+directory's own `Changed` event still reaches the engine as a path that is not a file, which
+the hash gate refuses harmlessly; the watcher logs "safety poll every 0s" for a sub-second
+interval; and the App suite's catch-up waits under load — three different tests red in one
+full run tonight, each green alone — which widens the fourth round's `SourceProjectTests` watch
+item from one test to the suite's waits, and has not been looked into.
+
+---
+
 ### The review's sixth round: five more, three of them the fifth round's fixes one case short
 
 **2026-10-25, the reviewer read `2d2937e` and sent five confirmed items — two P1, three P2 —

@@ -19,8 +19,9 @@ round of twelve (three of them fixes to the first round's fixes) on 2026-10-25, 
 more, a third round of four the same day (two of them what the earlier fixes had left),
 four commits, a fourth round of seven the same evening (two of them ways to lose a
 project), seven commits, a fifth of six (three P1, one of them a hole the third round's
-own fix opened), six commits, and a sixth of five (three of them the fifth round's fixes
-one case short), five commits; FINDINGS has all six lists, newest first. Item 1 is done:
+own fix opened), six commits, a sixth of five (three of them the fifth round's fixes
+one case short), five commits, and a seventh of three (a restore that adopted what it put
+back), four commits; FINDINGS has all seven lists, newest first. Item 1 is done:
 `Versio.Plc.Codesys.Tests` ran on `Siemens2` on 2026-08-19 evening — **54/54 green in
 39 m 33 s, zero skips**, on an idle machine with the IDE closed, over the Core seam
 changes (`ExportHeldViaCopy`, the held-wait, occupancy-then-hash, the locked-pointer
@@ -30,8 +31,8 @@ UX remainder) is built and tested as of 2026-08-25** — UX-6 find boxes, UX-7 `
 Escape, UX-8 copy-a-commit, UX-12 amend-while-unpushed — and its visual half joins the
 eyeball list in item 2. Do not start from `archive/` or a handoff.
 
-**Tests:** 4,423 across twelve projects (plus 211 vitest in `web/`), last counted 2026-10-25
-on `VersioWeb` after the review's sixth round (Core 2,079, App 845, Web 504) — re-derived by summing the table below; the toolchain-gated
+**Tests:** 4,430 across twelve projects (plus 211 vitest in `web/`), last counted 2026-10-25
+on `VersioWeb` after the review's seventh round (Core 2,080, App 846, Web 504) — re-derived by summing the table below; the toolchain-gated
 counts (TIA 5, TwinCAT 6, CODESYS 55) are from their last gate runs, not re-run for the count. **The Rendered view of an ST object reads like the IDE (2026-09-20):** no
 `@@` line, one gutter, a Declaration / Implementation divider, and the implementation
 numbered from 1 so a compile error's line number can be found — FINDINGS 2026-09-20. **With TIA Portal open, a commit no longer records a stale mirror**: the
@@ -70,9 +71,9 @@ marking, duplicate-param keys, and the detail-pane lookup. All of them are in
 
 | Project | Tests | Time | Needs |
 |---|---|---|---|
-| `Versio.Core.Tests` | 2,079 (nothing skipped) | under a second | nothing |
-| `Versio.Integration.Tests` | 249 | ~1 m (2 m 18 s loaded) | real git |
-| `Versio.App.Tests` | 845 (re-counted 2026-10-25) | **12 m 15 s, 845/845, idle, 2026-10-25 night**; 9 m 3 s, 838/842, 2026-10-25 night (the CODESYS run beside it; the four red are the clipboard tests, `CLIPBRD_E_CANT_OPEN`, red alone and on the untouched base too — another program held the clipboard; FINDINGS 2026-10-25 fifth round); 12 m 49 s, 840/841, 2026-10-25 evening (nothing else of this session running; `SourceProjectTests.A_program_with_no_variables…` red after 13 s for the second full run today, green alone and in its class — a watch item, FINDINGS 2026-10-25 fourth round); 13 m 29 s, 835/836, loaded, 2026-10-25 (the third round's CODESYS run beside it; a 21 s catch-up wait in `SourceProjectTests` failed and passed alone in 4 s); 13 m 9 s, 835/836, loaded, 2026-10-25 (the CODESYS gate ran beside it; the one 30 s catch-up wait failed and passed alone in 4 s); **12 m 22 s, 833/833, idle, 2026-10-24**; 11 m 23 s the same day loaded (three gates beside it; one 30 s catch-up wait failed and passed alone in 4 s) and 16 m 30 s under three builds; 10 m 45 s (loaded: mutation checks ran beside it) and 10 m 36 s on 2026-10-23; 12 m 19 s, 10 m 42 s and 9 m 5 s on 2026-10-22; 10 m 46 s on 2026-10-19; 10 m 58 s on 2026-10-16; 6 m 35 s on 2026-10-10; 8 m 38 s on 2026-10-05; ~3.6 min on 2026-09-22 | nothing |
+| `Versio.Core.Tests` | 2,080 (nothing skipped) | under a second | nothing |
+| `Versio.Integration.Tests` | 254 | ~1 m (2 m 18 s loaded) | real git |
+| `Versio.App.Tests` | 846 (re-counted 2026-10-25) | 10 m 57 s, 843/846, 2026-10-25 night (three catch-up waits red, all green alone and in their classes; FINDINGS 2026-10-25 seventh round); **12 m 15 s, 845/845, idle, 2026-10-25 night**; 9 m 3 s, 838/842, 2026-10-25 night (the CODESYS run beside it; the four red are the clipboard tests, `CLIPBRD_E_CANT_OPEN`, red alone and on the untouched base too — another program held the clipboard; FINDINGS 2026-10-25 fifth round); 12 m 49 s, 840/841, 2026-10-25 evening (nothing else of this session running; `SourceProjectTests.A_program_with_no_variables…` red after 13 s for the second full run today, green alone and in its class — a watch item, FINDINGS 2026-10-25 fourth round); 13 m 29 s, 835/836, loaded, 2026-10-25 (the third round's CODESYS run beside it; a 21 s catch-up wait in `SourceProjectTests` failed and passed alone in 4 s); 13 m 9 s, 835/836, loaded, 2026-10-25 (the CODESYS gate ran beside it; the one 30 s catch-up wait failed and passed alone in 4 s); **12 m 22 s, 833/833, idle, 2026-10-24**; 11 m 23 s the same day loaded (three gates beside it; one 30 s catch-up wait failed and passed alone in 4 s) and 16 m 30 s under three builds; 10 m 45 s (loaded: mutation checks ran beside it) and 10 m 36 s on 2026-10-23; 12 m 19 s, 10 m 42 s and 9 m 5 s on 2026-10-22; 10 m 46 s on 2026-10-19; 10 m 58 s on 2026-10-16; 6 m 35 s on 2026-10-10; 8 m 38 s on 2026-10-05; ~3.6 min on 2026-09-22 | nothing |
 | `Versio.Arch.Tests` | 36 | instant | nothing |
 | `Versio.Plc.Codesys.Pure.Tests` | 405 | under a second | nothing |
 | `Versio.Plc.Codesys.Parity.Tests` | 104 | ~15 s | `python` on PATH — skips cleanly without it, so check the count |
@@ -615,6 +616,17 @@ Close Versio **and** Portal before a host rebuild. Click **Yes to all** on Openn
     and `repo.json` with null collections or null entries is read without a crash. No python
     touched, so the CODESYS gate owes nothing new; the TIA gate is still owed. Still not
     done: branch deletion addresses the hardcoded "origin" (the first round's item 39).
+
+17. **The review's seventh round, three items, all fixed — 2026-10-25.** FINDINGS 2026-10-25,
+    the newest entry, has the list. P1: restoring an auto-stash adopted the restored mirror
+    edit as synced, so the next save exported over it — the restore no longer adopts and
+    raises the import the edit owes. P2: a throw from inside a run (two bindings sharing
+    one state.json.tmp) left the coalescer's slot held for good — the run answers Failed
+    and releases it, the JSON writer serialises writers and retries a replace a scanner
+    holds; a mirror subfolder moved out raised no change — the watcher turns folder events
+    into the files they carried and the poll reports a tracked file that is gone. No python
+    touched. Still not done: branch deletion addresses the hardcoded "origin" (the first
+    round's item 39), and the merge twin of the sixth round's item 4.
 
 ---
 
