@@ -56,6 +56,18 @@ public enum WatchTier
 /// missing too is waited for from the nearest ancestor that exists.
 /// </para>
 /// <para>
+/// <b>A folder is its files, and a tracked file that is gone is a change.</b> Windows
+/// reports a directory rename, move or deletion as one event about the directory and none
+/// about what it carried, and until 2026-10-25 (the review's seventh round) the tree watcher
+/// did not listen for directory names at all, while the poll skipped a tracked file that
+/// no longer existed. So <c>Programs/</c> dragged out of a mirror was invisible to every
+/// tier, and the import prompt stayed absent until something else changed. Now a directory
+/// event is translated into the tracked files that were under the old path and the files
+/// found under the new one (<see cref="OnTreeEvent"/>), the poll reports a tracked file
+/// that is gone — once, then forgets it — and a root swap re-checks what was tracked under
+/// the old root for the same reason.
+/// </para>
+/// <para>
 /// None of this is relied on for correctness. The commit gate re-checks hashes before any
 /// commit, so the worst case of a completely broken watcher is that the diff appears at
 /// commit time instead of at save time.
@@ -121,7 +133,20 @@ public sealed class FileChangeWatcher : IDisposable
         Track(path);
         var watcher = Create(dir, Path.GetFileName(path), includeSubdirectories: false,
             NotifyFilters.LastWrite | NotifyFilters.FileName | NotifyFilters.Size,
-            onEvent: e => Enqueue(e.FullPath),
+            onEvent: e =>
+            {
+                // The file renamed away: its old path is a tracked path that is gone, enqueued
+                // so it is reported and forgotten now rather than found by the poll as a
+                // disappearance "missed". Only when tracked, though — the common rename here
+                // is the IDE's heartbeat moving a temp sibling ONTO the watched name, and the
+                // temp, which the filter never showed us, is nobody's change.
+                if (e is RenamedEventArgs renamed && IsTracked(renamed.OldFullPath))
+                {
+                    Enqueue(renamed.OldFullPath);
+                }
+
+                Enqueue(e.FullPath);
+            },
             onError: ex =>
             {
                 // Never swallow this. An overflow means events were lost, and the only
@@ -226,9 +251,14 @@ public sealed class FileChangeWatcher : IDisposable
             _log.Debug(LogCategory.Watch, $"enumerating {tree.Root} stopped early: {ex.Message}");
         }
 
+        // DirectoryName too, since 2026-10-25 (the review's seventh round). Without it a
+        // folder renamed, moved out of the tree or moved in raised nothing at all: Windows
+        // reports the directory, once, and never the files it carried — so Programs/ dragged
+        // out of a mirror was invisible to this tier, and the poll below skipped files that
+        // no longer existed, so no tier ever said so.
         tree.Watcher = Create(tree.Root, "*", includeSubdirectories: true,
-            NotifyFilters.LastWrite | NotifyFilters.FileName | NotifyFilters.Size,
-            onEvent: e => Enqueue(e.FullPath),
+            NotifyFilters.LastWrite | NotifyFilters.FileName | NotifyFilters.DirectoryName | NotifyFilters.Size,
+            onEvent: e => OnTreeEvent(tree, e),
             onError: ex => OnTreeError(tree, ex));
 
         // The sentinel on the parent: the only thing that sees the ROOT renamed away or
@@ -297,10 +327,23 @@ public sealed class FileChangeWatcher : IDisposable
                 // Created, renamed in, renamed out or deleted: whichever it was, the directory
                 // at the root's path is not the one the watcher holds. Rebuilt on what is
                 // there now; what is there now is all new to the watcher.
+                //
+                // And what was tracked under the old one is re-checked, for the same reason a
+                // subfolder's rename re-checks its files (OnTreeEvent): a file the new tree
+                // does not have is a change, and left in the tracked set it would surface at
+                // the next poll as "a change the watcher missed" — a false alarm after every
+                // export that removes a file, because the watcher did see the swap.
+                var carried = TrackedUnder(tree.Root);
+                foreach (var file in carried)
+                {
+                    Enqueue(file);
+                }
+
                 _log.Info(LogCategory.Watch,
-                    Directory.Exists(tree.Root)
+                    (Directory.Exists(tree.Root)
                         ? $"the tree {tree.Root} was replaced; watching the new one"
-                        : $"the tree {tree.Root} is gone; watching {Path.GetDirectoryName(tree.Root)} for it to come back");
+                        : $"the tree {tree.Root} is gone; watching {Path.GetDirectoryName(tree.Root)} for it to come back")
+                    + $"; {carried.Count} tracked file(s) under the old one re-checked");
                 Arm(tree, Existing.Enqueue);
                 return;
             }
@@ -316,6 +359,137 @@ public sealed class FileChangeWatcher : IDisposable
 
     private static bool IsRoot(Tree tree, string path) =>
         string.Equals(Path.TrimEndingDirectorySeparator(path), tree.Root, StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>Something under a tree's root changed: a file, or a folder standing in for its files.</summary>
+    /// <remarks>
+    /// A directory event is one event about the directory and none about its contents, so it
+    /// is translated here into what the consumer understands: the tracked files whose path
+    /// began with the old one (each now a path that is gone — a change), and the files found
+    /// under the new one (each new to the watcher — a change). The directory's own path is not
+    /// enqueued for them, because the orchestrator hashes the whole tree on any path under its
+    /// root and the files already name it. A deleted path cannot be told from a deleted
+    /// folder once it is gone, so a deletion with nothing tracked under it is enqueued as the
+    /// file it most likely was — and an empty folder going is a harmless extra.
+    /// </remarks>
+    private void OnTreeEvent(Tree tree, FileSystemEventArgs e)
+    {
+        lock (_gate)
+        {
+            if (_disposed)
+            {
+                return;
+            }
+        }
+
+        switch (e.ChangeType)
+        {
+            case WatcherChangeTypes.Deleted:
+            {
+                var carried = TrackedUnder(e.FullPath);
+                if (carried.Count == 0)
+                {
+                    Enqueue(e.FullPath);
+                    return;
+                }
+
+                foreach (var file in carried)
+                {
+                    Enqueue(file);
+                }
+
+                _log.Info(LogCategory.Watch,
+                    $"the folder {e.FullPath} was deleted or moved out of {tree.Root}; " +
+                    $"{carried.Count} tracked file(s) went with it");
+                return;
+            }
+
+            case WatcherChangeTypes.Renamed when e is RenamedEventArgs renamed:
+            {
+                if (!Directory.Exists(renamed.FullPath))
+                {
+                    // A file. Its old path is gone and its new one is new; both are changes,
+                    // and enqueuing the old one is what stops the poll from later reporting
+                    // it as a disappearance the watcher missed.
+                    Enqueue(renamed.OldFullPath);
+                    Enqueue(renamed.FullPath);
+                    return;
+                }
+
+                var carried = TrackedUnder(renamed.OldFullPath);
+                foreach (var file in carried)
+                {
+                    Enqueue(file);
+                }
+
+                var arrived = EnqueueUnder(renamed.FullPath);
+                _log.Info(LogCategory.Watch,
+                    $"the folder {renamed.OldFullPath} was renamed to {renamed.FullPath}; " +
+                    $"{carried.Count} tracked file(s) went with it, {arrived} file(s) now under the new name");
+                return;
+            }
+
+            case WatcherChangeTypes.Created when Directory.Exists(e.FullPath):
+            {
+                // A folder created empty has nothing to say yet; its files announce
+                // themselves. A folder moved in from outside the tree is the one that matters:
+                // Windows reports the directory and not one of the files it brought.
+                var arrived = EnqueueUnder(e.FullPath);
+                if (arrived > 0)
+                {
+                    _log.Info(LogCategory.Watch,
+                        $"the folder {e.FullPath} appeared in {tree.Root} with {arrived} file(s)");
+                }
+
+                return;
+            }
+
+            default:
+                Enqueue(e.FullPath);
+                return;
+        }
+    }
+
+    private bool IsTracked(string path)
+    {
+        lock (_gate)
+        {
+            return _known.ContainsKey(path);
+        }
+    }
+
+    /// <summary>The tracked files whose path is under the folder, as it was named when they were tracked.</summary>
+    private List<string> TrackedUnder(string folder)
+    {
+        var prefix = Path.TrimEndingDirectorySeparator(folder) + Path.DirectorySeparatorChar;
+        lock (_gate)
+        {
+            return _known.Keys
+                .Where(k => k.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+                .ToList();
+        }
+    }
+
+    /// <summary>Enqueue every file under a folder that just arrived; returns how many.</summary>
+    private int EnqueueUnder(string folder)
+    {
+        var count = 0;
+        try
+        {
+            foreach (var file in Directory.EnumerateFiles(folder, "*", SearchOption.AllDirectories))
+            {
+                Enqueue(file);
+                count++;
+            }
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            // Renamed again, or gone, before it could be listed. The next event about it, or
+            // the poll's walk of the root, finds whatever is there then.
+            _log.Debug(LogCategory.Watch, $"enumerating {folder} stopped early: {ex.Message}");
+        }
+
+        return count;
+    }
 
     private void OnTreeError(Tree tree, Exception error)
     {
@@ -435,6 +609,26 @@ public sealed class FileChangeWatcher : IDisposable
                 var info = new FileInfo(path);
                 if (!info.Exists)
                 {
+                    // A tracked file that is gone is a change — the one this poll used to
+                    // skip, which is how a folder moved out of a mirror went unreported by
+                    // every tier until 2026-10-25. Said once: Track forgets it, so the next
+                    // poll has nothing to say about it. Not said at all when the watcher
+                    // already has it pending, because then nothing was missed.
+                    bool pending;
+                    lock (_gate)
+                    {
+                        pending = _pending.ContainsKey(path);
+                    }
+
+                    if (pending)
+                    {
+                        continue;
+                    }
+
+                    Track(path);
+                    _log.Warn(LogCategory.Watch,
+                        $"{tier} found a tracked file gone that the watcher missed: {path}");
+                    Settled?.Invoke(new WatchedChange(path, _clock.UtcNow, tier));
                     continue;
                 }
 
@@ -500,19 +694,29 @@ public sealed class FileChangeWatcher : IDisposable
         }
     }
 
+    /// <summary>Record a file's stats as the baseline — or, if it is gone, forget it.</summary>
+    /// <remarks>
+    /// Forgetting is what makes "a tracked file that is gone is a change" a change reported
+    /// once: every path that reaches the listener comes through here first, so a deletion
+    /// the watcher saw, a folder's carried files, and a disappearance the poll found all
+    /// leave the tracked set at the moment they are reported, and the poll has no reason to
+    /// mention them again.
+    /// </remarks>
     private void Track(string path)
     {
         try
         {
             var info = new FileInfo(path);
-            if (!info.Exists)
-            {
-                return;
-            }
-
             lock (_gate)
             {
-                _known[path] = (info.Length, info.LastWriteTimeUtc);
+                if (info.Exists)
+                {
+                    _known[path] = (info.Length, info.LastWriteTimeUtc);
+                }
+                else
+                {
+                    _known.Remove(path);
+                }
             }
         }
         catch (IOException)
