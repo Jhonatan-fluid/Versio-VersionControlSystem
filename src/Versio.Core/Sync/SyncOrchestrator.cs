@@ -1657,11 +1657,15 @@ public sealed class SyncOrchestrator
         // file afterwards: a save made in the IDE while the toolchain ran was recorded against
         // an export that never saw it, the next event answered NoChange, and the commit gate
         // called the mirror current (the 2026-10-24 review's item 2).
-        var exportedHash = scratchProject is null
-            ? null
-            : await HashPayloadAsync(
-                binding, _formats(binding.ProjectPath)?.PayloadPathFor(scratchProject) ?? scratchProject,
-                ct).ConfigureAwait(false);
+        //
+        // Taken INSIDE the try below, beside the toolchain run, and not here. The direction
+        // is already claimed by the time this method is entered, so a Stop that lands on the
+        // hash has to reach the same handler a Stop during the run reaches: the first version
+        // hashed here, outside both the cancellation handler and the scratch folder's finally,
+        // and a cancelled read left the binding ProjectAuthoritative with no Try again, the
+        // copy on disk, and the coalescer's slot never completed — every later watcher job
+        // answered Coalesced until a restart (the 2026-10-25 review's fourth round, item 5).
+        string? exportedHash = null;
 
         var job = new PlcJob
         {
@@ -1721,6 +1725,16 @@ public sealed class SyncOrchestrator
         PlcResult result;
         try
         {
+            if (scratchProject is not null)
+            {
+                // The copy's hash, before the toolchain leaves its sidecars beside it; see
+                // the declaration for why it is taken here and not earlier.
+                exportedHash = await HashPayloadAsync(
+                    binding,
+                    _formats(binding.ProjectPath)?.PayloadPathFor(scratchProject) ?? scratchProject,
+                    ct).ConfigureAwait(false);
+            }
+
             result = await RunnerFor(binding).RunAsync(job, _progress, ct).ConfigureAwait(false);
         }
         catch (OperationCanceledException)

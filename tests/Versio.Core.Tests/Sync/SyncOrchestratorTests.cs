@@ -1619,6 +1619,46 @@ public class SyncOrchestratorTests
     }
 
     [Fact]
+    public async Task Stopping_while_the_scratch_copy_is_hashed_fails_the_run_and_frees_the_slot()
+    {
+        // Review 2026-10-25, fourth round, item 5: the copy's hash is taken after the direction
+        // is claimed and before the toolchain runs, and a Stop that landed there escaped both
+        // the runner's cancellation handler and the scratch folder's finally. The binding stayed
+        // ProjectAuthoritative with no Try again, the scratch copy stayed on disk, and the
+        // coalescer's slot was never completed, so every later watcher job answered Coalesced.
+        var h = new Harness();
+        h.Occupancy.Hold();
+        h.SetProject("v2");
+        using var cts = new CancellationTokenSource();
+        h.Fs.BeforeRead = path =>
+        {
+            if (path.Contains(Path.Combine(".versio", "local", "open"), StringComparison.OrdinalIgnoreCase))
+            {
+                cts.Cancel();
+                cts.Token.ThrowIfCancellationRequested();
+            }
+        };
+
+        // A watcher job, not a synchronous one: the coalescer's slot is the point.
+        var outcome = await h.Orchestrator.HandleChangeAsync(
+            new SyncJob { BindingId = BindingId, Source = ChangeSource.Project }, cts.Token);
+
+        Assert.Equal(SyncVerdict.Failed, outcome.Verdict);
+        Assert.Equal(SyncDirection.Failed, outcome.State);
+        Assert.Empty(h.Codesys.Jobs);
+        Assert.Empty(h.Fs.EnumerateFiles(Path.Combine(Root, ".versio", "local", "open", BindingId)));
+
+        // The next change is judged on its own, not queued behind a slot nobody completes.
+        h.Fs.BeforeRead = null;
+        h.Occupancy.Answer = ProjectOccupancy.Free;
+        h.SetProject("v3");
+        var later = await h.Orchestrator.HandleChangeAsync(
+            new SyncJob { BindingId = BindingId, Source = ChangeSource.Project }, CancellationToken.None);
+
+        Assert.NotEqual(SyncVerdict.Coalesced, later.Verdict);
+    }
+
+    [Fact]
     public async Task Two_held_exports_do_not_share_a_scratch_folder()
     {
         // The commit gate is synchronous and skips the coalescer, so a second

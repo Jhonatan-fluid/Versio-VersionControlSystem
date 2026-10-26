@@ -21,6 +21,15 @@ public sealed class FakeFileSystem : IFileSystem
     /// </summary>
     public HashSet<string> LockedFiles { get; } = new(StringComparer.OrdinalIgnoreCase);
 
+    /// <summary>
+    /// Called with the path before every read, standing in for a filesystem that honours
+    /// cancellation: a test cancels its token from here and throws, which is what a real
+    /// read does when Stop is pressed while it is in flight. The fake's reads otherwise
+    /// ignore the token, so without this hook no test can reach the code that runs after a
+    /// cancelled read.
+    /// </summary>
+    public Action<string>? BeforeRead { get; set; }
+
     public void Write(string path, string content)
     {
         _files[path] = Encoding.UTF8.GetBytes(content);
@@ -42,6 +51,7 @@ public sealed class FakeFileSystem : IFileSystem
 
     public Task<byte[]> ReadAllBytesAsync(string path, CancellationToken ct)
     {
+        BeforeRead?.Invoke(path);
         if (LockedFiles.Contains(path))
         {
             throw new IOException("the file is in use by another process");
