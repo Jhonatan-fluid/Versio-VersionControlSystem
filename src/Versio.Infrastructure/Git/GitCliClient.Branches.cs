@@ -127,8 +127,8 @@ public sealed partial class GitCliClient
     {
         var unified = $"-U{Math.Max(0, contextLines)}";
         string[] args = staged
-            ? ["diff", unified, "--cached", "--", path]
-            : ["diff", unified, "--", path];
+            ? [LiteralPathspecs, "diff", unified, "--cached", "--", path]
+            : [LiteralPathspecs, "diff", unified, "--", path];
 
         var result = await RunAsync(args, null, ct).ConfigureAwait(false);
         if (!string.IsNullOrWhiteSpace(result.StdOut))
@@ -169,7 +169,7 @@ public sealed partial class GitCliClient
         string path, string unified, CancellationToken ct)
     {
         // ls-files --error-unmatch fails precisely when the path is not in the index.
-        var tracked = await RunAsync(["ls-files", "--error-unmatch", "--", path], null, ct)
+        var tracked = await RunAsync([LiteralPathspecs, "ls-files", "--error-unmatch", "--", path], null, ct)
             .ConfigureAwait(false);
         if (tracked.Success)
         {
@@ -188,7 +188,7 @@ public sealed partial class GitCliClient
         }
 
         var result = await RunAsync(
-            ["diff", unified, "--no-index", "--", "/dev/null", path], null, ct)
+            [LiteralPathspecs, "diff", unified, "--no-index", "--", "/dev/null", path], null, ct)
             .ConfigureAwait(false);
 
         _log.Debug(LogCategory.Git,
@@ -199,9 +199,18 @@ public sealed partial class GitCliClient
 
     /// <summary>Renames git detected, old path → new path.</summary>
     /// <remarks>
+    /// <para>
     /// Used to re-link a binding whose <c>.project</c> was renamed. Without it the rename
     /// reads as a delete plus an add: the binding id is lost, the baseline resets, and the
     /// diff shows the whole project as newly added (plan R29).
+    /// </para>
+    /// <para>
+    /// The listing goes through <see cref="GitNameStatusParser"/> rather than a scan of its
+    /// own. The scan this replaced took any field starting with <c>R</c> as a rename status,
+    /// and a one-path record was skipped one field at a time — so a modified
+    /// <c>README.txt</c> ahead of the rename was read as the status, the real rename behind
+    /// it was lost, and the binding reported broken. The 2026-10-24 review's item 4.
+    /// </para>
     /// </remarks>
     public async Task<IReadOnlyDictionary<string, string>> DetectRenamesAsync(CancellationToken ct)
     {
@@ -209,26 +218,12 @@ public sealed partial class GitCliClient
             ["diff", "--name-status", "--find-renames", "-z", "HEAD"], null, ct)
             .ConfigureAwait(false);
 
-        var renames = new Dictionary<string, string>(StringComparer.Ordinal);
         if (!result.Success)
         {
-            return renames;
+            return new Dictionary<string, string>(StringComparer.Ordinal);
         }
 
-        // -z layout for a rename is: "R<score>\0<old>\0<new>\0"
-        var fields = result.StdOut.Split('\0');
-        for (var i = 0; i < fields.Length; i++)
-        {
-            if (!fields[i].StartsWith('R') || i + 2 >= fields.Length)
-            {
-                continue;
-            }
-
-            renames[fields[i + 1]] = fields[i + 2];
-            i += 2;
-        }
-
-        return renames;
+        return GitNameStatusParser.Renames(result.StdOut);
     }
 
     /// <summary>Commit id at HEAD, or empty on an unborn branch.</summary>
@@ -380,7 +375,7 @@ public sealed partial class GitCliClient
         int contextLines = GitDiff.DefaultContext)
     {
         var result = await RunAsync(
-            ["show", "--format=", "--patch", $"-U{Math.Max(0, contextLines)}",
+            [LiteralPathspecs, "show", "--format=", "--patch", $"-U{Math.Max(0, contextLines)}",
              commit, "--", path], null, ct)
             .ConfigureAwait(false);
 

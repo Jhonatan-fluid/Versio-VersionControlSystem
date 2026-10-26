@@ -760,6 +760,26 @@ public sealed class PythonFileNameParityTests(ITestOutputHelper output)
             //     thing for it to contain.
             "<List>\n<t>\U0001F600</t>\n<t>\uE000</t>\n</List>",
 
+            // 3c. Siblings are sorted as WHOLE elements, cut by tag depth (review item 20,
+            //     2026-10-24): two multi-line children keep their own lines together and in
+            //     order, a container nested inside a sibling is sorted on its own, a line
+            //     holding several tags counts each, an unterminated child is kept whole, and
+            //     a close with no open degrades to the old line sort. Any of these cut
+            //     differently on one side gives different TEXT while every verdict agrees.
+            "<List>\n<Single Name=\"B\">\n<Id>2</Id>\n<Value>y</Value>\n</Single>\n<Single Name=\"A\">\n<Id>1</Id>\n<Value>x</Value>\n</Single>\n</List>",
+            "<List>\n<Single Name=\"A\">\n<Properties>\n<b/>\n<a/>\n</Properties>\n</Single>\n</List>",
+            "<List>\n<b><c/></b>\n<a><d>\n</d></a>\n</List>",
+            "<List>\n<b>\n<a/>\n</List>",
+            "<List>\n</z>\n<a/>\n</List>",
+            "<List>\n<!-- a comment -->\n<?pi x?>\n<a/>\n</List>",
+
+            // 3d. A GUID inside a sibling (second-round review item 7, 2026-10-25). The
+            //     mask used to be "<masked-guid>", which the depth count read as an element
+            //     that never closes, so with masking ON these two siblings became one chunk
+            //     and could not be reordered. The TEXT pins the placeholder's shape on both
+            //     sides: a side that still emits angle brackets cuts differently here.
+            "<List>\n<Single Name=\"B\">\n<Guid>6f9619ff-8b86-d011-b42d-00c04fc964ff</Guid>\n<Value>y</Value>\n</Single>\n<Single Name=\"A\">\n<Guid>0f8fad5b-d9cb-469f-a165-70867728950e</Guid>\n<Value>x</Value>\n</Single>\n</List>",
+
             // A self-closing container has no body to sort, and the test is on the whole
             // line rather than the tag, so this one is left alone by both sides.
             "<List/>",
@@ -1266,6 +1286,65 @@ public sealed class PythonFileNameParityTests(ITestOutputHelper output)
         {
             Assert.True(StTextCodec.DeclarationOnly(corpus[i].Declaration) == pythonDeclOnly[i],
                 $"normalize_decl_only disagrees on '{corpus[i].Name}'");
+        }
+
+        // ── three b: a declaration-only object's file is read as it was written ────
+        //
+        // The export writes a DUT with normalize_decl_only and never escapes it; the import
+        // read every plain .st through split_st, which unescapes and cuts at a delimiter.
+        // A DUT holding a literal escape marker came back changed and one holding the
+        // literal delimiter line was truncated (the 2026-10-24 review's item 5). The rule
+        // lives in read_textual and is chosen by the object: no implementation, no decoding.
+        var declOnly = corpus.Select(c => c.Declaration)
+            .Concat(
+            [
+                "TYPE Marker :\nSTRUCT\n  // a literal //!VERSIO-ESC!D in a comment\n  x : INT;\nEND_STRUCT\nEND_TYPE",
+                "TYPE Delim :\nSTRUCT\n  // --- BEGIN IMPLEMENTATION ---\n  y : INT;\nEND_STRUCT\nEND_TYPE",
+                "TYPE Both :\nSTRUCT\n  // //!VERSIO-ESC!E and //!VERSIO-ESC!D\nEND_STRUCT\nEND_TYPE",
+            ])
+            .ToList();
+
+        var pythonRead = RunPython(JsonSerializer.Serialize(declOnly), """
+            import json
+            import versio_text
+            out = [json.dumps(list(versio_text.read_textual(t, False))) for t in payload]
+            """);
+
+        for (var i = 0; i < declOnly.Count; i++)
+        {
+            var fromPython = JsonSerializer.Deserialize<string[]>(pythonRead[i])!;
+            var expected = StTextCodec.DeclarationOnly(declOnly[i]).TrimEnd('\n');
+
+            Assert.True(expected == fromPython[0],
+                $"read_textual(decl-only) disagrees with DeclarationOnly on payload {i}:\n"
+                + $"  C#     {Visible(expected)}\n"
+                + $"  python {Visible(fromPython[0])}");
+            Assert.Equal(string.Empty, fromPython[1]);
+
+            // And it is NOT what split_st would have made of it, for the three adversarial
+            // cases: that difference is the defect.
+            if (i >= corpus.Count)
+            {
+                var (split, _) = StTextCodec.Split(declOnly[i]);
+                Assert.True(split != fromPython[0],
+                    $"payload {i} reads the same through Split as through the declaration-only "
+                    + "reader, so this case no longer pins the asymmetry");
+            }
+        }
+
+        // With an implementation the file is the escaped two-part form, exactly as Split.
+        var pythonReadFull = RunPython(JsonSerializer.Serialize(csharpJoined), """
+            import json
+            import versio_text
+            out = [json.dumps(list(versio_text.read_textual(t, True))) for t in payload]
+            """);
+
+        for (var i = 0; i < csharpJoined.Count; i++)
+        {
+            var fromPython = JsonSerializer.Deserialize<string[]>(pythonReadFull[i])!;
+            var (declaration, implementation) = StTextCodec.Split(csharpJoined[i]);
+            Assert.True(declaration == fromPython[0] && implementation == fromPython[1],
+                $"read_textual(full) disagrees with Split on '{corpus[i].Name}'");
         }
 
         // ── four: the round trip, on BOTH sides, over the same corpus ──────────────

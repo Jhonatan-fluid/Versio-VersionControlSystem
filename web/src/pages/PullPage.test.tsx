@@ -1,8 +1,8 @@
 import { act } from 'react';
 import { createRoot } from 'react-dom/client';
-import { MemoryRouter, Route, Routes, useNavigate } from 'react-router';
+import { MemoryRouter, Route, Routes, useLocation, useNavigate } from 'react-router';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import type { CoverageGap, CoverageSummary, PendingReviewView, ThreadPlacement } from '../api';
+import type { CoverageGap, CoverageSummary, Me, PendingReviewView, ThreadPlacement } from '../api';
 import { PullPage, placementSelector, threadSelector } from './PullPage';
 
 // The review page (docs/web/PLAN.md, *Pull request review*, slice 1): everything read against one
@@ -14,11 +14,18 @@ import { PullPage, placementSelector, threadSelector } from './PullPage';
 const head = 'd'.repeat(40);
 const token = 'sealed-token';
 
-// A Raw text diff as TextDiffHtml draws it: rows carry the old and new file lines.
+// A Raw text diff as TextDiffHtml draws it: rows carry the old and new file lines, the sign in
+// its marker span and the line's text in its code element.
 const rawDiff = `<div class="cd-page cd-diff">
-  <div class="cd-drow" data-old-line="2" data-line="2"><span class="cd-num">2</span>VAR</div>
-  <div class="cd-drow" data-old-line="3"><span class="cd-num">3</span>-  run : BOOL;</div>
-  <div class="cd-drow" data-line="3"><span class="cd-num">3</span>+  run : BOOL := TRUE;</div>
+  <div class="cd-drow" data-old-line="2" data-line="2"><span class="cd-num">2</span><span class="cd-marker"> </span><code class="cd-code">VAR</code></div>
+  <div class="cd-drow" data-old-line="3"><span class="cd-num">3</span><span class="cd-marker">-</span><code class="cd-code">  run : BOOL;</code></div>
+  <div class="cd-drow" data-line="3"><span class="cd-num">3</span><span class="cd-marker">+</span><code class="cd-code">  run : BOOL := TRUE;</code></div>
+</div>`;
+
+// Side by side, as TextDiffHtml draws it: one row per pair, the old line's cell, a rule, the new line's cell.
+const splitDiff = `<div class="cd-page cd-diff">
+  <div class="cd-split"><div class="cd-cell" data-old-line="2"><span class="cd-num">2</span><code class="cd-code">VAR</code></div><span class="cd-rule"></span><div class="cd-cell" data-line="2"><span class="cd-num">2</span><code class="cd-code">VAR</code></div></div>
+  <div class="cd-split"><div class="cd-cell" data-old-line="3"><span class="cd-num">3</span><code class="cd-code">  run : BOOL;</code></div><span class="cd-rule"></span><div class="cd-cell" data-line="3"><span class="cd-num">3</span><code class="cd-code">  run : BOOL := TRUE;</code></div></div>
 </div>`;
 
 // A rendered body as SourceHtml draws it: data-line is the line within its SECTION, not the file
@@ -28,7 +35,7 @@ const rawDiff = `<div class="cd-page cd-diff">
 // is a block of ANOTHER file, the .st — exactly why every block names its own file.
 const renderedSource =
   '<div class="mt-page" data-src-path="src/Pump.xml"><table class="mt-table"><tbody>' +
-  '<tr class="mt-row mt-modified" data-path="run" data-change="modified" data-anchors="r-new-0 r-old-0"><td class="mt-mark">M</td><td class="mt-name">run</td><td class="mt-type">BOOL</td></tr>' +
+  '<tr class="mt-row mt-modified" data-path="run" data-change="modified" data-anchors="r-new-0 r-old-0"><td class="mt-mark">M</td><td class="mt-name">run</td><td class="mt-type"><span data-link="src/Other.st">ST_Other</span></td></tr>' +
   '</tbody></table></div>' +
   '<div class="cd-page" data-src-path="src/Pump.st"><div class="cd-row" data-line="3" data-file-line="9"><span class="cd-num">3</span>run := TRUE;</div></div>';
 
@@ -42,8 +49,14 @@ interface Reply {
 }
 
 interface Options {
+  /** Who is looking, as /api/me answered the app; null while it has not. */
+  me?: Me | null;
   stale?: boolean;
+  /** The status poll answers 409 snapshot-expired: a tab left open past the snapshot's life. */
+  statusExpired?: boolean;
   writable?: boolean;
+  /** What a run's /annotations answers (Step 3b); none by default. */
+  annotations?: unknown[];
   /** What each write answers, by path suffix; done by default. */
   writes?: Record<string, Reply | Reply[]>;
   /** Where the server placed each thread on the drawing. */
@@ -74,6 +87,14 @@ interface Options {
   newer?: boolean;
   /** A second changed file, to move between. */
   twoFiles?: boolean;
+  /** The conversation (Step 2): the timeline's items, the checks, the commits, the header's counts, which review a thread belongs to. */
+  timeline?: unknown[];
+  checks?: unknown[];
+  commits?: unknown[];
+  counts?: Record<string, unknown>;
+  threadReview?: string;
+  /** A suggested change on the first thread's comment (Step 5). */
+  suggestion?: string | null;
 }
 
 let calls: { url: string; snapshot: string | null; method: string; csrf: string | null; body: Record<string, unknown> | null }[] = [];
@@ -94,8 +115,10 @@ function answer(url: string, o: Options): unknown {
         labels: [{ name: 'plc', value: 'plc', color: '0e8a16' }], assignees: ['sam'],
         reviewers: [{ login: 'kim', state: 'REQUESTED' }], viewerIsAuthor: o.viewerIsAuthor ?? false, viewerLastReviewCommit: o.lastReview ?? null,
         title: o.live?.title ?? 'Fix interlock', titleText: o.live?.title ?? 'Fix interlock', markdown: o.live?.markdown ?? 'The delay was wrong.',
-        html: `<div class="md-page"><p>${o.live?.markdown ?? 'The delay was wrong.'}</p></div>`, viewerCanUpdate: o.canUpdate ?? true },
-      checksError: null, checks: [{ name: 'build', status: 'completed', conclusion: 'failure', url: 'https://ci.example/1', source: 'check-run' }], checksTruncated: o.checksCut ?? false,
+        html: `<div class="md-page"><p>${o.live?.markdown ?? 'The delay was wrong.'}</p></div>`, viewerCanUpdate: o.canUpdate ?? true, ...(o.counts ?? {}) },
+      checksError: null, checks: o.checks ?? [{ name: 'build', status: 'completed', conclusion: 'failure', url: 'https://ci.example/1', source: 'check-run' }], checksTruncated: o.checksCut ?? false,
+      // The latest commit's checks, in counts, once the head moved (Step 10).
+      liveChecks: moved ? { head: 'e'.repeat(40), total: 2, failed: 1, running: 0, truncated: false } : null,
     };
   }
   if (url.endsWith('/files')) {
@@ -103,21 +126,33 @@ function answer(url: string, o: Options): unknown {
       patchSource: 'pull', githubListCut: false, total: o.twoFiles ? 2 : 1, truncated: false,
       files: [
         { path: 'src/Pump.st', label: 'src/Pump.st', change: 'modified', previousPath: null, previousLabel: null, object: 'Pump', inline: true, inlineUnavailable: null },
-        ...(o.twoFiles ? [{ path: 'src/Valve.st', label: 'src/Valve.st', change: 'modified', previousPath: null, previousLabel: null, object: 'Valve', inline: true, inlineUnavailable: null }] : []),
+        ...(o.twoFiles ? [{ path: 'src/Valve.st', label: 'src/Valve.st', change: 'modified', previousPath: null, previousLabel: null, object: 'Valve', inline: true, inlineUnavailable: null, additions: 2, deletions: 1 }] : []),
       ],
     };
   }
   if (url.includes('/files/view')) {
     const raw = url.includes('view=raw');
+    const html = raw ? (url.includes('layout=split') ? splitDiff : rawDiff) : renderedSource;
     return {
       coverage: raw ? 'raw' : o.coverage ?? 'partial',
       gaps: raw ? [] : o.gaps ?? [],
       placements: raw ? [] : o.placements ?? [],
-      view: { kind: raw ? 'diff' : 'table', title: 'Pump', path: 'src/Pump.st', html: raw ? rawDiff : renderedSource, notices: [], layers: ['src/Pump.st'], layerLabels: ['src/Pump.st'] },
+      view: { kind: raw ? 'diff' : 'table', title: 'Pump', path: 'src/Pump.st', html, notices: [], layers: ['src/Pump.st'], layerLabels: ['src/Pump.st'] },
     };
   }
+  if (url.includes('/view?')) {
+    // An object outside the pull request, read at the head for the peek (Step 3c).
+    return { kind: 'table', title: 'ST_Other', path: 'src/Other.st', html: '<div class="mt-page">other drawn</div>', notices: [], layers: ['src/Other.st'], layerLabels: ['src/Other.st'] };
+  }
+  if (url.includes('/annotations')) {
+    // Run 7's; any other run left none.
+    return { annotations: url.includes('/checks/7/') ? o.annotations ?? [] : [] };
+  }
   if (url.endsWith('/threads')) {
-    const comment = (id: string, html: string) => ({ id, author: 'sam', when: '2026-10-17T09:00:00Z', html, markdown: 'text', commit: head, originalCommit: head, canEdit: true, canDelete: true });
+    const comment = (id: string, html: string) => ({ id, author: 'sam', when: '2026-10-17T09:00:00Z', html, markdown: 'text', commit: head, originalCommit: head, canEdit: true, canDelete: true,
+      url: `https://github.com/acme/plant/pull/12#discussion_r${id}`,
+      reviewId: id === 'c1' ? o.threadReview ?? null : null, diffHunk: id === 'c1' ? '@@ -1,3 +1,3 @@\n a\n-b\n+c' : id === 'c3' ? '@@ -8,2 +8,2 @@\n old\n-x\n+y' : null,
+      suggestion: id === 'c1' ? o.suggestion ?? null : null, reactions: id === 'c1' ? [{ content: 'HEART', count: 2, viewerHasReacted: false }] : [] });
     const may = { canReply: true, canResolve: true, canUnresolve: true };
     return {
       truncated: false,
@@ -141,16 +176,19 @@ function answer(url: string, o: Options): unknown {
     return o.summary ?? { files: [{ path: 'src/Pump.st', coverage: 'partial', gaps: 2 }] };
   }
   if (url.endsWith('/timeline')) {
-    return { truncated: false, items: [{ kind: 'review', actor: 'sam', when: '2026-10-17T09:00:00Z', html: null, text: null, state: 'APPROVED', sha: null }] };
+    return { truncated: false, items: o.timeline ?? [{ kind: 'review', actor: 'sam', when: '2026-10-17T09:00:00Z', html: null, text: null, state: 'APPROVED', sha: null }] };
   }
   if (url.endsWith('/commits')) {
-    return { truncated: false, headFound: true, commits: [
+    return { truncated: false, headFound: true, commits: o.commits ?? [
       { sha: head, headline: 'Fix the default', author: 'jo', when: '2026-10-17T09:00:00Z', inSnapshot: true },
       { sha: 'e'.repeat(40), headline: 'And another', author: 'jo', when: '2026-10-17T09:05:00Z', inSnapshot: false },
     ] };
   }
   if (url.endsWith('/labels')) {
     return { labels: [{ value: 'plc', label: 'plc', color: '0e8a16' }, { value: 'safety', label: 'safety', color: 'd73a4a' }] };
+  }
+  if (url.endsWith('/milestones')) {
+    return { milestones: [{ number: 5, title: 'v2' }] };
   }
   if (url.endsWith('/branches')) {
     return { branches: [{ name: 'main', label: 'main', commit: 'x' }], truncated: false };
@@ -161,15 +199,28 @@ function answer(url: string, o: Options): unknown {
 
 /** Lets a test move the router as a link click would, without leaving the page under test. */
 let jump: (to: string) => void = () => {};
+/** Where the router is now, for a test that asserts on the URL the page navigated to. */
+let where = '';
 function Jumper() {
   const navigate = useNavigate();
+  const location = useLocation();
   jump = navigate;
+  where = location.pathname + location.search + location.hash;
   return null;
 }
 
 async function render(path: string, o: Options = {}) {
   calls = [];
+  pending = 0;
   vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
+    pending++;
+    try {
+      return await answerFetch(url, init, o);
+    } finally {
+      pending--;
+    }
+  }));
+  async function answerFetch(url: string, init: RequestInit | undefined, o: Options): Promise<Response> {
     const headers = (init?.headers ?? {}) as Record<string, string>;
     const method = init?.method ?? 'GET';
     const body = typeof init?.body === 'string' ? (JSON.parse(init.body) as Record<string, unknown>) : null;
@@ -185,8 +236,11 @@ async function render(path: string, o: Options = {}) {
       }
       return new Response(typeof reply.body === 'string' ? reply.body : JSON.stringify(reply.body), { status: reply.status, headers });
     }
+    if (o.statusExpired && url.endsWith('/status')) {
+      return new Response(JSON.stringify({ error: 'snapshot-expired', message: 'This review was loaded too long ago. Reload the pull request.' }), { status: 409, headers: { 'Content-Type': 'application/json' } });
+    }
     return new Response(JSON.stringify(answer(url, o)), { status: 200, headers: { 'Content-Type': 'application/json' } });
-  }));
+  }
   const host = document.createElement('div');
   document.body.appendChild(host);
   const root = createRoot(host);
@@ -195,7 +249,8 @@ async function render(path: string, o: Options = {}) {
       <MemoryRouter initialEntries={[path]}>
         <Jumper />
         <Routes>
-          <Route path="/:owner/:repo/pull/:number" element={<PullPage me={null} />} />
+          <Route path="/:owner/:repo/pull/:number" element={<PullPage me={o.me ?? null} />} />
+          <Route path="/:owner/:repo/pull/:number/:tab" element={<PullPage me={o.me ?? null} />} />
         </Routes>
       </MemoryRouter>,
     );
@@ -204,18 +259,29 @@ async function render(path: string, o: Options = {}) {
   return { host, root };
 }
 
+/** Reads the stubbed fetch has not answered yet: what `settle` waits on. */
+let pending = 0;
+
+/**
+ * Waits for the page to come to rest: no read in flight, and none started for three ticks after
+ * the last answer (a dependent read follows an answer by an effect, which needs a tick). With
+ * `until`, waits for that instead. Until Step 10 this was a fixed forty ticks plus ten once the
+ * pane head showed, which failed under a loaded machine (STATUS, 2026-10-20: six tests together)
+ * — timing, not behaviour — so it waits for a condition now, with a ceiling that only a hang hits.
+ */
 async function settle(host: HTMLElement, until?: () => boolean) {
-  for (let i = 0; i < 40 && !(until?.() ?? false); i++) {
+  let quiet = 0;
+  for (let i = 0; i < 400; i++) {
     await act(async () => {
       await new Promise((r) => setTimeout(r, 5));
     });
-    if (!until && host.querySelector('.pane-head')) {
-      // Let the dependent reads land too.
-      for (let j = 0; j < 10; j++) {
-        await act(async () => {
-          await new Promise((r) => setTimeout(r, 5));
-        });
-      }
+    if (until?.()) {
+      return;
+    }
+    // Quiet: nothing in flight for three ticks running. A `() => false` caller means "until the
+    // page is at rest", which is this.
+    quiet = pending === 0 ? quiet + 1 : 0;
+    if (quiet >= 3 && host.isConnected) {
       return;
     }
   }
@@ -305,7 +371,7 @@ describe('PullPage', () => {
 
   it('says a checks list cut short is cut, on the tab and beside the counts', async () => {
     const cut = await render('/acme/plant/pull/12?tab=checks', { checksCut: true });
-    expect(cut.host.querySelector('.pane .notice')?.textContent).toContain('more checks than were read');
+    expect(cut.host.querySelector('.notice')?.textContent).toContain('more checks than were read');
     act(() => cut.root.unmount());
     document.body.innerHTML = '';
 
@@ -766,9 +832,11 @@ describe('PullPage review', () => {
 
   it("moving between files never saves one file's draft under another's", async () => {
     const { host, root } = await render('/acme/plant/pull/12?tab=files&path=src%2FValve.st&view=raw', { writable: true, twoFiles: true });
-    const fill = async (text: string) => {
+    // Every file is on the page now (Step 3), each in its own section: the boxes are found by file.
+    const section = (file: string) => host.querySelector(`[data-file="${file}"]`)!;
+    const fill = async (file: string, text: string) => {
       await act(async () => {
-        const textarea = host.querySelector<HTMLTextAreaElement>('.file-comment textarea')!;
+        const textarea = section(file).querySelector<HTMLTextAreaElement>('.file-comment textarea')!;
         Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')!.set!.call(textarea, text);
         textarea.dispatchEvent(new Event('input', { bubbles: true }));
       });
@@ -779,25 +847,25 @@ describe('PullPage review', () => {
       return slot ? (JSON.parse(sessionStorage.getItem(slot)!) as { body: string }).body : null;
     };
 
-    await click(button(host, 'Comment on the whole file')!, host);
-    await fill('Valve draft');
+    await click(button(section('src/Valve.st'), 'Comment on the whole file')!, host);
+    await fill('src/Valve.st', 'Valve draft');
     await open('src/Pump.st');
-    if (!host.querySelector('.file-comment textarea')) {
-      await click(button(host, 'Comment on the whole file')!, host);
+    if (!section('src/Pump.st').querySelector('.file-comment textarea')) {
+      await click(button(section('src/Pump.st'), 'Comment on the whole file')!, host);
     }
-    expect(host.querySelector<HTMLTextAreaElement>('.file-comment textarea')!.value).toBe('');
-    await fill('Pump draft');
+    expect(section('src/Pump.st').querySelector<HTMLTextAreaElement>('.file-comment textarea')!.value).toBe('');
+    await fill('src/Pump.st', 'Pump draft');
     await open('src/Valve.st');
 
     expect(draftOf('src/Valve.st')).toBe('Valve draft');
     expect(draftOf('src/Pump.st')).toBe('Pump draft');
-    expect(host.querySelector<HTMLTextAreaElement>('.file-comment textarea')?.value ?? 'Valve draft').toBe('Valve draft');
+    expect(section('src/Valve.st').querySelector<HTMLTextAreaElement>('.file-comment textarea')?.value ?? 'Valve draft').toBe('Valve draft');
     act(() => root.unmount());
   });
 
   it("going to another pull request starts its page afresh: one's open title edit never carries over", async () => {
     const { host, root } = await render('/acme/plant/pull/12', { writable: true });
-    await click(button(host.querySelector('h1')!, 'Edit')!, host);
+    await click(button(host.querySelector('.pr-title-row')!, 'Edit')!, host);
     expect(host.querySelector('.title-editor')).not.toBeNull();
 
     await act(async () => {
@@ -1022,9 +1090,9 @@ describe('PullPage review', () => {
     const confirm = vi.spyOn(window, 'confirm').mockReturnValueOnce(false).mockReturnValueOnce(true);
     const { host, root } = await render('/acme/plant/pull/12', { writable: true, pending: pendingOn(head) });
 
-    await click(button(host, 'Discard')!, host);
+    await click(button(host, 'Abandon review')!, host);
     expect(writes()).toHaveLength(0);
-    await click(button(host, 'Discard')!, host);
+    await click(button(host, 'Abandon review')!, host);
 
     expect(confirm).toHaveBeenCalledTimes(2);
     expect(writes()[0]!.url.endsWith('/reviews/PRR_1/discard')).toBe(true);
@@ -1038,10 +1106,12 @@ describe('PullPage review', () => {
       Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, 'lee');
       input.dispatchEvent(new Event('input', { bubbles: true }));
     });
-    await click(button(host, 'Ask')!, host);
+    await click(button(host, 'Request')!, host);
     await click(button(host, 'remove')!, host);
 
-    expect(writes().map((w) => w.body)).toMatchObject([{ add: ['lee'], remove: [] }, { add: [], remove: ['kim'] }]);
+    // Only the half being changed is sent (Step 5): an add, then a removal.
+    expect(writes().map((w) => w.body)).toMatchObject([{ add: ['lee'] }, { remove: ['kim'] }]);
+    expect(writes()[0]!.body).not.toHaveProperty('remove');
     act(() => root.unmount());
   });
 });
@@ -1085,7 +1155,7 @@ describe('PullPage metadata', () => {
   it('edits the title naming the one it replaces, as it was when editing began, and reads the state again after', async () => {
     const o = { writable: true, live: { title: 'Fix interlock', markdown: 'The delay was wrong.' } };
     const { host, root } = await render('/acme/plant/pull/12', o);
-    await click(button(host.querySelector('h1')!, 'Edit')!, host);
+    await click(button(host.querySelector('.pr-title-row')!, 'Edit')!, host);
     // Someone else renames it while this person types: the poll brings their title in.
     o.live = { title: 'Fix interlock (jo)', markdown: 'The delay was wrong.' };
     await poll(host);
@@ -1104,7 +1174,8 @@ describe('PullPage metadata', () => {
   it('edits the description from the text it showed, and a draft kept over a reload keeps the text it was written against', async () => {
     const o = { writable: true, live: { title: 'Fix interlock', markdown: 'The delay was wrong.' } };
     const first = await render('/acme/plant/pull/12', o);
-    await click(button(first.host, 'Edit the description')!, first.host);
+    // The description is the first card; its Edit sits in that card's header, as on GitHub.
+    await click(button(first.host.querySelector('.comment-row')!, 'Edit')!, first.host);
     await fill(first.host.querySelector<HTMLTextAreaElement>('.comment-box textarea')!, 'The delay was 5 s; it is 2 s.');
     act(() => first.root.unmount());
     document.body.innerHTML = '';
@@ -1112,7 +1183,7 @@ describe('PullPage metadata', () => {
     // A reload later, someone else has changed the description: the kept draft still names the old text.
     o.live = { title: 'Fix interlock', markdown: 'Jo rewrote this.' };
     const again = await render('/acme/plant/pull/12', o);
-    await click(button(again.host, 'Edit the description')!, again.host);
+    await click(button(again.host.querySelector('.comment-row')!, 'Edit')!, again.host);
     expect(again.host.querySelector<HTMLTextAreaElement>('.comment-box textarea')!.value).toBe('The delay was 5 s; it is 2 s.');
     await click(button(again.host.querySelector('.comment-box')!, 'Save')!, again.host);
 
@@ -1217,18 +1288,19 @@ describe('PullPage merge box', () => {
   it('asks first, naming the pull request, its branches, the commit and the method, and merges only on yes', async () => {
     const { host, root } = await render('/acme/plant/pull/12', { writable: true, canMerge: true, merge: ready });
     const box = () => host.querySelector('.merge-box')!;
-    await act(async () => {
-      const select = box().querySelector<HTMLSelectElement>('select')!;
-      Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value')!.set!.call(select, 'SQUASH');
-      select.dispatchEvent(new Event('change', { bubbles: true }));
-    });
+    // The split button: the caret opens the method menu, the primary half is named by the method.
+    expect(button(box(), 'Merge pull request')).toBeDefined();
+    await click(box().querySelector('.merge-method-caret')!, host);
+    await click(box().querySelector<HTMLInputElement>('.merge-method-menu input[value="SQUASH"]')!, host);
+    expect(box().querySelector('.merge-method-menu')).toBeNull();
 
-    await click(button(box(), 'Merge...')!, host);
+    await click(button(box(), 'Squash and merge')!, host);
     expect(box().querySelector('.merge-confirm')?.textContent).toContain(`Merge #12 (fix → main) at commit ${head.slice(0, 8)} by squash`);
+    expect(box().querySelector('input[aria-label="Commit title"]')).not.toBeNull();
     await click(button(box(), 'Cancel')!, host);
     expect(writes()).toHaveLength(0);
 
-    await click(button(box(), 'Merge...')!, host);
+    await click(button(box(), 'Squash and merge')!, host);
     await click(button(box(), 'Confirm')!, host);
     const posted = writes()[0]!;
     expect(posted.url.endsWith('/pulls/12/merge')).toBe(true);
@@ -1243,7 +1315,8 @@ describe('PullPage merge box', () => {
     const box = () => host.querySelector('.merge-box')!;
 
     expect(box().textContent).toContain('Required reviews or checks have not passed.');
-    expect(button(box(), 'Merge...')).toBeUndefined();
+    expect(box().textContent).toContain('Merging is blocked.');
+    expect(button(box(), 'Merge pull request')).toBeUndefined();
     await click(button(box(), 'Merge automatically when ready...')!, host);
     // What GitHub does, not what it was once said to: later pushes by writers are merged too.
     expect(box().querySelector('.merge-confirm')?.textContent).toContain('commits pushed after your review');
@@ -1262,7 +1335,7 @@ describe('PullPage merge box', () => {
     const { host, root } = await render('/acme/plant/pull/12', { writable: true, canMerge: true, merge: ready, writes: { '/merge': unknown } });
     const box = () => host.querySelector('.merge-box')!;
     for (let i = 0; i < 2; i++) {
-      await click(button(box(), 'Merge...')!, host);
+      await click(button(box(), 'Merge pull request')!, host);
       await click(button(box(), 'Confirm')!, host);
     }
 
@@ -1277,7 +1350,7 @@ describe('PullPage merge box', () => {
     const { host, root } = await render('/acme/plant/pull/12', { writable: true, canMerge: true, merge: ready, writes: { '/merge': [{ status: 202, body: { outcome: 'unknown', message: 'This may or may not have been posted.' } }, { status: 429, body: { error: 'rate-limited', message: 'Too many requests: this one was not acted on.' } }, { status: 202, body: { outcome: 'unknown', message: 'This may or may not have been posted.' } }] } });
     const box = () => host.querySelector('.merge-box')!;
     for (let i = 0; i < 3; i++) {
-      await click(button(box(), 'Merge...')!, host);
+      await click(button(box(), 'Merge pull request')!, host);
       await click(button(box(), 'Confirm')!, host);
     }
 
@@ -1297,16 +1370,18 @@ describe('PullPage merge box', () => {
         input.dispatchEvent(new Event('input', { bubbles: true }));
       });
     };
-    const confirm = async () => {
-      await click(button(box(), 'Merge...')!, host);
+    // The title is asked for in the confirm step, as on github.com.
+    const confirm = async (text?: string) => {
+      await click(button(box(), 'Merge pull request')!, host);
+      if (text !== undefined) {
+        await message(text);
+      }
       await click(button(box(), 'Confirm')!, host);
     };
 
     await confirm();
-    await message('Another title');
-    await confirm();
-    await message('');
-    await confirm();
+    await confirm('Another title');
+    await confirm('');
 
     const [first, other, again] = writes().map((w) => w.body?.opKey);
     expect(other).not.toBe(first);
@@ -1319,7 +1394,7 @@ describe('PullPage merge box', () => {
     const { host, root } = await render('/acme/plant/pull/12', { writable: true, canMerge: true, merge: ready, writes: { '/merge': refused } });
     const box = () => host.querySelector('.merge-box')!;
     for (let i = 0; i < 2; i++) {
-      await click(button(box(), 'Merge...')!, host);
+      await click(button(box(), 'Merge pull request')!, host);
       await click(button(box(), 'Confirm')!, host);
     }
 
@@ -1332,11 +1407,69 @@ describe('PullPage merge box', () => {
     const behind = { ...ready, mergeStateStatus: 'BEHIND', mergeable: false, blocked: 'The branch must be brought up to date with its base first.' };
     const { host, root } = await render('/acme/plant/pull/12', { writable: true, canMerge: true, merge: behind });
 
-    await click(button(host.querySelector('.merge-box')!, 'Update branch...')!, host);
+    await click(button(host.querySelector('.merge-box')!, 'Update branch')!, host);
+    await click(button(host.querySelector('.merge-box')!, 'Confirm')!, host);
+    // The caret's menu offers the rebase, and says every commit is rewritten.
+    await click(host.querySelector('.merge-box .merge-method-caret')!, host);
+    await click(button(host.querySelector('.merge-box')!, 'Update with rebaseThe branch rebased onto main: every commit rewritten.')!, host);
+    expect(host.querySelector('.merge-confirm')?.textContent).toContain('Every commit of the branch is rewritten');
     await click(button(host.querySelector('.merge-box')!, 'Confirm')!, host);
 
-    expect(writes()[0]!.url.endsWith('/update-branch')).toBe(true);
+    expect(writes().map((w) => [w.url.slice(w.url.lastIndexOf('/')), w.body?.method])).toEqual([['/update-branch', 'MERGE'], ['/update-branch', 'REBASE']]);
     act(() => root.unmount());
+  });
+
+  // Step 6: the branch after a merge (the owner's decision, with the race said), and the merge queue.
+  const merged = { ...ready, merged: true, state: 'MERGED', mergeCommit: 'a'.repeat(40), headRef: 'fix', headRefLabel: 'fix', headRefExists: true, isCrossRepository: false, deleteBranchOnMerge: false };
+
+  it('offers to delete the merged branch, with the race said', async () => {
+    const { host, root } = await render('/acme/plant/pull/12', { writable: true, canMerge: true, merge: merged });
+    const box = () => host.querySelector('.merge-box')!;
+    await click(button(box(), 'Delete branch')!, host);
+    expect(box().querySelector('.merge-confirm')?.textContent).toContain('a push landing in the moment between that check and the delete would be lost');
+    await click(button(box(), 'Confirm')!, host);
+    expect(writes()[0]!.url.endsWith('/delete-branch')).toBe(true);
+    act(() => root.unmount());
+  });
+
+  it('offers to restore a deleted branch', async () => {
+    const { host, root } = await render('/acme/plant/pull/12', { writable: true, canMerge: true, merge: { ...merged, headRefExists: false } });
+    await click(button(host.querySelector('.merge-box')!, 'Restore branch')!, host);
+    await click(button(host.querySelector('.merge-box')!, 'Confirm')!, host);
+    expect(writes()[0]!.url.endsWith('/restore-branch')).toBe(true);
+    act(() => root.unmount());
+  });
+
+  it('says when the repository deletes branches itself, and offers nothing for a fork’s branch', async () => {
+    const { host, root } = await render('/acme/plant/pull/12', { writable: true, canMerge: true, merge: { ...merged, deleteBranchOnMerge: true, headRefExists: false } });
+    expect(host.querySelector('.merge-box')?.textContent).toContain('deletes head branches itself');
+    expect(button(host.querySelector('.merge-box')!, 'Restore branch')).toBeUndefined();
+    act(() => root.unmount());
+    document.body.innerHTML = '';
+
+    const fork = await render('/acme/plant/pull/12', { writable: true, canMerge: true, merge: { ...merged, isCrossRepository: true } });
+    expect(button(fork.host.querySelector('.merge-box')!, 'Delete branch')).toBeUndefined();
+    act(() => fork.root.unmount());
+  });
+
+  it('a base with a merge queue gets Add to merge queue in place of the merge, and Remove once queued', async () => {
+    const queue = { ...ready, hasMergeQueue: true, inMergeQueue: false };
+    const { host, root } = await render('/acme/plant/pull/12', { writable: true, canMerge: true, merge: queue });
+    const box = () => host.querySelector('.merge-box')!;
+    expect(button(box(), 'Merge pull request')).toBeUndefined();
+    await click(button(box(), 'Add to merge queue')!, host);
+    await click(button(box(), 'Confirm')!, host);
+    expect(writes()[0]!.body).toMatchObject({ enqueue: true });
+    act(() => root.unmount());
+  });
+
+  it('a queued pull request says its position and offers to leave the queue', async () => {
+    const queued = await render('/acme/plant/pull/12', { writable: true, canMerge: true, merge: { ...ready, hasMergeQueue: true, inMergeQueue: true, queuePosition: 2 } });
+    expect(queued.host.querySelector('.merge-queued')?.textContent).toContain('position 2');
+    await click(button(queued.host.querySelector('.merge-box')!, 'Remove from queue')!, queued.host);
+    await click(button(queued.host.querySelector('.merge-box')!, 'Confirm')!, queued.host);
+    expect(writes()[0]!.body).toMatchObject({ enqueue: false });
+    act(() => queued.root.unmount());
   });
 
   it('offers nothing when GitHub cannot say, or when the pull request has moved past the reviewed commit', async () => {
@@ -1348,7 +1481,7 @@ describe('PullPage merge box', () => {
 
     const moved = await render('/acme/plant/pull/12', { writable: true, canMerge: true, merge: { ...ready, headSha: 'f'.repeat(40) } });
     expect(moved.host.querySelector('.merge-box')?.textContent).toContain('Load the latest to merge it');
-    expect(button(moved.host.querySelector('.merge-box')!, 'Merge...')).toBeUndefined();
+    expect(button(moved.host.querySelector('.merge-box')!, 'Merge pull request')).toBeUndefined();
     act(() => moved.root.unmount());
   });
 
@@ -1365,5 +1498,690 @@ describe('PullPage merge box', () => {
     const merged = await render('/acme/plant/pull/12', { writable: true, canMerge: true, merge: { ...ready, merged: true, state: 'MERGED', mergeCommit: 'a'.repeat(40) } });
     expect(merged.host.querySelector('.merge-box')?.textContent).toContain('Merged as aaaaaaaa');
     act(() => merged.root.unmount());
+  });
+});
+
+// Step 2 of docs/web/FINISH.md: the conversation as GitHub draws it — every event kind in its
+// words, a review's threads under it, the merge box where GitHub puts it, the header's counts,
+// the commits' and checks' detail.
+describe('PullPage conversation', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    document.body.innerHTML = '';
+    sessionStorage.clear();
+  });
+
+  const at = '2026-10-17T09:00:00Z';
+  const event = (kind: string, more: Record<string, unknown> = {}) => ({ kind, actor: 'sam', when: at, html: null, text: null, state: null, sha: null, id: null, markdown: null, canEdit: false, canDelete: false, ...more });
+
+  async function click(element: Element, host: HTMLElement) {
+    await act(async () => {
+      (element as HTMLElement).click();
+    });
+    await settle(host, () => false);
+  }
+
+  it('draws every event kind in GitHub’s words, and an unknown kind as its words rather than nothing', async () => {
+    const timeline = [
+      event('labeled', { target: 'plc', targetColor: '1a7f37' }),
+      event('review-requested', { target: 'controls' }),
+      event('renamed', { previous: 'fix', target: 'Fix interlock' }),
+      event('force-push', { previous: 'a'.repeat(40), sha: 'b'.repeat(40) }),
+      event('cross-referenced', { actor: 'lee', reference: { number: 3, title: 'Trips late', repository: 'acme/plant', url: 'https://github.com/acme/plant/issues/3', isPull: false, state: 'OPEN' }, message: 'closes' }),
+      event('review-dismissed', { target: 'lee', message: 'stale' }),
+      event('merged', { sha: '9'.repeat(40), target: 'main' }),
+      event('something-newer'),
+    ];
+    const { host, root } = await render('/acme/plant/pull/12', { timeline });
+
+    // The actor, the sentence and the time are separate spans with a flex gap, no space in the text: read them as words.
+    const rows = Array.from(host.querySelectorAll('.timeline-item')).map((li) => Array.from(li.querySelectorAll('.timeline-meta > *')).map((e) => e.textContent?.replace(/\s+/g, ' ').trim()).join(' '));
+    expect(rows[0]).toContain('sam added the plc label');
+    expect(host.querySelector('.timeline-labeled .issue-label')?.getAttribute('style')).toContain('rgb(26, 127, 55)');
+    expect(rows[1]).toContain('requested a review from controls');
+    expect(rows[2]).toContain('changed the title fix Fix interlock');
+    expect(host.querySelector('.timeline-renamed del')?.textContent).toBe('fix');
+    expect(rows[3]).toContain('force-pushed the branch from aaaaaaa to bbbbbbb');
+    expect(rows[4]).toContain('lee will close this in acme/plant#3 Trips late');
+    expect(host.querySelector('.timeline-cross-referenced a')?.getAttribute('href')).toBe('https://github.com/acme/plant/issues/3');
+    expect(rows[5]).toContain('dismissed lee’s review: stale');
+    expect(rows[6]).toContain('merged commit 9999999 into main');
+    expect(rows[7]).toContain('something newer');
+    act(() => root.unmount());
+  });
+
+  it('draws a comment as a card: the picture, the role, the edit mark, the permalink, the reactions', async () => {
+    const timeline = [event('comment', { actor: 'jo', html: '<p>fine</p>', id: 'IC_1', association: 'MEMBER', editedAt: at, url: 'https://github.com/acme/plant/pull/12#issuecomment-9',
+      reactions: [{ content: 'THUMBS_UP', count: 2, viewerHasReacted: true }, { content: 'EYES', count: 1, viewerHasReacted: false }] })];
+    const { host, root } = await render('/acme/plant/pull/12', { timeline });
+
+    const card = host.querySelector('.timeline-comment .comment-row')!;
+    expect(card.getAttribute('id')).toBe('issuecomment-9');
+    expect(card.querySelector('.comment-head')?.textContent).toContain('jo');
+    expect(card.querySelector('.comment-head')?.textContent).toContain('edited');
+    expect(card.querySelector('.role-badge')?.textContent).toBe('Member');
+    expect(card.querySelector('.avatar-letter')?.textContent).toBe('J');
+    expect(card.querySelector('.comment-head a[href="#issuecomment-9"]')).not.toBeNull();
+    const reactions = Array.from(card.querySelectorAll('.reaction'));
+    expect(reactions.map((r) => r.textContent?.trim())).toEqual(['👍 2', '👀 1']);
+    expect(reactions[0]?.classList.contains('is-mine')).toBe(true);
+    act(() => root.unmount());
+  });
+
+  it('lists a review’s own threads under it, hunk first, and leaves the others to Files changed', async () => {
+    const timeline = [event('review', { actor: 'lee', state: 'CHANGES_REQUESTED', id: 'PRR_1', html: '<p>Not yet.</p>', sha: head })];
+    const { host, root } = await render('/acme/plant/pull/12', { timeline, threadReview: 'PRR_1' });
+
+    const review = host.querySelector('.timeline-review')!;
+    expect(review.classList.contains('timeline-review-danger')).toBe(true);
+    expect(review.textContent).toContain('lee requested changes');
+    expect(review.querySelector('.comment-review-summary')?.textContent).toContain('Not yet.');
+    // The thread whose first comment names the review is under it, with GitHub's hunk and a link to the file.
+    const threads = Array.from(review.querySelectorAll('.review-thread'));
+    expect(threads).toHaveLength(1);
+    expect(threads[0]?.querySelector('.diff-hunk')?.textContent).toBe('@@ -1,3 +1,3 @@\n a\n-b\n+c');
+    expect(threads[0]?.querySelector('.review-thread-file a')?.getAttribute('href')).toContain('/acme/plant/pull/12/files?path=src%2FPump.st');
+    expect(threads[0]?.querySelector('[data-thread]')?.getAttribute('data-thread')).toBe('NEW3');
+    act(() => root.unmount());
+  });
+
+  it('puts the merge summary and the merge box after the timeline and before the comment box, as GitHub does', async () => {
+    const ready = { tier: true, state: 'OPEN', merged: false, headSha: head, mergeStateStatus: 'CLEAN', mergeable: true, blocked: null,
+      methods: ['MERGE'], autoMergeAllowed: false, autoMerge: null, canDisableAutoMerge: false, mergeCommit: null };
+    const { host, root } = await render('/acme/plant/pull/12', { writable: true, canMerge: true, merge: ready, counts: { reviewDecision: 'APPROVED', mergeable: 'MERGEABLE' } });
+
+    const order = ['.timeline', '.merge-summary', '.merge-box', '.comment-row-new'].map((s) => host.querySelector(s));
+    expect(order.every((e) => e !== null)).toBe(true);
+    for (let i = 1; i < order.length; i++) {
+      expect(order[i - 1]!.compareDocumentPosition(order[i]!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    }
+    expect(host.querySelector('.merge-summary')?.textContent).toContain('Changes approved');
+    expect(host.querySelector('.merge-summary')?.textContent).toContain('Some checks were not successful');
+    // Each check listed under the summary (Step 6), with its state and its link.
+    expect(host.querySelector('.merge-summary-checks')?.textContent).toContain('Show all checks');
+    expect(host.querySelector('.merge-summary-check')?.textContent).toContain('build');
+    expect(host.querySelector('.merge-summary-check a')?.getAttribute('href')).toBe('https://ci.example/1');
+    act(() => root.unmount());
+  });
+
+  it('shows the header’s counts: commits in the meta line and on the tab, comments on the tab, the diffstat', async () => {
+    const { host, root } = await render('/acme/plant/pull/12', { counts: { commits: 3, comments: 5, additions: 12, deletions: 3, changedFiles: 2 } });
+
+    expect(host.querySelector('.pr-meta')?.textContent).toContain('wants to merge 3 commits into');
+    const tab = (label: string) => Array.from(host.querySelectorAll('.pr-tabs .underline-nav-item')).find((a) => a.textContent?.includes(label));
+    expect(tab('Commits')?.querySelector('.counter')?.textContent).toBe('3');
+    expect(tab('Conversation')?.querySelector('.counter')?.textContent).toBe('5');
+    expect(host.querySelector('.pr-diffstat')?.textContent).toContain('+12');
+    expect(host.querySelector('.pr-diffstat')?.textContent).toContain('−3');
+    act(() => root.unmount());
+  });
+
+  it('groups the checks by app, marks the required one, and shows a run’s output on demand', async () => {
+    const checks = [
+      { name: 'build', status: 'completed', conclusion: 'success', url: 'https://ci.example/1', source: 'check-run', app: 'GitHub Actions', required: true, startedAt: at, completedAt: '2026-10-17T09:04:00Z', title: 'Built', summary: '<div class="md-page"><p>All <strong>green</strong></p></div>' },
+      { name: 'lint', status: 'in_progress', conclusion: null, url: null, source: 'check-run', app: 'GitHub Actions', required: false },
+      { name: 'ci/jenkins', status: 'completed', conclusion: 'failure', url: 'https://jenkins.example/42', source: 'status', app: 'jenkins-bot', description: 'Build #42 failed' },
+    ];
+    const { host, root } = await render('/acme/plant/pull/12/checks', { checks, counts: { requiredChecks: ['build'] } });
+
+    const groups = Array.from(host.querySelectorAll('.checks-group .box-header')).map((h) => h.textContent);
+    expect(groups).toEqual(['GitHub Actions2', 'jenkins-bot1']);
+    expect(host.querySelector('.checks-summary')?.textContent).toContain('1 failing');
+    expect(host.querySelector('.checks-summary')?.textContent).toContain('1 in progress');
+    expect(host.querySelector('.checks-summary')?.textContent).toContain('1 successful');
+    const build = Array.from(host.querySelectorAll('.check')).find((li) => li.textContent?.includes('build'))!;
+    expect(build.querySelector('.check-required')?.textContent).toBe('Required');
+    expect(build.textContent).toContain('4m 0s');
+    expect(build.querySelector('.check-output')).toBeNull();
+    await click(Array.from(build.querySelectorAll('button')).find((b) => b.textContent?.includes('Show output'))!, host);
+    expect(build.querySelector('.check-output')?.textContent).toContain('All green');
+    act(() => root.unmount());
+  });
+
+  it('badges a verified signature and a merge, and opens a commit’s body on demand', async () => {
+    const commits = [
+      { sha: head, headline: 'Fix the default', author: 'jo', when: at, inSnapshot: true, login: 'jo', body: 'It was wrong.', verified: true, parents: 2, url: 'https://github.com/acme/plant/commit/' + head },
+    ];
+    const { host, root } = await render('/acme/plant/pull/12/commits', { commits });
+
+    const row = host.querySelector('.commit-row')!;
+    expect(row.querySelector('.verified-badge')?.textContent).toBe('Verified');
+    expect(row.textContent).toContain('Merge');
+    expect(row.querySelector('a.commit-sha')?.getAttribute('href')).toBe('https://github.com/acme/plant/commit/' + head);
+    expect(row.querySelector('.commit-body')).toBeNull();
+    await click(row.querySelector('.commit-expand')!, host);
+    expect(row.querySelector('.commit-body')?.textContent).toBe('It was wrong.');
+    act(() => root.unmount());
+  });
+});
+
+// Step 3 of docs/web/FINISH.md: Files changed as GitHub shows it — the tree of changed files
+// beside every file stacked, each with its own header and state; a shift-click makes a range.
+describe('PullPage files changed', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    document.body.innerHTML = '';
+    sessionStorage.clear();
+  });
+
+  async function click(element: Element, host: HTMLElement, shift = false) {
+    await act(async () => {
+      element.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, shiftKey: shift }));
+    });
+    await settle(host, () => false);
+  }
+
+  it('stacks every changed file under its own sticky header, the one in the URL first and lit in the tree', async () => {
+    const { host, root } = await render('/acme/plant/pull/12/files?path=src%2FValve.st', { twoFiles: true });
+
+    const sections = Array.from(host.querySelectorAll('.file-review'));
+    expect(sections.map((s) => s.getAttribute('data-file'))).toEqual(['src/Pump.st', 'src/Valve.st']);
+    // Each section has its header with the object's name, where it lives and its +N −M.
+    expect(sections[1]?.querySelector('.review-file')?.textContent).toBe('Valve');
+    expect(sections[1]?.querySelector('.pane-folder')?.textContent).toBe('src');
+    expect(sections[1]?.querySelector('.diffstat')?.textContent).toContain('+2');
+    expect(host.querySelector('.files-tree .tree-row.is-selected')?.textContent).toContain('Valve');
+    // The tree groups by folder: one "src" folder with two files under it.
+    expect(host.querySelector('.files-tree .tree-folder .tree-name')?.textContent).toBe('src');
+    expect(host.querySelectorAll('.files-tree [role="treeitem"][aria-selected]')).toHaveLength(2);
+    act(() => root.unmount());
+  });
+
+  it('folds a viewed file to its header, as GitHub does, and the chevron opens it again', async () => {
+    const { host, root } = await render('/acme/plant/pull/12/files?path=src%2FValve.st', { writable: true, twoFiles: true, viewed: ['src/Pump.st'] });
+
+    const pump = host.querySelector('[data-file="src/Pump.st"]')!;
+    expect(pump.classList.contains('is-folded')).toBe(true);
+    expect(pump.querySelector('.file-review-body')).toBeNull();
+    expect(host.querySelector('.files-progress')?.textContent).toContain('1 / 2 files viewed');
+    await click(pump.querySelector('.file-chevron')!, host);
+    expect(pump.querySelector('.file-review-body')).not.toBeNull();
+
+    // Opened once, the drawing is kept: folding and opening again reads nothing (review,
+    // 2026-10-24 — every toggle re-read the most expensive thing on the page).
+    const reads = () => calls.filter((c) => c.url.includes('/files/view') && c.url.includes('Pump')).length;
+    const once = reads();
+    expect(once).toBeGreaterThan(0);
+    await click(pump.querySelector('.file-chevron')!, host);
+    expect(pump.querySelector('.file-review-body')).toBeNull();
+    await click(pump.querySelector('.file-chevron')!, host);
+    expect(pump.querySelector('.file-review-body')).not.toBeNull();
+    expect(reads()).toBe(once);
+    act(() => root.unmount());
+  });
+
+  it('a shift-click on a second line makes the draft a range, posted with its start line', async () => {
+    const { host, root } = await render('/acme/plant/pull/12/files?path=src%2FPump.st&view=raw', { writable: true });
+    const number = (line: number) => host.querySelector(`[data-line="${line}"] .cd-num`)!;
+
+    await click(number(2), host);
+    expect(host.querySelector('.thread-draft .thread-head')?.textContent).toContain('new line 2');
+    await click(number(3), host, true);
+    expect(host.querySelector('.thread-draft .thread-head')?.textContent).toContain('new lines 2–3');
+
+    const textarea = host.querySelector<HTMLTextAreaElement>('.thread-draft textarea')!;
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')!.set!.call(textarea, 'Both of these.');
+      textarea.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    await click(Array.from(host.querySelectorAll('.thread-draft button')).find((b) => b.textContent === 'Comment')!, host);
+
+    const posted = calls.find((c) => c.method === 'POST' && c.url.endsWith('/line-comments'))!;
+    expect(posted.body).toMatchObject({ path: 'src/Pump.st', line: 3, startLine: 2, side: 'RIGHT' });
+    act(() => root.unmount());
+  });
+
+  it('hides resolved threads when asked, and says how many it hides', async () => {
+    const { host, root } = await render('/acme/plant/pull/12/files?path=src%2FPump.st&view=raw');
+
+    expect(host.querySelector('[data-thread="OLD3"]')).not.toBeNull();
+    const toggle = host.querySelector<HTMLInputElement>('.file-resolved-toggle input')!;
+    expect(host.querySelector('.file-resolved-toggle')?.textContent).toContain('Show 1 resolved thread');
+    await click(toggle, host);
+    expect(host.querySelector('[data-thread="OLD3"]')).toBeNull();
+    expect(host.querySelector('[data-thread="NEW3"]')).not.toBeNull();
+    act(() => root.unmount());
+  });
+
+  // GitHub's own permalink shape, /pull/12/files#discussion_r…, names no path: the page finds the
+  // file holding the comment and goes to it WITH the hash, so the thread is scrolled to once placed
+  // (review, 2026-10-24: the hash was dropped on the way).
+  it('a GitHub-shaped comment permalink opens the file that holds the comment and keeps the hash', async () => {
+    // Opened on another file than the comment's, so the page has to move to the comment's file.
+    const { host, root } = await render('/acme/plant/pull/12/files?path=src%2FValve.st#discussion_rc1', { twoFiles: true });
+    await settle(host);
+    expect(where).toContain('/acme/plant/pull/12/files');
+    expect(where).toContain('path=src%2FPump.st');
+    expect(where.endsWith('#discussion_rc1')).toBe(true);
+    act(() => root.unmount());
+  });
+
+  // A tab left open past the snapshot's life: the status poll is refused as expired, and the page
+  // says so rather than freezing at its last answer (review, 2026-10-24).
+  it('an expired snapshot found by the poll shows the reload banner', async () => {
+    const { host, root } = await render('/acme/plant/pull/12', { statusExpired: true });
+    await settle(host);
+    expect(host.querySelector('.review-stale')?.textContent).toContain('loaded too long ago');
+    act(() => root.unmount());
+  });
+
+  // The link's own behaviour (a changed file's section, else a peek) is the peek test's; this one
+  // is the tree following the URL to the file.
+  it('the files tree selects the file the URL names', async () => {
+    const { host, root } = await render('/acme/plant/pull/12/files?path=src%2FPump.st', { twoFiles: true });
+    await act(async () => {
+      jump('/acme/plant/pull/12/files?path=src%2FValve.st');
+    });
+    await settle(host);
+    expect(host.querySelector('.files-tree .tree-row.is-selected')?.textContent).toContain('Valve');
+    act(() => root.unmount());
+  });
+});
+
+// Step 5 of docs/web/FINISH.md: the writes GitHub's page has — reactions, hiding, dismissing and
+// editing a review, close with comment, suggested changes, the milestone, notifications, the lock,
+// re-requesting a reviewer, a team by slug, a draft edited in place.
+describe('PullPage review writes', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+    document.body.innerHTML = '';
+    sessionStorage.clear();
+  });
+
+  async function click(element: Element, host: HTMLElement) {
+    await act(async () => {
+      (element as HTMLElement).click();
+    });
+    await settle(host, () => false);
+  }
+
+  async function fill(element: HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement, value: string) {
+    await act(async () => {
+      const proto = element instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : element instanceof HTMLSelectElement ? HTMLSelectElement.prototype : HTMLInputElement.prototype;
+      Object.getOwnPropertyDescriptor(proto, 'value')!.set!.call(element, value);
+      element.dispatchEvent(new Event(element instanceof HTMLSelectElement ? 'change' : 'input', { bubbles: true }));
+    });
+  }
+
+  const at = '2026-10-17T09:00:00Z';
+  const button = (root: ParentNode, label: string) => Array.from(root.querySelectorAll('button')).find((b) => b.textContent?.trim() === label);
+  const writes = () => calls.filter((c) => c.method !== 'GET' && !c.url.endsWith('/markdown'));
+  const live = { nodeId: 'PR_12', canReact: true, viewerSubscription: 'SUBSCRIBED', milestoneNumber: null, locked: false };
+  const comment = (id: string, more: Record<string, unknown> = {}) => ({ kind: 'comment', actor: 'sam', when: at, html: '<p>hi</p>', text: null, state: null, sha: null, id, markdown: 'hi', canEdit: true, canDelete: true, ...more });
+  const review = (id: string, state: string, more: Record<string, unknown> = {}) => ({ kind: 'review', actor: 'kim', when: at, html: '<p>fine</p>', text: null, state, sha: null, id, markdown: 'fine', canEdit: true, canDelete: false, ...more });
+
+  it('toggles the viewer’s reaction on the description, a comment and a line comment, naming each subject', async () => {
+    const { host, root } = await render('/acme/plant/pull/12', { writable: true, counts: live, timeline: [comment('IC_1')] });
+    const cards = host.querySelectorAll('.comment-row');
+    // The description's picker, then a thumbs up; the comment's existing pill is a toggle.
+    await click(cards[0]!.querySelector('.reaction-add-button')!, host);
+    await click(cards[0]!.querySelector('.reaction-pick[title="thumbs up"]')!, host);
+
+    expect(writes().map((w) => w.body)).toMatchObject([{ subject: 'PR_12', content: 'THUMBS_UP', on: true }]);
+    expect(writes()[0]!.url.endsWith('/pulls/12/reactions')).toBe(true);
+    act(() => root.unmount());
+  });
+
+  it('a line comment’s reaction pill is a toggle, and a hidden one is folded behind its reason', async () => {
+    const { host, root } = await render('/acme/plant/pull/12/files?path=src%2FPump.st&view=raw', { writable: true, counts: live });
+    const thread = host.querySelector('[data-thread="NEW3"]')!;
+    await click(thread.querySelector('button.reaction')!, host);
+
+    expect(writes().map((w) => w.body)).toMatchObject([{ subject: 'c1', content: 'HEART', on: true }]);
+    act(() => root.unmount());
+  });
+
+  it('hides a comment with a reason and draws a hidden one folded, with Show and Unhide', async () => {
+    const { host, root } = await render('/acme/plant/pull/12', { writable: true, counts: live, timeline: [comment('IC_1'), comment('IC_2', { minimized: true, minimizedReason: 'OUTDATED' })] });
+    const cards = host.querySelectorAll('.timeline-comment .comment-row');
+    expect(cards[1]!.querySelector('.comment-minimized-note')?.textContent).toContain('marked as outdated');
+    expect(cards[1]!.querySelector('.comment-body')).toBeNull();
+    await click(button(cards[1]!, 'Show comment')!, host);
+    expect(cards[1]!.querySelector('.comment-body')).not.toBeNull();
+
+    await click(button(cards[0]!, 'Hide')!, host);
+    await fill(cards[0]!.querySelector<HTMLSelectElement>('.reason-form select')!, 'SPAM');
+    await click(button(cards[0]!, 'Hide comment')!, host);
+    // The write re-reads the conversation: the cards are found again rather than held.
+    await click(button(host.querySelectorAll('.timeline-comment .comment-row')[1]!, 'Unhide')!, host);
+
+    expect(writes().map((w) => [w.url.slice(w.url.indexOf('/comments/')), w.body])).toMatchObject([
+      ['/comments/IC_1/minimize', { classifier: 'SPAM' }],
+      ['/comments/IC_2/minimize', { classifier: null }],
+    ]);
+    act(() => root.unmount());
+  });
+
+  it('dismisses an approval with a reason, and edits the viewer’s own review summary', async () => {
+    const { host, root } = await render('/acme/plant/pull/12', { writable: true, counts: live, timeline: [review('PRR_1', 'APPROVED'), review('PRR_2', 'COMMENTED', { canEdit: false })] });
+    const items = host.querySelectorAll('.timeline-review');
+    expect(button(items[1]!, 'Dismiss review')).toBeUndefined();
+    await click(button(items[0]!, 'Dismiss review')!, host);
+    await fill(items[0]!.querySelector<HTMLTextAreaElement>('.reason-form textarea')!, 'Stale after the rebase');
+    await click(items[0]!.querySelector<HTMLButtonElement>('.reason-form button[type="submit"]')!, host);
+
+    await click(button(host.querySelectorAll('.timeline-review')[0]!, 'Edit')!, host);
+    await fill(host.querySelector<HTMLTextAreaElement>('.timeline-review textarea')!, 'Better words');
+    await click(button(host.querySelectorAll('.timeline-review')[0]!, 'Save')!, host);
+
+    expect(writes().map((w) => [w.method, w.url.slice(w.url.indexOf('/reviews/')), w.body])).toMatchObject([
+      ['POST', '/reviews/PRR_1/dismiss', { body: 'Stale after the rebase' }],
+      ['PATCH', '/reviews/PRR_1', { body: 'Better words' }],
+    ]);
+    act(() => root.unmount());
+  });
+
+  it('closes with a comment: the comment is posted first, then the state, each its own operation', async () => {
+    const { host, root } = await render('/acme/plant/pull/12', { writable: true, counts: live });
+    expect(button(host, 'Close pull request')).toBeDefined();
+    await fill(host.querySelector<HTMLTextAreaElement>('.comment-new textarea')!, 'Not needed any more.');
+    await click(button(host, 'Close with comment')!, host);
+
+    const sent = writes();
+    expect(sent.map((w) => w.url.slice(w.url.lastIndexOf('/')))).toEqual(['/comments', '/state']);
+    expect(sent[0]!.body).toMatchObject({ body: 'Not needed any more.' });
+    expect(sent[1]!.body).toMatchObject({ open: false });
+    expect(sent[0]!.body!.opKey).not.toBe(sent[1]!.body!.opKey);
+    act(() => root.unmount());
+  });
+
+  it('a refused comment closes nothing', async () => {
+    const refused = { status: 422, body: { error: 'github-refused', message: 'GitHub refused this.' } };
+    const { host, root } = await render('/acme/plant/pull/12', { writable: true, counts: live, writes: { '/comments': refused } });
+    await fill(host.querySelector<HTMLTextAreaElement>('.comment-new textarea')!, 'Not needed any more.');
+    await click(button(host, 'Close with comment')!, host);
+
+    expect(writes().map((w) => w.url.slice(w.url.lastIndexOf('/')))).toEqual(['/comments']);
+    act(() => root.unmount());
+  });
+
+  it('draws a suggested change as a diff, applies it in one commit on confirm, and batches several', async () => {
+    vi.spyOn(window, 'confirm').mockReturnValue(true);
+    const { host, root } = await render('/acme/plant/pull/12/files?path=src%2FPump.st&view=raw', { writable: true, canMerge: true, counts: live, suggestion: '  run : BOOL := TRUE;\n' });
+    const thread = host.querySelector('[data-thread="NEW3"]')!;
+    expect(thread.querySelector('.suggestion-body')?.textContent).toContain('+  run : BOOL := TRUE;');
+
+    await click(button(thread, 'Add suggestion to batch')!, host);
+    expect(host.querySelector('.batch-bar')?.textContent).toContain('1 suggestion in the batch');
+    await click(button(host.querySelector('.batch-bar')!, 'Commit suggestions (1)')!, host);
+    await click(button(host.querySelector('[data-thread="NEW3"]')!, 'Apply suggestion')!, host);
+
+    expect(writes().map((w) => [w.url.slice(w.url.indexOf('/suggestions')), w.body])).toMatchObject([
+      ['/suggestions/apply', { comments: ['c1'] }],
+      ['/suggestions/apply', { comments: ['c1'] }],
+    ]);
+    expect(host.querySelector('.batch-bar')).toBeNull();
+    act(() => root.unmount());
+  });
+
+  it('offers no apply without the merge tier, and none on an outdated or old-side thread', async () => {
+    const { host, root } = await render('/acme/plant/pull/12/files?path=src%2FPump.st&view=raw', { writable: true, canMerge: false, counts: live, suggestion: 'x\n' });
+    expect(host.querySelector('.suggestion')).not.toBeNull();
+    expect(button(host, 'Apply suggestion')).toBeUndefined();
+    act(() => root.unmount());
+  });
+
+  it('puts the line’s own text in a suggestion block from the comment toolbar', async () => {
+    const { host, root } = await render('/acme/plant/pull/12/files?path=src%2FPump.st&view=raw', { writable: true, counts: live });
+    await click(host.querySelector('[data-line="3"] .cd-num')!, host);
+    await click(button(host.querySelector('.thread-draft')!, 'Suggest a change')!, host);
+
+    expect(host.querySelector<HTMLTextAreaElement>('.thread-draft textarea')?.value).toBe('```suggestion\n  run : BOOL := TRUE;\n```\n');
+    act(() => root.unmount());
+  });
+
+  it('sets the milestone, the viewer’s notifications and the lock from the sidebar', async () => {
+    const { host, root } = await render('/acme/plant/pull/12', { writable: true, counts: live });
+    await fill(host.querySelector<HTMLSelectElement>('.milestone-editor select')!, '5');
+    await click(button(host, 'Unsubscribe')!, host);
+    await click(button(host, 'Lock conversation')!, host);
+    await fill(host.querySelector<HTMLSelectElement>('.lock-action select')!, 'RESOLVED');
+    await click(button(host.querySelector('.lock-action')!, 'Lock')!, host);
+
+    expect(writes().map((w) => [w.url.slice(w.url.lastIndexOf('/')), w.body])).toMatchObject([
+      ['/milestone', { number: 5 }],
+      ['/subscription', { state: 'UNSUBSCRIBED' }],
+      ['/lock', { lock: true, reason: 'RESOLVED' }],
+    ]);
+    act(() => root.unmount());
+  });
+
+  // A refused pick stayed in the select while the heading showed the real milestone, and picking
+  // the same option again fired no change, so there was no retry (the 2026-10-24 review's item 7).
+  it('a refused milestone snaps the select back and can be picked again', async () => {
+    const refused = { status: 422, body: { error: 'github-refused', message: 'GitHub refused this.' } };
+    const { host, root } = await render('/acme/plant/pull/12', { writable: true, counts: live, writes: { '/milestone': refused } });
+    const select = () => host.querySelector<HTMLSelectElement>('.milestone-editor select')!;
+    await fill(select(), '5');
+    await settle(host, () => false);
+
+    expect(select().value).toBe('');
+    expect(host.querySelector('.milestone-editor .notice')?.textContent).toContain('GitHub refused this.');
+
+    await fill(select(), '5');
+    await settle(host, () => false);
+    expect(writes().map((w) => [w.url.slice(w.url.lastIndexOf('/')), w.body])).toMatchObject([
+      ['/milestone', { number: 5 }],
+      ['/milestone', { number: 5 }],
+    ]);
+    act(() => root.unmount());
+  });
+
+  it('re-requests a reviewer who already reviewed, and withdraws a team by its slug', async () => {
+    const reviewers = [{ login: 'kim', state: 'APPROVED' }, { login: 'Controls', state: 'REQUESTED', isTeam: true, slug: 'plc-controls' }];
+    const { host, root } = await render('/acme/plant/pull/12', { writable: true, counts: { ...live, reviewers } });
+    const rows = host.querySelectorAll('.reviewer-row');
+    await click(rows[0]!.querySelector('[aria-label="Re-request review from kim"]')!, host);
+    await click(rows[1]!.querySelector('[aria-label="Stop asking Controls"]')!, host);
+    await fill(host.querySelector<HTMLInputElement>('.reviewers-add input')!, 'acme/safety');
+    await click(button(host, 'Request')!, host);
+
+    expect(writes().map((w) => w.body)).toMatchObject([{ add: ['kim'] }, { removeTeams: ['plc-controls'] }, { addTeams: ['safety'] }]);
+    act(() => root.unmount());
+  });
+
+  it('shows the pending review’s drafts with their words and lines, and edits one in place', async () => {
+    const pending = { id: 'PRR_1', commit: head, onSnapshotHead: true, comments: [{ id: 'C1', path: 'src/Pump.st', pathLabel: 'src/Pump.st', html: '<p>x</p>', markdown: 'x', line: 3, startLine: null }] };
+    const { host, root } = await render('/acme/plant/pull/12', { writable: true, counts: live, pending });
+    await click(button(host, 'Show your drafts')!, host);
+    expect(host.querySelector('.review-draft')?.textContent).toContain('line 3');
+    await click(button(host.querySelector('.review-draft')!, 'Edit')!, host);
+    await fill(host.querySelector<HTMLTextAreaElement>('.review-draft textarea')!, 'y');
+    await click(button(host.querySelector('.review-draft')!, 'Save')!, host);
+
+    expect(writes().map((w) => [w.method, w.url.slice(w.url.indexOf('/comments/')), w.body])).toMatchObject([['PATCH', '/comments/C1', { body: 'y' }]]);
+    act(() => root.unmount());
+  });
+});
+
+// Comments everywhere (docs/web/FINISH.md, Step 3b): an outdated thread keeps the hunk it was
+// written on; a side-by-side thread sits under its own column; a modified row can be commented on
+// as it was; a check's annotations are listed under the run and drawn on the file's lines.
+describe('PullPage comments everywhere', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+    document.body.innerHTML = '';
+    sessionStorage.clear();
+  });
+
+  async function click(element: Element, host: HTMLElement) {
+    await act(async () => {
+      (element as HTMLElement).click();
+    });
+    await settle(host, () => false);
+  }
+  const writes = () => calls.filter((c) => c.method !== 'GET' && !c.url.endsWith('/markdown'));
+
+  const annotated = {
+    checks: [
+      { name: 'plc-compile', status: 'completed', conclusion: 'failure', url: null, source: 'check-run', id: 7, annotations: 1 },
+      // GitHub counts one for this run, but lists none when asked: its list says so, not run 7's.
+      { name: 'lint', status: 'completed', conclusion: 'success', url: null, source: 'check-run', id: 8, annotations: 1 },
+    ],
+    annotations: [{ path: 'src/Pump.st', pathLabel: 'src/Pump.st', startLine: 3, endLine: 3, level: 'failure', message: 'unknown identifier', title: 'C0046' }],
+  };
+
+  it('shows an outdated thread with the hunk it was written on and the way to the file at that commit', async () => {
+    const { host, root } = await render('/acme/plant/pull/12?tab=files&path=src%2FPump.st&view=raw');
+
+    const gone = host.querySelector('.unplaced [data-thread="GONE"]')!;
+    expect(gone.querySelector('.thread-hunk-code')?.textContent).toBe('@@ -8,2 +8,2 @@\n old\n-x\n+y');
+    expect(gone.querySelector('.thread-hunk a')?.getAttribute('href')).toBe(`/acme/plant/blob/${head}/src/Pump.st#L9`);
+    // A thread still on its line shows no hunk: the line itself is there.
+    expect(host.querySelector('[data-thread="NEW3"] .thread-hunk')).toBeNull();
+    act(() => root.unmount());
+  });
+
+  it('side by side, puts each thread under its own column, the other column empty', async () => {
+    const { host, root } = await render('/acme/plant/pull/12?tab=files&path=src%2FPump.st&view=raw&layout=split');
+
+    const newThread = host.querySelector('[data-thread="NEW3"]')!;
+    const oldThread = host.querySelector('[data-thread="OLD3"]')!;
+    const newRow = newThread.closest('.thread-slot-row')!;
+    const oldRow = oldThread.closest('.thread-slot-row')!;
+    // The new side is the right column, the old side the left; both slot rows follow the line's row.
+    expect(newThread.closest('.cd-cell')).toBe(newRow.lastElementChild);
+    expect(oldThread.closest('.cd-cell')).toBe(oldRow.firstElementChild);
+    expect(newRow.querySelector('.cd-cell:first-child [data-thread]')).toBeNull();
+    const lineRow = host.querySelector('.cd-split:has([data-line="3"])');
+    expect([newRow, oldRow]).toContain(lineRow?.nextElementSibling);
+    act(() => root.unmount());
+  });
+
+  it('offers the older side of a modified row, and posts that side\'s id when chosen', async () => {
+    const { host, root } = await render('/acme/plant/pull/12?tab=files&path=src%2FPump.st', { writable: true });
+
+    await click(host.querySelector('tr[data-anchors~="r-new-0"] td.mt-name')!, host);
+    let draft = host.querySelector('.thread-draft')!;
+    expect(draft.querySelector('.thread-head')?.textContent).not.toContain('member, as it was');
+    expect(draft.querySelector('.thread-side-switch')?.textContent).toContain('as it was instead');
+    // Words typed before switching sides go with the person: losing them is the failure that matters.
+    await act(async () => {
+      const textarea = draft.querySelector('textarea')!;
+      Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')!.set!.call(textarea, 'Was this right before?');
+      textarea.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    await click(draft.querySelector('.thread-side-switch')!, host);
+    draft = host.querySelector('.thread-draft')!;
+    expect(draft.querySelector('.thread-head')?.textContent).toContain('member, as it was');
+    expect(draft.querySelector('.thread-side-switch')?.textContent).toContain('as it is instead');
+    expect(draft.querySelector('textarea')?.value).toBe('Was this right before?');
+    await click(Array.from(draft.querySelectorAll('button')).find((b) => b.textContent === 'Comment')!, host);
+
+    expect(writes()[0]!.body).toMatchObject({ path: 'src/Pump.st', dom: 'r-old-0' });
+    act(() => root.unmount());
+  });
+
+  it("lists a run's annotations under it on Checks, each linking to the file's line", async () => {
+    const { host, root } = await render('/acme/plant/pull/12/checks', annotated);
+
+    const [first, second] = Array.from(host.querySelectorAll('button')).filter((b) => b.textContent?.includes('Show output'));
+    await click(second!, host);
+    expect(host.querySelector('.check-annotations')?.textContent).toContain('GitHub listed no annotations for this run.');
+    expect(host.querySelector('.check-annotations .check-note')).toBeNull();
+    await click(first!, host);
+    const note = host.querySelector('.check-annotations .check-note')!;
+    expect(note.textContent).toContain('Error');
+    expect(note.textContent).toContain('C0046');
+    expect(note.querySelector('.check-note-text')?.textContent).toBe('unknown identifier');
+    expect(note.querySelector('a')?.getAttribute('href')).toContain('/acme/plant/pull/12/files');
+    expect(note.querySelector('a')?.getAttribute('href')).toContain('src%2FPump.st');
+    expect(note.querySelector('a')?.textContent).toBe('src/Pump.st:L3');
+    expect(calls.some((c) => c.url.endsWith('/checks/7/annotations') && c.snapshot === token)).toBe(true);
+    act(() => root.unmount());
+  });
+
+  // Step 3c, "stay in context": a link to something the pull request does not change opens a
+  // peek at the reviewed head beside the review; the review stays where it was.
+  it('opens a type link to an unchanged object in a peek at the reviewed head, and the review stays', async () => {
+    const { host, root } = await render('/acme/plant/pull/12?tab=files&path=src%2FPump.st');
+
+    await click(host.querySelector('[data-link="src/Other.st"]')!, host);
+
+    const peek = host.querySelector('.peek')!;
+    expect(peek).not.toBeNull();
+    expect(peek.querySelector('.peek-title')?.textContent).toBe('ST_Other');
+    expect(peek.querySelector('.mt-page')?.textContent).toBe('other drawn');
+    expect(peek.querySelector(`a[href="/acme/plant/blob/${head}/src/Other.st"]`)?.textContent).toBe('Open');
+    // The object's own view at the head, not a file section's /files/view.
+    const read = calls.find((c) => c.url.includes('/view?') && !c.url.includes('/files/view'))!;
+    expect(read.url).toContain(`ref=${head}`);
+    expect(read.url).toContain('path=src%2FOther.st');
+    // The review is still drawn behind it.
+    expect(host.querySelector('.file-review[data-file="src/Pump.st"]')).not.toBeNull();
+    await click(peek.querySelector('button[aria-label="Close the peek"]')!, host);
+    expect(host.querySelector('.peek')).toBeNull();
+    act(() => root.unmount());
+  });
+
+  // Step 10: once the branch moved, the Checks tab says how the LATEST commit's checks stand,
+  // in counts, over the reviewed commit's list.
+  it("says how the latest commit's checks stand once the branch moved, over the reviewed commit's list", async () => {
+    const { host, root } = await render('/acme/plant/pull/12/checks', { stale: true });
+
+    const flash = host.querySelector('.flash-danger')!;
+    expect(flash.textContent).toContain('latest commit (eeeeeee)');
+    expect(flash.textContent).toContain('2 checks, 1 failing, 0 in progress');
+    expect(host.querySelectorAll('.check').length).toBe(1);
+    act(() => root.unmount());
+  });
+
+  it("draws a run's annotation under its line on Raw, and not where the file has no such line", async () => {
+    const { host, root } = await render('/acme/plant/pull/12?tab=files&path=src%2FPump.st&view=raw', annotated);
+
+    const rows = Array.from(host.querySelectorAll('.cd-drow'));
+    const newRow = rows.find((r) => r.getAttribute('data-line') === '3' && !r.hasAttribute('data-old-line'))!;
+    let after: Element | null = newRow.nextElementSibling;
+    const slots: Element[] = [];
+    while (after?.classList.contains('thread-slot')) {
+      slots.push(after);
+      after = after.nextElementSibling;
+    }
+    expect(slots.some((s) => s.querySelector('.check-note')?.textContent?.includes('unknown identifier'))).toBe(true);
+    expect(host.querySelectorAll('.check-note').length).toBe(1);
+    act(() => root.unmount());
+  });
+});
+
+// A reader who cannot write is told why, where the comment box would be (2026-10-24: a preview
+// with a stale session cookie showed a page with no comment box and nothing saying so).
+describe('PullPage, read-only', () => {
+  const nobody: Me = { signedIn: false, login: null, name: null, avatarUrl: null, signInAvailable: false, anonymousAccess: true, installUrl: null };
+
+  it('says nothing about writing while who the reader is has not come back', async () => {
+    const { host, root } = await render('/acme/plant/pull/12', { me: null });
+    expect(host.querySelector('.comment-read-only')).toBeNull();
+    expect(host.querySelector('.comment-new')).toBeNull();
+    act(() => root.unmount());
+  });
+
+  it('offers sign-in where the comment box would be when the server has it', async () => {
+    const { host, root } = await render('/acme/plant/pull/12', { me: { ...nobody, signInAvailable: true } });
+    const note = host.querySelector('.comment-read-only');
+    expect(note?.textContent).toContain('Sign in to comment, review or merge.');
+    expect(note?.querySelector('a')?.getAttribute('href')).toContain('/auth/');
+    act(() => root.unmount());
+  });
+
+  it('says the server has no sign-in when it has none', async () => {
+    const { host, root } = await render('/acme/plant/pull/12', { me: nobody });
+    expect(host.querySelector('.comment-read-only')?.textContent).toContain('This server has no sign-in');
+    expect(host.querySelector('.comment-read-only a')).toBeNull();
+    act(() => root.unmount());
+  });
+
+  it('says writes are off for the repository when the signed-in reader still cannot write', async () => {
+    const { host, root } = await render('/acme/plant/pull/12', { me: { ...nobody, signedIn: true, login: 'sam', name: 'Sam' } });
+    expect(host.querySelector('.comment-read-only')?.textContent).toContain('Writes are not turned on for this repository');
+    act(() => root.unmount());
+  });
+
+  it('draws the comment box and no note for a writer', async () => {
+    const { host, root } = await render('/acme/plant/pull/12', { me: { ...nobody, signedIn: true, login: 'sam' }, writable: true });
+    expect(host.querySelector('.comment-read-only')).toBeNull();
+    expect(host.querySelector('.comment-new')).not.toBeNull();
+    act(() => root.unmount());
   });
 });

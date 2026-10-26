@@ -208,6 +208,7 @@ public sealed class LocalTiaPortalRunner(
 
         var buffer = new StringBuilder();
         var stopwatch = Stopwatch.StartNew();
+        int? portalPid = null;
         var gate = new object();
 
         using var process = new Process { StartInfo = psi, EnableRaisingEvents = true };
@@ -232,6 +233,14 @@ public sealed class LocalTiaPortalRunner(
                     job.OperationId, evt.String("phase") ?? "running",
                     null, null, evt.String("detail"), stopwatch.Elapsed));
             }
+
+            // The host names the Portal it created, measured across the creation call
+            // alone. That PID is the only one a reap may touch — see ChildProcess.KillOwned.
+            if (evt is not null && evt.Type == "ide_pid"
+                && int.TryParse(evt.String("pid"), out var reported))
+            {
+                portalPid = reported;
+            }
         }
 
         process.OutputDataReceived += OnData;
@@ -239,9 +248,10 @@ public sealed class LocalTiaPortalRunner(
 
         _log.Debug(TiaPortalLog.Category, $"exec {hostExecutablePath} {psi.Arguments}");
         ChildProcess.StampParent(psi);
-        // Portal is a COM server, not a child of Host.exe. Snapshot before start so a
-        // later kill reaps only the instance this run created, not one the user had open.
-        var portalBefore = ChildProcess.PidsNamed("Siemens.Automation.Portal");
+        // Portal is a COM server, not a child of Host.exe. The host reports the PID it
+        // created; a later kill reaps that one, not an instance the engineer opened
+        // meanwhile (the 2026-10-24 review's item 28).
+        var hostStarted = DateTime.Now;
         process.Start();
         process.BeginOutputReadLine();
         process.BeginErrorReadLine();
@@ -252,16 +262,14 @@ public sealed class LocalTiaPortalRunner(
             if (!ChildProcess.WaitForExitOrKill(
                     process, timeout, cancellationToken, closeStdinOnCancel: true))
             {
-                LogReaped(ChildProcess.KillNew(portalBefore, "Siemens.Automation.Portal"),
-                    "Siemens.Automation.Portal");
+                LogReaped(portalPid, hostStarted);
                 _log.Error(TiaPortalLog.Category, $"timed out after {timeout} — killed the host");
                 return PlcResult.Failure("the TIA Portal host did not finish within the timeout");
             }
         }
         catch (OperationCanceledException)
         {
-            LogReaped(ChildProcess.KillNew(portalBefore, "Siemens.Automation.Portal"),
-                "Siemens.Automation.Portal");
+            LogReaped(portalPid, hostStarted);
             _log.Warn(TiaPortalLog.Category,
                 "cancelled — closed stdin so the host can Quit COM, then killed the host if it stayed up");
             throw;
@@ -328,8 +336,22 @@ public sealed class LocalTiaPortalRunner(
     private static string Quote(string path) =>
         path.Contains(' ', StringComparison.Ordinal) ? "\"" + path + "\"" : path;
 
-    private void LogReaped(int count, string processName)
+    private void LogReaped(int? portalPid, DateTime hostStarted)
     {
+        const string name = "Siemens.Automation.Portal";
+        if (portalPid is null)
+        {
+            // Never a kill by name: the only Portal this run could identify as its own is
+            // the one the host named, and the host named none (it died before creating
+            // one, or an older host). Said out loud, because a Portal left running is
+            // the recoverable failure and a stranger's Portal killed is not.
+            _log.Warn(TiaPortalLog.Category,
+                $"the host reported no {name} pid; nothing was reaped by name — " +
+                "a Portal this run started may still be running");
+            return;
+        }
+
+        var count = ChildProcess.KillOwned(portalPid, name, hostStarted);
         if (count <= 0)
         {
             return;
@@ -339,7 +361,7 @@ public sealed class LocalTiaPortalRunner(
         // case: the host Quit and Portal went with it. A number here is the hole
         // that used to leave Siemens.Automation.Portal running after Stop.
         _log.Warn(TiaPortalLog.Category,
-            $"reaped {count} leftover {processName} process(es) this run started — not ones already open");
+            $"reaped the {name} process this run started (pid {portalPid}) — nothing else");
     }
 
     private static string WriteJobFile(TiaPortalJob job)

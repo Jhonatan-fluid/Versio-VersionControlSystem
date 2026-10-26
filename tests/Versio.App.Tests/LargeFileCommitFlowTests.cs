@@ -70,6 +70,39 @@ public sealed class LargeFileCommitFlowTests
     }
 
     [Fact]
+    public async Task A_large_file_staged_and_then_shrunk_on_disk_is_still_asked_about()
+    {
+        // The commit records the index, and the preflight weighed the working copy: stage
+        // the large file, overwrite it on disk with five bytes, and the question never came
+        // while twenty megabytes went into history (the 2026-10-24 review's item 4). The
+        // partly-staged commit path leaves exactly this row alone - it is committed as the
+        // index stands - so the index is what has to be measured.
+        using var repo = new TempRepo();
+        WriteLarge(repo, "huge.bin");
+        repo.Git("add .");
+        File.WriteAllText(Path.Combine(repo.Path, "huge.bin"), "tiny!");
+
+        using var shell = Shell();
+        await shell.OpenAsync(repo.Path);
+        await Eventually.Until(
+            () => shell.Pending.Any(r => r.Path == "huge.bin" && r.IsPartlyStaged),
+            "the row to read as partly staged");
+
+        string? asked = null;
+        shell.Asked().Destructive = p =>
+        {
+            asked = p.Title;
+            return false;
+        };
+
+        shell.CommitMessage = "about to be stopped";
+        await Eventually.Press(shell.CommitCommand, "commit");
+
+        Assert.Equal("Commit a large file without LFS?", asked);
+        Assert.Contains(shell.Pending, r => r.Path == "huge.bin");
+    }
+
+    [Fact]
     public async Task A_file_an_lfs_rule_matches_is_not_asked_about()
     {
         using var repo = new TempRepo();

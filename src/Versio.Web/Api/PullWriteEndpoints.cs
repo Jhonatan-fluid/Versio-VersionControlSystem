@@ -38,7 +38,8 @@ public sealed record HistoricalReviewRequest(string? OpKey, string? Event, strin
 /// <summary>A draft comment for the viewer's pending review: on a drawn element (Dom), a line, or the whole file.</summary>
 public sealed record PendingThreadRequest(string? OpKey, string? Body, string? Path, int? Line, string? Side, int? StartLine, string? From, string? Dom) : WriteRequest(OpKey);
 
-public sealed record ReviewersRequest(string? OpKey, string[]? Add, string[]? Remove) : WriteRequest(OpKey);
+/// <param name="AddTeams">Teams by slug, asked for a review; <paramref name="RemoveTeams"/> likewise withdrawn.</param>
+public sealed record ReviewersRequest(string? OpKey, string[]? Add, string[]? Remove, string[]? AddTeams = null, string[]? RemoveTeams = null) : WriteRequest(OpKey);
 
 public sealed record ViewedRequest(string? OpKey, string? Path, bool Viewed) : WriteRequest(OpKey);
 
@@ -164,6 +165,8 @@ public static partial class PullWriteEndpoints
         MapReviews(pulls);
         MapMeta(pulls);
         MapMerge(pulls);
+        MapConversation(pulls);
+        MapSuggestions(pulls);
         MapCreate(app);
 
         pulls.MapWrite("POST", "/threads/{threadId}/replies", async (string owner, string repo, int number, string threadId, CommentRequest request, HttpContext http, Writes w, CancellationToken ct) =>
@@ -405,18 +408,76 @@ public static partial class PullWriteEndpoints
 
         pulls.MapWrite("POST", "/reviewers", async (string owner, string repo, int number, ReviewersRequest request, HttpContext http, Writes w, CancellationToken ct) =>
         {
-            var add = request.Add ?? [];
-            var remove = request.Remove ?? [];
-            if (add.Length + remove.Length is 0 or > 15 || add.Concat(remove).Any(l => !Login().IsMatch(l)))
+            // People by login, teams by slug (FINISH.md, B7): both the same shape, both bounded. Asking
+            // someone who already reviewed is GitHub's "re-request review", the same call.
+            var change = new ReviewerChange(request.Add ?? [], request.Remove ?? [], request.AddTeams ?? [], request.RemoveTeams ?? []);
+            if (change.Count is 0 or > 15 || change.Add.Concat(change.Remove).Concat(change.AddTeams).Concat(change.RemoveTeams).Any(l => !Login().IsMatch(l)))
             {
-                return Invalid("reviewers", "Name up to fifteen people by their GitHub login.");
+                return Invalid("reviewers", "Name up to fifteen people by their GitHub login, or teams by their slug.");
             }
 
-            return await w.RunAsync(http, owner, repo, number, request, "reviewers", ReviewTags.PayloadHash(string.Join(',', add), "|", string.Join(',', remove)),
+            return await w.RunAsync(http, owner, repo, number, request, "reviewers",
+                ReviewTags.PayloadHash(string.Join(',', change.Add), "|", string.Join(',', change.Remove), "|", string.Join(',', change.AddTeams), "|", string.Join(',', change.RemoveTeams)),
                 precondition: null,
-                async (who, s, key) => Done(await w.Writer.SetReviewersAsync(who, owner, repo, number, add, remove, CancellationToken.None).ConfigureAwait(false), "reviewers"),
+                async (who, s, key) => Done(await w.Writer.SetReviewersAsync(who, owner, repo, number, change, CancellationToken.None).ConfigureAwait(false), "reviewers"),
                 // Safe to repeat: an uncertain change is simply made again.
                 (who, s, key, since) => Task.FromResult(RepoResult<string>.Of("")),
+                idempotent: true, ct).ConfigureAwait(false);
+        });
+
+        // Dismissing a review takes it out of the merge requirements with a reason everyone reads
+        // (FINISH.md, B7). GitHub decides who may (write access); here only that it is a submitted
+        // review of THIS pull request, and that the reason is said.
+        pulls.MapWrite("POST", "/reviews/{reviewId}/dismiss", async (string owner, string repo, int number, string reviewId, CommentRequest request, HttpContext http, Writes w, CancellationToken ct) =>
+        {
+            if (Body(request.Body) is not { } message)
+            {
+                return Invalid("body", "Say why the review is dismissed.");
+            }
+
+            return await w.RunAsync(http, owner, repo, number, request, "dismiss", ReviewTags.PayloadHash(reviewId, message),
+                precondition: async (who, s) =>
+                {
+                    var (refusal, node) = await w.OwnerOfAsync(who, s, reviewId, ["PullRequestReview"], ct).ConfigureAwait(false);
+                    return refusal ?? (node!.State is "APPROVED" or "CHANGES_REQUESTED"
+                        ? null
+                        : Results.Json(new { error = "not-dismissable", message = "Only an approval or a request for changes can be dismissed." }, statusCode: 409));
+                },
+                async (who, s, key) => Done(await w.Writer.DismissReviewAsync(who, reviewId, message, CancellationToken.None).ConfigureAwait(false), reviewId),
+                // Dismissed is a state: read back, it answers definitively.
+                async (who, s, key, since) =>
+                {
+                    var node = await w.Writer.NodeOwnerAsync(who, reviewId, ct).ConfigureAwait(false);
+                    return node.Ok ? RepoResult<string>.Of(node.Value!.State == "DISMISSED" ? reviewId : "") : node.As<string>();
+                },
+                idempotent: true, ct).ConfigureAwait(false);
+        });
+
+        // A submitted review's summary, rewritten by its author: the words only, never the state or
+        // the commit. A pending review is not edited here — its submission is what writes its words.
+        pulls.MapWrite("PATCH", "/reviews/{reviewId}", async (string owner, string repo, int number, string reviewId, CommentRequest request, HttpContext http, Writes w, CancellationToken ct) =>
+        {
+            if (request.Body is null || request.Body.Length > MaxBodyChars)
+            {
+                return Invalid("body", "That is too long to post.");
+            }
+
+            var body = request.Body;
+            return await w.RunAsync(http, owner, repo, number, request, "edit-review", ReviewTags.PayloadHash(reviewId, body),
+                precondition: async (who, s) =>
+                {
+                    var (refusal, node) = await w.OwnerOfAsync(who, s, reviewId, ["PullRequestReview"], ct).ConfigureAwait(false);
+                    if (refusal is not null)
+                    {
+                        return refusal;
+                    }
+
+                    return node!.Author == who.Who && node.State != "PENDING"
+                        ? null
+                        : Results.Json(new { error = "not-your-review", message = "Only your own submitted review can be edited here." }, statusCode: 409);
+                },
+                async (who, s, key) => Done(await w.Writer.EditReviewAsync(who, reviewId, ReviewTags.WithOperation(body, key), CancellationToken.None).ConfigureAwait(false), reviewId),
+                async (who, s, key, since) => Reconciled(await w.Writer.ReviewBodyAsync(who, reviewId, ct).ConfigureAwait(false), b => ReviewTags.Carries(b, key), reviewId),
                 idempotent: true, ct).ConfigureAwait(false);
         });
 
@@ -507,16 +568,27 @@ public static partial class PullWriteEndpoints
         {
             var owner = http.GetRouteValue("owner") as string ?? "";
             var repo = http.GetRouteValue("repo") as string ?? "";
+            // The request, for every refusal line below, with the path SPELLED: route values and
+            // Request.Path are both percent-decoded, so a %0A in the URL would otherwise start a
+            // line of its own in the log (review of the review, 2026-10-24 - the first fix named
+            // the valid repository and then printed the same text through the path).
+            var where = $"{http.Request.Method} {CodeHtml.Spelled(http.Request.Path.ToString())}";
 
             // S9 first, as 404: with writes off for this repository, a write route does not exist.
+            // Said in the log all the same (Step 10): a 404 the operator did not expect is the first
+            // sign of a misconfigured repository list, and a burst of them is somebody probing.
             if (!ApiEndpoints.Valid(owner, repo) || !options.Value.Writable(owner, repo))
             {
+                // Route values are percent-decoded, so an invalid name is not written into the log
+                // as it came (a %0A would start a line of its own): the valid ones are named.
+                log.Info(LogCategory.Web, $"write refused (S9: writes are off for {(ApiEndpoints.Valid(owner, repo) ? $"{owner}/{repo}" : "an invalid repository name")}) {where}");
                 return ApiEndpoints.NotFoundJson();
             }
 
             // S11: the merge tier is its own switch on top, and likewise does not exist without it.
             if (http.GetEndpoint()?.Metadata.GetMetadata<MergeEndpoint>() is not null && !options.Value.Writes.Merge)
             {
+                log.Info(LogCategory.Web, $"write refused (S11: the merge tier is off) {where}");
                 return ApiEndpoints.NotFoundJson();
             }
 
@@ -528,7 +600,7 @@ public static partial class PullWriteEndpoints
                 || !MediaTypeHeaderValue.TryParse(http.Request.ContentType, out var type) || type.MediaType != "application/json"
                 || !SameOrigin(http, options.Value.GitHub.PublicBaseUrl))
             {
-                log.Warn(LogCategory.Web, $"write refused (S4: request forgery checks) {http.Request.Method} {http.Request.Path}");
+                log.Warn(LogCategory.Web, $"write refused (S4: request forgery checks) {where}");
                 return Results.Json(new { error = "forbidden", message = "This request was refused." }, statusCode: 403);
             }
 
@@ -536,6 +608,7 @@ public static partial class PullWriteEndpoints
             var max = Math.Max(1024, options.Value.Writes.MaxBodyBytes);
             if (http.Request.ContentLength > max)
             {
+                log.Warn(LogCategory.Web, $"write refused (S8: body of {http.Request.ContentLength} bytes over {max}) {where}");
                 return Results.Json(new { error = "too-large", message = "That is too long to post." }, statusCode: 413);
             }
 
@@ -546,6 +619,17 @@ public static partial class PullWriteEndpoints
 
             // S1: a person's own token, nothing else. Not the installation token, not anonymous, not
             // (when it exists) an Okta session without GitHub: a review must be in somebody's name.
+            // The session is asked for FIRST, before access is resolved: resolving it for a request
+            // with no session read the repository's visibility from GitHub under the App's token,
+            // uncached for a private repository, on every anonymous probe that had the three S4
+            // headers — a flood with no limiter in front of it, since the per-session limiter has
+            // no session to count (review, 2026-10-24). With no session there is nobody to write as.
+            if (await access.SessionAsync(http, http.RequestAborted).ConfigureAwait(false) is null)
+            {
+                log.Info(LogCategory.Web, $"write refused (S1: no session) {where}");
+                return Results.Json(new { error = "sign-in", message = "Sign in with GitHub to comment, so it is in your name." }, statusCode: 401);
+            }
+
             var who = await access.ResolveAsync(http, owner, repo, http.RequestAborted).ConfigureAwait(false);
             if (!who.Ok)
             {
@@ -554,7 +638,7 @@ public static partial class PullWriteEndpoints
 
             if (who.Value!.Kind != AccessKind.User)
             {
-                log.Info(LogCategory.Web, $"write refused (S1: not a signed-in person) {http.Request.Method} {http.Request.Path}");
+                log.Info(LogCategory.Web, $"write refused (S1: not a signed-in person) {where}");
                 return Results.Json(new { error = "sign-in", message = "Sign in with GitHub to comment, so it is in your name." }, statusCode: 401);
             }
 
@@ -595,8 +679,12 @@ public static partial class PullWriteEndpoints
 
         public IRepoSource Source => source;
 
-        /// <summary>For the other part of this class: a primary constructor's parameters are seen only by the part that declares them.</summary>
-        private IVersioLogger Log => log;
+        /// <summary>For the other parts of this class, and the branch routes' own log lines: a primary constructor's parameters are seen only by the part that declares them.</summary>
+        internal IVersioLogger Log => log;
+
+        private PullReview Review => review;
+
+        private ApiEndpoints.Loader Load => load;
 
         /// <summary>A one-shot review's preconditions: the snapshot still the pull request's, and no pending review in the way.</summary>
         /// <remarks>GitHub keeps one pending review per person per pull request; a one-shot review beside it is refused there, and said here first.</remarks>
@@ -731,6 +819,9 @@ public static partial class PullWriteEndpoints
 
             if (snapshot is null)
             {
+                // Said in the log (S10): an expired token is ordinary, an invalid one is hand-made
+                // or another viewer's, and either way the write did not happen.
+                log.Info(LogCategory.Web, $"write {action} {who} {owner}/{repo}#{number} refused: snapshot {(refused == SnapshotRefusal.Expired ? "expired" : "invalid")}");
                 return refused == SnapshotRefusal.Expired
                     ? Results.Json(new { error = "snapshot-expired", message = "This review was loaded too long ago. Reload the pull request." }, statusCode: 409)
                     : Results.Json(new { error = "snapshot-invalid", message = "This review's revision could not be read. Reload the pull request." }, statusCode: 400);
@@ -789,8 +880,13 @@ public static partial class PullWriteEndpoints
             Func<RepoAccess, ReviewSnapshot?, string, DateTimeOffset, Task<RepoResult<string>>> reconcile, CancellationToken ct)
         {
             var expired = Results.Json(new { error = "snapshot-expired", message = "This review was loaded too long ago. Reload the pull request." }, statusCode: 409);
-            if (ReviewTags.CheckKey(request.OpKey, clock.UtcNow) != KeyCheck.Ok)
+            // Every way out of here is in the log (Step 10): a settle is a write that may have
+            // happened, and the one line that says how it was answered is what an investigation of
+            // "was my comment posted?" has to go on.
+            var check = ReviewTags.CheckKey(request.OpKey, clock.UtcNow);
+            if (check != KeyCheck.Ok)
             {
+                Audit(who, action, owner, repo, number, old, request.OpKey ?? "", $"expired snapshot, key {check.ToString().ToLowerInvariant()}: reload");
                 return expired;
             }
 
@@ -799,19 +895,24 @@ public static partial class PullWriteEndpoints
             var entry = await ledger.FindAsync(ledgerKey, ct).ConfigureAwait(false);
             if (entry is null || entry.PayloadHash != Bound(payloadHash, old))
             {
+                Audit(who, action, owner, repo, number, old, key, entry is null ? "expired snapshot, nothing recorded: reload" : "expired snapshot, different payload: reload");
                 return expired;
             }
 
             switch (entry.State)
             {
                 case OperationState.Succeeded:
+                    Audit(who, action, owner, repo, number, old, key, "expired snapshot, settled done from the ledger");
                     return Results.Ok(new { outcome = "done", id = entry.Result });
                 case OperationState.Pending when clock.UtcNow - entry.Reserved < AbandonedAfter:
+                    Audit(who, action, owner, repo, number, old, key, "expired snapshot, still in flight");
                     return Results.Json(new { outcome = "pending", message = "Still being posted." }, statusCode: 202);
                 case OperationState.Pending or OperationState.Unknown:
+                    Audit(who, action, owner, repo, number, old, key, "expired snapshot, reconciling");
                     return await ReconcileAsync(who, old, key, entry, reconcile, ledgerKey, action, owner, repo, number).ConfigureAwait(false) ?? UnknownResult();
                 default:
                     // Failed: the ledger knows nothing was written under this key.
+                    Audit(who, action, owner, repo, number, old, key, "expired snapshot, settled as refused from the ledger");
                     Settled(http);
                     return expired;
             }
@@ -848,9 +949,12 @@ public static partial class PullWriteEndpoints
             switch (ReviewTags.CheckKey(request.OpKey, now))
             {
                 case KeyCheck.Malformed:
+                    // A page never sends one: a malformed key is a hand-made request, worth a line.
+                    log.Warn(LogCategory.Web, $"write {action} {who} {owner}/{repo}#{number} refused: malformed operation key");
                     return Invalid("op-key", "This request has no usable operation key.");
                 case KeyCheck.Expired:
                     // Never re-run: the person submits again, deliberately, with a new key.
+                    Audit(who, action, owner, repo, number, snapshot, request.OpKey!, "refused: operation key expired");
                     return Results.Json(new { error = "operation-expired", message = "This was submitted too long ago to retry. Check whether it was posted, then submit it again if not." }, statusCode: 422);
             }
 
@@ -865,14 +969,19 @@ public static partial class PullWriteEndpoints
                     return Results.Json(new { error = "op-mismatch", message = "This retry does not match what was first submitted." }, statusCode: 422);
                 }
 
+                // A retry answered from the ledger is a write that did NOT go to GitHub again: said,
+                // so a log reader counting posts against GitHub's own list finds them equal.
                 switch (existing.State)
                 {
                     case OperationState.Succeeded:
+                        Audit(who, action, owner, repo, number, snapshot, key, "answered done from the ledger");
                         return Results.Ok(new { outcome = "done", id = existing.Result });
                     case OperationState.Pending when now - existing.Reserved < AbandonedAfter:
+                        Audit(who, action, owner, repo, number, snapshot, key, "still in flight");
                         return Results.Json(new { outcome = "pending", message = "Still being posted." }, statusCode: 202);
                     case OperationState.Pending or OperationState.Unknown:
                         // Abandoned, or sent with no answer: find out before doing anything else.
+                        Audit(who, action, owner, repo, number, snapshot, key, existing.State == OperationState.Pending ? "abandoned; reconciling" : "unknown earlier; reconciling");
                         var found = await ReconcileAsync(who, snapshot, key, existing, reconcile, ledgerKey, action, owner, repo, number).ConfigureAwait(false);
                         if (found is not null || !idempotent)
                         {
@@ -887,6 +996,7 @@ public static partial class PullWriteEndpoints
                 // entry; only one of them gets past here, the rest say "in progress".
                 if (!await ledger.TryTakeOverAsync(ledgerKey, reservation, new OperationEntry(payloadHash, OperationState.Pending, null, now, now), ct).ConfigureAwait(false))
                 {
+                    Audit(who, action, owner, repo, number, snapshot, key, "another retry took the key over; still being posted");
                     return Results.Json(new { outcome = "pending", message = "Still being posted." }, statusCode: 202);
                 }
             }
@@ -945,7 +1055,6 @@ public static partial class PullWriteEndpoints
         private static IResult UnknownResult() =>
             Results.Json(new { outcome = "unknown", message = "This may or may not have been posted. Refresh to check before posting it again." }, statusCode: 202);
 
-        /// <summary>A line comment's preconditions: the pull request still at this snapshot, and a line GitHub will take.</summary>
         /// <summary>
         /// A comment on a drawn element's preconditions: the pull request still at this snapshot, the
         /// element really in the snapshot's drawing of that file, and where GitHub will take it.
@@ -982,12 +1091,19 @@ public static partial class PullWriteEndpoints
             }
 
             var drawn = await views.CompareAsync(who, older.Value.Model, newer.Value.Model, path, Versio.Web.Rendering.PaneView.Rendered, false, ct, from).ConfigureAwait(false);
-            var anchor = drawn.Ok ? drawn.Value!.Anchors.SingleOrDefault(a => a.Dom == dom) : null;
-            if (anchor is null)
+            // Exactly one element answers to the id. Two would be a renderer's defect, and a
+            // refusal that says so beats the exception SingleOrDefault threw (a 500 with the
+            // operation left pending in the ledger — review, 2026-10-24).
+            var matches = drawn.Ok ? drawn.Value!.Anchors.Where(a => a.Dom == dom).Take(2).ToList() : [];
+            if (matches.Count != 1)
             {
-                log.Info(LogCategory.Web, $"anchor comment refused: {dom} is not drawn in {s.Owner}/{s.Repo}#{s.Number} {path}");
+                log.Info(LogCategory.Web, matches.Count == 0
+                    ? $"anchor comment refused: {dom} is not drawn in {s.Owner}/{s.Repo}#{s.Number} {path}"
+                    : $"anchor comment refused: {dom} is drawn twice in {s.Owner}/{s.Repo}#{s.Number} {path}, which is a renderer's defect");
                 return (Results.Json(new { error = "anchor-not-found", message = "That element is not in this version's drawing. Reload the file." }, statusCode: 422), null);
             }
+
+            var anchor = matches[0];
 
             var side = anchor.Side == Versio.Core.Review.ReviewSide.New ? "RIGHT" : "LEFT";
             var semantic = new Versio.Core.Review.SemanticAnchor(anchor.Kind, anchor.SourcePath, anchor.Side,

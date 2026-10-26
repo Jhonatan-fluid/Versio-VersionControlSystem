@@ -1,4 +1,5 @@
 using Versio.Core.Git;
+using Versio.Infrastructure.FileSystem;
 using Versio.Infrastructure.Git;
 using Versio.TestSupport;
 using Xunit.Abstractions;
@@ -71,11 +72,93 @@ public sealed class GitCliClientTests(ITestOutputHelper output) : IDisposable
         await p.WaitForExitAsync();
     }
 
+    /// <summary>Raw git, with what it printed and how it exited — for asking git's own opinion.</summary>
+    private static async Task<(int ExitCode, string StdOut)> RunRawOutputAsync(string workingDirectory, params string[] args)
+    {
+        var psi = new System.Diagnostics.ProcessStartInfo("git")
+        {
+            WorkingDirectory = workingDirectory,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            UseShellExecute = false,
+            CreateNoWindow = true,
+        };
+        foreach (var a in args)
+        {
+            psi.ArgumentList.Add(a);
+        }
+
+        using var p = System.Diagnostics.Process.Start(psi)!;
+        var stdout = await p.StandardOutput.ReadToEndAsync();
+        await p.WaitForExitAsync();
+        return (p.ExitCode, stdout);
+    }
+
     private void Write(string relative, string content)
     {
         var full = Path.Combine(_repo, relative);
         Directory.CreateDirectory(Path.GetDirectoryName(full)!);
         File.WriteAllText(full, content);
+    }
+
+    [SkippableFact]
+    public async Task A_mirror_path_with_a_space_gets_an_attribute_line_git_reads_as_one_pattern()
+    {
+        // git splits an attribute line on whitespace, so the unquoted
+        // `src/My App/export/** text eol=lf` the planner used to write was the pattern
+        // `src/My` with three attributes — the mirror got no LF rule, and git said so when
+        // asked. The 2026-10-24 review's item 26. Asked of git rather than of the planner's
+        // own reader, because what git makes of the line is the only thing that matters.
+        Skip.IfNot(GitAvailable, "git not on PATH");
+        await InitAsync();
+
+        var plan = GitAttributes.Plan(string.Empty, ["*.project"], lfsAvailable: false,
+                                      mirrors: ["src/My App/export"]);
+        Write(".gitattributes", plan.Content);
+
+        var (exit, answer) = await RunRawOutputAsync(_repo, "check-attr", "eol", "--", "src/My App/export/a.st");
+
+        Assert.Equal(0, exit);
+        Assert.Equal("src/My App/export/a.st: eol: lf", answer.Trim());
+    }
+
+    [SkippableFact]
+    public async Task The_exclude_rule_for_a_linked_worktree_lands_where_git_reads_it()
+    {
+        // git reads info/exclude from the common directory only. The shell handed
+        // LocalExclude the per-worktree directory (.git/worktrees/<name>, what
+        // --absolute-git-dir answers there), wrote the rule under it, and git never read it:
+        // .versio/local/ stayed untracked in every linked worktree and
+        // `stash push --include-untracked` swept the auto-stash record into the stash it
+        // described. The 2026-10-24 review's item 25. Asked of git with check-ignore, because
+        // where git looks is the only thing that matters.
+        Skip.IfNot(GitAvailable, "git not on PATH");
+        await InitAsync();
+
+        Write("a.txt", "a");
+        await Client.StageAsync(["a.txt"], CancellationToken.None);
+        await Client.CommitAsync("initial", CancellationToken.None);
+        await RunRawAsync("worktree", "add", "wt");
+
+        var worktree = Path.Combine(_repo, "wt");
+        var worktreeClient = new GitCliClient(worktree, logger: new TestLogger(output));
+
+        var perWorktree = await worktreeClient.GitDirectoryAsync(CancellationToken.None);
+        var common = await worktreeClient.CommonGitDirectoryAsync(CancellationToken.None);
+
+        // The per-worktree answer is still the per-worktree one: the merge-state reader
+        // depends on it and must not follow the exclude to the common directory.
+        Assert.EndsWith(Path.Combine("worktrees", "wt"), perWorktree.Replace('/', Path.DirectorySeparatorChar));
+        Assert.Equal(Path.GetFullPath(Path.Combine(_repo, ".git")),
+                     Path.GetFullPath(common));
+
+        await LocalExclude.EnsureAsync(common, new TestLogger(output), CancellationToken.None);
+
+        var (exit, _) = await RunRawOutputAsync(worktree, "check-ignore", "-q", ".versio/local/x");
+
+        Assert.Equal(0, exit);
+        Assert.False(File.Exists(Path.Combine(perWorktree, "info", "exclude")),
+                     "the rule was written under the per-worktree directory, where git does not read it");
     }
 
     [SkippableFact]
@@ -287,6 +370,102 @@ public sealed class GitCliClientTests(ITestOutputHelper output) : IDisposable
     }
 
     [SkippableFact]
+    public async Task A_rename_survives_a_modified_file_whose_name_starts_with_R()
+    {
+        // The client scanned the -z fields itself and took any field starting with R as a
+        // rename status. A modified README.txt listed before the rename put "README.txt" in
+        // the status position, so the scan recorded R100 → plc/Old.st as the rename and lost
+        // the real one: the binding reported broken and the new path untracked. The
+        // 2026-10-24 review's item 4.
+        Skip.IfNot(GitAvailable, "git not on PATH");
+        await InitAsync();
+
+        Write("README.txt", "about");
+        Write("plc/Old.st", new string('x', 400));
+        await Client.StageAsync(["README.txt", "plc/Old.st"], CancellationToken.None);
+        await Client.CommitAsync("initial", CancellationToken.None);
+
+        Write("README.txt", "about, edited");
+        File.Move(Path.Combine(_repo, "plc/Old.st"), Path.Combine(_repo, "plc/New.st"));
+        await Client.StageAsync(["README.txt", "plc"], CancellationToken.None);
+
+        var renames = await Client.DetectRenamesAsync(CancellationToken.None);
+
+        var rename = Assert.Single(renames);
+        Assert.Equal("plc/Old.st", rename.Key);
+        Assert.Equal("plc/New.st", rename.Value);
+    }
+
+    [SkippableFact]
+    public async Task Incoming_paths_with_non_ascii_names_arrive_verbatim_not_quoted()
+    {
+        // The merge guard matches what a branch would bring against the tracked projects by
+        // string: an exact path, or a prefix under the mirror. git's default core.quotePath
+        // writes a non-ASCII name as "Pr\303\274fung.project" — quotes included — on any
+        // listing without -z, and that string matches no project and no mirror, so the guard
+        // reported "touches nothing" and the import protection was skipped. The 2026-10-24
+        // review's item 15.
+        Skip.IfNot(GitAvailable, "git not on PATH");
+        await InitAsync();
+
+        Write("a.txt", "a");
+        await Client.StageAsync(["a.txt"], CancellationToken.None);
+        await Client.CommitAsync("initial", CancellationToken.None);
+
+        var created = await Client.CreateBranchAsync("topic", checkout: true, CancellationToken.None);
+        Assert.True(created.Success, created.FailureReason);
+        Write("plc/Prüfung.project", "binary-ish");
+        Write("plc/Prüfung/Kühl.st", "PROGRAM Kühl\nEND_PROGRAM\n");
+        await Client.StageAsync(["plc"], CancellationToken.None);
+        await Client.CommitAsync("umlauts", CancellationToken.None);
+        Assert.True((await Client.CheckoutAsync("main", CancellationToken.None)).Success);
+
+        var incoming = await Client.IncomingPathsAsync("topic", CancellationToken.None);
+
+        Assert.NotNull(incoming);
+        Assert.Equal(["plc/Prüfung.project", "plc/Prüfung/Kühl.st"], incoming.Order());
+
+        var plan = MergePreflight.For(
+            "topic", incoming,
+            [new TrackedRoot { BindingId = "b1", Name = "Prüfung", ProjectPath = "plc/Prüfung.project", MirrorPath = "plc/Prüfung" }]);
+        Assert.Equal(MergeVerdict.TouchesTrackedProject, plan.Verdict);
+    }
+
+    [SkippableFact]
+    public async Task Incoming_paths_keep_their_leading_spaces()
+    {
+        // The -z listing above was split with TrimEntries to drop the runner's trailing
+        // newline, and TrimEntries trims every field: " plc/Machine.project" arrived as
+        // "plc/Machine.project", matched no tracked root, and the merge guard let the merge
+        // through for a project it was tracking (the second-round review's item 2). The
+        // newline is removed by length now; a name with a space at either end is the name.
+        Skip.IfNot(GitAvailable, "git not on PATH");
+        await InitAsync();
+
+        Write("a.txt", "a");
+        await Client.StageAsync(["a.txt"], CancellationToken.None);
+        await Client.CommitAsync("initial", CancellationToken.None);
+
+        var created = await Client.CreateBranchAsync("topic", checkout: true, CancellationToken.None);
+        Assert.True(created.Success, created.FailureReason);
+        Write(" plc/Machine.project", "binary-ish");
+        Write(" plc/Machine/ Main.st", "PROGRAM Main\nEND_PROGRAM\n");
+        await Client.StageAsync([" plc"], CancellationToken.None);
+        await Client.CommitAsync("leading spaces", CancellationToken.None);
+        Assert.True((await Client.CheckoutAsync("main", CancellationToken.None)).Success);
+
+        var incoming = await Client.IncomingPathsAsync("topic", CancellationToken.None);
+
+        Assert.NotNull(incoming);
+        Assert.Equal([" plc/Machine.project", " plc/Machine/ Main.st"], incoming.Order());
+
+        var plan = MergePreflight.For(
+            "topic", incoming,
+            [new TrackedRoot { BindingId = "b1", Name = "Machine", ProjectPath = " plc/Machine.project", MirrorPath = " plc/Machine" }]);
+        Assert.Equal(MergeVerdict.TouchesTrackedProject, plan.Verdict);
+    }
+
+    [SkippableFact]
     public async Task A_file_the_working_tree_has_lost_is_still_readable_at_HEAD()
     {
         // The only source of a departed file's content. The import planner needs it to pair a
@@ -312,6 +491,36 @@ public sealed class GitCliClientTests(ITestOutputHelper output) : IDisposable
         // so a rename falls back to a delete and a create.
         Assert.Equal(
             string.Empty, await Client.ShowAtHeadAsync("plc/Never.st", CancellationToken.None));
+    }
+
+    [SkippableFact]
+    public async Task The_index_is_weighed_not_the_working_copy_that_replaced_it()
+    {
+        // The large-file preflight measured FileInfo, and the commit records the index: a
+        // blob staged at a megabyte and then overwritten on disk with five bytes weighed five
+        // bytes to the preflight and a megabyte to git (the 2026-10-24 review's item 4).
+        Skip.IfNot(GitAvailable, "git not on PATH");
+        await InitAsync();
+
+        const string path = "Device/Plc Logic/Kühlschrank Regelung.project";
+        var full = Path.Combine(_repo, path);
+        Directory.CreateDirectory(Path.GetDirectoryName(full)!);
+        File.WriteAllBytes(full, new byte[1024 * 1024]);
+        await Client.StageAsync([path], CancellationToken.None);
+
+        File.WriteAllText(full, "tiny!");
+        Write("plc/Never.st", "PROGRAM Never\n");
+
+        var sizes = await Client.IndexBlobSizesAsync(
+            [path, "plc/Never.st", "Device"], CancellationToken.None);
+
+        Assert.NotNull(sizes);
+        Assert.Equal(1024 * 1024, sizes[path]);
+
+        // Never staged, and a directory: neither has a blob in the index, and neither is a
+        // failure — absent, so the caller falls back to whatever it measures otherwise.
+        Assert.DoesNotContain("plc/Never.st", sizes.Keys);
+        Assert.DoesNotContain("Device", sizes.Keys);
     }
 
     [SkippableFact]
@@ -347,6 +556,93 @@ public sealed class GitCliClientTests(ITestOutputHelper output) : IDisposable
         Assert.True(discard.Success, discard.FailureReason);
         Assert.Equal("original", File.ReadAllText(Path.Combine(_repo, "a.txt")));
         Assert.True((await Client.StatusAsync(CancellationToken.None)).IsClean);
+    }
+
+    [SkippableFact]
+    public async Task A_selected_path_is_a_name_and_never_a_pattern()
+    {
+        // Every path git takes is a pathspec, and a pathspec is a glob unless told otherwise:
+        // "part[1].st" matches part1.st as well. Discarding the one file the owner ticked then
+        // threw away another file's edits, and nothing in git's output said so (the
+        // 2026-10-24 review's item 1). Staging had the same reach; resolving a conflict too.
+        Skip.IfNot(GitAvailable, "git not on PATH");
+        await InitAsync();
+        Write("part[1].st", "bracket");
+        Write("part1.st", "plain");
+        await Client.StageAsync(["part[1].st", "part1.st"], CancellationToken.None);
+        await Client.CommitAsync("initial", CancellationToken.None);
+
+        Write("part[1].st", "bracket edited");
+        Write("part1.st", "plain edited");
+
+        // Stage: only the bracketed file goes in.
+        var staged = await Client.StageAsync(["part[1].st"], CancellationToken.None);
+        Assert.True(staged.Success, staged.FailureReason);
+        var status = await Client.StatusAsync(CancellationToken.None);
+        Assert.Equal(ChangeKind.Modified, Assert.Single(status.Changes, c => c.Path == "part[1].st").Staged);
+        Assert.Equal(ChangeKind.Unmodified, Assert.Single(status.Changes, c => c.Path == "part1.st").Staged);
+
+        // Discard: only the bracketed file's edit is lost.
+        await Client.UnstageAsync(["part[1].st"], CancellationToken.None);
+        var discard = await Client.DiscardAsync(["part[1].st"], CancellationToken.None);
+        Assert.True(discard.Success, discard.FailureReason);
+
+        Assert.Equal("bracket", File.ReadAllText(Path.Combine(_repo, "part[1].st")));
+        Assert.Equal("plain edited", File.ReadAllText(Path.Combine(_repo, "part1.st")));
+    }
+
+    [SkippableFact]
+    public async Task Unstaging_works_before_the_first_commit_and_leaves_the_other_staged_file_alone()
+    {
+        // `git restore --staged` restores the index entry from HEAD, and a repository with no
+        // commit yet has no HEAD to restore from: "fatal: could not resolve 'HEAD'". So on the
+        // first day of a repository, ticking one of two staged files and pressing Commit
+        // failed at the unstage and committed nothing (the 2026-10-25 review's P2). Before
+        // the first commit the index is a diff against the empty tree, which is what the
+        // client restores from instead.
+        //
+        // a.txt is edited AFTER it was staged. That is the state `git rm --cached` refuses
+        // without -f ("staged content different from both the file and the HEAD"), and the
+        // reason it was not the fix: a flag spelled "force" on an unstage would be the wrong
+        // thing to find in the log of a tool whose whole point is not losing work.
+        Skip.IfNot(GitAvailable, "git not on PATH");
+        await InitAsync();
+        Write("a.txt", "a");
+        Write("b.txt", "b");
+        await Client.StageAsync(["a.txt", "b.txt"], CancellationToken.None);
+        Write("a.txt", "a edited after staging");
+
+        var result = await Client.UnstageAsync(["a.txt"], CancellationToken.None);
+        Assert.True(result.Success, result.FailureReason);
+
+        var status = await Client.StatusAsync(CancellationToken.None);
+        Assert.True(status.Branch.IsUnborn);
+        Assert.Equal(ChangeKind.Untracked, Assert.Single(status.Changes, c => c.Path == "a.txt").Unstaged);
+        Assert.Equal(ChangeKind.Added, Assert.Single(status.Changes, c => c.Path == "b.txt").Staged);
+
+        // Unstaging is about the index only: the working file keeps the edit.
+        Assert.Equal("a edited after staging", File.ReadAllText(Path.Combine(_repo, "a.txt")));
+    }
+
+    [SkippableFact]
+    public async Task Unstaging_several_paths_before_the_first_commit_takes_them_all_out_in_one_call()
+    {
+        // The shell hands over a list — a staged rename is unstaged by both of its paths —
+        // and the unborn-branch form has to take a list the way the ordinary one does.
+        Skip.IfNot(GitAvailable, "git not on PATH");
+        await InitAsync();
+        Write("a.txt", "a");
+        Write("b.txt", "b");
+        Write("c.txt", "c");
+        await Client.StageAsync(["a.txt", "b.txt", "c.txt"], CancellationToken.None);
+
+        var result = await Client.UnstageAsync(["a.txt", "c.txt"], CancellationToken.None);
+        Assert.True(result.Success, result.FailureReason);
+
+        var status = await Client.StatusAsync(CancellationToken.None);
+        Assert.Equal(ChangeKind.Untracked, Assert.Single(status.Changes, c => c.Path == "a.txt").Unstaged);
+        Assert.Equal(ChangeKind.Added, Assert.Single(status.Changes, c => c.Path == "b.txt").Staged);
+        Assert.Equal(ChangeKind.Untracked, Assert.Single(status.Changes, c => c.Path == "c.txt").Unstaged);
     }
 
     [SkippableFact]
@@ -543,6 +839,230 @@ public sealed class GitCliClientTests(ITestOutputHelper output) : IDisposable
         var status = await Client.StatusAsync(CancellationToken.None);
         Assert.Equal(ChangeKind.Added,
             Assert.Single(status.Changes, c => c.Path == "--odd.st").Staged);
+    }
+
+    /// <summary>
+    /// A merge where one branch edited the file and the other deleted it.
+    /// </summary>
+    /// <remarks>
+    /// The direction matters, which is why it is a parameter: git keeps the surviving version
+    /// at stage 2 when this branch kept the file and at stage 3 when the incoming branch did,
+    /// and the side that deleted has no stage at all. The path has a space in it because real
+    /// mirror paths do, and a space is the character a listing parser is likeliest to split on.
+    /// </remarks>
+    private async Task MakeAModifyDeleteConflictAsync(string path, bool oursDeletes)
+    {
+        await InitAsync();
+        Write(path, "shared\noriginal\n");
+        await RunRawAsync("add", "--", path);
+        await RunRawAsync("commit", "-m", "base");
+
+        await RunRawAsync("checkout", "-b", "incoming");
+        if (oursDeletes)
+        {
+            Write(path, "shared\ntheir edit\n");
+            await RunRawAsync("commit", "-am", "incoming edits");
+        }
+        else
+        {
+            await RunRawAsync("rm", "--", path);
+            await RunRawAsync("commit", "-m", "incoming deletes");
+        }
+
+        await RunRawAsync("checkout", "main");
+        if (oursDeletes)
+        {
+            await RunRawAsync("rm", "--", path);
+            await RunRawAsync("commit", "-m", "ours deletes");
+        }
+        else
+        {
+            Write(path, "shared\nour edit\n");
+            await RunRawAsync("commit", "-am", "ours edits");
+        }
+
+        // Expected to fail. That failure is the state under test.
+        await RunRawAsync("merge", "incoming");
+        var (_, unmerged) = await RunRawOutputAsync(_repo, "ls-files", "-u", "--", path);
+        Assert.False(string.IsNullOrWhiteSpace(unmerged), "the fixture did not produce a conflict");
+    }
+
+    [SkippableTheory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task Resolving_a_modify_delete_conflict_with_the_side_that_deleted_removes_the_file(bool oursDeletes)
+    {
+        // The deleting side has no version of the file, so `checkout --ours` (or --theirs) has
+        // nothing to write and git says so and exits 1. The first version ran exactly that and
+        // reported the failure — the conflict stayed, the file stayed, and the button looked
+        // broken (the 2026-10-25 review, P2). Taking the deleting side means the file leaves the
+        // working tree and its removal is what gets staged.
+        Skip.IfNot(GitAvailable, "git not on PATH");
+        const string path = "plc/Motor Control.st";
+        await MakeAModifyDeleteConflictAsync(path, oursDeletes);
+
+        var result = await Client.ResolveWithSideAsync(path, ours: oursDeletes, CancellationToken.None);
+
+        Assert.True(result.Success, result.FailureReason);
+        var (_, unmerged) = await RunRawOutputAsync(_repo, "ls-files", "-u", "--", path);
+        Assert.Equal(string.Empty, unmerged.Trim());
+        var (_, indexed) = await RunRawOutputAsync(_repo, "ls-files", "--", path);
+        Assert.Equal(string.Empty, indexed.Trim());
+        Assert.False(File.Exists(Path.Combine(_repo, path)), "the deleted side's file is still in the tree");
+        var status = await Client.StatusAsync(CancellationToken.None);
+        Assert.DoesNotContain(status.Changes, c => c.Path == path && c.IsConflicted);
+
+        if (!oursDeletes)
+        {
+            // Against HEAD, which still has the file, the resolution reads as a staged delete.
+            // When HEAD is the side that deleted there is nothing to show: the index already
+            // matches it.
+            Assert.Equal(ChangeKind.Deleted, Assert.Single(status.Changes, c => c.Path == path).Staged);
+        }
+    }
+
+    [SkippableTheory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task Resolving_a_modify_delete_conflict_with_the_side_that_kept_the_file_keeps_its_edit(bool oursDeletes)
+    {
+        // The other button in the same conflict. It worked before the fix, and the deleting-side
+        // path must not have changed that: the stage lookup picks checkout + add here.
+        Skip.IfNot(GitAvailable, "git not on PATH");
+        const string path = "plc/Motor Control.st";
+        await MakeAModifyDeleteConflictAsync(path, oursDeletes);
+
+        var result = await Client.ResolveWithSideAsync(path, ours: !oursDeletes, CancellationToken.None);
+
+        Assert.True(result.Success, result.FailureReason);
+        var (_, unmerged) = await RunRawOutputAsync(_repo, "ls-files", "-u", "--", path);
+        Assert.Equal(string.Empty, unmerged.Trim());
+        // Line endings normalised: checkout rewrites them under core.autocrlf, and that is
+        // git's business, not this test's.
+        Assert.Equal(oursDeletes ? "shared\ntheir edit\n" : "shared\nour edit\n",
+                     File.ReadAllText(Path.Combine(_repo, path)).Replace("\r\n", "\n"));
+        var status = await Client.StatusAsync(CancellationToken.None);
+        Assert.DoesNotContain(status.Changes, c => c.Path == path && c.IsConflicted);
+    }
+
+    /// <summary>
+    /// A rebase of <c>feature</c> onto <c>main</c>, stopped at its one conflict and resolved,
+    /// with an editor configured that refuses to run.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The refusing editor is the point of the fixture. After a resolved conflict
+    /// <c>rebase --continue</c> opens the editor on the commit's message, and under Versio's
+    /// redirected console that is a hang; the client has to tell git there is no editor, and
+    /// in a way that wins over whatever the user has set. <c>false</c> is an editor that exits
+    /// non-zero — so a continuation that reached it fails in git's words, and one that did
+    /// not is the one under test.
+    /// </para>
+    /// <para>
+    /// <b>Set at both levels, and the environment is the one that matters.</b> The first
+    /// version set only <c>core.editor false</c>, and a mutant client that suppressed nothing
+    /// passed anyway: the shell this suite was run from exported <c>GIT_EDITOR=true</c>, the
+    /// test host inherited it, and git reads that variable ahead of any config. The same
+    /// precedence is why the client overrides the variable rather than passing <c>-c
+    /// core.editor</c>, so the fixture has to put a refusing editor where the client's answer
+    /// must beat it. <see cref="WithRefusingEditor"/> scopes that to the one test.
+    /// </para>
+    /// </remarks>
+    private async Task MakeAResolvedRebaseConflictAsync()
+    {
+        await InitAsync();
+        Write("seed.txt", "base\n");
+        await RunRawAsync("add", "--", "seed.txt");
+        await RunRawAsync("commit", "-m", "base");
+
+        await RunRawAsync("checkout", "-b", "feature");
+        Write("seed.txt", "mine\n");
+        await RunRawAsync("commit", "-am", "the feature's own message");
+
+        await RunRawAsync("checkout", "main");
+        Write("seed.txt", "theirs\n");
+        await RunRawAsync("commit", "-am", "upstream");
+
+        await RunRawAsync("checkout", "feature");
+        await RunRawAsync("config", "core.editor", "false");
+
+        // Expected to stop. That stop is the state under test.
+        await RunRawAsync("rebase", "main");
+        Assert.True(Directory.Exists(Path.Combine(_repo, ".git", "rebase-merge")),
+                    "the fixture did not pause a rebase");
+
+        // Under a rebase --theirs is the branch being replayed; its version differs from the
+        // upstream HEAD, so the continuation has something to commit.
+        await RunRawAsync("checkout", "--theirs", "--", "seed.txt");
+        await RunRawAsync("add", "--", "seed.txt");
+    }
+
+    /// <summary>
+    /// <c>GIT_EDITOR=false</c> for the duration of one test, whatever the host shell exported.
+    /// </summary>
+    /// <remarks>
+    /// Process-wide, because a child process inherits the environment and nothing narrower
+    /// reaches it. Tolerable here: the only git command that opens an editor is the one under
+    /// test, and for any other test running beside it the change can only turn a hang nobody
+    /// expected into a fast failure that names the editor.
+    /// </remarks>
+    private static IDisposable WithRefusingEditor()
+    {
+        var previous = Environment.GetEnvironmentVariable("GIT_EDITOR");
+        Environment.SetEnvironmentVariable("GIT_EDITOR", "false");
+        return new RestoreEditor(previous);
+    }
+
+    private sealed class RestoreEditor(string? previous) : IDisposable
+    {
+        public void Dispose() => Environment.SetEnvironmentVariable("GIT_EDITOR", previous);
+    }
+
+    [SkippableFact]
+    public async Task Continuing_a_rebase_keeps_the_replayed_commit_s_message_and_never_opens_the_editor()
+    {
+        Skip.IfNot(GitAvailable, "git not on PATH");
+        using var _ = WithRefusingEditor();
+        await MakeAResolvedRebaseConflictAsync();
+
+        // The fixture has to refuse a plain continuation, or the client's success below proves
+        // nothing about the editor. Git fails the commit, says so, and leaves the rebase paused
+        // with the resolution still staged, which is the state the client is then handed.
+        var (plainExit, _) = await RunRawOutputAsync(_repo, "rebase", "--continue");
+        Assert.NotEqual(0, plainExit);
+        Assert.True(Directory.Exists(Path.Combine(_repo, ".git", "rebase-merge")),
+                    "the fixture's editor did not refuse: a plain rebase --continue went through");
+
+        var result = await Client.ContinueRebaseAsync(CancellationToken.None);
+
+        Assert.True(result.Success, result.FailureReason);
+        Assert.False(Directory.Exists(Path.Combine(_repo, ".git", "rebase-merge")), "the rebase is still paused");
+        Assert.Equal(MergeState.None, await Client.MergeStateAsync(CancellationToken.None));
+
+        // Back on the branch, on top of the upstream, with the commit's own message: the
+        // editor that would have asked about it was never opened.
+        var (_, head) = await RunRawOutputAsync(_repo, "symbolic-ref", "-q", "HEAD");
+        Assert.Equal("refs/heads/feature", head.Trim());
+        var (_, log) = await RunRawOutputAsync(_repo, "log", "--format=%s");
+        Assert.Equal("the feature's own message\nupstream\nbase", log.Replace("\r\n", "\n").Trim());
+        Assert.Equal("mine\n", File.ReadAllText(Path.Combine(_repo, "seed.txt")).Replace("\r\n", "\n"));
+    }
+
+    [SkippableFact]
+    public async Task Continuing_outside_a_rebase_is_refused_rather_than_reported_as_done()
+    {
+        // The abort reads the state first for the same reason: a continuation that continued
+        // nothing and said it succeeded is the client lying about what it did.
+        Skip.IfNot(GitAvailable, "git not on PATH");
+        await InitAsync();
+        Write("seed.txt", "base\n");
+        await RunRawAsync("add", "--", "seed.txt");
+        await RunRawAsync("commit", "-m", "base");
+
+        var result = await Client.ContinueRebaseAsync(CancellationToken.None);
+
+        Assert.False(result.Success);
+        Assert.Contains("no rebase is in progress", result.FailureReason);
     }
 
     private static bool GitAvailable

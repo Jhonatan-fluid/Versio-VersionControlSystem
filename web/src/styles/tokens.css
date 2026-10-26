@@ -1,0 +1,225 @@
+/* The page's colour and type tokens: Primer's NAMES, so every component in app.css speaks
+   GitHub's vocabulary (canvas, fg-muted, accent-emphasis…), with VERSIO'S VALUES — the desktop
+   palette in src/Versio.App/Theme/tokens/Palette.Light.xaml and Palette.Dark.xaml, so the page
+   and the desktop app are one product in two hosts. The page carried Primer's own values until
+   2026-10-24, when the owner's first look at the GitHub-shaped page drew the line: GitHub's
+   shape, Versio's icon, colours and style. `tokens.test.ts` pins each colour here to its palette
+   key, the way the desktop's ThemeTokenTests pins its two palettes to each other; a value that
+   drifts from the XAML is a red test, not a slightly different blue.
+
+   Where Primer has a token the palette does not, the value is derived from the palette's own
+   colour (a translucent "subtle" fill from the status colour). Three choices worth stating:
+   the primary button is the accent blue, as the desktop's AccentButton is, not GitHub's green;
+   a filled "emphasis" in dark is the LIGHT palette's status colour, because the dark palette's
+   status colours are text colours (the #4ADE80 green under white letters would not read); and
+   the header is Surface.Base, the desktop's own top bar, not a darker band.
+
+   Two themes, three ways to pick one. The operating system's preference is the default; a
+   person's choice (data-color-mode on <html>, kept per browser in localStorage by theme.ts)
+   beats it. The dark block is written twice on purpose: once under the media query, guarded so
+   an explicit "light" choice is not overridden, and once under the explicit "dark" choice.
+   `tokens.test.ts` holds the two to the same text.
+
+   Core's own renderers (the code, the member tables, the ladder) read --cd-* and --ld-* from
+   :root, set by CodePageAssets and LadderPageAssets with their own prefers-color-scheme rule;
+   the bottom of this file re-points those at these tokens so the drawings follow the person's
+   choice too, the way the desktop maps its palette onto --ld-* at runtime (LadderPage.cs). */
+
+:root {
+  --color-canvas-default: #ffffff;   /* Surface.Base */
+  --color-canvas-subtle: #f3f4f6;    /* Surface.Sunken */
+  --color-canvas-inset: #f3f4f6;     /* Surface.Sunken */
+  --color-canvas-overlay: #ffffff;   /* Surface.Raised */
+  --color-canvas-hover: #f0f1f3;     /* Surface.Hover */
+  --color-canvas-selected: #e4edfb;  /* Surface.Selected */
+  --color-border-default: #cbd0d8;   /* Border.Strong */
+  --color-border-muted: #e5e7eb;     /* Border.Subtle */
+  --color-fg-default: #14161a;       /* Text.Primary */
+  --color-fg-muted: #5b6270;         /* Text.Secondary */
+  --color-fg-subtle: #9ba1ac;        /* Text.Disabled */
+  --color-fg-on-emphasis: #ffffff;   /* Text.OnAccent */
+  --color-accent-fg: #2563eb;        /* Accent.Default */
+  --color-accent-emphasis: #2563eb;  /* Accent.Default */
+  --color-accent-subtle: #dce8fd;    /* Accent.Muted */
+  --color-success-fg: #1a7f45;       /* Status.Added */
+  --color-success-emphasis: #1a7f45; /* Status.Added */
+  --color-success-subtle: #e6f6ec;   /* Diff.AddedBg */
+  --color-attention-fg: #b45309;     /* Status.Modified */
+  --color-attention-emphasis: #b45309;
+  --color-attention-subtle: rgba(180, 83, 9, 0.12);
+  --color-severe-fg: #c2410c;        /* Status.Conflict */
+  --color-danger-fg: #be2d2d;        /* Status.Deleted */
+  --color-danger-emphasis: #be2d2d;
+  --color-danger-subtle: #fceaea;    /* Diff.DeletedBg */
+  --color-done-fg: #6d3fc4;          /* Status.Renamed */
+  --color-done-emphasis: #6d3fc4;
+  --color-done-subtle: rgba(109, 63, 196, 0.1);
+  --color-neutral-muted: rgba(107, 114, 128, 0.2);
+  --color-neutral-emphasis: #6b7280; /* Status.Neutral */
+  --color-diff-add-line: #e6f6ec;    /* Diff.AddedBg */
+  --color-diff-add-num: #bbebcb;     /* Diff.AddedWord */
+  --color-diff-add-word: #bbebcb;    /* Diff.AddedWord */
+  --color-diff-del-line: #fceaea;    /* Diff.DeletedBg */
+  --color-diff-del-num: #f9cfcf;     /* Diff.DeletedWord */
+  --color-diff-del-word: #f9cfcf;    /* Diff.DeletedWord */
+  --color-diff-hunk: #dce8fd;        /* Accent.Muted */
+  --color-btn-bg: #f3f4f6;           /* Surface.Sunken, the desktop's PillButton */
+  --color-btn-hover-bg: #f0f1f3;     /* Surface.Hover */
+  --color-btn-border: #cbd0d8;       /* Border.Strong */
+  --color-btn-primary-bg: #2563eb;   /* Accent.Default, the desktop's AccentButton */
+  --color-btn-primary-hover-bg: #1d4fd7; /* Accent.Hover */
+  --color-btn-danger-fg: #be2d2d;    /* Status.Deleted */
+  --color-header-bg: #ffffff;        /* Surface.Base: the desktop's top bar is the base surface */
+  --color-shadow-small: 0 1px 0 rgba(20, 22, 26, 0.04);
+  --color-shadow-medium: 0 3px 6px rgba(91, 98, 112, 0.15);
+  --color-shadow-large: 0 8px 24px rgba(91, 98, 112, 0.2);
+  --color-focus: #2563eb;            /* Accent.Default */
+  --font-ui: "Segoe UI Variable Text", "Segoe UI", system-ui, -apple-system, BlinkMacSystemFont, "Noto Sans", Helvetica, Arial, sans-serif, "Segoe UI Emoji", "Apple Color Emoji";
+  --font-mono: "Cascadia Mono", Consolas, ui-monospace, SFMono-Regular, Menlo, "Courier New", monospace;
+  --radius: 6px;                     /* Radius.Card */
+  color-scheme: light;
+}
+
+/* Dark, by the system's preference, unless the person chose light. */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-color-mode="light"]) {
+    --color-canvas-default: #1d2026;   /* Surface.Base */
+    --color-canvas-subtle: #252932;    /* Surface.Raised: the card is lighter than the canvas, as on the desktop */
+    --color-canvas-inset: #16181d;     /* Surface.Sunken */
+    --color-canvas-overlay: #252932;   /* Surface.Raised */
+    --color-canvas-hover: #2b303b;     /* Surface.Hover */
+    --color-canvas-selected: #2c3b55;  /* Surface.Selected */
+    --color-border-default: #3d4451;   /* Border.Strong */
+    --color-border-muted: #2e333d;     /* Border.Subtle */
+    --color-fg-default: #e8eaed;       /* Text.Primary */
+    --color-fg-muted: #9aa2b1;         /* Text.Secondary */
+    --color-fg-subtle: #5c6472;        /* Text.Disabled */
+    --color-fg-on-emphasis: #ffffff;   /* Text.OnAccent */
+    --color-accent-fg: #4f8df7;        /* Accent.Default */
+    --color-accent-emphasis: #4f8df7;  /* Accent.Default */
+    --color-accent-subtle: #1e3462;    /* Accent.Muted */
+    --color-success-fg: #4ade80;       /* Status.Added */
+    --color-success-emphasis: #1a7f45; /* the light palette's Status.Added: a fill under white letters */
+    --color-success-subtle: #12301f;   /* Diff.AddedBg */
+    --color-attention-fg: #fbbf24;     /* Status.Modified */
+    --color-attention-emphasis: #b45309;
+    --color-attention-subtle: rgba(251, 191, 36, 0.15);
+    --color-severe-fg: #fb923c;        /* Status.Conflict */
+    --color-danger-fg: #f87171;        /* Status.Deleted */
+    --color-danger-emphasis: #be2d2d;
+    --color-danger-subtle: #331617;    /* Diff.DeletedBg */
+    --color-done-fg: #c4a0ff;          /* Status.Renamed */
+    --color-done-emphasis: #6d3fc4;
+    --color-done-subtle: rgba(196, 160, 255, 0.12);
+    --color-neutral-muted: rgba(139, 147, 161, 0.25);
+    --color-neutral-emphasis: #8b93a1; /* Status.Neutral */
+    --color-diff-add-line: #12301f;    /* Diff.AddedBg */
+    --color-diff-add-num: #1b5334;     /* Diff.AddedWord */
+    --color-diff-add-word: #1b5334;    /* Diff.AddedWord */
+    --color-diff-del-line: #331617;    /* Diff.DeletedBg */
+    --color-diff-del-num: #5c2326;     /* Diff.DeletedWord */
+    --color-diff-del-word: #5c2326;    /* Diff.DeletedWord */
+    --color-diff-hunk: #1e3462;        /* Accent.Muted */
+    --color-btn-bg: #252932;           /* Surface.Raised */
+    --color-btn-hover-bg: #2b303b;     /* Surface.Hover */
+    --color-btn-border: #3d4451;       /* Border.Strong */
+    --color-btn-primary-bg: #4f8df7;   /* Accent.Default */
+    --color-btn-primary-hover-bg: #6ba0f9; /* Accent.Hover */
+    --color-btn-danger-fg: #f87171;    /* Status.Deleted */
+    --color-header-bg: #1d2026;        /* Surface.Base */
+    --color-shadow-small: 0 0 transparent;
+    --color-shadow-medium: 0 3px 6px #16181d;
+    --color-shadow-large: 0 8px 24px #16181d;
+    --color-focus: #4f8df7;            /* Accent.Default */
+    color-scheme: dark;
+  }
+}
+
+/* Dark, by the person's choice. The same values as above; a change goes in both blocks. */
+:root[data-color-mode="dark"] {
+  --color-canvas-default: #1d2026;   /* Surface.Base */
+  --color-canvas-subtle: #252932;    /* Surface.Raised: the card is lighter than the canvas, as on the desktop */
+  --color-canvas-inset: #16181d;     /* Surface.Sunken */
+  --color-canvas-overlay: #252932;   /* Surface.Raised */
+  --color-canvas-hover: #2b303b;     /* Surface.Hover */
+  --color-canvas-selected: #2c3b55;  /* Surface.Selected */
+  --color-border-default: #3d4451;   /* Border.Strong */
+  --color-border-muted: #2e333d;     /* Border.Subtle */
+  --color-fg-default: #e8eaed;       /* Text.Primary */
+  --color-fg-muted: #9aa2b1;         /* Text.Secondary */
+  --color-fg-subtle: #5c6472;        /* Text.Disabled */
+  --color-fg-on-emphasis: #ffffff;   /* Text.OnAccent */
+  --color-accent-fg: #4f8df7;        /* Accent.Default */
+  --color-accent-emphasis: #4f8df7;  /* Accent.Default */
+  --color-accent-subtle: #1e3462;    /* Accent.Muted */
+  --color-success-fg: #4ade80;       /* Status.Added */
+  --color-success-emphasis: #1a7f45; /* the light palette's Status.Added: a fill under white letters */
+  --color-success-subtle: #12301f;   /* Diff.AddedBg */
+  --color-attention-fg: #fbbf24;     /* Status.Modified */
+  --color-attention-emphasis: #b45309;
+  --color-attention-subtle: rgba(251, 191, 36, 0.15);
+  --color-severe-fg: #fb923c;        /* Status.Conflict */
+  --color-danger-fg: #f87171;        /* Status.Deleted */
+  --color-danger-emphasis: #be2d2d;
+  --color-danger-subtle: #331617;    /* Diff.DeletedBg */
+  --color-done-fg: #c4a0ff;          /* Status.Renamed */
+  --color-done-emphasis: #6d3fc4;
+  --color-done-subtle: rgba(196, 160, 255, 0.12);
+  --color-neutral-muted: rgba(139, 147, 161, 0.25);
+  --color-neutral-emphasis: #8b93a1; /* Status.Neutral */
+  --color-diff-add-line: #12301f;    /* Diff.AddedBg */
+  --color-diff-add-num: #1b5334;     /* Diff.AddedWord */
+  --color-diff-add-word: #1b5334;    /* Diff.AddedWord */
+  --color-diff-del-line: #331617;    /* Diff.DeletedBg */
+  --color-diff-del-num: #5c2326;     /* Diff.DeletedWord */
+  --color-diff-del-word: #5c2326;    /* Diff.DeletedWord */
+  --color-diff-hunk: #1e3462;        /* Accent.Muted */
+  --color-btn-bg: #252932;           /* Surface.Raised */
+  --color-btn-hover-bg: #2b303b;     /* Surface.Hover */
+  --color-btn-border: #3d4451;       /* Border.Strong */
+  --color-btn-primary-bg: #4f8df7;   /* Accent.Default */
+  --color-btn-primary-hover-bg: #6ba0f9; /* Accent.Hover */
+  --color-btn-danger-fg: #f87171;    /* Status.Deleted */
+  --color-header-bg: #1d2026;        /* Surface.Base */
+  --color-shadow-small: 0 0 transparent;
+  --color-shadow-medium: 0 3px 6px #16181d;
+  --color-shadow-large: 0 8px 24px #16181d;
+  --color-focus: #4f8df7;            /* Accent.Default */
+  color-scheme: dark;
+}
+
+/* Core's renderers follow the page's theme. Their own stylesheets set these on :root with a
+   media query of their own; a selector with an attribute on :root is more specific than :root,
+   so the person's choice wins, and under the system default this restates the same values. */
+:root, :root[data-color-mode="light"], :root[data-color-mode="dark"] {
+  --cd-bg: var(--color-canvas-default);
+  --cd-sunken: var(--color-canvas-subtle);
+  --cd-fg: var(--color-fg-default);
+  --cd-muted: var(--color-fg-muted);
+  --cd-border: var(--color-border-default);
+  --cd-accent: var(--color-accent-fg);
+  --cd-added: var(--color-success-fg);
+  --cd-added-bg: var(--color-diff-add-line);
+  --cd-added-word: var(--color-diff-add-word);
+  --cd-removed: var(--color-danger-fg);
+  --cd-removed-bg: var(--color-diff-del-line);
+  --cd-removed-word: var(--color-diff-del-word);
+  --cd-gutter: var(--color-fg-subtle);
+  --cd-ui: var(--font-ui);
+  --cd-mono: var(--font-mono);
+  --ld-fg: var(--color-fg-default);
+  --ld-bg: var(--color-canvas-default);
+  --ld-muted: var(--color-fg-muted);
+  --ld-wire: var(--color-fg-default);
+  --ld-box: var(--color-canvas-subtle);
+  --ld-border: var(--color-border-default);
+  --ld-added: var(--color-success-fg);
+  --ld-added-bg: var(--color-diff-add-line);
+  --ld-removed: var(--color-danger-fg);
+  --ld-removed-bg: var(--color-diff-del-line);
+  --ld-changed: var(--color-attention-fg);
+  --ld-changed-bg: var(--color-attention-subtle);
+  --ld-moved: var(--color-done-fg);
+  --ld-moved-bg: var(--color-done-subtle);
+  --ld-ui: var(--font-ui);
+}

@@ -197,6 +197,49 @@ public sealed class ConflictFlowTests
     }
 
     [Fact]
+    public async Task Keeping_mine_during_a_rebase_still_keeps_this_branch_version()
+    {
+        // Under a rebase git's --ours is the upstream, because it is replaying this branch's
+        // commits onto it. The button says "mine" and means this branch either way; the first
+        // version passed the flag through and took the upstream's file (the 2026-10-24
+        // review's item 29).
+        using var repo = Diverged();
+        using var shell = Shell();
+
+        await shell.OpenAsync(repo.Path);
+        await Eventually.Press(shell.ReconcileCommand, true, "rebase");
+        await Eventually.Until(() => shell.Conflicted.Count > 0, "the rebase stopped");
+        Assert.Equal(MergeState.Rebasing, shell.MergeState);
+
+        shell.SelectedConflict = shell.Conflicted[0];
+
+        await Eventually.Press(shell.ResolveCommand, true, "keep mine");
+        await Eventually.Until(() => shell.Conflicted.Count == 0, "the file was resolved");
+
+        Assert.Equal("mine\n",
+                     File.ReadAllText(Path.Combine(repo.Path, "seed.txt")).Replace("\r\n", "\n"));
+    }
+
+    [Fact]
+    public async Task Keeping_theirs_during_a_rebase_takes_the_upstream_version()
+    {
+        using var repo = Diverged();
+        using var shell = Shell();
+
+        await shell.OpenAsync(repo.Path);
+        await Eventually.Press(shell.ReconcileCommand, true, "rebase");
+        await Eventually.Until(() => shell.Conflicted.Count > 0, "the rebase stopped");
+
+        shell.SelectedConflict = shell.Conflicted[0];
+
+        await Eventually.Press(shell.ResolveCommand, false, "keep theirs");
+        await Eventually.Until(() => shell.Conflicted.Count == 0, "the file was resolved");
+
+        Assert.Equal("theirs\n",
+                     File.ReadAllText(Path.Combine(repo.Path, "seed.txt")).Replace("\r\n", "\n"));
+    }
+
+    [Fact]
     public async Task Keeping_theirs_takes_the_incoming_version()
     {
         using var repo = Diverged();
@@ -276,6 +319,168 @@ public sealed class ConflictFlowTests
         Assert.Contains("rebase", shell.ConflictHeadline);
     }
 
+    /// <summary>
+    /// A branch two commits past a moved upstream, where the first conflicts with it.
+    /// </summary>
+    /// <param name="secondConflictsToo">
+    /// Make the second commit conflict as well, so a continued rebase stops a second time.
+    /// </param>
+    /// <remarks>
+    /// Two commits because that is what distinguishes a continued rebase from a stray commit:
+    /// with one, a <c>git commit</c> on the detached HEAD leaves a tree that looks finished
+    /// until somebody reads <c>git status</c>. With two, the second is either replayed or it is
+    /// not.
+    /// </remarks>
+    private static TempRepo DivergedByTwoCommits(bool secondConflictsToo = false)
+    {
+        var repo = new TempRepo(published: true);
+
+        var other = Path.Combine(Path.GetTempPath(), "versio-other-" + Guid.NewGuid().ToString("N")[..8]);
+        TempRepo.Git(Path.GetTempPath(), $"clone -q \"{repo.RemotePath}\" \"{other}\"");
+        TempRepo.Git(other, "config user.name Other");
+        TempRepo.Git(other, "config user.email other@versio.local");
+        File.WriteAllText(Path.Combine(other, "seed.txt"), "theirs\n");
+        if (secondConflictsToo)
+        {
+            // Both sides add the same new file with different content: an add/add conflict,
+            // which git reports exactly as it reports a modify/modify one.
+            File.WriteAllText(Path.Combine(other, "other.txt"), "theirs\n");
+        }
+        TempRepo.Git(other, "add .");
+        TempRepo.Git(other, "commit -qm theirs");
+        TempRepo.Git(other, "push -q");
+        TempRepo.DeleteTree(other);
+
+        File.WriteAllText(Path.Combine(repo.Path, "seed.txt"), "mine\n");
+        repo.Git("commit -qam mine");
+        File.WriteAllText(Path.Combine(repo.Path, "other.txt"), "mine\n");
+        repo.Git("add other.txt");
+        repo.Git("commit -qm second");
+        repo.Git("fetch -q");
+
+        return repo;
+    }
+
+    private static bool RebaseIsPaused(TempRepo repo) =>
+        Directory.Exists(Path.Combine(repo.Path, ".git", "rebase-merge"))
+        || Directory.Exists(Path.Combine(repo.Path, ".git", "rebase-apply"));
+
+    [Fact]
+    public async Task Continuing_a_rebase_replays_the_rest_and_leaves_the_branch_whole()
+    {
+        // The banner said "Continue the rebase" and the button ran `git commit`: a new commit
+        // on the detached HEAD a rebase works on, the branch unchanged, the second commit never
+        // replayed, the rebase still paused (the 2026-10-25 review's sixth round, P2). Asserted
+        // on git's own view of the result, because the panel reading "clean" was the lie.
+        using var repo = DivergedByTwoCommits();
+        using var shell = Shell();
+
+        await shell.OpenAsync(repo.Path);
+        await Eventually.Press(shell.ReconcileCommand, true, "rebase");
+        await Eventually.Until(() => shell.Conflicted.Count > 0, "the rebase stopped");
+        Assert.Equal(MergeState.Rebasing, shell.MergeState);
+
+        shell.SelectedConflict = shell.Conflicted[0];
+        await Eventually.Press(shell.ResolveCommand, true, "keep mine");
+        await Eventually.Until(() => shell.Conflicted.Count == 0, "the file was resolved");
+
+        // The caption and the banner agree, and no message is demanded: the replayed commits
+        // have theirs already.
+        Assert.Contains("Continue the rebase", shell.ConflictHeadline);
+        Assert.Equal("Continue rebase", shell.Commit.Label);
+        Assert.Equal(string.Empty, shell.CommitMessage);
+        Assert.True(shell.CommitCommand.CanExecute(null), shell.CommitBlockedReason);
+
+        // Whatever is typed into the box is the message of nothing here, and is left alone.
+        shell.CommitMessage = "typed while the rebase was paused";
+
+        await Eventually.Press(shell.CommitCommand, "continue the rebase");
+        await Eventually.Until(() => !shell.IsMidMerge, "the rebase finished");
+
+        Assert.False(RebaseIsPaused(repo), "the rebase is still paused");
+        Assert.Equal("refs/heads/main", TempRepo.GitOutput(repo.Path, "symbolic-ref -q HEAD"));
+        Assert.Equal("main", shell.BranchName);
+        Assert.Equal(MergeState.None, shell.MergeState);
+        Assert.Empty(shell.Conflicted);
+
+        // Both local commits, replayed onto the upstream, in order and with their own messages.
+        Assert.Equal(
+            "second\nmine\ntheirs\nfirst",
+            TempRepo.GitOutput(repo.Path, "log --format=%s").Replace("\r\n", "\n"));
+        Assert.Equal("mine\n", File.ReadAllText(Path.Combine(repo.Path, "seed.txt")).Replace("\r\n", "\n"));
+        Assert.Equal("mine\n", File.ReadAllText(Path.Combine(repo.Path, "other.txt")).Replace("\r\n", "\n"));
+        Assert.Equal(TrackingState.Ahead, shell.Remote.Standing.State);
+
+        Assert.Equal("typed while the rebase was paused", shell.CommitMessage);
+    }
+
+    [Fact]
+    public async Task A_rebase_that_stops_again_shows_the_next_conflict_rather_than_success()
+    {
+        // `rebase --continue` replays the next commit, and that one can conflict in its turn.
+        // Git exits non-zero and stops; a panel that read the exit code as failure, or the
+        // first continuation as the end, would be wrong in opposite directions.
+        using var repo = DivergedByTwoCommits(secondConflictsToo: true);
+        using var shell = Shell();
+
+        await shell.OpenAsync(repo.Path);
+        await Eventually.Press(shell.ReconcileCommand, true, "rebase");
+        await Eventually.Until(() => shell.Conflicted.Count > 0, "the rebase stopped");
+        Assert.Equal(["seed.txt"], shell.Conflicted.Select(r => r.Path).ToList());
+
+        shell.SelectedConflict = shell.Conflicted[0];
+        await Eventually.Press(shell.ResolveCommand, true, "keep mine");
+        await Eventually.Until(() => shell.Conflicted.Count == 0, "the first file was resolved");
+
+        await Eventually.Press(shell.CommitCommand, "continue the rebase");
+        await Eventually.Until(() => shell.Conflicted.Count > 0, "the rebase stopped a second time");
+
+        Assert.True(RebaseIsPaused(repo));
+        Assert.Equal(MergeState.Rebasing, shell.MergeState);
+        Assert.Equal(["other.txt"], shell.Conflicted.Select(r => r.Path).ToList());
+        Assert.Contains("rebase", shell.ConflictHeadline);
+        Assert.False(shell.CommitCommand.CanExecute(null));
+
+        // And the second stop is continued the same way, to the same end. "Keep mine" rather
+        // than "theirs" on purpose: taking the upstream's version of a file the commit only
+        // added leaves that commit with nothing of its own, and git (--empty=drop, the
+        // default) then drops it from the replay rather than stopping — a correct answer, but
+        // not the one this test is about, which is that the second commit survives.
+        shell.SelectedConflict = shell.Conflicted[0];
+        await Eventually.Press(shell.ResolveCommand, true, "keep mine");
+        await Eventually.Until(() => shell.Conflicted.Count == 0, "the second file was resolved");
+
+        await Eventually.Press(shell.CommitCommand, "continue the rebase again");
+        await Eventually.Until(() => !shell.IsMidMerge, "the rebase finished");
+
+        Assert.False(RebaseIsPaused(repo));
+        Assert.Equal("refs/heads/main", TempRepo.GitOutput(repo.Path, "symbolic-ref -q HEAD"));
+        Assert.Equal(
+            "second\nmine\ntheirs\nfirst",
+            TempRepo.GitOutput(repo.Path, "log --format=%s").Replace("\r\n", "\n"));
+        Assert.Equal("mine\n", File.ReadAllText(Path.Combine(repo.Path, "other.txt")).Replace("\r\n", "\n"));
+    }
+
+    [Fact]
+    public async Task Continuing_is_refused_while_the_rebase_still_has_conflicts()
+    {
+        // The same gate as a plain commit: git refuses to continue over an unmerged path, and
+        // the button says so instead of failing. A message in the box changes nothing.
+        using var repo = DivergedByTwoCommits();
+        using var shell = Shell();
+
+        await shell.OpenAsync(repo.Path);
+        await Eventually.Press(shell.ReconcileCommand, true, "rebase");
+        await Eventually.Until(() => shell.Conflicted.Count > 0, "the rebase stopped");
+
+        shell.CommitMessage = "trying anyway";
+
+        Assert.Equal("Continue rebase", shell.Commit.Label);
+        Assert.False(shell.CommitCommand.CanExecute(null));
+        Assert.Equal("Resolve the conflicts first.", shell.CommitBlockedReason);
+        Assert.True(RebaseIsPaused(repo));
+    }
+
     [Fact]
     public async Task Nothing_is_mid_merge_in_an_ordinary_repository()
     {
@@ -288,5 +493,82 @@ public sealed class ConflictFlowTests
         Assert.Empty(shell.Conflicted);
         Assert.Equal(string.Empty, shell.ConflictHeadline);
         Assert.False(shell.AbortMergeCommand.CanExecute(null));
+        Assert.False(shell.ShowsConflicts);
+    }
+
+    /// <summary>A stash whose apply conflicts with what was committed since.</summary>
+    private static TempRepo WithAConflictingStash()
+    {
+        var repo = new TempRepo();
+        File.WriteAllText(Path.Combine(repo.Path, "seed.txt"), "stashed\n");
+        repo.Git("stash push -q -m conflicting");
+        File.WriteAllText(Path.Combine(repo.Path, "seed.txt"), "committed\n");
+        repo.Git("commit -qam committed");
+        return repo;
+    }
+
+    [Fact]
+    public async Task A_stash_that_conflicts_shows_the_conflict_section_with_nothing_to_abandon()
+    {
+        // The section's visibility was IsMidMerge, and MergeStateAsync reads only the merge
+        // and rebase marker files. A stash apply that stopped at a conflict moved the file
+        // into Conflicted, the commit button said "Resolve the conflicts first", and the
+        // only buttons that could were hidden. The 2026-10-24 review's item 30.
+        using var repo = WithAConflictingStash();
+        using var shell = Shell();
+        await shell.OpenAsync(repo.Path);
+
+        var row = Assert.Single(shell.Stashes);
+        await Eventually.Press(row.ApplyCommand, "apply the stash");
+        await Eventually.Until(() => shell.Conflicted.Count > 0, "the stash apply stopped at a conflict");
+
+        Assert.True(shell.ShowsConflicts);
+        Assert.Equal(MergeState.Conflicts, shell.MergeState);
+        Assert.Contains("conflict", shell.ConflictHeadline);
+
+        // There is no operation behind it: nothing to finish, nothing to abandon.
+        Assert.False(shell.IsMidMerge);
+        Assert.False(shell.AbortMergeCommand.CanExecute(null));
+        Assert.True(shell.HasStashes);
+    }
+
+    [Fact]
+    public async Task Keep_theirs_under_a_stash_apply_takes_the_stash_s_version()
+    {
+        // The sides as git assigns them for a stash apply: --ours is HEAD, this branch, and
+        // --theirs is the stash. Only a rebase swaps them, and the mapping that got the
+        // rebase right (item 29) must not swap these.
+        using var repo = WithAConflictingStash();
+        using var shell = Shell();
+        await shell.OpenAsync(repo.Path);
+
+        await Eventually.Press(Assert.Single(shell.Stashes).ApplyCommand, "apply the stash");
+        await Eventually.Until(() => shell.Conflicted.Count > 0, "the stash apply stopped at a conflict");
+
+        shell.SelectedConflict = shell.Conflicted[0];
+        await Eventually.Press(shell.ResolveCommand, false, "keep theirs");
+        await Eventually.Until(() => shell.Conflicted.Count == 0, "the conflict to be resolved");
+
+        // Trimmed: git's autocrlf decides the ending on the way out, and the side is the point.
+        Assert.Equal("stashed", File.ReadAllText(Path.Combine(repo.Path, "seed.txt")).TrimEnd('\r', '\n'));
+        Assert.False(shell.ShowsConflicts);
+        Assert.Equal(MergeState.None, shell.MergeState);
+    }
+
+    [Fact]
+    public async Task Keep_mine_under_a_stash_apply_keeps_this_branch_s_version()
+    {
+        using var repo = WithAConflictingStash();
+        using var shell = Shell();
+        await shell.OpenAsync(repo.Path);
+
+        await Eventually.Press(Assert.Single(shell.Stashes).ApplyCommand, "apply the stash");
+        await Eventually.Until(() => shell.Conflicted.Count > 0, "the stash apply stopped at a conflict");
+
+        shell.SelectedConflict = shell.Conflicted[0];
+        await Eventually.Press(shell.ResolveCommand, true, "keep mine");
+        await Eventually.Until(() => shell.Conflicted.Count == 0, "the conflict to be resolved");
+
+        Assert.Equal("committed", File.ReadAllText(Path.Combine(repo.Path, "seed.txt")).TrimEnd('\r', '\n'));
     }
 }

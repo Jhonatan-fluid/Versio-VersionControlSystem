@@ -112,4 +112,289 @@ public sealed class LargeFilePreflightTests
 
         Assert.Single(offenders);
     }
+
+    /// <summary>
+    /// A later <c>-filter</c> on a narrower pattern takes the protection away again.
+    /// </summary>
+    /// <remarks>
+    /// gitattributes is last-match-wins per attribute. The preflight used to keep only the
+    /// rules that said <c>filter=lfs</c> and ask whether <i>any</i> of them matched, so
+    /// <c>*.bin filter=lfs</c> followed by <c>huge.bin -filter</c> still counted as
+    /// protected and the warning was suppressed for the one file git would actually commit
+    /// in full — a false negative, in a class whose remarks claimed only spurious questions
+    /// were possible. The 2026-10-24 review's item 13.
+    /// </remarks>
+    [Fact]
+    public void A_later_unset_filter_takes_the_protection_away()
+    {
+        var offenders = LargeFilePreflight.Unprotected(
+            [("huge.bin", 20 * Mb), ("other.bin", 20 * Mb)],
+            "*.bin filter=lfs diff=lfs merge=lfs -text\nhuge.bin -filter\n");
+
+        Assert.Equal("huge.bin", Assert.Single(offenders));
+    }
+
+    [Fact]
+    public void A_later_unspecified_filter_takes_the_protection_away()
+    {
+        // "!filter" is the third spelling: the attribute reverts to unspecified, which for
+        // LFS means the same as unset — git commits the content.
+        var offenders = LargeFilePreflight.Unprotected(
+            [("huge.bin", 20 * Mb)],
+            "*.bin filter=lfs\nhuge.bin !filter\n");
+
+        Assert.Equal("huge.bin", Assert.Single(offenders));
+    }
+
+    [Fact]
+    public void A_later_different_filter_takes_the_protection_away()
+    {
+        var offenders = LargeFilePreflight.Unprotected(
+            [("huge.bin", 20 * Mb)],
+            "*.bin filter=lfs\nhuge.bin filter=clean-only\n");
+
+        Assert.Equal("huge.bin", Assert.Single(offenders));
+    }
+
+    [Fact]
+    public void A_later_lfs_rule_puts_the_protection_back()
+    {
+        var offenders = LargeFilePreflight.Unprotected(
+            [("huge.bin", 20 * Mb)],
+            "*.bin filter=lfs\nhuge.bin -filter\nhuge.bin filter=lfs\n");
+
+        Assert.Empty(offenders);
+    }
+
+    [Fact]
+    public void A_later_rule_that_says_nothing_about_filter_leaves_the_protection_alone()
+    {
+        // Under git a rule only changes the attributes it names. Recording every later
+        // matching rule as "not lfs" would have traded the false negative for a false
+        // positive on the commonest hand-written layout: one line for lfs, one for -diff.
+        var offenders = LargeFilePreflight.Unprotected(
+            [("huge.bin", 20 * Mb)],
+            "*.bin filter=lfs\n*.bin -diff -merge\n");
+
+        Assert.Empty(offenders);
+    }
+
+    [Fact]
+    public void A_quoted_pattern_with_a_space_is_read_as_one_pattern()
+    {
+        // git quotes a pattern that contains whitespace, and so does GitAttributes.Plan
+        // since the 2026-10-24 review's item 26; the first-whitespace split read only
+        // `"src/My` and matched nothing, so the project's own rule did not count.
+        var offenders = LargeFilePreflight.Unprotected(
+            [("src/My App/Machine.project", 20 * Mb)],
+            "\"src/My App/*.project\" filter=lfs diff=lfs -text\n");
+
+        Assert.Empty(offenders);
+    }
+
+    [Fact]
+    public void A_filter_whose_name_merely_starts_with_lfs_is_not_protection()
+    {
+        // The old test was a substring search, so "filter=lfsx" counted.
+        var offenders = LargeFilePreflight.Unprotected(
+            [("huge.bin", 20 * Mb)],
+            "*.bin filter=lfsx\n");
+
+        Assert.Equal("huge.bin", Assert.Single(offenders));
+    }
+
+    /// <summary>
+    /// A later bare <c>filter</c> sets the attribute to true, which is not lfs.
+    /// </summary>
+    /// <remarks>
+    /// `git check-attr filter -- huge.bin` answers <c>set</c> for <c>*.bin filter=lfs</c>
+    /// followed by <c>huge.bin filter</c> (git 2.55, 2026-10-25): the boolean overrides
+    /// the value, and there is no filter driver called "true", so git commits the content.
+    /// The token reader knew <c>-filter</c>, <c>!filter</c> and <c>filter=…</c> and let the
+    /// fourth spelling fall through as "says nothing about filter", so the earlier lfs rule
+    /// stood and the warning was suppressed. The 2026-10-25 review's item 5.
+    /// </remarks>
+    [Fact]
+    public void A_later_boolean_filter_takes_the_protection_away()
+    {
+        var offenders = LargeFilePreflight.Unprotected(
+            [("huge.bin", 20 * Mb), ("other.bin", 20 * Mb)],
+            "*.bin filter=lfs\nhuge.bin filter\n");
+
+        Assert.Equal("huge.bin", Assert.Single(offenders));
+    }
+
+    [Fact]
+    public void A_boolean_filter_on_the_same_line_wins_over_an_earlier_value()
+    {
+        // Within one line git takes the last mention: `filter=lfs filter` is `set`, and
+        // `filter filter=lfs` is `lfs`. Both asked of git 2.55.
+        Assert.Single(LargeFilePreflight.Unprotected(
+            [("huge.bin", 20 * Mb)], "*.bin filter=lfs filter\n"));
+        Assert.Empty(LargeFilePreflight.Unprotected(
+            [("huge.bin", 20 * Mb)], "*.bin filter filter=lfs\n"));
+    }
+
+    /// <summary>
+    /// A character class in a later rule is matched, so its <c>-filter</c> counts.
+    /// </summary>
+    /// <remarks>
+    /// <c>huge[.]bin -filter</c> after <c>*.bin filter=lfs</c> leaves git answering
+    /// <c>unset</c> for huge.bin. The matcher escaped <c>[</c> and <c>]</c> as literals, the
+    /// override matched nothing, and the lfs rule stood — the same quiet false negative as
+    /// the boolean, reached through the pattern instead of the attribute. The 2026-10-25
+    /// review's item 5.
+    /// </remarks>
+    [Fact]
+    public void A_character_class_in_a_later_rule_takes_the_protection_away()
+    {
+        var offenders = LargeFilePreflight.Unprotected(
+            [("huge.bin", 20 * Mb), ("other.bin", 20 * Mb)],
+            "*.bin filter=lfs\nhuge[.]bin -filter\n");
+
+        Assert.Equal("huge.bin", Assert.Single(offenders));
+    }
+
+    /// <summary>
+    /// The pattern matcher agrees with git on each shape gitattributes(5) allows.
+    /// </summary>
+    /// <remarks>
+    /// Every row is `git check-attr filter -- &lt;path&gt;` against a one-line file
+    /// `&lt;pattern&gt; filter=lfs`, run on git 2.55.0.windows.5 with core.ignorecase on,
+    /// on 2026-10-25 — the expectations are git's, not a reading of the manual. The rows
+    /// that matter most are the ones where the old matcher said "protected" and git says
+    /// "unspecified": a rule read wider than git reads it silences the warning for a file
+    /// git will commit in full.
+    /// </remarks>
+    [Theory]
+    // Character classes: ranges, both negation spellings, a leading ] as a member, a
+    // trailing - as a member, a POSIX class, and a backslash escape inside the class.
+    [InlineData("v[0-9].bin", "v1.bin", true)]
+    [InlineData("v[0-9].bin", "va.bin", false)]
+    [InlineData("v[0-9].bin", "v10.bin", false)]
+    [InlineData("v[!0-9].bin", "v1.bin", false)]
+    [InlineData("v[!0-9].bin", "va.bin", true)]
+    [InlineData("v[^0-9].bin", "va.bin", true)]
+    [InlineData("v[]].bin", "v].bin", true)]
+    [InlineData("v[!]a].bin", "v].bin", false)]
+    [InlineData("v[!]a].bin", "vb.bin", true)]
+    [InlineData("v[a-].bin", "v-.bin", true)]
+    [InlineData("v[a-].bin", "vb.bin", false)]
+    [InlineData("[[:digit:]].bin", "1.bin", true)]
+    [InlineData("[[:digit:]].bin", "a.bin", false)]
+    [InlineData("v[\\]].bin", "v].bin", true)]
+    [InlineData("v[*].bin", "v*.bin", true)]
+    [InlineData("v[*].bin", "va.bin", false)]
+    [InlineData("v[a-c].bin", "vB.bin", true)]
+    // A range written backwards is empty in wildmatch, but its low end was tested as a
+    // member before the dash was read, so `[z-a]` is `[z]` — and the negation excludes z.
+    // The matcher dropped the range and built `[]`, which .NET refuses, so preflight threw
+    // (the 2026-10-25 review's third round, item 2).
+    [InlineData("v[z-a].bin", "vz.bin", true)]
+    [InlineData("v[z-a].bin", "va.bin", false)]
+    [InlineData("v[z-a].bin", "v-.bin", false)]
+    [InlineData("v[!z-a].bin", "vz.bin", false)]
+    [InlineData("v[!z-a].bin", "va.bin", true)]
+    // wildmatch walks BYTES: `?` and a class each consume one byte of the path's UTF-8, so
+    // ä (two bytes) is `??` and never `?` or `[ä]`, and 😀 (four) is `????`. The matcher
+    // walked UTF-16 characters, so a rule git did not apply to ä.bin suppressed the warning
+    // for it (the third round, item 3). A literal still names the file, bytes matched to
+    // bytes; and a range `[a-ä]` is `a` to ä's first byte with its second a member, which
+    // ä.bin itself does not fit (the class takes its first byte, `.bin` must follow).
+    [InlineData("?.bin", "ä.bin", false)]
+    [InlineData("??.bin", "ä.bin", true)]
+    [InlineData("[ä].bin", "ä.bin", false)]
+    [InlineData("ä.bin", "ä.bin", true)]
+    [InlineData("[a-ä].bin", "ä.bin", false)]
+    [InlineData("[a-ä].bin", "b.bin", true)]
+    [InlineData("[a-ä].bin", "Ä.bin", false)]
+    [InlineData("?.bin", "😀.bin", false)]
+    [InlineData("????.bin", "😀.bin", true)]
+    [InlineData("*.bin", "😀.bin", true)]
+    // A class never matches a slash, even when the slash is listed or inside a range.
+    [InlineData("a[/]b.bin", "a/b.bin", false)]
+    [InlineData("a[+-9]b.bin", "a/b.bin", false)]
+    [InlineData("a[+-9]b.bin", "a1b.bin", true)]
+    // A class that never closes is a pattern that never matches, not a literal bracket.
+    [InlineData("huge[.bin", "huge[.bin", false)]
+    [InlineData("huge[.bin", "huge.bin", false)]
+    [InlineData("huge.bin[", "huge.bin[", false)]
+    // A backslash escapes the next character; one at the end matches nothing.
+    [InlineData("huge\\*.bin", "huge*.bin", true)]
+    [InlineData("huge\\*.bin", "hugeX.bin", false)]
+    [InlineData("huge.bin\\", "huge.bin", false)]
+    // ? is one character and not a slash.
+    [InlineData("hug?.bin", "huge.bin", true)]
+    [InlineData("hug?.bin", "hug.bin", false)]
+    [InlineData("hug?.bin", "hug/.bin", false)]
+    // Two stars are "any depth" only between slashes or ends; elsewhere they are one star.
+    [InlineData("**/huge.bin", "huge.bin", true)]
+    [InlineData("**/huge.bin", "a/b/huge.bin", true)]
+    [InlineData("a/**/huge.bin", "a/huge.bin", true)]
+    [InlineData("a/**/huge.bin", "a/x/y/huge.bin", true)]
+    [InlineData("a/**", "a/b/huge.bin", true)]
+    [InlineData("a**b.bin", "axb.bin", true)]
+    [InlineData("a**b.bin", "a/b.bin", false)]
+    [InlineData("a**b.bin", "a/x/b.bin", false)]
+    [InlineData("a/**b.bin", "a/xb.bin", true)]
+    [InlineData("a/**b.bin", "a/x/b.bin", false)]
+    [InlineData("**a/huge.bin", "xa/huge.bin", true)]
+    [InlineData("**a/huge.bin", "x/a/huge.bin", false)]
+    [InlineData("a/***.bin", "a/huge.bin", true)]
+    [InlineData("a/***.bin", "a/x/huge.bin", false)]
+    // Anchoring: no slash means the name anywhere; any slash means from the file's folder.
+    [InlineData("huge.bin", "a/b/huge.bin", true)]
+    [InlineData("a/huge.bin", "x/a/huge.bin", false)]
+    [InlineData("/huge.bin", "huge.bin", true)]
+    [InlineData("/huge.bin", "a/huge.bin", false)]
+    [InlineData("/[hH]uge.bin", "huge.bin", true)]
+    [InlineData("/[hH]uge.bin", "a/huge.bin", false)]
+    [InlineData("a/", "a/huge.bin", false)]
+    public void The_matcher_answers_as_git_does(string pattern, string path, bool protectedByGit)
+    {
+        var offenders = LargeFilePreflight.Unprotected(
+            [(path, 20 * Mb)], pattern + " filter=lfs\n");
+
+        if (protectedByGit)
+        {
+            Assert.Empty(offenders);
+        }
+        else
+        {
+            Assert.Equal(path, Assert.Single(offenders));
+        }
+    }
+
+    /// <summary>
+    /// A quoted pattern with a C-style octal escape names the file git says it names.
+    /// </summary>
+    /// <remarks>
+    /// <c>"huge\056bin" -filter</c> is git's spelling of <c>huge.bin -filter</c>, and
+    /// git answers <c>unset</c> for huge.bin. The reader dropped the backslash and kept
+    /// the digits, so the override was a rule for a file called huge056bin and the lfs
+    /// rule stood. The 2026-10-25 review's item 6, seen from the preflight.
+    /// </remarks>
+    [Fact]
+    public void A_quoted_octal_escape_in_a_later_rule_takes_the_protection_away()
+    {
+        var offenders = LargeFilePreflight.Unprotected(
+            [("huge.bin", 20 * Mb), ("other.bin", 20 * Mb)],
+            "*.bin filter=lfs\n\"huge\\056bin\" -filter\n");
+
+        Assert.Equal("huge.bin", Assert.Single(offenders));
+    }
+
+    [Fact]
+    public void A_later_rule_git_can_never_match_changes_nothing()
+    {
+        // `huge[.bin -filter` is a pattern wildmatch gives up on, so under git the line
+        // matches nothing and the earlier lfs rule stands (check-attr: lfs). Dropping the
+        // line is right; reading the bracket as a literal, or the whole line as an
+        // override, would both disagree with git.
+        var offenders = LargeFilePreflight.Unprotected(
+            [("huge.bin", 20 * Mb)],
+            "*.bin filter=lfs\nhuge[.bin -filter\n");
+
+        Assert.Empty(offenders);
+    }
 }

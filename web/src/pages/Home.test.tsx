@@ -56,8 +56,8 @@ describe('Home', () => {
     const rows = Array.from(host.querySelectorAll('.repo-row'));
     expect(rows.map((r) => r.getAttribute('href'))).toEqual(['/acme/plant', '/acme/secret']);
     // The private one says so; the public one says nothing.
-    expect(rows[1]?.textContent).toContain('private');
-    expect(rows[0]?.textContent).not.toContain('private');
+    expect(rows[1]?.textContent).toMatch(/private/i);
+    expect(rows[0]?.textContent).not.toMatch(/private/i);
     expect(host.querySelector('.open-form')).toBeNull();
     act(() => root.unmount());
   });

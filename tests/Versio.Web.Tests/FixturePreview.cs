@@ -86,6 +86,9 @@ public sealed class FixturePreview
         var simulation = "fixtures/projects/MachineWithMembers/Device/Plc Logic/Application/Simulation.st";
         var alarm = "fixtures/projects/RefrigeratorControl/Device/Plc Logic/Application/Library/Alarm/DUTs/ST_AlarmSettings.st";
         repo.MergeBases[(repo.Refs["main"], next)] = repo.Refs["main"];
+        // The commit page (Step 8) needs a parent to compare from and a message to show.
+        repo.Parents[next] = [repo.Refs["main"]];
+        repo.CommitMessages[next] = "Lower the simulated cooling step\n\nThe simulation cooled twice as fast as the plant, so every soak test passed that should not have.\n";
         repo.PullFiles[1] = new PullFileList(
         [
             new PullFile(alarm, "modified", null, "@@ -9 +9 @@\n-\tEnable\t\t\t\t: BOOL := TRUE;\n+\tEnable\t\t\t\t: BOOL := FALSE;"),
@@ -98,13 +101,19 @@ public sealed class FixturePreview
         [
             new ReviewThread("T-new", simulation, false, false, 22, null, "RIGHT", 22, "LINE",
             [
-                new ReviewComment("C1", "sam", "Half the step: is **0.2** right for the plant's cooling, or is that the soak rig?", when, next, next, CanEdit: true, CanDelete: true),
-                new ReviewComment("C2", "jo", "Plant data: 0.2/s. The rig was 0.1.\n\n<script>alert('this must draw as text')</script>", when.AddMinutes(9), next, next),
+                new ReviewComment("C1", "sam", "Half the step: is **0.2** right for the plant's cooling, or is that the soak rig?", when, next, next, CanEdit: true, CanDelete: true)
+                {
+                    ReviewId = "PRR_LEE", DiffHunk = "@@ -19,7 +19,7 @@\n a\n b\n c\n-x\n+y", AuthorAssociation = "OWNER", Reactions = [new ReactionGroup("HEART", 1, false)],
+                },
+                new ReviewComment("C2", "jo", "Plant data: 0.2/s. The rig was 0.1.\n\n<script>alert('this must draw as text')</script>", when.AddMinutes(9), next, next) { ReviewId = "PRR_LEE", EditedAt = when.AddMinutes(12) },
+                // A suggested change (Step 5): drawn as a diff under the comment, with Apply / Add to batch under the merge tier.
+                new ReviewComment("C2s", "lee", "Then say so in the code:\n```suggestion\n\t\t\tGlob_Var.TempActual := Glob_Var.TempActual - 0.2; (* plant data *)\n```", when.AddMinutes(14), next, next) { ReviewId = "PRR_LEE", AuthorAssociation = "COLLABORATOR" },
             ], false, CanReply: true, CanResolve: true),
             new ReviewThread("T-old", simulation, true, false, 22, null, "LEFT", 22, "LINE",
                 [new ReviewComment("C3", "sam", "This old value is the bug.", when, next, next, CanEdit: true, CanDelete: true)], false, CanReply: true, CanUnresolve: true),
             new ReviewThread("T-gone", alarm, false, true, null, null, "RIGHT", 4, "LINE",
-                [new ReviewComment("C4", "sam", "An earlier remark on a line that has since moved.", when.AddDays(-1), null, next)], false),
+                // Outdated: GitHub keeps the hunk it was written on, which the page shows (Step 3b).
+                [new ReviewComment("C4", "sam", "An earlier remark on a line that has since moved.", when.AddDays(-1), null, next) { DiffHunk = "@@ -2,4 +2,4 @@\n TYPE ST_AlarmSettings :\n STRUCT\n-\tbEnabled : BOOL;\n+\tbEnabled : BOOL := FALSE;" }], false),
             // Written on github.com on the struct's changed line, no tag: placed on the row holding it.
             new ReviewThread("T-row", alarm, false, false, 9, null, "RIGHT", 9, "LINE",
                 [new ReviewComment("C5", "lee", "Off by default means a fresh controller raises nothing. Intended?", when.AddMinutes(30), next, next)], false, CanReply: true, CanResolve: true),
@@ -114,17 +123,46 @@ public sealed class FixturePreview
         ], false);
         repo.Checks[next] =
         [
-            new CheckInfo("build", "completed", "success", "https://github.com/acme/plant/actions/runs/1", "check-run"),
-            new CheckInfo("plc-compile", "completed", "failure", "https://github.com/acme/plant/actions/runs/2", "check-run"),
-            new CheckInfo("soak-test", "in_progress", null, null, "check-run"),
+            new CheckInfo("build", "completed", "success", "https://github.com/acme/plant/actions/runs/1", "check-run") { Id = 1, App = "GitHub Actions", Suite = 10, StartedAt = when.AddMinutes(3), CompletedAt = when.AddMinutes(7), Title = "Build passed", Summary = "All **12** projects built." },
+            new CheckInfo("plc-compile", "completed", "failure", "https://github.com/acme/plant/actions/runs/2", "check-run") { Id = 2, App = "GitHub Actions", Suite = 10, StartedAt = when.AddMinutes(3), CompletedAt = when.AddMinutes(9), Title = "2 errors", Summary = "`PLC_PRG` line 12: unknown identifier `tSetpoint`.", AnnotationCount = 2 },
+            new CheckInfo("soak-test", "in_progress", null, null, "check-run") { Id = 3, App = "Soak rig", Suite = 11, StartedAt = when.AddMinutes(10) },
+            new CheckInfo("ci/jenkins", "completed", "success", "https://jenkins.example/job/plant/42", "status") { App = "jenkins-bot", Description = "Build #42 passed", CompletedAt = when.AddMinutes(8) },
         ];
+        // The compile run's two annotations (Step 3b): listed under the run on Checks, drawn on the
+        // lines on Files changed — one on the changed program's new line, one as a warning.
+        repo.Annotations[2] =
+        [
+            new CheckAnnotation(simulation, 22, 22, "failure", "C0046: identifier 'tSetpoint' not defined", "Compile error"),
+            new CheckAnnotation(simulation, 3, 3, "warning", "C0035: variable 'rStep' is declared but never used", null),
+        ];
+        // Two comments on the head commit (Step 3b): one on the commit, one GitHub placed on a line.
+        repo.CommitComments[next] =
+        [
+            new CommitComment("CC_1", "lee", null, "Is the cooling step right for the **small** plant too?", when.AddMinutes(12), null, null, null),
+            new CommitComment("CC_2", "sam", null, "Yes: the simulation was the only thing off.", when.AddMinutes(20), simulation, 22, null),
+        ];
+        // The conversation GitHub would show: the push, the label and reviewer events, a comment
+        // with reactions and an edit mark, a review whose thread the page lists under it (its
+        // comments name the review by id), a cross-reference, a dismissal.
         repo.Timelines[1] = new Timeline(
         [
-            new TimelineItem("commit", "sam", when, "Lower the simulated cooling step", null, next),
-            new TimelineItem("comment", "jo", when.AddMinutes(20), "Soak tests went green with this. **Please check** the interlock still trips.", null, null),
-            new TimelineItem("review", "lee", when.AddMinutes(40), "", "CHANGES_REQUESTED", null),
+            new TimelineItem("commit", "sam", when, "Lower the simulated cooling step", null, next) { Verified = true },
+            new TimelineItem("labeled", "sam", when.AddMinutes(1), null, null, null) { Target = "plc", TargetColor = "1a7f37" },
+            new TimelineItem("labeled", "sam", when.AddMinutes(1), null, null, null) { Target = "needs-soak", TargetColor = "9a6700" },
+            new TimelineItem("review-requested", "sam", when.AddMinutes(2), null, null, null) { Target = "lee" },
+            new TimelineItem("review-requested", "sam", when.AddMinutes(2), null, null, null) { Target = "controls" },
+            new TimelineItem("renamed", "sam", when.AddMinutes(5), null, null, null) { Previous = "Lower the cooling step", Target = "Lower the simulated cooling step" },
+            new TimelineItem("comment", "jo", when.AddMinutes(20), "Soak tests went green with this. **Please check** the interlock still trips.", null, null, "IC_1", CanEdit: true, CanDelete: true)
+            {
+                AuthorAssociation = "MEMBER", EditedAt = when.AddMinutes(25), Reactions = [new ReactionGroup("THUMBS_UP", 2, false), new ReactionGroup("EYES", 1, true)],
+            },
+            new TimelineItem("cross-referenced", "jo", when.AddMinutes(30), null, null, null) { Reference = new TimelineReference(7, "Soak rig cools too fast", "acme/plant", null, false, "OPEN"), Message = "closes" },
+            new TimelineItem("review", "lee", when.AddMinutes(40), "The interlock reads the old value once more before the step lands.", "CHANGES_REQUESTED", next, "PRR_LEE") { AuthorAssociation = "COLLABORATOR" },
+            new TimelineItem("review-dismissed", "sam", when.AddMinutes(50), null, null, null) { Target = "lee", Message = "Addressed in the second commit." },
         ], false);
-        repo.PullCommits[1] = new PullCommitList([new PullCommit(next, "Lower the simulated cooling step", "sam", when)], false);
+        // What GitHub's header counts and marks: the diff's size, and the one check branch protection requires.
+        repo.PullHeader[1] = (4, 4, 3, ["build"]);
+        repo.PullCommits[1] = new PullCommitList([new PullCommit(next, "Lower the simulated cooling step", "sam", when) { AuthorLogin = "sam", Body = "The simulation cooled twice as fast as the plant.\n\nMeasured on the soak rig, 2026-10-20.", Verified = true }], false);
         repo.PullPeople[1] = ([new PullLabel("plc", "1a7f37"), new PullLabel("needs-soak", "9a6700")], [new PullReviewer("lee", "CHANGES_REQUESTED"), new PullReviewer("controls", "REQUESTED")]);
         // Slice 5: labels to put on and people who can be assigned. A new pull request can be
         // opened from "next" into "main" (the fixtures carry no template, so its body starts empty).
@@ -137,7 +175,10 @@ public sealed class FixturePreview
             "## Changed\n\n- The alarm defaults\n- The simulation step\n"));
         repo.Releases.Add((new ReleaseInfo("v1.2-rc1", "Next cut", "sam", DateTimeOffset.Now.AddDays(-1), Prerelease: true), ""));
 
-        var settings = new Dictionary<string, string?> { ["urls"] = "http://127.0.0.1:5199" };
+        // 5199 unless VERSIO_WEB_PREVIEW_PORT says otherwise: a second preview beside another
+        // session's (the same reason PullPreview takes one, 2026-10-23).
+        var port = Environment.GetEnvironmentVariable("VERSIO_WEB_PREVIEW_PORT") is { Length: > 0 } chosen ? chosen : "5199";
+        var settings = new Dictionary<string, string?> { ["urls"] = $"http://127.0.0.1:{port}" };
 
         // VERSIO_WEB_PREVIEW_SCOPED=1 besides: the server scoped to the fixtures repository, to
         // look at the home page's repository list and the off-list refusal ("The product shape"
@@ -175,7 +216,13 @@ public sealed class FixturePreview
             await File.WriteAllTextAsync(Path.Combine(Path.GetTempPath(), "versio-web-preview-session.txt"), session.Id);
         }
 
-        await Task.Delay(TimeSpan.FromMinutes(25));
+        // 25 minutes unless VERSIO_WEB_PREVIEW_MINUTES says otherwise. The owner's first look at the
+        // page (2026-10-24) outlived two 25-minute previews, and every restart minted a new signed-in
+        // session, so the cookie pasted from the file above went stale under them and the page fell
+        // silently to read-only: no comment box, no reply buttons, nothing saying why. A day-long
+        // preview keeps one session for one look; the session itself is good for eight hours.
+        var minutes = int.TryParse(Environment.GetEnvironmentVariable("VERSIO_WEB_PREVIEW_MINUTES"), out var m) && m > 0 ? m : 25;
+        await Task.Delay(TimeSpan.FromMinutes(minutes));
     }
 
     /// <summary>The anchor a comment written on Signals' network 2, at the older commit, would carry.</summary>

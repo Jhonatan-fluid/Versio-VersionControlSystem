@@ -1,6 +1,6 @@
 # Versio — status and what is next
 
-**Date:** 2026-09-14 · **This is the live page.** Where the project is, and what is next, live
+**Date:** 2026-10-25 · **This is the live page.** Where the project is, and what is next, live
 here and only here. Search [`FINDINGS.md`](FINDINGS.md) for defects. Completed plans and session
 handoffs are records in [`phase1/`](phase1/) and [`archive/`](archive/) — read them for why,
 never for state.
@@ -11,7 +11,17 @@ log file; the diff parser read a removed `--` line as a file header). Everything
 the working loop is green; the visual half is item 2's first bullet. FINDINGS 2026-09-21 has
 the list.
 
-**Continue from here — item 2 of *What is next*: the owner eyeballs.** Item 1 is done:
+**Continue from here — item 11 of *What is next*: the five IDE gates the review's fixes still
+owe (2026-10-24), then item 10, the web viewer's real-GitHub gates, then item 2, the owner's
+eyeballing of the desktop.** An external review's forty-one findings — sixteen of them ways to
+lose work — were verified and fixed on 2026-10-24, forty-three commits, and the reviewer's second
+round of twelve (three of them fixes to the first round's fixes) on 2026-10-25, twelve commits
+more, a third round of four the same day (two of them what the earlier fixes had left),
+four commits, a fourth round of seven the same evening (two of them ways to lose a
+project), seven commits, a fifth of six (three P1, one of them a hole the third round's
+own fix opened), six commits, a sixth of five (three of them the fifth round's fixes
+one case short), five commits, and a seventh of three (a restore that adopted what it put
+back), four commits; FINDINGS has all seven lists, newest first. Item 1 is done:
 `Versio.Plc.Codesys.Tests` ran on `Siemens2` on 2026-08-19 evening — **54/54 green in
 39 m 33 s, zero skips**, on an idle machine with the IDE closed, over the Core seam
 changes (`ExportHeldViaCopy`, the held-wait, occupancy-then-hash, the locked-pointer
@@ -21,8 +31,8 @@ UX remainder) is built and tested as of 2026-08-25** — UX-6 find boxes, UX-7 `
 Escape, UX-8 copy-a-commit, UX-12 amend-while-unpushed — and its visual half joins the
 eyeball list in item 2. Do not start from `archive/` or a handoff.
 
-**Tests:** 3,896 across twelve projects (plus 128 vitest in `web/`), last counted 2026-10-23
-on `PrReview` — re-derived by summing the table below, which the old total no longer matched; the toolchain-gated
+**Tests:** 4,430 across twelve projects (plus 211 vitest in `web/`), last counted 2026-10-25
+on `VersioWeb` after the review's seventh round (Core 2,080, App 846, Web 504) — re-derived by summing the table below; the toolchain-gated
 counts (TIA 5, TwinCAT 6, CODESYS 55) are from their last gate runs, not re-run for the count. **The Rendered view of an ST object reads like the IDE (2026-09-20):** no
 `@@` line, one gutter, a Declaration / Implementation divider, and the implementation
 numbered from 1 so a compile error's line number can be found — FINDINGS 2026-09-20. **With TIA Portal open, a commit no longer records a stale mirror**: the
@@ -61,19 +71,19 @@ marking, duplicate-param keys, and the detail-pane lookup. All of them are in
 
 | Project | Tests | Time | Needs |
 |---|---|---|---|
-| `Versio.Core.Tests` | 1,837 | under a second | nothing |
-| `Versio.Integration.Tests` | 176 | ~10 s | real git |
-| `Versio.App.Tests` | 800 (re-counted 2026-10-23) | 10 m 36 s on 2026-10-23; 12 m 19 s, 10 m 42 s and 9 m 5 s on 2026-10-22; 10 m 46 s on 2026-10-19; 10 m 58 s on 2026-10-16; 6 m 35 s on 2026-10-10; 8 m 38 s on 2026-10-05; ~3.6 min on 2026-09-22 | nothing |
+| `Versio.Core.Tests` | 2,080 (nothing skipped) | under a second | nothing |
+| `Versio.Integration.Tests` | 254 | ~1 m (2 m 18 s loaded) | real git |
+| `Versio.App.Tests` | 846 (re-counted 2026-10-25) | 10 m 57 s, 843/846, 2026-10-25 night (three catch-up waits red, all green alone and in their classes; FINDINGS 2026-10-25 seventh round); **12 m 15 s, 845/845, idle, 2026-10-25 night**; 9 m 3 s, 838/842, 2026-10-25 night (the CODESYS run beside it; the four red are the clipboard tests, `CLIPBRD_E_CANT_OPEN`, red alone and on the untouched base too — another program held the clipboard; FINDINGS 2026-10-25 fifth round); 12 m 49 s, 840/841, 2026-10-25 evening (nothing else of this session running; `SourceProjectTests.A_program_with_no_variables…` red after 13 s for the second full run today, green alone and in its class — a watch item, FINDINGS 2026-10-25 fourth round); 13 m 29 s, 835/836, loaded, 2026-10-25 (the third round's CODESYS run beside it; a 21 s catch-up wait in `SourceProjectTests` failed and passed alone in 4 s); 13 m 9 s, 835/836, loaded, 2026-10-25 (the CODESYS gate ran beside it; the one 30 s catch-up wait failed and passed alone in 4 s); **12 m 22 s, 833/833, idle, 2026-10-24**; 11 m 23 s the same day loaded (three gates beside it; one 30 s catch-up wait failed and passed alone in 4 s) and 16 m 30 s under three builds; 10 m 45 s (loaded: mutation checks ran beside it) and 10 m 36 s on 2026-10-23; 12 m 19 s, 10 m 42 s and 9 m 5 s on 2026-10-22; 10 m 46 s on 2026-10-19; 10 m 58 s on 2026-10-16; 6 m 35 s on 2026-10-10; 8 m 38 s on 2026-10-05; ~3.6 min on 2026-09-22 | nothing |
 | `Versio.Arch.Tests` | 36 | instant | nothing |
-| `Versio.Plc.Codesys.Pure.Tests` | 396 | under a second | nothing |
-| `Versio.Plc.Codesys.Parity.Tests` | 100 | ~15 s | `python` on PATH — skips cleanly without it, so check the count |
-| `Versio.Plc.TiaPortal.Pure.Tests` | 98 | instant | nothing |
-| `Versio.Plc.TiaPortal.Tests` | 5 | seconds when skipped; minutes when Portal runs the import gate | **real TIA Portal** — skips without Openness membership or LFS content |
-| `Versio.Plc.TwinCat.Pure.Tests` | 23 | instant | nothing |
-| `Versio.Plc.TwinCat.Tests` | 6 | seconds when skipped; ~5 min when XAE runs the import gate | **real TwinCAT XAE** — skips without `TcXaeShell.DTE.17.0` or the fixture |
-| `Versio.Web.Tests` | 364 | a few seconds | nothing — GitHub is faked |
-| `web/` (vitest) | 128 | ~20 s | the pinned Node in `web/.node` |
-| `Versio.Plc.Codesys.Tests` | 55 | **~30 min**; 41 m 14 s, 55/55, on 2026-10-11 on `WebViewer` | **real CODESYS** |
+| `Versio.Plc.Codesys.Pure.Tests` | 405 | under a second | nothing |
+| `Versio.Plc.Codesys.Parity.Tests` | 104 | ~15 s | `python` on PATH — skips cleanly without it, so check the count |
+| `Versio.Plc.TiaPortal.Pure.Tests` | 108 | instant | nothing |
+| `Versio.Plc.TiaPortal.Tests` | 5 | seconds when skipped; 3 m 1 s on 2026-10-25 when Portal is there but refuses the host (1 passed, 4 skipped, not an Openness member); minutes when Portal runs the import gate | **real TIA Portal** — skips without Openness membership or LFS content |
+| `Versio.Plc.TwinCat.Pure.Tests` | 27 | instant | nothing — the host's text rules are compiled in as source |
+| `Versio.Plc.TwinCat.Tests` | 6 | seconds when skipped (4 s, 6 skipped, 2026-10-25); ~5 min when XAE runs the import gate | **real TwinCAT XAE** — skips without `TcXaeShell.DTE.17.0` or the fixture |
+| `Versio.Web.Tests` | 504 | ~25 s | nothing — GitHub is faked |
+| `web/` (vitest) | 211 | ~21 s on 2026-10-24 (the review page waits for its reads, not ticks; it was ~3 min) | the pinned Node in `web/.node` |
+| `Versio.Plc.Codesys.Tests` | 55 | **~30 min**; 41 m 14 s, 55/55, on 2026-10-11 on `WebViewer`; 1 h 22 m, 53/55, on 2026-10-25 on `VersioWeb` loaded (the two red are item 11's `<masked-guid>` regression) | **real CODESYS** |
 
 The first ten are the loop to work in — about thirty seconds plus the UI suite. The last is
 the CODESYS gate before a commit. `Versio.Plc.TiaPortal.Tests` and `Versio.Plc.TwinCat.Tests`
@@ -100,7 +110,8 @@ real toolchain.
 | [`project/PLAN.md`](project/PLAN.md) | Design record for Versio Project — one PLC beside the IDE. Not the live queue |
 | [`outpost/PLAN.md`](outpost/PLAN.md) | Design record for Versio Outpost — plant backup and confirmed restore. Not the live queue |
 | [`web/ARCHITECTURE.md`](web/ARCHITECTURE.md) | Versio Web as built: the layers, where every file is, one request end to end, what it reuses from the desktop |
-| [`web/PLAN.md`](web/PLAN.md) | Design record for Versio Web — a read-only browser view of a repository on GitHub, drawn by the same Core renderers. Its Step 1 is Outpost's Step 2b. Not the live queue |
+| [`web/PLAN.md`](web/PLAN.md) | Design record for Versio Web — a browser view of a repository on GitHub, drawn by the same Core renderers, and since slice 2 a pull request reviewer with writes on. Its Step 1 is Outpost's Step 2b. Not the live queue |
+| [`web/FINISH.md`](web/FINISH.md) | **The live queue for Versio Web** (2026-10-23): every gap between the page and a finished product — GitHub's look, the pull request page at parity, every desktop drawing — and the order they land in |
 | [`fbs/PLAN.md`](fbs/PLAN.md) | Design record for CODESYS File-Based Storage — an `.fbsproj` folder shown and drawn as a project, never synced. What the fixture measured. Not the live queue |
 
 ---
@@ -335,8 +346,18 @@ One list. Reorder it; do not copy it into another file.
    - "open in CODESYS" from `.sidecars/.~u`;
    - CFC;
    - the owner's eyeball of the drawing (right rail?) and of the row.
-10. **Versio Web, a read-only browser view of a repository on GitHub — built 2026-10-11 on
-   `WebViewer`, since merged.** The design, the security rules and what each step measured are
+10. **Versio Web, a browser view of a repository on GitHub, read-only at first and a pull request reviewer since slice 2 — built 2026-10-11 on
+   `WebViewer`, since merged.** **[`web/FINISH.md`](web/FINISH.md) is the queue, and its Steps 0–10
+   landed between 2026-10-23 and 2026-10-24 on `VersioWeb`:** GitHub's shape in place of the
+   desktop shell (with Versio's mark and palette, not GitHub's, since the owner's first look on
+   2026-10-24 — `tokens.css` is the desktop palette, `VersioMark` the header), the pull request page at parity (comments everywhere, landing on the right
+   GitHub line; checks with their annotations; the merge box; the lists and the form; commit
+   comments), every desktop drawing for every vendor through Core's one renderer choice, links that
+   stay in context and reveal their target, "used by", and the operations work (audit lines on every
+   write path, the live head's checks, both flakes retired, the App permission list). **What is
+   left there is the owner's: the real-GitHub gates on a throwaway repository, writes on, merge
+   last** — and the named future renderers and anchors (ladder elements, catalog rows, the
+   desktop's own ST links). The history below is how it got here. The design, the security rules and what each step measured are
    in [`web/PLAN.md`](web/PLAN.md). An ASP.NET Core server (`src/Versio.Web`) renders with
    Versio.Core and the three pure packs; a React page (`web/`) places that HTML and draws no
    code. Built: the HTML renderers for source, text diffs and member tables (Outpost's Step 2b,
@@ -433,19 +454,27 @@ One list. Reorder it; do not copy it into another file.
    it off (one by a writer does not — GitHub's rule, corrected here 2026-10-20). Then the external penetration test with
    writes on, before anyone but the owner has them. **The PR review plan's six slices are built;
    every real-GitHub gate is the owner's to run.**
-   **A loose end seen once, 2026-10-19:** `PerformanceTests.A_page_load_asks_GitHub_for_each_thing_once`
+   ~~**A loose end seen once, 2026-10-19:** `PerformanceTests.A_page_load_asks_GitHub_for_each_thing_once`
    failed one full Web run and passed three after; not investigated. A suspect, unproven: the
    loader's resolution cache is written after its single-flight finishes, so a request arriving in
-   between resolves again.
-   **A second, seen 2026-10-20:** the review page's vitest waits a fixed number of short ticks for
+   between resolves again.~~ **Closed 2026-10-24 (FINISH Step 10):** the suspect was right.
+   `SingleFlight` retires its key in a `finally` before the caller's `cache.Set`, so a request in
+   between resolved again. The write moved inside the flight; the old binary failed once in ten
+   class runs, the fixed one passed 32 of 32 — FINDINGS 2026-10-24.
+   ~~**A second, seen 2026-10-20:** the review page's vitest waits a fixed number of short ticks for
    reads to land (`settle` in `PullPage.test.tsx`). With a mutation run's builds loading the machine,
    six slice 5 tests failed together and one failed again later; on an idle machine 86/86, twice.
-   Timing, not behaviour, by every sign — but a wait-for-condition would retire it.
-   **The `PerformanceTests` flake above was seen a second time, 2026-10-20**, once in a full Web run
+   Timing, not behaviour, by every sign — but a wait-for-condition would retire it.~~ **Closed
+   2026-10-24:** `settle` waits for the page to be at rest — no stubbed read in flight for three
+   ticks — with a ceiling only a hang reaches; the file went from about three minutes to eighteen
+   seconds, which is what the fixed ticks had been costing.
+   ~~**The `PerformanceTests` flake above was seen a second time, 2026-10-20**, once in a full Web run
    right after the GraphQL-errors change; three runs after it were green (340/340 each). Still not
    investigated; the resolution-cache race stays the suspect. **A third sighting the same day**,
    once in a full run; four runs after it green (348/348). Three in a day is no longer rare enough to
-   leave: it is the next loose end to take up.
+   leave: it is the next loose end to take up. **A fourth, 2026-10-23**, once in a full Web run on
+   the coverage-rules branch while an integration run shared the machine; alone and in a second full
+   run, green (364/364). Still the resolution-cache suspect, still not investigated.~~ Closed, see above.
    **Left, all needing the owner or a deployment:**
    - **register the GitHub App** (on GitHub: read-only Contents and Metadata, a callback at
      `/auth/callback`) and run sign-in against real GitHub; until then the server runs
@@ -460,8 +489,17 @@ One list. Reorder it; do not copy it into another file.
      ~~and at the Docs tab's embedded PDF~~ — **seen drawing in the owner's Chrome 2026-10-16**,
      after its first look found the viewer's own frame lock blocking it (FINDINGS 2026-10-16);
    - the external penetration test and a cost alarm, once it is deployed;
-   - later, on purpose: the desktop drawing with the shared HTML renderers, and the choice of
-     renderer moved into Core for both (today mirrored, pinned by a test).
+   - later, on purpose: the desktop drawing with the shared HTML renderers; ~~and the choice of
+     renderer moved into Core for both (today mirrored, pinned by a test)~~ — **moved 2026-10-23**.
+   **2026-10-23: the choice of what a row draws is Core's** (`RenderChoice.Decide`), called by
+   the desktop pane and by `ViewService`, after the owner's FBS library pull request drew its
+   catalogs and empty objects as raw metadata on the web (FINDINGS 2026-10-23): the web now draws
+   the project card, the three catalogs (Versio's YAML and the vendor's own files), the task and
+   device cards, the empty-object note in a pull request, the whole file under a table whose
+   format knows no body, a `.html` as `kind: "webpage"` served sandboxed by `/raw`, and a notice
+   over any native file no model draws. `RenderChoiceParityTests` runs both hosts over every
+   fixture row; `/tree` nodes carry the desktop's row whole. The page's side (framing the web
+   page, drawing the new kinds and the tree fields) is the `web/` rebuild's.
 7. **Wait for a specimen, not a build.** C5 (`DELETE_UNREADABLE`) and `native_partial` close when
    reality produces an object nobody has observed. They cannot be manufactured. See
    [`phase1/IMPORT-PLAN.md`](phase1/IMPORT-PLAN.md).
@@ -485,6 +523,110 @@ One list. Reorder it; do not copy it into another file.
 
 Close Versio **and** Portal before a host rebuild. Click **Yes to all** on Openness access (path
 + hash — a rebuild drops the host off the AllowList).
+
+11. **The five IDE gates the review's fixes owe, and two follow-ups — 2026-10-24.** FINDINGS
+    2026-10-24 has the forty-one items. Owed: ~~`Versio.Plc.Codesys.Tests` over items 5 (the
+    import reads a DUT as written) and 31 (task retargeting within the Application)~~ — **ran
+    2026-10-25 on `ba8dbdf`: 53/55 in 1 h 22 m**, loaded (the owner's CODESYS GUI, Portal and
+    the installed Versio stayed open; none holds the CODESYS mutex while idle). Items 5 and 31
+    pass under real CODESYS —
+    `A_declaration_only_object_edited_in_the_mirror_reaches_the_project` and
+    `A_POU_renamed_in_the_mirror_keeps_its_identity_rather_than_being_rebuilt`, which asserts
+    the task list names the renamed POU; the second-Application case of 31 stays parity-only.
+    **The two red are a regression from item 20's own fix** (`4b83f89`): both normalisers mask a
+    GUID to `<masked-guid>`, and the new sibling chunker reads that as an open tag, so an
+    unordered container holding GUIDs never closes, its children are never sorted, and the two
+    vis files CODESYS re-mints on import compare as changed —
+    `An_import_and_a_re_export_leave_the_mirror_byte_identical` (`Live_Visu.vis.xml`,
+    `Visualization.vis.xml`, then `_manifest.json`) and
+    `A_member_inside_a_folder_round_trips_and_moves_nothing_else` (the same two files).
+    Reproduced without CODESYS on the embedded python as plain CPython: two swapped siblings
+    compare equivalent with plain values and not with GUIDs. It is the second review round's
+    item 7, fixed by that round's session (`2d602ec`, the placeholder is `{masked-guid}` on
+    both sides); **re-run on `5cb51ef` with that python embedded: the two red tests and the
+    item 5 and 31 tests, 4/4 in 9 m 7 s.** The CODESYS gate is settled for the first round.
+    **Re-run once more on `85f88d1` — the third round's item 4 changed the delete check's
+    python — with the three real-CODESYS deletion tests beside those four: 7/7 in 22 m 34 s,
+    the owner's IDEs open (FINDINGS 2026-10-25, the third round's item 4).** **And once more on `ef3b469` — the fifth round's item 1 changed the delete check's
+    python again — the same seven: 7/7 in 26 m 33 s, the owner's IDEs open (FINDINGS
+    2026-10-25, the fifth round's item 1).**
+    `Versio.Plc.TwinCat.Tests` over 23 (does XAE accept an empty `ImplementationText`?) and the
+    `ide_pid` half of 28 — **cannot run here: 6 of 6 skipped in 4 s, no `TcXaeShell.DTE.17.0`
+    (2026-10-25)**; `Versio.Plc.TiaPortal.Tests` over 27 (the Comment marker is 300
+    characters now) and the other half of 28 — **cannot either: 1 passed, 4 skipped in 3 m 1 s
+    (2026-10-25)**; the locator passes because only V21's PublicAPI has a `net48` folder, and
+    each of the four Portal tests launched the host and was refused, the account not being in
+    the `Siemens TIA Openness` group. Both gates are still owed, on a machine that has the
+    IDE. Follow-ups, named and not done: ~~a Clean binding
+    with an **unconfirmed** mirror edit exports over it on the next project save
+    (`A_project_save_does_not_export_over_an_unconfirmed_mirror_edit`, skipped in Core;
+    `SyncStateMachine.EnterConflict` has no caller)~~ — closed 2026-10-25 by the second
+    round's item 1 (a gate beside the direction lock refuses the export; `EnterConflict` still
+    has no caller, on purpose, and dev.md says so) — and branch deletion still addresses the
+    hardcoded "origin" after item 39.
+
+12. **The review's second round, twelve items, all fixed — 2026-10-25.** FINDINGS 2026-10-25
+    has the list. Two of them touch the embedded python and so the CODESYS gate: item 3 (the
+    rename's task walk stops at a nested Application) and item 7 (the GUID mask no longer
+    breaks the sibling sort the delete check reads — the two red of item 11's 53/55). The gate session re-ran those two red tests, with item 11's 5 and 31, on the new
+    embedded python: 4/4 in 9 m 7 s on `5cb51ef`; item 11 carries the result.
+    The TIA and TwinCAT gates owe nothing new; the TIA import Fact ran green over the branch
+    in passing. Still not done: branch deletion addresses the hardcoded "origin" (the first
+    round's item 39).
+
+13. **The review's third round, four items, all fixed — 2026-10-25.** FINDINGS 2026-10-25,
+    the newest entry, has the list: a semicolon on its own line merged two ST declarations
+    (a regression from the second round's item 9), a reversed `.gitattributes` range made
+    the commit preflight throw, a non-ASCII file name was matched as characters where git
+    matches bytes, and the delete check could no longer read the `nhash` every existing
+    mirror carries, because the normaliser had changed twice without it. Item 4 changed the
+    embedded python; item 11 carries the CODESYS re-run over it. Still not done: branch
+    deletion addresses the hardcoded "origin" (the first round's item 39).
+
+14. **The review's fourth round, seven items, all fixed — 2026-10-25.** FINDINGS 2026-10-25,
+    the newest entry, has the list. Two P1: a backup whose tree copy stopped partway was
+    listed and restorable, and restoring it deleted the half of the live project the copy
+    never had; "merge upstream" (and rebase) adopted a merge that reached a tracked project,
+    recording the mismatch as synced so the next save exported over the incoming logic. Five
+    P2: an excluded staged rename committed its deletion, a modify/delete conflict could not
+    keep the deleted side, a Stop during the scratch copy's hash left the binding stuck and
+    Coalesced, applying a web suggestion rewrote the unselected lines of a mixed-ending file,
+    and a CRLF suggestion whose fence ended its line was not recognised. Nothing touches the
+    embedded python, so the CODESYS gate owes nothing new. Still not done: branch deletion
+    addresses the hardcoded "origin" (the first round's item 39).
+
+15. **The review's fifth round, six items, all fixed — 2026-10-25.** FINDINGS 2026-10-25,
+    the newest entry, has the list. Three P1: the third round's legacy-hash fallback let
+    the lossy line-sort hash authorise the deletion of a modified object (an older hash now
+    vouches only where its normalisation was lossless for that object; the rest wait for a
+    re-export — item 11 carries the CODESYS re-run), nested export roots were accepted and
+    the outer export deleted the inner project, and the TIA host wrote a plan's payload into
+    the first PLC when its target could not be found. Three P2: a selected-file first commit
+    failed on `restore --staged` with no HEAD, the commit page drew a renamed-and-edited file
+    as wholly added, and one malformed `_manifest.json` aborted repository discovery. The
+    TIA gate is still owed on a machine in the Openness group. Still not done: branch
+    deletion addresses the hardcoded "origin" (the first round's item 39).
+
+16. **The review's sixth round, five items, all fixed — 2026-10-25.** FINDINGS 2026-10-25,
+    the newest entry, has the list. Three are the fifth round's fixes one case short: the
+    nested-root check now reads every project the scan found, tracked or not (the outer one
+    is refused); the TIA host refuses a file for a PLC that is gone even when one PLC is left;
+    the renderer pairs a renamed object by the explicit old/new path rather than by suffix.
+    Two new: a paused rebase is continued with `rebase --continue` instead of a plain commit,
+    and `repo.json` with null collections or null entries is read without a crash. No python
+    touched, so the CODESYS gate owes nothing new; the TIA gate is still owed. Still not
+    done: branch deletion addresses the hardcoded "origin" (the first round's item 39).
+
+17. **The review's seventh round, three items, all fixed — 2026-10-25.** FINDINGS 2026-10-25,
+    the newest entry, has the list. P1: restoring an auto-stash adopted the restored mirror
+    edit as synced, so the next save exported over it — the restore no longer adopts and
+    raises the import the edit owes. P2: a throw from inside a run (two bindings sharing
+    one state.json.tmp) left the coalescer's slot held for good — the run answers Failed
+    and releases it, the JSON writer serialises writers and retries a replace a scanner
+    holds; a mirror subfolder moved out raised no change — the watcher turns folder events
+    into the files they carried and the poll reports a tracked file that is gone. No python
+    touched. Still not done: branch deletion addresses the hardcoded "origin" (the first
+    round's item 39), and the merge twin of the sixth round's item 4.
 
 ---
 

@@ -162,11 +162,12 @@ public sealed class PullMetaWriteTests
 
     [Theory]
     [InlineData("main", "main", "Same")]
-    [InlineData("main", "bob:feature", "A fork")]
+    [InlineData("bob:main", "feature", "A fork as the base")]
+    [InlineData("main", "not a login:feature", "A fork named wrongly")]
     [InlineData("main", "feature", "")]
     [InlineData("main", "feature", "   ")]
     [InlineData("main", "-feature", "Option-shaped")]
-    public async Task Two_different_branches_of_this_repository_and_a_title_are_required(string @base, string head, string title)
+    public async Task Two_different_branches_and_a_title_are_required(string @base, string head, string title)
     {
         var w = Build();
         var (host, writer, alice, _) = await StartAsync(w);
@@ -174,6 +175,19 @@ public sealed class PullMetaWriteTests
 
         (await Create(host, alice, new { opKey = Key(), @base, head, title, body = "", draft = false })).AssertStatus(HttpStatusCode.BadRequest);
         Assert.Empty(writer.Writes);
+    }
+
+    /// <summary>A fork's branch as GitHub names it (Step 7): not looked up here, where it cannot be seen; GitHub checks it and is believed.</summary>
+    [Fact]
+    public async Task A_forks_branch_is_named_as_the_head_and_sent_to_GitHub_as_it_is()
+    {
+        var w = Build();
+        var (host, writer, alice, _) = await StartAsync(w);
+        await using var __ = host;
+
+        (await Create(host, alice, new { opKey = Key(), @base = "main", head = "bob:feature", title = "From a fork", body = "", draft = false })).AssertStatus(HttpStatusCode.OK);
+
+        Assert.Equal(("main", "bob:feature"), (writer.Created.Single().Base, writer.Created.Single().Head));
     }
 
     [Fact]
@@ -381,6 +395,12 @@ public sealed class PullMetaWriteTests
         unknown.AssertStatus(HttpStatusCode.UnprocessableEntity);
         Assert.Contains("label-not-found", await unknown.Body(), StringComparison.Ordinal);
         Assert.Single(writer.Writes);
+
+        // A cut label list cannot say a label does not exist: the write goes to GitHub, which
+        // decides (review, 2026-10-24 — the 101st label of a repository with more was refused by name).
+        w.Repo.ListsCut = true;
+        (await Post(host, alice, token, "/labels", new { opKey = Key(), add = new[] { "made-up" } })).AssertStatus(HttpStatusCode.OK);
+        Assert.Equal(2, writer.Writes.Count);
     }
 
     /// <summary>GitHub answers success while dropping an assignee who cannot be assigned: asked first, so the page is never told it worked.</summary>

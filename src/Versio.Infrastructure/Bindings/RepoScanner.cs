@@ -160,9 +160,39 @@ public sealed class RepoScanner(
         {
             using var stream = File.OpenRead(manifestPath);
             using var document = JsonDocument.Parse(stream);
-            return document.RootElement.TryGetProperty("bindingId", out var id)
-                ? id.GetString()
-                : null;
+
+            // Valid JSON is not the same as a manifest. `null` and `[]` parse, and so does
+            // {"bindingId": 7}; TryGetProperty on a non-object root and GetString() on a
+            // number both throw InvalidOperationException, which the catch below was never
+            // written for — so until 2026-10-25 one such file aborted the whole scan, and
+            // every other project in the repository vanished with it. The kinds are checked
+            // first so that a wrong-shaped manifest costs exactly what a corrupt one does:
+            // its own tree reads as unidentified, and the scan goes on.
+            var root = document.RootElement;
+            if (root.ValueKind != JsonValueKind.Object)
+            {
+                _log.Warn(LogCategory.Fs,
+                    $"could not read the binding id from {manifestPath}: " +
+                    $"the file holds {root.ValueKind}, not a JSON object");
+                return null;
+            }
+
+            // Absent, or present and null, is a manifest from before binding ids or one the
+            // exporter has not filled in — a state, not damage, so it stays out of the log.
+            if (!root.TryGetProperty("bindingId", out var id) || id.ValueKind == JsonValueKind.Null)
+            {
+                return null;
+            }
+
+            if (id.ValueKind != JsonValueKind.String)
+            {
+                _log.Warn(LogCategory.Fs,
+                    $"could not read the binding id from {manifestPath}: " +
+                    $"bindingId is {id.ValueKind}, not a string");
+                return null;
+            }
+
+            return id.GetString();
         }
         catch (Exception e) when (e is IOException or JsonException)
         {

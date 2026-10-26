@@ -61,6 +61,15 @@ public static class HunkPatchBuilder
         var seen = -1;
         var collecting = false;
 
+        // Lines a skipped hunk still owes on each side, from its @@ header. While either is
+        // above zero every line is that hunk's content, whatever it starts with: a removed
+        // "-- comment" arrives as "--- comment", an added "++ x" as "+++ x", and the header
+        // check below took both for a file header and copied them into the patch being
+        // built - a second "---" line, which git apply rejects. The 2026-10-24 review's
+        // item 19; the parser had been given the same budget on 2026-09-21 and this had not.
+        var oldLeft = 0;
+        var newLeft = 0;
+
         foreach (var line in lines)
         {
             if (line.StartsWith("diff --git", StringComparison.Ordinal))
@@ -72,6 +81,8 @@ public static class HunkPatchBuilder
 
                 header.Clear();
                 header.Add(line);
+                oldLeft = 0;
+                newLeft = 0;
                 continue;
             }
 
@@ -81,6 +92,8 @@ public static class HunkPatchBuilder
                 {
                     break;
                 }
+
+                (_, _, oldLeft, newLeft) = UnifiedDiffParser.ParseHunkHeader(line);
 
                 seen++;
                 if (seen == hunkIndex)
@@ -95,6 +108,32 @@ public static class HunkPatchBuilder
             if (collecting)
             {
                 body.Add(line);
+                continue;
+            }
+
+            if (oldLeft > 0 || newLeft > 0)
+            {
+                // Inside a skipped hunk. A "\ No newline at end of file" marker owes nothing;
+                // everything else is one line of one side or of both.
+                if (line.StartsWith('\\'))
+                {
+                    continue;
+                }
+
+                switch (line.Length > 0 ? line[0] : ' ')
+                {
+                    case '+':
+                        newLeft--;
+                        break;
+                    case '-':
+                        oldLeft--;
+                        break;
+                    default:
+                        oldLeft--;
+                        newLeft--;
+                        break;
+                }
+
                 continue;
             }
 

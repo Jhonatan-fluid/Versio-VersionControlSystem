@@ -24,11 +24,19 @@ public static class RepoExplorerBuilder
     /// Which format claims a path. Defaults to <see cref="PlcFormats.ForPath"/>; injected the
     /// way <c>OrphanScanner</c> takes it, so a test need not touch the static registry.
     /// </param>
+    /// <param name="changes">
+    /// What changed, when the listing is a comparison (the web viewer's compare and commit pages,
+    /// FINISH.md Step 8): each path's own state marks its row, a folder rolls its descendants up,
+    /// and a deleted path — which <paramref name="files"/> no longer holds — is listed struck
+    /// rather than dropped, exactly as the desktop's Project panel draws a working-tree diff.
+    /// Null for a plain listing, which marks nothing.
+    /// </param>
     public static IReadOnlyList<ProjectTreeNode> Build(
         IReadOnlyList<string> files,
         IReadOnlyList<WorkspaceProject> projects,
         ProjectTreeOptions? options = null,
-        Func<string, IPlcProjectFormat?>? formats = null)
+        Func<string, IPlcProjectFormat?>? formats = null,
+        IReadOnlyList<FileChange>? changes = null)
     {
         var opts = options ?? new ProjectTreeOptions
         {
@@ -36,7 +44,22 @@ public static class RepoExplorerBuilder
             HideUnchangedProjects = false,
         };
 
+        var marks = new Dictionary<string, ChangeKind>(StringComparer.OrdinalIgnoreCase);
+        foreach (var change in changes ?? [])
+        {
+            marks[Normalize(change.Path)] = change.Effective;
+            // A rename's old place is listed struck, as a deletion is: a file moved across folders
+            // otherwise read as a modified file at its new path and nothing at the old (review,
+            // 2026-10-24). The new path keeps the rename mark.
+            if (change.OriginalPath is { Length: > 0 } from && !string.Equals(Normalize(from), Normalize(change.Path), StringComparison.OrdinalIgnoreCase))
+            {
+                marks.TryAdd(Normalize(from), ChangeKind.Deleted);
+            }
+        }
+
+        // A deleted path is not among the files any more, and must still be listed, struck.
         var listed = files
+            .Concat(marks.Keys)
             .Select(Normalize)
             .Where(p => p.Length > 0)
             .Distinct(StringComparer.OrdinalIgnoreCase)
@@ -57,7 +80,7 @@ public static class RepoExplorerBuilder
 
         foreach (var project in projects.OrderBy(p => p.ProjectPath, StringComparer.OrdinalIgnoreCase))
         {
-            var node = WorkspaceTreeBuilder.BuildProjectNode(project, [], opts, claimed);
+            var node = WorkspaceTreeBuilder.BuildProjectNode(project, changes ?? [], opts, claimed);
 
             var exportRoot = Normalize(project.ExportPath).TrimEnd('/');
             if (exportRoot.Length > 0)
@@ -83,12 +106,20 @@ public static class RepoExplorerBuilder
                 continue;
             }
 
+            // A comparison that lists only what changed lists only projects with a change in
+            // them, as the Project panel does (HideUnchangedProjects).
+            if (changes is not null && opts.ChangedOnly && opts.HideUnchangedProjects && !node.HasChanges)
+            {
+                continue;
+            }
+
             grafts.Add(node);
         }
 
         var remaining = listed
             .Where(p => !claimed.Contains(p))
-            .Where(p => PathMatches(p, opts.Search));
+            .Where(p => PathMatches(p, opts.Search))
+            .Where(p => changes is null || !opts.ChangedOnly || marks.GetValueOrDefault(p) != ChangeKind.Unmodified);
 
         var root = new Folder();
         foreach (var path in remaining)
@@ -101,7 +132,7 @@ public static class RepoExplorerBuilder
             root.AddGraft(graft);
         }
 
-        return root.ToNodes("", toolchains);
+        return root.ToNodes("", toolchains, marks);
     }
 
     /// <summary>
@@ -260,20 +291,23 @@ public static class RepoExplorerBuilder
             return here;
         }
 
+        /// <param name="marks">Each changed path's state, when the listing is a comparison; empty otherwise.</param>
         public IReadOnlyList<ProjectTreeNode> ToNodes(
-            string prefix, IReadOnlyDictionary<string, Pill> toolchains)
+            string prefix, IReadOnlyDictionary<string, Pill> toolchains, IReadOnlyDictionary<string, ChangeKind> marks)
         {
             var nodes = new List<ProjectTreeNode>();
 
             foreach (var (name, child) in _folders.OrderBy(e => e.Key, StringComparer.OrdinalIgnoreCase))
             {
                 var path = prefix.Length == 0 ? name : prefix + "/" + name;
-                var nested = child.ToNodes(path, toolchains);
+                var nested = child.ToNodes(path, toolchains, marks);
                 if (nested.Count == 0)
                 {
                     continue;
                 }
 
+                // The folder's badge, as the Project panel's: how many below it changed, and the
+                // strongest of their states for its colour.
                 nodes.Add(new ProjectTreeNode
                 {
                     Name = name,
@@ -282,6 +316,10 @@ public static class RepoExplorerBuilder
                     Children = nested,
                     Toolchain = toolchains.GetValueOrDefault(path)?.Label ?? string.Empty,
                     Detail = toolchains.GetValueOrDefault(path)?.State ?? string.Empty,
+                    ChangedDescendants = nested.Sum(c => c.ChangedDescendants + (c.Status != ChangeKind.Unmodified ? 1 : 0)),
+                    RollUp = nested
+                        .Select(c => ProjectTreeBuilder.Stronger(c.Status, c.RollUp))
+                        .Aggregate(ChangeKind.Unmodified, ProjectTreeBuilder.Stronger),
                 });
             }
 
@@ -306,6 +344,7 @@ public static class RepoExplorerBuilder
                     Kind = ProjectNodeKind.File,
                     Files = [path],
                     Toolchain = toolchains.GetValueOrDefault(path)?.Label ?? string.Empty,
+                    Status = marks.GetValueOrDefault(path),
                 });
             }
 

@@ -141,11 +141,17 @@ public class SyncRunSignallingTests
     [Fact]
     public async Task A_run_that_throws_is_still_announced_as_finished()
     {
+        // The throw used to escape HandleChangeAsync whole; since the 2026-10-25 review's
+        // seventh round (item 2) the attempt catches it, releases the slot it held and answers
+        // Failed with the exception's words, so Try again lights and nothing stays Coalesced.
+        // What this test pins is unchanged: the finished notice is raised either way.
         var h = new Harness();
         h.Codesys.BeforeRun = _ => throw new InvalidOperationException("kaboom");
 
-        await Assert.ThrowsAsync<InvalidOperationException>(() => h.Saved());
+        var outcome = await h.Saved();
 
+        Assert.Equal(SyncVerdict.Failed, outcome.Verdict);
+        Assert.Contains("kaboom", outcome.Explanation);
         Assert.Single(h.Started);
         Assert.Single(h.Finished);
     }

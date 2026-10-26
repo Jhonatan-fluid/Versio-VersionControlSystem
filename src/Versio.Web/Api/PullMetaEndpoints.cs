@@ -59,11 +59,49 @@ public static partial class PullWriteEndpoints
     private static void MapCreate(WebApplication app)
     {
         var repos = app.MapGroup("/api/repos/{owner}/{repo}").RequireRateLimiting(WebHost.RatePolicy);
+        // What a comment will look like, for the new pull request's description: the same Core
+        // Markdown as the review page's preview, before there is a pull request to put it under.
+        repos.MapWrite("POST", "/markdown", (PreviewRequest request) =>
+            Results.Ok(new { html = request.Body is { Length: > 0 and <= MaxBodyChars } b ? ApiEndpoints.MarkdownFragment(ReviewTags.Strip(b)) : "" }));
+
+        // A comment on a commit (Step 3b): no pull request, so no snapshot — the commit's sha is
+        // the revision, fixed by nature, and the ledger keys it under pull request 0 with the sha
+        // in the payload. Reconciled by the viewer's own tagged comment on that commit.
+        repos.MapWrite("POST", "/commits/{sha}/comments", async (string owner, string repo, string sha, CommentRequest request, HttpContext http, Writes w, CancellationToken ct) =>
+        {
+            if (sha is not { Length: 40 } || !sha.All(Uri.IsHexDigit))
+            {
+                return Invalid("sha", "Name the commit by its full sha.");
+            }
+
+            if (Body(request.Body) is not { } body)
+            {
+                return Invalid("body", "A comment needs some text.");
+            }
+
+            return await w.RunWithoutSnapshotAsync(http, owner, repo, request, "commit-comment", ReviewTags.PayloadHash(sha, body),
+                precondition: async who =>
+                {
+                    // The audit line below names no revision for a write without a snapshot (it says
+                    // "#0 head -"); this one says which commit, so the two lines together answer
+                    // "was my comment posted, and where" (S10).
+                    w.Log.Info(LogCategory.Web, $"write commit-comment {who} {owner}/{repo} on commit {sha[..8]}");
+                    var resolved = await w.Source.ResolveCommitAsync(who, owner, repo, sha, ct).ConfigureAwait(false);
+                    return resolved.Ok ? null : resolved.Failure == RepoFailure.NotFound
+                        ? Results.Json(new { error = "not-found", message = "Not found, or not visible to you." }, statusCode: 404)
+                        : ApiEndpoints.Refused(resolved.Failure);
+                },
+                (who, key) => w.Writer.AddCommitCommentAsync(who, owner, repo, sha, ReviewTags.WithOperation(body, key), CancellationToken.None),
+                (who, key, since) => w.Writer.FindTaggedCommitCommentAsync(who, owner, repo, sha, ReviewTags.OperationTag(key), ct),
+                idempotent: false, ct).ConfigureAwait(false);
+        });
+
         repos.MapWrite("POST", "/pulls", async (string owner, string repo, CreatePullRequest request, HttpContext http, Writes w, CancellationToken ct) =>
         {
-            if (Branch(request.Base) is not { } @base || Branch(request.Head) is not { } head || @base == head)
+            // The head may be a fork's, as GitHub names one (owner:branch) — Step 7; the base is always this repository's.
+            if (Branch(request.Base) is not { } @base || Head(request.Head) is not { } head || @base == head)
             {
-                return Invalid("branches", "Choose two different branches of this repository.");
+                return Invalid("branches", "Choose two different branches: the base one of this repository, the head one of this repository or a fork's as owner:branch.");
             }
 
             if (Title(request.Title) is not { } title)
@@ -202,6 +240,23 @@ public static partial class PullWriteEndpoints
     private static string? Branch(string? name) =>
         name is { Length: > 0 } && ApiEndpoints.ValidRef(name) && !name.Contains(':', StringComparison.Ordinal) && !name.StartsWith('-') ? name : null;
 
+    /// <summary>A head branch: this repository's, or a fork's as <c>owner:branch</c> with a login before the colon.</summary>
+    private static string? Head(string? name)
+    {
+        if (name is null)
+        {
+            return null;
+        }
+
+        var colon = name.IndexOf(':', StringComparison.Ordinal);
+        if (colon < 0)
+        {
+            return Branch(name);
+        }
+
+        return Login().IsMatch(name[..colon]) && Branch(name[(colon + 1)..]) is not null ? name : null;
+    }
+
     private static string? Title(string? title) =>
         title?.Trim() is { Length: > 0 and <= MaxTitleChars } t && !t.Any(char.IsControl) ? t : null;
 
@@ -214,10 +269,13 @@ public static partial class PullWriteEndpoints
 
     public sealed partial class Writes
     {
-        /// <summary>Both branches exist here. GitHub refuses the rest (no commits between them, one already open) in its own words.</summary>
+        /// <summary>
+        /// Both branches exist here — a fork's head cannot be looked up in this repository, so GitHub
+        /// checks that one. GitHub refuses the rest (no commits between them, one already open) in its own words.
+        /// </summary>
         internal async Task<IResult?> CreatePreconditionAsync(RepoAccess who, string owner, string repo, string @base, string head, CancellationToken ct)
         {
-            foreach (var branch in new[] { @base, head })
+            foreach (var branch in head.Contains(':', StringComparison.Ordinal) ? [@base] : new[] { @base, head })
             {
                 var resolved = await Source.ResolveCommitAsync(who, owner, repo, branch, ct).ConfigureAwait(false);
                 if (!resolved.Ok)
@@ -290,7 +348,14 @@ public static partial class PullWriteEndpoints
                 return ApiEndpoints.Refused(labels.Failure);
             }
 
-            var missing = add.FirstOrDefault(a => labels.Value!.All(l => l.Name != a));
+            // A cut list cannot say a label does not exist: GitHub decides then (review, 2026-10-24).
+            if (labels.Value!.Truncated)
+            {
+                Log.Info(LogCategory.Web, $"labels of {s.Owner}/{s.Repo} are more than {GitHubRepoSource.ListPages * 100}: the write is not gated on the list");
+                return null;
+            }
+
+            var missing = add.FirstOrDefault(a => labels.Value.Labels.All(l => l.Name != a));
             return missing is null
                 ? null
                 : Results.Json(new { error = "label-not-found", message = $"This repository has no label {CodeHtml.Spelled(missing)}." }, statusCode: 422);

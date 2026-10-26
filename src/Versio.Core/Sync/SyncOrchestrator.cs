@@ -455,6 +455,14 @@ public sealed class SyncOrchestrator
             {
                 LockRecovery.ReadoptedAfterRestart when persisted is not null => persisted,
 
+                // The owner is alive — and most often it is this process, rebuilding its
+                // engine on a rescan because a project appeared. "Leaving it alone" fell
+                // through to the blank-direction branch below and the held lock came back
+                // Clean: a project-ahead binding lost its direction mid-session and an
+                // import could run over work the project side had not pushed (the
+                // 2026-10-24 review's item 9). A lock a live session holds is kept as it is.
+                LockRecovery.HeldByLiveSession when persisted is not null => persisted,
+
                 // Releasing the DIRECTION is not the same as forgetting what was last
                 // exported, and conflating them cost an export on every single launch.
                 //
@@ -1103,6 +1111,11 @@ public sealed class SyncOrchestrator
             return (locked, slotHeld);
         }
 
+        if (await MirrorEditStillPendingAsync(attempt, ct).ConfigureAwait(false) is { } pending)
+        {
+            return (pending, slotHeld);
+        }
+
         if (ImportNeedsConfirming(attempt) is { } unconfirmed)
         {
             return (unconfirmed, slotHeld);
@@ -1140,10 +1153,57 @@ public sealed class SyncOrchestrator
         //
         // The slot is completed by the caller, which is the only place that can act on
         // "a follow-up must start now" — it has to await one.
-        var outcome = await ClaimTheDirectionAndRunAsync(
-            attempt, trigger, transition, scratchProject, operationId, ct).ConfigureAwait(false);
+        try
+        {
+            var outcome = await ClaimTheDirectionAndRunAsync(
+                attempt, trigger, transition, scratchProject, operationId, ct).ConfigureAwait(false);
 
-        return (outcome, !job.Synchronous);
+            return (outcome, !job.Synchronous);
+        }
+        catch (Exception ex)
+        {
+            // The caller completes the slot only on an outcome it was handed, so a throw from
+            // in here left the slot held for good: every later change on the binding answered
+            // Coalesced, and nothing ever ran again until a restart. Two bindings persisting
+            // their claims through one state.json.tmp at the same moment was the throw that
+            // found it (the 2026-10-25 review's seventh round, item 2; the fourth round's item
+            // 5 was the same shape, for a cancelled read). The slot is reset here — a change
+            // that queued behind the failed run is dropped with it, and the next watcher event
+            // is judged on its own — and the failure is recorded as any other, so Try again
+            // lights. The record is written with a live token and under its own guard: the
+            // store that just refused one write may refuse this one too, and that must not
+            // turn a recorded failure into a second escape.
+            _log.Error(LogCategory.Sync,
+                $"{job.BindingId}: the run threw before it could answer — {ex.Message}; the " +
+                "slot is released and the failure recorded");
+            if (granted)
+            {
+                _coalescers[job.BindingId].Reset();
+            }
+
+            var fail = job.Source == ChangeSource.Project
+                ? SyncTrigger.ExportFailed
+                : SyncTrigger.ImportFailed;
+            try
+            {
+                await ApplyAsync(job.BindingId, fail, string.Empty, CancellationToken.None,
+                        reason: FailedBecause(job.Source == ChangeSource.Project ? "export" : "import", ex.Message))
+                    .ConfigureAwait(false);
+            }
+            catch (Exception persist)
+            {
+                _log.Error(LogCategory.Sync,
+                    $"{job.BindingId}: the failure could not be recorded either — {persist.Message}");
+            }
+
+            return (new SyncOutcome
+            {
+                Verdict = SyncVerdict.Failed,
+                BindingId = job.BindingId,
+                Explanation = ex.Message,
+                State = StateOf(job.BindingId),
+            }, false);
+        }
     }
 
     /// <summary>
@@ -1375,6 +1435,83 @@ public sealed class SyncOrchestrator
                 $"{transition.Reason} (lock is {attempt.State})", transition.State);
 
     /// <summary>
+    /// 4b. Both sides changed: a project save while the mirror holds an edit nothing has
+    /// imported.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The direction lock cannot see this one. An import that waits for confirmation (gate 5)
+    /// or for the IDE to let go (gate 5b) refuses without claiming the direction — rightly,
+    /// since nothing was written — so the binding is still Clean, and from Clean the
+    /// transition table lets an export run. That export regenerates the whole mirror from the
+    /// project and the unconfirmed edit is gone, with no backup: an import backs the project
+    /// up first, an export backs nothing up, because the mirror is supposed to be in git. An
+    /// edit nobody has committed is not. Found while fixing the 2026-10-24 review's item 3 and
+    /// left as a skipped test; closed for the second round's item 1.
+    /// </para>
+    /// <para>
+    /// <b>After the lock, before confirmation.</b> After the lock because a held direction
+    /// has already answered the question — a text edit under <c>ProjectAuthoritative</c> was
+    /// refused out loud with "will not be imported", and the export that follows is what that
+    /// refusal promised. Before confirmation because this is a project job, which that gate
+    /// does not read. Only Clean is asked, and only against a mirror hash that has actually
+    /// been recorded: an empty record is a fresh clone that adoption has not reached yet, and
+    /// there is nothing to compare an edit with.
+    /// </para>
+    /// <para>
+    /// <b>A checkout does not trip it.</b> Git rewriting the tree leaves both hashes
+    /// different from the last synced ones, and <see cref="AdoptExternalStateAsync"/> moves
+    /// the record to what the new commit holds before any save is measured against it.
+    /// </para>
+    /// </remarks>
+    private async Task<SyncOutcome?> MirrorEditStillPendingAsync(Attempt attempt, CancellationToken ct)
+    {
+        if (attempt.Job.Source != ChangeSource.Project
+            || await UnimportedMirrorEditAsync(attempt.Binding, ct).ConfigureAwait(false)
+                is not var (mirrorHash, synced))
+        {
+            return null;
+        }
+
+        return Refuse(LogLevel.Warning, SyncVerdict.BlockedByPendingEdit, attempt.Job.BindingId,
+            $"the exported text of {ProjectName(attempt.Binding)} has an edit nobody has " +
+            $"imported (mirror {Short(mirrorHash)}, last synced {Short(synced)}); the project " +
+            "change was not exported, because the export would write over it. Confirm the " +
+            "import or discard the text edit first",
+            attempt.State);
+    }
+
+    /// <summary>
+    /// Whether the binding's exported text holds an edit nobody has imported: Clean, with a
+    /// mirror hash on record, and a mirror on disk that differs from it.
+    /// </summary>
+    /// <remarks>
+    /// The same question the gate above asks, offered to callers that put edits back into the
+    /// tree without a watcher seeing them. An auto-stash restored its mirror edit under the
+    /// watcher hold and then adopted the result as synced — so the edit was back in the tree
+    /// with the banner gone and the gate blind to it, and the next project save exported over
+    /// it (the 2026-10-25 review's seventh round, item 1). The caller asks this instead of
+    /// adopting, and raises the import the edit still owes.
+    /// </remarks>
+    public async Task<bool> HasUnimportedMirrorEditAsync(string bindingId, CancellationToken ct) =>
+        _bindings.TryGetValue(bindingId, out var binding)
+        && binding.Enabled
+        && await UnimportedMirrorEditAsync(binding, ct).ConfigureAwait(false) is not null;
+
+    private async Task<(string Mirror, string Synced)?> UnimportedMirrorEditAsync(
+        ProjectBinding binding, CancellationToken ct)
+    {
+        if (StateOf(binding.Id) != SyncDirection.Clean
+            || _locks[binding.Id].LastSynced.MirrorHash is not { Length: > 0 } synced)
+        {
+            return null;
+        }
+
+        var mirrorHash = await ExportTreeHashAsync(binding, ct).ConfigureAwait(false);
+        return mirrorHash == synced ? null : (mirrorHash, synced);
+    }
+
+    /// <summary>
     /// 5. Import is detected automatically but applied only on confirmation.
     /// </summary>
     private SyncOutcome? ImportNeedsConfirming(in Attempt attempt) =>
@@ -1585,6 +1722,22 @@ public sealed class SyncOrchestrator
         var started = _clock.UtcNow;
         var source = scratchProject ?? Absolute(binding.ProjectPath);
 
+        // When the export reads a copy, what it exports IS the copy, and the hash recorded as
+        // exported has to be the copy's — taken now, before the toolchain runs, because the run
+        // leaves its own sidecars in the scratch folder. The first version hashed the live
+        // file afterwards: a save made in the IDE while the toolchain ran was recorded against
+        // an export that never saw it, the next event answered NoChange, and the commit gate
+        // called the mirror current (the 2026-10-24 review's item 2).
+        //
+        // Taken INSIDE the try below, beside the toolchain run, and not here. The direction
+        // is already claimed by the time this method is entered, so a Stop that lands on the
+        // hash has to reach the same handler a Stop during the run reaches: the first version
+        // hashed here, outside both the cancellation handler and the scratch folder's finally,
+        // and a cancelled read left the binding ProjectAuthoritative with no Try again, the
+        // copy on disk, and the coalescer's slot never completed — every later watcher job
+        // answered Coalesced until a restart (the 2026-10-25 review's fourth round, item 5).
+        string? exportedHash = null;
+
         var job = new PlcJob
         {
             Operation = PlcOperation.Export,
@@ -1643,6 +1796,16 @@ public sealed class SyncOrchestrator
         PlcResult result;
         try
         {
+            if (scratchProject is not null)
+            {
+                // The copy's hash, before the toolchain leaves its sidecars beside it; see
+                // the declaration for why it is taken here and not earlier.
+                exportedHash = await HashPayloadAsync(
+                    binding,
+                    _formats(binding.ProjectPath)?.PayloadPathFor(scratchProject) ?? scratchProject,
+                    ct).ConfigureAwait(false);
+            }
+
             result = await RunnerFor(binding).RunAsync(job, _progress, ct).ConfigureAwait(false);
         }
         catch (OperationCanceledException)
@@ -1696,7 +1859,7 @@ public sealed class SyncOrchestrator
             await WaitUntilProjectFreeAsync(binding, ct).ConfigureAwait(false);
         }
 
-        var projectHash = await ProjectHashAsync(binding, ct).ConfigureAwait(false);
+        var projectHash = exportedHash ?? await ProjectHashAsync(binding, ct).ConfigureAwait(false);
         await ApplyAsync(binding.Id, SyncTrigger.ExportSucceeded, projectHash, ct)
             .ConfigureAwait(false);
 
@@ -2240,11 +2403,41 @@ public sealed class SyncOrchestrator
         }
     }
 
-    public Task ReleaseAfterDiscardAsync(string bindingId, CancellationToken ct)
+    /// <summary>
+    /// Something under the mirror was discarded. Release the lock only when nothing is left
+    /// to guard.
+    /// </summary>
+    /// <remarks>
+    /// A discard is per file, and the owner may have discarded one of several edits. The
+    /// first version released unconditionally and recorded the mirror <i>as it now stood</i>
+    /// as the last synced state — the surviving edits included. From then on the text gate
+    /// said "no change" for them and the next project save exported straight over them (the
+    /// 2026-10-24 review's item 3). So, unless the project side holds the lock, the mirror is
+    /// hashed first: while it still differs from what was last synced, the discard changed
+    /// nothing about what the lock guards, and the lock and the record are kept as they are.
+    /// A project-held lock keeps the old release: the discard reverted an uncommitted export,
+    /// the empty project hash forces the next event to export again, and that is wanted.
+    /// </remarks>
+    public async Task ReleaseAfterDiscardAsync(string bindingId, CancellationToken ct)
     {
+        if (_locks.TryGetValue(bindingId, out var current)
+            && current.Direction != SyncDirection.ProjectAuthoritative
+            && _bindings.TryGetValue(bindingId, out var binding))
+        {
+            var mirrorHash = await ExportTreeHashAsync(binding, ct).ConfigureAwait(false);
+            if (mirrorHash != current.LastSynced.MirrorHash)
+            {
+                _log.Info(LogCategory.Lock,
+                    $"{bindingId}: changes discarded, but the mirror still differs from the " +
+                    $"last synced state; {current.Direction} is kept and nothing is recorded");
+                return;
+            }
+        }
+
         _log.Warn(LogCategory.Lock,
             $"{bindingId}: changes discarded; releasing the direction lock");
-        return ApplyAsync(bindingId, SyncTrigger.ChangesDiscarded, string.Empty, ct);
+        await ApplyAsync(bindingId, SyncTrigger.ChangesDiscarded, string.Empty, ct)
+            .ConfigureAwait(false);
     }
 
     /// <summary>
@@ -2319,6 +2512,16 @@ public sealed class SyncOrchestrator
                 $"that backup is no longer on disk: {backupPath}");
         }
 
+        if (_fs.FileExists(BackupCatalog.PartialMarkerFor(source)))
+        {
+            // Not listed, so only reachable by a path remembered from before — and still
+            // refused, because the restore below deletes what the backup does not have, and
+            // half a backup does not have the other half of the live project.
+            return Refuse(LogLevel.Warning, SyncVerdict.Failed, bindingId,
+                $"that backup was never finished — the copy that made it stopped partway — so " +
+                $"restoring it would replace the project with part of one: {backupPath}");
+        }
+
         var occupancy = _occupancy is null
             ? ProjectOccupancy.Free
             : await _occupancy.CheckAsync(binding, Absolute(binding.ProjectPath), ct)
@@ -2335,13 +2538,33 @@ public sealed class SyncOrchestrator
 
         // The state being left, kept before it is overwritten. This is what makes a restore
         // reversible, and it is the whole reason this method does not simply copy a file.
-        var safety = await BackUpProjectAsync(binding, ct).ConfigureAwait(false);
+        //
+        // The source is pinned through that copy's prune. Ten are kept; the safety copy
+        // made eleven, and the oldest — the one about to be restored — was deleted before it
+        // was read (the 2026-10-24 review's item 22).
+        var safety = await BackUpProjectAsync(binding, ct, keep: source).ConfigureAwait(false);
 
         using (BeginOwnWrite(bindingId, ChangeSource.Project))
         {
             var live = PayloadPath(binding);
             if (IsTreePayload(source) || IsTreePayload(live))
             {
+                // Exactly the tree that was saved. A copy over the live directory overlays
+                // it, and a file added since the backup — a block the bad import created —
+                // survived, so the result was neither the backup nor the damaged state (the
+                // 2026-10-24 review's item 21). Files the backup never had go first.
+                foreach (var file in _fs.EnumerateFiles(live).ToList())
+                {
+                    ct.ThrowIfCancellationRequested();
+                    var relative = Path.GetRelativePath(live, file);
+                    if (!_fs.FileExists(Path.Combine(source, relative)))
+                    {
+                        _fs.DeleteFile(file);
+                        _log.Debug(LogCategory.Sync,
+                            $"{bindingId}: removed {relative}, which the backup does not have");
+                    }
+                }
+
                 await _fs.CopyTreeAsync(source, live, ct).ConfigureAwait(false);
             }
             else
@@ -2678,7 +2901,10 @@ public sealed class SyncOrchestrator
     /// dangerous half of the operation having skipped the part that makes it recoverable.
     /// </para>
     /// </remarks>
-    private async Task<string?> BackUpProjectAsync(ProjectBinding binding, CancellationToken ct)
+    /// <param name="keep">A backup the prune must leave alone whatever its age: the one a
+    /// restore is about to read.</param>
+    private async Task<string?> BackUpProjectAsync(
+        ProjectBinding binding, CancellationToken ct, string? keep = null)
     {
         var source = PayloadPath(binding);
         if (!_fs.FileExists(source) && !_fs.DirectoryExists(source))
@@ -2699,23 +2925,43 @@ public sealed class SyncOrchestrator
 
         _fs.CreateDirectory(folder);
 
-        if (IsTreePayload(source))
+        var tree = IsTreePayload(source);
+        if (tree)
         {
             // A tree copy must be a directory of its own. Enumerating files under the
             // backup folder would otherwise list every inner file of the newest copy,
             // parse none of them as stamps, and prune the inside of the thing we just
             // wrote.
-            var treeName = Path.GetFileNameWithoutExtension(name);
-            destination = UniqueBackupPath(folder, $"{stamp}-{treeName}");
-            await _fs.CopyTreeAsync(source, destination, ct).ConfigureAwait(false);
+            destination = UniqueBackupPath(folder, $"{stamp}-{Path.GetFileNameWithoutExtension(name)}");
         }
         else
         {
             destination = UniqueBackupPath(folder, $"{stamp}-{name}");
+        }
+
+        // The marker goes down before the first byte and comes up after the last. A tree copy
+        // that stops partway — a locked file in the middle, a full disk, a killed process —
+        // used to leave a directory that the catalog listed like any other and the restore
+        // put back like any other: a restore deletes what the backup does not have (the
+        // 2026-10-24 review's item 21), so half a backup restored deleted the other half of
+        // the live project and reported success (the 2026-10-25 review's fourth round, item
+        // 1). While the marker stands the copy is neither listed nor restorable, and the next
+        // completed copy's prune removes it.
+        var marker = BackupCatalog.PartialMarkerFor(destination);
+        await _fs.WriteAllTextAsync(marker, string.Empty, ct).ConfigureAwait(false);
+
+        if (tree)
+        {
+            await _fs.CopyTreeAsync(source, destination, ct).ConfigureAwait(false);
+        }
+        else
+        {
             await _fs.CopyAsync(source, destination, ct).ConfigureAwait(false);
         }
 
-        PruneBackups(folder);
+        _fs.DeleteFile(marker);
+
+        PruneBackups(folder, keep);
 
         _log.Info(LogCategory.Sync, $"{binding.Id}: project backed up to {destination}");
         return destination;
@@ -2729,19 +2975,42 @@ public sealed class SyncOrchestrator
     /// Immediate children only: a tree backup is itself a directory, and walking files
     /// underneath it would prune the newest copy from the inside.
     /// </remarks>
-    private void PruneBackups(string folder)
+    private void PruneBackups(string folder, string? keep = null)
     {
         try
         {
             var existing = ImmediateBackupEntries(folder)
                 .OrderByDescending(f => f, StringComparer.Ordinal)
                 .Skip(BackupsKept)
+                .Where(f => keep is null
+                            || !string.Equals(f, keep, StringComparison.OrdinalIgnoreCase))
                 .ToList();
 
             foreach (var stale in existing)
             {
                 DeleteBackupEntry(stale);
                 _log.Info(LogCategory.Sync, $"pruned old project backup {stale}");
+            }
+
+            // A copy that never finished, with it the marker that says so. Safe to remove
+            // here and nowhere else: this runs from the writer that has just completed its
+            // own copy and taken its own marker down, and a binding has one writer at a
+            // time, so a marker still standing belongs to a copy nobody is writing. Never
+            // listed, never restorable, and left alone it would sit there for good.
+            foreach (var marker in _fs.EnumerateFiles(folder)
+                         .Where(f => PathsAreEqual(Path.GetDirectoryName(f), folder)
+                                     && BackupCatalog.IsPartialMarker(f))
+                         .ToList())
+            {
+                var unfinished = marker[..^BackupCatalog.PartialMarkerSuffix.Length];
+                if (_fs.FileExists(unfinished) || _fs.DirectoryExists(unfinished))
+                {
+                    DeleteBackupEntry(unfinished);
+                }
+
+                _fs.DeleteFile(marker);
+                _log.Info(LogCategory.Sync,
+                    $"removed the project backup {unfinished}, whose copy never finished");
             }
         }
         catch (IOException ex)
@@ -2777,9 +3046,16 @@ public sealed class SyncOrchestrator
             $"{binding.Id}: occupancy still held after waiting to hash; hashing anyway");
     }
 
-    private async Task<string> ProjectHashAsync(ProjectBinding binding, CancellationToken ct)
+    private Task<string> ProjectHashAsync(ProjectBinding binding, CancellationToken ct) =>
+        HashPayloadAsync(binding, PayloadPath(binding), ct);
+
+    /// <summary>
+    /// The content hash of a payload — the live one, or a scratch copy of it — with the
+    /// binding's format deciding which files count.
+    /// </summary>
+    private async Task<string> HashPayloadAsync(
+        ProjectBinding binding, string path, CancellationToken ct)
     {
-        var path = PayloadPath(binding);
         var format = _formats(binding.ProjectPath);
 
         if (IsTreePayload(path))
@@ -2864,11 +3140,17 @@ public sealed class SyncOrchestrator
     private bool IsTreePayload(string payload) =>
         _fs.DirectoryExists(payload) && !_fs.FileExists(payload);
 
+    /// <summary>
+    /// The copies in a backup folder: its immediate children, less the markers and less any
+    /// copy whose marker still stands (<see cref="BackupCatalog.PartialMarkerSuffix"/>).
+    /// </summary>
     private IEnumerable<string> ImmediateBackupEntries(string folder)
     {
         var files = _fs.EnumerateFiles(folder)
             .Where(f => PathsAreEqual(Path.GetDirectoryName(f), folder));
-        return _fs.EnumerateDirectories(folder).Concat(files);
+        return _fs.EnumerateDirectories(folder).Concat(files)
+            .Where(e => !BackupCatalog.IsPartialMarker(e)
+                        && !_fs.FileExists(BackupCatalog.PartialMarkerFor(e)));
     }
 
     private static bool PathsAreEqual(string? left, string right) =>

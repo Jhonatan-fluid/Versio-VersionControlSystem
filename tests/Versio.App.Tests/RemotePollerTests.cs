@@ -93,6 +93,7 @@ public sealed class RemotePollerTests
         public Task<GitResult> VerifyRemoteAsync(string u, CancellationToken ct) => throw new NotSupportedException();
         public Task<string> RemoteUrlAsync(string r, CancellationToken ct) => throw new NotSupportedException();
         public Task<string> GitDirectoryAsync(CancellationToken ct) => throw new NotSupportedException();
+        public Task<string> CommonGitDirectoryAsync(CancellationToken ct) => throw new NotSupportedException();
         public Task<GitResult> FetchAsync(IProgress<GitProgress>? p, CancellationToken ct) => throw new NotSupportedException();
         public Task<GitResult> PullAsync(IProgress<GitProgress>? p, CancellationToken ct) => throw new NotSupportedException();
         public Task<GitResult> PushAsync(IProgress<GitProgress>? p, CancellationToken ct) => throw new NotSupportedException();
@@ -112,6 +113,9 @@ public sealed class RemotePollerTests
             throw new NotSupportedException();
 
         public Task<GitResult> AbortMergeOrRebaseAsync(CancellationToken ct) =>
+            throw new NotSupportedException();
+
+        public Task<GitResult> ContinueRebaseAsync(CancellationToken ct) =>
             throw new NotSupportedException();
 
         public Task<MergeState> MergeStateAsync(CancellationToken ct) =>
@@ -136,6 +140,7 @@ public sealed class RemotePollerTests
         public Task<GitResult> PublishBranchAsync(string r, string b, IProgress<GitProgress>? p, CancellationToken ct) => throw new NotSupportedException();
         public Task<IReadOnlyList<string>> ListWorkingTreeAsync(CancellationToken ct) =>
             Task.FromResult<IReadOnlyList<string>>([]);
+        public Task<IReadOnlyDictionary<string, long>?> IndexBlobSizesAsync(IReadOnlyList<string> p, CancellationToken ct) => throw new NotSupportedException();
         public Task<string> DiffAsync(string p, bool s, CancellationToken ct, int c = 3) => throw new NotSupportedException();
         public Task<IReadOnlyDictionary<string, string>> DetectRenamesAsync(CancellationToken ct) => throw new NotSupportedException();
         public Task<string> HeadCommitAsync(CancellationToken ct) => throw new NotSupportedException();

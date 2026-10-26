@@ -408,4 +408,34 @@ public sealed class TiaPortalLadderTests
         Assert.All(document.Body.Networks, n => Assert.Contains("<SW.Blocks.CompileUnit", lines[n.Lines!.Value.Start - 1], StringComparison.Ordinal));
         Assert.Equal(document.Body.Networks.Count, document.Body.Networks.Select(n => n.Lines!.Value.Start).Distinct().Count());
     }
+
+    /// <summary>
+    /// The ladder's framing for review coverage (docs/web/PLAN.md, C4): the markup outside its networks,
+    /// with the block's Interface left to the member table drawn over it. The fixture's cyclic interrupt
+    /// has both, so the two drawings' claims can be checked not to overlap.
+    /// </summary>
+    [Fact]
+    public void A_ladders_framing_is_the_markup_outside_its_networks_and_its_interface()
+    {
+        var path = Path.Combine(CyclicBlocks, "Cyclic interrupt.xml");
+        var text = File.ReadAllText(path);
+        var lines = text.Replace("\r\n", "\n").Split('\n');
+        int LineOf(string marker) => Array.FindIndex(lines, l => l.Contains(marker, StringComparison.Ordinal)) + 1;
+
+        var document = TiaPortalProjectFormat.Instance.TryParseLadder("x/Cyclic interrupt.xml", text)!;
+        bool Framed(int line) => document.Structural.Any(s => s.Contains(line));
+
+        Assert.True(Framed(LineOf("<Document>")));
+        Assert.True(Framed(LineOf("<ObjectList>")));
+        // Inside a compile unit: the network's span vouches for it.
+        var first = document.Body.Networks[0].Lines!.Value;
+        Assert.False(Framed(first.Start));
+        Assert.False(Framed(first.Start + 1));
+        // Inside the Interface: the table's.
+        var sections = LineOf("<Sections");
+        Assert.True(sections > 0);
+        Assert.False(Framed(sections));
+        // A value between tags, wherever it is.
+        Assert.False(Framed(LineOf("<ProgrammingLanguage>")));
+    }
 }

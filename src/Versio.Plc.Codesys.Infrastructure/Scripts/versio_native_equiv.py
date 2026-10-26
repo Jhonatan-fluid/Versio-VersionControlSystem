@@ -90,15 +90,90 @@ def _ordinal_key(line):
     return line.encode("utf-16-be")
 
 
-def _sort_unordered_blocks(text):
-    """Sort sibling lines inside containers whose order is not meaningful.
+# One tag, enough to count depth: a close, an open, or a self-closing one. The same
+# expression as the C#'s Tag(), and it has to stay the same: the chunking below is what
+# decides which lines travel together, and two normalisers that cut differently disagree
+# on the text while agreeing on every verdict the corpus happens to ask.
+_TAG_RE = re.compile(r"<(/?)[^\s/>!?][^\s/>]*[^>]*?(/?)>")
+
+
+def _chunks(body):
+    """The lines of a container's body cut into whole sibling elements, or None when the body
+    cannot be cut cleanly - a close with no open, which only malformed input produces."""
+    chunks = []
+    current = []
+    depth = 0
+
+    for line in body:
+        current.append(line)
+        for match in _TAG_RE.finditer(line):
+            if match.group(2):
+                continue                        # <x/> opens and closes on the spot
+            depth += -1 if match.group(1) else 1
+
+        if depth < 0:
+            return None
+
+        if depth == 0:
+            chunks.append(current)
+            current = []
+
+    if current:
+        chunks.append(current)                  # unterminated: kept whole, sorted with the rest
+
+    return chunks
+
+
+def _sorted_siblings(body):
+    """The lines of a container's body, regrouped into whole sibling elements and sorted.
+
+    Falls back to the old line sort when the body cannot be cut cleanly, so a strange payload
+    degrades to the previous answer rather than throwing. Mirrors SortedSiblings in the C#.
+    """
+    chunks = _chunks(body)
+    if chunks is None:
+        flat = list(body)
+        flat.sort(key=_ordinal_key)
+        return flat
+
+    joined = []
+    for chunk in chunks:
+        if len(chunk) > 1:
+            chunk = _sort_unordered_lines(chunk)
+        joined.append(u"\n".join(chunk))
+    joined.sort(key=_ordinal_key)
+
+    result = []
+    for chunk in joined:
+        result.extend(chunk.split(u"\n"))
+    return result
+
+
+def _sort_unordered_blocks(text, whole_siblings=True):
+    """Sort sibling ELEMENTS inside containers whose order is not meaningful.
 
     Deliberately line-based rather than a full XML parse: these payloads reach 2.5 MB and are
     compared on every import, and the reordering CODESYS performs is at the level of whole
-    sibling elements on their own lines.
+    sibling elements.
+
+    Whole siblings, not lines. The first version sorted the container's LINES, which threw
+    away which line belonged to which child: two multi-line children with their values
+    swapped between them sorted to the same bag of lines, read as equivalent, and the export
+    kept the old file on disk - a real change never reached the mirror (the 2026-10-24
+    review's item 20). See _sorted_siblings.
+
+    whole_siblings=False is the pre-item-20 line sort, kept ONLY so normalized_forms can
+    reproduce the hash an older export recorded; nothing else may pass it.
     """
-    lines = text.split(u"\n")
-    result = []
+    return u"\n".join(_sort_unordered_lines(text.split(u"\n"), whole_siblings))
+
+
+def _container_bodies(lines):
+    """Each (opening index, closing index) of an unordered container with a body to sort.
+
+    The one walk both the sorter and the losslessness check make, so the two cannot disagree
+    about which containers exist.
+    """
     count = len(lines)
     i = 0
 
@@ -115,7 +190,6 @@ def _sort_unordered_blocks(text):
         # on the tag, matching the C#: a line carrying both an opening container and some
         # self-closing element is left alone by both sides.
         if container is None or u"/>" in line:
-            result.append(line)
             i += 1
             continue
 
@@ -128,18 +202,45 @@ def _sort_unordered_blocks(text):
         # opening line is emitted as ordinary content and the scan resumes just after it,
         # so a missing close costs one unsorted block rather than the rest of the file.
         if end >= count:
-            result.append(line)
             i += 1
             continue
 
-        result.append(line)
-        body = lines[i + 1:end]
-        body.sort(key=_ordinal_key)
-        result.extend(body)
-        result.append(lines[end])
+        yield (i, end)
         i = end + 1
 
-    return u"\n".join(result)
+
+def _sort_unordered_lines(lines, whole_siblings=True):
+    result = []
+    i = 0
+
+    for start, end in _container_bodies(lines):
+        result.extend(lines[i:start + 1])
+        i = end + 1
+        body = lines[start + 1:end]
+        if whole_siblings:
+            result.extend(_sorted_siblings(body))
+        else:
+            # The body's LINES sorted - the normalisation every export before 2026-10-24
+            # recorded its nhash under, blind to values swapped between two multi-line
+            # children (item 20). Reproduced here for those recorded hashes and for nothing
+            # else: see normalized_forms.
+            body.sort(key=_ordinal_key)
+            result.extend(body)
+        result.append(lines[end])
+
+    result.extend(lines[i:])
+    return result
+
+
+# The GUID placeholder. Braces, not angle brackets: "<masked-guid>" read to _sorted_siblings
+# as an element that opens and never closes, so every chunk after the first GUID was
+# swallowed into one and a reordered payload compared different with masking on - the only
+# setting the delete check uses (the second-round review's item 7). The old spelling is kept
+# beside it because every nhash recorded before that fix was taken over it, and a delete
+# check that could no longer reproduce those hashes refused every native deletion in every
+# existing mirror as DELETE_CONTENT_CHANGED (the third round's item 4): see normalized_forms.
+MASKED_GUID = u"{masked-guid}"
+_LEGACY_MASKED_GUID = u"<masked-guid>"
 
 
 def normalize(xml, mask_guids=True):
@@ -155,6 +256,83 @@ def normalize(xml, mask_guids=True):
     comparing two exports of the same project: GUIDs are stable across exports, so a
     difference there is genuinely meaningful and masking it away would hide a real change.
     """
+    return _normalize(xml, mask_guids, MASKED_GUID, True)
+
+
+def normalized_forms(xml):
+    """Every comparison form a manifest's nhash may have been taken over, current first.
+
+    The delete check compares a fresh re-export of the live object against the nhash the
+    manifest recorded at export time (versio_import.why_not_delete). That hash was taken
+    over whatever normalisation the exporting Versio had, and the normalisation has changed
+    twice since nhash exists: the sibling sort replaced the line sort on 2026-10-24 (the
+    first review round's item 20) and the GUID placeholder changed on 2026-10-25 (the
+    second's item 7). Each change made every hash recorded before it unreproducible, so an
+    unchanged object exported by an older Versio was refused as DELETE_CONTENT_CHANGED -
+    "edited since the export" - when nothing had touched it. Both committed fixture mirrors
+    are such older exports, every native record of them (the third round's item 4).
+
+    So the check accepts a match under any of these. Nothing is lost by it: a recorded hash
+    was produced by exactly one of them, and under the other two agreement is a SHA-256
+    collision. What an older form cannot see (the line sort's blindness to swapped values,
+    item 20) it could not see when that hash was recorded either, and the next export
+    records the hash under the current form, which closes that gap for that mirror. The
+    alternative - a version number beside nhash - would have changed the manifest's shape
+    for every reader and still needed these three functions to compare the old ones.
+
+    python only, deliberately: the C# normaliser compares two payloads it holds in memory
+    and never a recorded hash, so it has no older form to reproduce.
+    """
+    return [
+        _normalize(xml, True, MASKED_GUID, True)[0],
+        _normalize(xml, True, _LEGACY_MASKED_GUID, True)[0],
+        _normalize(xml, True, _LEGACY_MASKED_GUID, False)[0],
+    ]
+
+
+# Indexes into normalized_forms, so the delete check can say which one matched.
+CURRENT_FORM = 0
+LEGACY_CHUNKER_FORM = 1
+LEGACY_LINE_SORT_FORM = 2
+
+
+def form_can_vouch(xml, form):
+    """Whether a match of the live object under that form proves it unchanged.
+
+    The current form and the 2026-10-24 chunker are permutation-insensitive and nothing
+    else: a sibling keeps its own lines in their order, so two payloads with the same text
+    under them hold the same siblings. (The chunker with the old placeholder failed to cut a
+    body holding a GUID and left it in file order - stricter than the current form, never
+    looser.) The line sort is looser: it sorts the body's LINES, so a multi-line sibling's
+    lines lose their owner, and swapping two values between two children gives the same bag
+    of lines and the same hash - the first round's item 20, which is why the sort was
+    replaced. A match under it proves nothing for such a payload, and the fifth round's item
+    1 walked through that door: two values swapped between their owners, the old hash
+    reproduced, the modified object deleted with olderHash on the log.
+
+    So the line sort vouches only where it is lossless for the payload at hand: every
+    unordered container holds single-line siblings and nothing else, in which case the bag
+    of lines IS the set of siblings and no reordering can hide an edit. Anything else that
+    was recorded under it is unverifiable until the next export records a hash that can
+    tell - a wait, said as one, rather than a deletion on evidence that cannot carry it.
+    """
+    if form != LEGACY_LINE_SORT_FORM:
+        return True
+    return _line_sort_is_lossless(xml)
+
+
+def _line_sort_is_lossless(xml):
+    # Over the current form's text: masking first, because an unmasked GUID is what broke
+    # the old chunker, and sorting whole siblings leaves each sibling's line count alone.
+    lines = _normalize(xml, True, MASKED_GUID, True)[0].split(u"\n")
+    for start, end in _container_bodies(lines):
+        chunks = _chunks(lines[start + 1:end])
+        if chunks is None or any(len(chunk) != 1 for chunk in chunks):
+            return False
+    return True
+
+
+def _normalize(xml, mask_guids, placeholder, whole_siblings):
     if not xml:
         return (u"", 0, 0)
 
@@ -176,13 +354,14 @@ def normalize(xml, mask_guids=True):
     text = _COUNTER_RE.sub(mask_counter, text)
 
     if mask_guids:
+        # MASKED_GUID, as in the C#; the legacy spelling only through normalized_forms.
         def mask_guid(match):
             guids[0] += 1
-            return u"<masked-guid>"
+            return placeholder
 
         text = _GUID_RE.sub(mask_guid, text)
 
-    text = _sort_unordered_blocks(text)
+    text = _sort_unordered_blocks(text, whole_siblings)
 
     return (text, guids[0], counters[0])
 

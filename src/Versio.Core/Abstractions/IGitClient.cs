@@ -92,10 +92,49 @@ public interface IGitClient
     /// </remarks>
     Task<IReadOnlyList<string>> ListWorkingTreeAsync(CancellationToken ct);
 
+    /// <summary>
+    /// How many bytes the index holds for each path, for the paths it holds at all.
+    /// </summary>
+    /// <param name="paths">Repository-relative, forward slashes — git's own path shape.</param>
+    /// <returns>
+    /// Path to size for every path the index has a blob for. A path the index does not have
+    /// — never added, a directory, a conflict with no stage-0 entry — is simply absent.
+    /// <c>null</c> when git could not answer at all, which is distinct from "none of them":
+    /// a caller measuring what a commit is about to record must not read a failed probe as
+    /// "nothing large".
+    /// </returns>
+    /// <remarks>
+    /// <para>
+    /// <b>The index, not the working tree, because the commit records the index.</b> A file
+    /// staged at twenty megabytes and then overwritten on disk with five bytes weighs five
+    /// bytes to <c>FileInfo</c> and twenty megabytes to <c>git commit</c>; the large-file
+    /// preflight read the working copy and let the twenty megabytes through (the 2026-10-24
+    /// review's item 4, found right after the partly-staged commit fix made that state
+    /// ordinary). The same holds for a staged file deleted from disk, which still commits.
+    /// </para>
+    /// <para>
+    /// <c>cat-file --batch-check</c> over <c>:0:&lt;path&gt;</c> names on standard input:
+    /// git resolves that form literally — spaces, non-ASCII, a name starting with
+    /// <c>--</c> — and argv carries no paths at all, so the CreateProcess limit that
+    /// <c>--pathspec-from-file</c> exists for is never approached. <c>ls-files -s</c> was
+    /// the obvious alternative and does not take <c>--pathspec-from-file</c>.
+    /// </para>
+    /// </remarks>
+    Task<IReadOnlyDictionary<string, long>?> IndexBlobSizesAsync(
+        IReadOnlyList<string> paths, CancellationToken ct);
+
     Task<IReadOnlyList<BranchInfo>> BranchesAsync(CancellationToken ct);
 
     Task<GitResult> StageAsync(IReadOnlyList<string> paths, CancellationToken ct);
 
+    /// <summary>Take the given paths out of the index, leaving the working tree alone.</summary>
+    /// <remarks>
+    /// <b>Works before the first commit.</b> The commit button unstages whatever was not
+    /// ticked, and the first commit of a repository is exactly when several files are staged
+    /// and only some are wanted. An implementation that restores from HEAD has no HEAD to
+    /// restore from there, and the whole commit failed on it once (the 2026-10-25 review's
+    /// P2) — the empty tree is what an unborn branch's index is a diff against.
+    /// </remarks>
     Task<GitResult> UnstageAsync(IReadOnlyList<string> paths, CancellationToken ct);
 
     Task<GitResult> CommitAsync(string message, CancellationToken ct);
@@ -229,7 +268,10 @@ public interface IGitClient
     /// <remarks>
     /// Staged immediately afterwards, because <c>checkout --ours</c> writes the file and leaves
     /// it unmerged. A file that looks resolved on disk and is still conflicted in the index is
-    /// the state that makes somebody think the button did nothing.
+    /// the state that makes somebody think the button did nothing. When the chosen side
+    /// <i>deleted</i> the file there is no version to write: taking that side removes the file
+    /// from the working tree and stages the removal, so the resolution is a deletion rather
+    /// than a failure.
     /// </remarks>
     Task<GitResult> ResolveWithSideAsync(string path, bool ours, CancellationToken ct);
 
@@ -292,6 +334,37 @@ public interface IGitClient
     /// supposed to keep them out of the terminal.
     /// </remarks>
     Task<GitResult> AbortMergeOrRebaseAsync(CancellationToken ct);
+
+    /// <summary>
+    /// Go on with a rebase that stopped at a conflict, now that the conflict is resolved.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Not a commit, and the commit path must not stand in for it.</b> A rebase replays the
+    /// branch's commits onto the upstream one at a time on a detached HEAD, and <c>git
+    /// commit</c> there records a new commit on that detached HEAD and nothing else: the
+    /// rebase stays paused, the branch ref is where it was, the commits after the conflicted
+    /// one are never replayed. That is what the panel did until 2026-10-25 (the review's sixth
+    /// round, P2), while its own banner said "Continue the rebase".
+    /// </para>
+    /// <para>
+    /// <b>Each replayed commit keeps its own message.</b> <c>rebase --continue</c> opens an
+    /// editor on the conflicted commit's message by default, and under a redirected console an
+    /// editor is a hang with nothing on screen to say why. The implementation suppresses it and
+    /// git keeps the message the commit already had. Nothing the user typed into the panel's
+    /// message box is used — there is no commit of theirs being made.
+    /// </para>
+    /// <para>
+    /// The result is not the end of the rebase. The next commit to replay may conflict in its
+    /// turn, and git stops again with a non-zero exit; the caller reads the merge state and the
+    /// unmerged paths afterwards rather than taking the exit code as "done" or "broken".
+    /// </para>
+    /// </remarks>
+    /// <returns>
+    /// A failed result when no rebase is in progress, rather than success for a continuation
+    /// that continued nothing.
+    /// </returns>
+    Task<GitResult> ContinueRebaseAsync(CancellationToken ct);
 
     /// <summary>Whether a merge or rebase is part-way through right now.</summary>
     Task<MergeState> MergeStateAsync(CancellationToken ct);
@@ -395,6 +468,22 @@ public interface IGitClient
     /// entirely. Anything writing next to git's own state has to know where that state is.
     /// </remarks>
     Task<string> GitDirectoryAsync(CancellationToken ct);
+
+    /// <summary>
+    /// The absolute path of the directory git shares between every worktree of this
+    /// repository: <c>.git</c> itself, even when asked from a linked worktree.
+    /// </summary>
+    /// <remarks>
+    /// Distinct from <see cref="GitDirectoryAsync"/> on purpose. In a linked worktree that
+    /// answers <c>&lt;main&gt;/.git/worktrees/&lt;name&gt;</c>, which is where the per-worktree
+    /// state lives — <c>MERGE_HEAD</c>, <c>rebase-merge</c> — and is right for anything reading
+    /// that state. It is wrong for <c>info/exclude</c>, which git reads from the common
+    /// directory only: the exclude rule written beside the per-worktree state was never read,
+    /// <c>.versio/local/</c> stayed untracked there, and <c>stash push --include-untracked</c>
+    /// swept the auto-stash record into the stash it was meant to describe. The 2026-10-24
+    /// review's item 25.
+    /// </remarks>
+    Task<string> CommonGitDirectoryAsync(CancellationToken ct);
 
     /// <summary>
     /// Fetch from the remote, dropping tracking refs for branches that are gone.

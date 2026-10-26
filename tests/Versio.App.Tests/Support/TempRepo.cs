@@ -47,13 +47,18 @@ public sealed class TempRepo : IDisposable
     /// </param>
     /// <param name="unstagedFiles">How many changed files to leave in the working tree.</param>
     /// <param name="stagedFiles">How many of those to stage.</param>
+    /// <param name="unborn">
+    /// Leave the first commit unmade: an identity, a staged seed file, and no HEAD. The first
+    /// day of a real repository, where everything that reads HEAD has to cope without one.
+    /// </param>
     public TempRepo(
         bool identity = true,
         bool withRemote = false,
         bool published = false,
         string? originUrl = null,
         int unstagedFiles = 0,
-        int stagedFiles = 0)
+        int stagedFiles = 0,
+        bool unborn = false)
     {
         _root = System.IO.Path.Combine(
             System.IO.Path.GetTempPath(), "versio-t-" + Guid.NewGuid().ToString("N")[..8]);
@@ -82,7 +87,7 @@ public sealed class TempRepo : IDisposable
         File.WriteAllText(System.IO.Path.Combine(Path, "seed.txt"), "seed\n");
         Git(Path, "add .");
 
-        if (identity)
+        if (identity && !unborn)
         {
             Git(Path, "commit -qm first");
         }
@@ -146,6 +151,30 @@ public sealed class TempRepo : IDisposable
         });
 
         git!.WaitForExit();
+    }
+
+    /// <summary>Run git anywhere and hand back what it printed, for a test that wants git's own answer.</summary>
+    /// <remarks>
+    /// Trimmed of the trailing newline only. A test asking for <c>symbolic-ref HEAD</c> or
+    /// <c>log --format=%s</c> compares the text, and git's one closing newline is not part of
+    /// either answer.
+    /// </remarks>
+    public static string GitOutput(string workingDirectory, string arguments)
+    {
+        using var git = Process.Start(new ProcessStartInfo
+        {
+            FileName = "git",
+            Arguments = arguments,
+            WorkingDirectory = workingDirectory,
+            UseShellExecute = false,
+            CreateNoWindow = true,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+        });
+
+        var value = git!.StandardOutput.ReadToEnd();
+        git.WaitForExit();
+        return value.TrimEnd('\r', '\n');
     }
 
     /// <summary>Read a single config value back, for a test that wants git's own answer.</summary>

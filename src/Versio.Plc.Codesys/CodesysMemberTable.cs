@@ -1,5 +1,6 @@
 using Versio.Core.Iec;
 using Versio.Core.Projects;
+using Versio.Core.Text;
 using Versio.Plc.Codesys.FileBased;
 using Versio.Plc.Codesys.Ladder;
 
@@ -44,7 +45,28 @@ public static class CodesysMemberTable
             var lines = content.Replace("\r\n", "\n").Split('\n');
             var declaration = string.Join('\n', lines[sections.HeaderEnd..sections.DeclarationEnd]);
             // The declaration starts after the header: rows name file lines (docs/web/PLAN.md, C3).
-            return StDeclarationTable.Parse(declaration, CodesysV3File.ObjectName(relativePath), sections.HeaderEnd + 1);
+            var table = StDeclarationTable.Parse(declaration, CodesysV3File.ObjectName(relativePath), sections.HeaderEnd + 1);
+            if (table is null)
+            {
+                return null;
+            }
+
+            // The file's own framing around the declaration, for review coverage (C4): the
+            // (* METADATA *) header, which holds the object's GUID and nothing the IDE shows,
+            // and the closing keyword (END_FUNCTION_BLOCK) with any blank tail after the body,
+            // which the code block under the table leaves out as the IDE does.
+            var framing = new List<LineSpan>(table.Structural);
+            if (sections.HeaderEnd > 0)
+            {
+                framing.Add(new LineSpan(1, sections.HeaderEnd));
+            }
+
+            if (sections.BodyEnd is { } end && end < lines.Length)
+            {
+                framing.Add(new LineSpan(end + 1, lines.Length));
+            }
+
+            return table with { Structural = framing };
         }
 
         if (relativePath.EndsWith(".xml", StringComparison.OrdinalIgnoreCase)
@@ -67,13 +89,53 @@ public static class CodesysMemberTable
             var blob = CodesysLadderParser.Named(
                 CodesysLadderParser.Named(CodesysLadderParser.Named(owner, "Interface"), "TextDocument"),
                 "TextBlobForSerialisation");
-            // The declaration text begins on its element's own line; an XML entity never adds a
-            // line, so the rows' lines are the file's from there on.
-            var first = blob is null ? null : Versio.Core.Text.SafeXml.LinesOf(blob, CodesysLadderParser.LineOffset(relativePath, content));
+            // The declaration text begins on its element's own line, and the rows are numbered
+            // by splitting the decoded text — which is the file's numbering only while every
+            // newline in the value is a newline in the file. `&lt;` adds no line; `&#10;` adds
+            // one the file does not have, and every row after it would then name the wrong
+            // line (the 2026-10-24 review's item 18). CODESYS writes real newlines, so this is
+            // a hand-edited or foreign file; its rows are kept and their lines are not, which
+            // leaves nothing to pin a comment to by line and nothing for coverage to vouch
+            // for through — the safe direction, rather than vouching for the wrong lines.
+            var offset = CodesysLadderParser.LineOffset(relativePath, content);
+            var first = blob is null ? null : Versio.Core.Text.SafeXml.LinesOf(blob, offset);
+            var numbered = blob is null
+                || blob.Nodes().OfType<System.Xml.Linq.XText>()
+                    .All(t => Versio.Core.Text.SafeXml.HasEncodedLineBreaks(t) != true);
+
+            // The markup around the declaration is framing review coverage may vouch for (C4);
+            // the declaration's own text is the rows', and the Implementation is the ladder's,
+            // so both are left out of what this table declares.
+            MemberTable? Framed(MemberTable? table)
+            {
+                if (table is null)
+                {
+                    return null;
+                }
+
+                if (!numbered)
+                {
+                    table = Unnumbered(table);
+                }
+
+                var drawn = new List<LineSpan>();
+                if (first is { } f)
+                {
+                    drawn.Add(f);
+                }
+
+                if (CodesysLadderParser.Named(owner, "Implementation") is { } implementation
+                    && Versio.Core.Text.SafeXml.LinesOf(implementation, offset) is { } i)
+                {
+                    drawn.Add(i);
+                }
+
+                return table with { Structural = [.. table.Structural, .. CodesysLadderParser.Framing(relativePath, content, owner, drawn, offset)] };
+            }
 
             if (CodesysLadderParser.IsNetworkList(owner))
             {
-                return StDeclarationTable.Parse(blob?.Value, name, first?.Start ?? 1);
+                return Framed(StDeclarationTable.Parse(blob?.Value, name, first?.Start ?? 1));
             }
 
             // A declaration with no implementation at all: a persistent variable list
@@ -87,7 +149,7 @@ public static class CodesysMemberTable
             // be. A guard here on the table's kind was tried and could never fire;
             // A_visualisation_with_parameters_is_still_not_a_table pins the behaviour instead.
             return blob is not null && CodesysLadderParser.Named(owner, "Implementation") is null
-                ? StDeclarationTable.Parse(blob.Value, name, first?.Start ?? 1)
+                ? Framed(StDeclarationTable.Parse(blob.Value, name, first?.Start ?? 1))
                 : null;
         }
 
@@ -101,4 +163,21 @@ public static class CodesysMemberTable
     public static (int Start, int End)? CodeBody(string relativePath, string content) =>
         CodesysFileBasedSource.CodeBody(relativePath, content)
         ?? (relativePath.EndsWith(".st", StringComparison.OrdinalIgnoreCase) ? StDeclarationTable.SourceCodeBody(content) : null);
+
+    /// <summary>
+    /// The same table with every file line forgotten: rows, their attributes, the object's
+    /// attributes, the unshown lines and the framing inside the declaration. For a
+    /// declaration whose decoded lines are not the file's (see the caller).
+    /// </summary>
+    private static MemberTable Unnumbered(MemberTable table) => table with
+    {
+        Members = table.Members.Select(m => m with
+        {
+            Lines = null,
+            Attributes = m.Attributes.Select(a => a with { Lines = null }).ToList(),
+        }).ToList(),
+        Attributes = table.Attributes.Select(a => a with { Lines = null }).ToList(),
+        Unshown = [],
+        Structural = [],
+    };
 }

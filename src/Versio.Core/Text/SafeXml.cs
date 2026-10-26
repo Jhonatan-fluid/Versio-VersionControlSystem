@@ -92,7 +92,94 @@ public static class SafeXml
 
         using var text = new StringReader(xml);
         using var reader = XmlReader.Create(text, settings);
-        return XDocument.Load(reader, options);
+        var document = XDocument.Load(reader, options);
+
+        // Kept so LinesOf can measure a text node against the file rather than against its
+        // decoded value — see Source. Only when line info was asked for, which is the only
+        // time anything will look.
+        if ((options & LoadOptions.SetLineInfo) != 0)
+        {
+            document.AddAnnotation(new Source(xml));
+        }
+
+        return document;
+    }
+
+    /// <summary>
+    /// The text a document was parsed from, annotated onto it by <see cref="Parse"/>, so a
+    /// text node's physical extent can be read from the file instead of guessed from its
+    /// decoded value.
+    /// </summary>
+    /// <remarks>
+    /// A reader reports where a text node starts and nothing about where it ends. Counting
+    /// the newlines in its value stood in for that until 2026-10-24, and it is wrong whenever
+    /// the file spells a newline as <c>&amp;#10;</c> or <c>&amp;#xA;</c>: the value holds a
+    /// line break the file does not, so a member's span ran past its own element into the
+    /// next member's lines — and <c>Anchors.ByLine</c>, which takes the smallest span holding
+    /// a line, could then hand the next member's line to this one (the 2026-10-24 review's
+    /// item 18). The file is the only thing that knows which newlines are physical.
+    /// </remarks>
+    private sealed class Source(string text)
+    {
+        private int[]? _lineStarts;
+
+        /// <summary>
+        /// The character offset of a reader position, or -1 when the position is not in the text.
+        /// </summary>
+        /// <remarks>
+        /// Line breaks are counted as the reader counts them: <c>\n</c>, <c>\r\n</c> and a lone
+        /// <c>\r</c> each end a line.
+        /// </remarks>
+        public int OffsetOf(int line, int position)
+        {
+            var starts = _lineStarts ??= LineStarts(text);
+            if (line < 1 || line > starts.Length || position < 1)
+            {
+                return -1;
+            }
+
+            var offset = starts[line - 1] + position - 1;
+            return offset <= text.Length ? offset : -1;
+        }
+
+        /// <summary>
+        /// The physical lines a text node beginning at <paramref name="offset"/> spans beyond its
+        /// first: up to the next <c>&lt;</c> for ordinary text, which cannot hold one, and up to
+        /// the closing <c>]]&gt;</c> for a CDATA section, which can.
+        /// </summary>
+        public int LineBreaksFrom(int offset, bool cdata)
+        {
+            var end = cdata ? text.IndexOf("]]>", offset, StringComparison.Ordinal) : text.IndexOf('<', offset);
+            if (end < 0)
+            {
+                end = text.Length;
+            }
+
+            var breaks = 0;
+            for (var i = offset; i < end; i++)
+            {
+                if (text[i] == '\n' || (text[i] == '\r' && (i + 1 >= end || text[i + 1] != '\n')))
+                {
+                    breaks++;
+                }
+            }
+
+            return breaks;
+        }
+
+        private static int[] LineStarts(string text)
+        {
+            var starts = new List<int> { 0 };
+            for (var i = 0; i < text.Length; i++)
+            {
+                if (text[i] == '\n' || (text[i] == '\r' && (i + 1 >= text.Length || text[i + 1] != '\n')))
+                {
+                    starts.Add(i + 1);
+                }
+            }
+
+            return [.. starts];
+        }
     }
 
     /// <summary>
@@ -100,10 +187,23 @@ public static class SafeXml
     /// <see cref="LoadOptions.SetLineInfo"/>; null otherwise.
     /// </summary>
     /// <remarks>
-    /// From the element's own start to the last line any descendant starts on: a reader reports
-    /// where elements begin, not where they close, so a closing tag on a line of its own is left
-    /// out. Close enough for what it is used for, pinning a review comment to the element's lines;
-    /// a closing tag is never what changed.
+    /// <para>
+    /// From the element's own start to the last line any descendant starts on, or any descendant's
+    /// text runs to: a reader reports where elements begin, not where they close, so a closing
+    /// tag on a line of its own is left out. Close enough for what it is used for, pinning a review
+    /// comment to the element's lines; a closing tag is never what changed.
+    /// </para>
+    /// <para>
+    /// Text counts since 2026-10-23: a vendor's declaration is one text node holding thirty lines
+    /// of Structured Text, and a span that ended on its first line left the other twenty-nine
+    /// outside the element for review coverage, which then took them for framing between rows.
+    /// </para>
+    /// <para>
+    /// Text is measured in the file, not in its value, since 2026-10-24: <c>&amp;#10;</c> is a
+    /// line break in the value and none in the file, and counting it ran a member's span into
+    /// the next member's lines (see <see cref="Source"/>). A document parsed elsewhere than
+    /// <see cref="Parse"/> has no file to measure against and falls back to the value.
+    /// </para>
     /// </remarks>
     public static LineSpan? LinesOf(XElement element, int offset = 0)
     {
@@ -113,15 +213,50 @@ public static class SafeXml
             return null;
         }
 
+        var source = element.Document?.Annotation<Source>();
         var end = self.LineNumber;
         foreach (var node in element.DescendantNodes())
         {
-            if (node is IXmlLineInfo info && info.HasLineInfo() && info.LineNumber > end)
+            if (node is IXmlLineInfo info && info.HasLineInfo())
             {
-                end = info.LineNumber;
+                var last = info.LineNumber + (node is XText text ? LineBreaksIn(text, info, source) : 0);
+                end = Math.Max(end, last);
             }
         }
 
         return new LineSpan(self.LineNumber + offset, end + offset);
+    }
+
+    /// <summary>True when any newline in <paramref name="text"/>'s value is not a newline in the file.</summary>
+    /// <remarks>
+    /// For a caller that numbers lines by splitting the decoded value — a vendor's declaration
+    /// blob — and must know when that numbering cannot be the file's. Null when the document
+    /// has no file to measure against, or the node no line info.
+    /// </remarks>
+    public static bool? HasEncodedLineBreaks(XText text)
+    {
+        ArgumentNullException.ThrowIfNull(text);
+        if (text is not IXmlLineInfo info || !info.HasLineInfo())
+        {
+            return null;
+        }
+
+        var physical = PhysicalLineBreaks(text, info, text.Document?.Annotation<Source>());
+        return physical is null ? null : physical != text.Value.Count(c => c == '\n');
+    }
+
+    private static int LineBreaksIn(XText text, IXmlLineInfo info, Source? source) =>
+        PhysicalLineBreaks(text, info, source) ?? text.Value.Count(c => c == '\n');
+
+    /// <summary>The line breaks the file holds inside this text node, or null when there is no file to read.</summary>
+    private static int? PhysicalLineBreaks(XText text, IXmlLineInfo info, Source? source)
+    {
+        if (source is null)
+        {
+            return null;
+        }
+
+        var offset = source.OffsetOf(info.LineNumber, info.LinePosition);
+        return offset < 0 ? null : source.LineBreaksFrom(offset, text is XCData);
     }
 }

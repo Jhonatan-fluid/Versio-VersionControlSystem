@@ -123,12 +123,17 @@ refuses a plan-less import instead of fabricating an empty plan. Findings, 2026-
 Since 2026-08-21 the wait honours cancel (`ChildProcess.WaitForExitOrKill`): Stop closes
 stdin so the host can `TryDispose` the portal, then kills leftovers. Host.exe is **not**
 in the kill-on-close Job Object — that would skip Quit. `VERSIO_PARENT_PID` plus a
-stdin-EOF watch: if Versio dies, the host Disposes COM and exits. Portal PIDs are
-snapshotted before Host starts (`Siemens.Automation.Portal`) so a cancel reaps only the
-instance this run created. The 15-minute mutex wait observes the token too. The log
+stdin-EOF watch: if Versio dies, the host Disposes COM and exits. The host measures
+`Siemens.Automation.Portal` PIDs across its `new TiaPortal(...)` call alone and reports
+the one that appeared as `ide_pid`; a cancel reaps that PID only, after checking its
+image name and start time (`ChildProcess.KillOwned`). ~~Snapshotted before Host starts~~
+reaped every Portal that appeared during the whole run, the engineer's included
+(FINDINGS 2026-10-24, item 28). The 15-minute mutex wait observes the token too. The log
 says `cancelled while waiting for the machine-wide TIA Portal lock`, or `closed stdin
-so the host can Quit COM`, and if Portal outlived Host, `reaped N leftover
-Siemens.Automation.Portal process(es) this run started`.
+so the host can Quit COM`, and if Portal outlived Host, `reaped the
+Siemens.Automation.Portal process this run started (pid N) — nothing else`; with no
+reported PID, `the host reported no Siemens.Automation.Portal pid; nothing was reaped by
+name`.
 
 The job schema (`TiaPortalJob` / `JobReader`):
 
@@ -195,6 +200,7 @@ review and are not imported.
 | Member | Used by | Notes |
 |---|---|---|
 | `FindObject` over `BlockGroup`, `TypeGroup`, `TagTableGroup` | rename, delete | **Exact identity only** (since 2026-10-14) — the same strings export writes. It used to also accept `EndsWith("/name#number")` and a bare name-contains, which in a multi-PLC project matched the first PLC's `Main` for a deletion planned on the second's. A miss is warned and kept; the remedy is an export. A UDT or tag table used to be a silent no-op |
+| `MatchPlc` over the path's first two segments | every file that lands on a PLC | **Checked for the whole plan before any write** (since 2026-10-25): the segments are compared against the sanitised `Device/PLC` directory names export wrote, and with two or more PLCs a miss refuses the plan as a fatal naming the files, the targets and the live PLCs. It used to fall back to `plcs[0]` at the point of use, so a device renamed in Portal after the export sent its files into the first PLC and saved (fifth review, P1; reproduced against fakes in the pure tests, which compile the host in). One PLC resolves everything; a `.devices.yaml` targets the project, not a PLC |
 | `obj.Name = newName` | rename | Identity is name+number, so this is the rename |
 | `obj.Delete()` via `TryDelete` | delete | Refused when `cannotVerify` is set, **and refused when the live object no longer matches the last export** (since 2026-10-14): `LiveMatchesRecorded` compares GenerateSource text against the recorded `hash` and a fresh in-session XML export through `HashNormalized` against `nhash` — the same check the CODESYS script (`why_not_delete`) and the TwinCAT host already made. A live object that cannot be read back is kept. If `Delete()` is missing or throws, emit a warning and **keep** the object — same class of refusal as an unverifiable delete. No second API is invented |
 | `ExternalSourceGroup.CreateFromFile` / `CreateFrom` | SCL apply / create | Existing source of the same file name is deleted first |

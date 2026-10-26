@@ -118,6 +118,29 @@ public static class BackupCatalog
         };
     }
 
+    /// <summary>
+    /// The suffix of the marker that sits beside a copy while it is being written.
+    /// </summary>
+    /// <remarks>
+    /// Written before the copy's first byte and deleted after its last, so a copy whose marker
+    /// is still there did not finish — the process died, the disk filled, a file in the tree
+    /// was locked halfway through. Such a copy is not listed and cannot be restored: a restore
+    /// puts back exactly the tree that was saved and deletes what the backup does not have
+    /// (the 2026-10-24 review's item 21), so restoring half a tree would delete the other half
+    /// of the live project and report success — reproduced by the 2026-10-25 review's fourth
+    /// round, item 1, with a program file that vanished. A rename on completion would say the
+    /// same thing with one file fewer, but the filesystem seam has no rename, and the marker
+    /// keeps the directory the only record, as the rest of this class insists.
+    /// </remarks>
+    public const string PartialMarkerSuffix = ".partial";
+
+    /// <summary>The marker that says the copy at <paramref name="backupPath"/> is still being written, or never finished.</summary>
+    public static string PartialMarkerFor(string backupPath) => backupPath + PartialMarkerSuffix;
+
+    /// <summary>Whether <paramref name="path"/> is such a marker rather than a copy.</summary>
+    public static bool IsPartialMarker(string path) =>
+        path.EndsWith(PartialMarkerSuffix, StringComparison.OrdinalIgnoreCase);
+
     /// <summary>Where one binding's copies live, repo-relative.</summary>
     /// <remarks>
     /// One place that knows the layout, so the writer, the pruner and the restore list cannot

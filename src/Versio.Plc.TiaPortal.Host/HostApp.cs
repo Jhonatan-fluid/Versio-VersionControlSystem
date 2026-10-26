@@ -113,8 +113,41 @@ internal static partial class HostApp
         var modeType = FindType("Siemens.Engineering.TiaPortalMode")
                        ?? throw new InvalidOperationException("TiaPortalMode missing");
         var withoutUi = Enum.Parse(modeType, "WithoutUserInterface");
-        return Activator.CreateInstance(tiaType, withoutUi)
+
+        // Portal is a COM server the activation launches, not a child of this process, so
+        // the only way to know which Siemens.Automation.Portal is ours is to look across
+        // the creation call itself. Reported to the runner as ide_pid; on Stop it reaps
+        // that PID and nothing else. Before this the runner diffed a snapshot taken over
+        // the whole run and killed every Portal that appeared meanwhile, the engineer's
+        // included (the 2026-10-24 review's item 28). Ambiguous — more than one appeared
+        // in the window — reports none: a Portal left running beats a stranger's killed.
+        var before = PortalPids();
+        var portal = Activator.CreateInstance(tiaType, withoutUi)
                ?? throw new InvalidOperationException("failed to construct TiaPortal");
+        var mine = PortalPids().Except(before).ToList();
+        if (mine.Count == 1)
+        {
+            Emit("ide_pid", "pid", mine[0].ToString(System.Globalization.CultureInfo.InvariantCulture));
+        }
+        else
+        {
+            Emit("warning", "msg", "could not tell which Portal this host created (" +
+                                   mine.Count + " appeared); Stop will not reap by name");
+        }
+
+        return portal;
+    }
+
+    private static HashSet<int> PortalPids()
+    {
+        try
+        {
+            return [.. System.Diagnostics.Process.GetProcessesByName("Siemens.Automation.Portal").Select(p => p.Id)];
+        }
+        catch (InvalidOperationException)
+        {
+            return [];
+        }
     }
 
     private static object? OpenProject(object portal, string path)

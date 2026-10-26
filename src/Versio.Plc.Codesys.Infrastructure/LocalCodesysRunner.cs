@@ -709,8 +709,16 @@ public sealed class LocalCodesysRunner(
                     // project. Everything else here either adds or replaces; this is the one
                     // that cannot be undone from the mirror, so it names the object and where
                     // it lived rather than a count somebody has to go and expand.
+                    //
+                    // olderHash: the live object matched its recorded nhash only under a
+                    // normalisation an older Versio used (the 2026-10-25 review's third
+                    // round, item 4). Still a match, and said here because the deletion was
+                    // vouched for by an older export's hash rather than by this version's.
                     _log.Info(CodesysLog.Category,
-                        $"removed {evt.String("name")} from {evt.String("path")}");
+                        $"removed {evt.String("name")} from {evt.String("path")}"
+                        + (evt.Bool("olderHash") == true
+                            ? " (checked against the hash an older Versio recorded, under that version's normalisation; the next export records the current one)"
+                            : ""));
                     break;
 
                 case "renamed":

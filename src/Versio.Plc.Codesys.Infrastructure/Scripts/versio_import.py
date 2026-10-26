@@ -45,10 +45,10 @@ from versio_decl import (DUT_ALIAS, DUT_ENUM, DUT_STRUCT, DUT_UNION,  # noqa: E4
                          KIND_DUT, KIND_FUNCTION, KIND_FUNCTION_BLOCK,
                          KIND_INTERFACE, KIND_PROGRAM, parse_declaration)
 from versio_text import (WS, content_hash, join_st, normalize_decl_only,  # noqa: E402
-                         scrub_native_xml, split_st)
+                         read_textual, scrub_native_xml, split_st)
 from versio_types import (FORM_NATIVE_R, NATIVE_FORMS, can_verify,  # noqa: E402
-                          is_versio_file)
-from versio_native_equiv import normalize  # noqa: E402
+                          is_versio_file, type_of)
+from versio_native_equiv import form_can_vouch, normalized_forms  # noqa: E402
 import versio_tree  # noqa: E402
 import versio_yaml  # noqa: E402
 
@@ -244,6 +244,10 @@ class Importer(object):
         # path that writes it: IronPython raises AttributeError on an unset attribute, and
         # that would turn a refusal-with-an-explanation into a fatal.
         self.reexport_error = None
+        # Set by why_not_delete when the live object matched its recorded nhash only under
+        # a normalisation an older Versio used; the removed event carries it so the log says
+        # whose normalisation vouched for the deletion.
+        self.older_nhash = False
 
     def warn(self, code, path, detail=None):
         self.warnings.append({"code": code, "path": path, "detail": detail})
@@ -257,8 +261,14 @@ class Importer(object):
     def apply_st(self, obj, rel_path, abs_path, suffix):
         content = read_text(abs_path)
 
-        if suffix in (".gvl.st",):
-            # GVL: declaration only.
+        # A declaration-only object - a GVL by its suffix, a DUT by having no textual
+        # implementation - is read the way the export wrote it: normalised, never unescaped,
+        # never split. Reading a DUT's plain .st through split_st decoded a literal escape
+        # marker into the delimiter and cut the declaration at a literal delimiter line (the
+        # 2026-10-24 review's item 5). read_textual holds the rule; this branch is its
+        # declaration-only half.
+        has_impl = bool(safe(lambda: obj.has_textual_implementation, False))
+        if suffix in (".gvl.st",) or (suffix == ".st" and not has_impl):
             new_decl = normalize_decl_only(content)
             old = safe(lambda: obj.textual_declaration.text, None)
             if old is not None and normalize_decl_only(old) == new_decl:
@@ -282,7 +292,7 @@ class Importer(object):
             return
 
         # Full ST: declaration + implementation.
-        decl, impl = split_st(content)
+        decl, impl = read_textual(content, True)
         changed = False
 
         old_decl = safe(lambda: obj.textual_declaration.text, None)
@@ -816,10 +826,21 @@ class Importer(object):
                   "moved": bool(rename.get("isMove"))})
 
             if old_name != new_name:
-                self.retarget_task_pous(old_name, new_name)
+                # Within the renamed object's own Application, never the whole project: a
+                # task entry is a bare name, and the same name in another Application is
+                # another program (the 2026-10-24 review's item 31).
+                is_application = (
+                    lambda o: type_of(safe(lambda: str(o.type), "")) == "APPLICATION")
+                scope = versio_tree.application_of(landed, safe, is_application)
+                if scope is None:
+                    self.warn("TASK_POU_RETARGET_SKIPPED", old_name,
+                              "the renamed object is not inside an Application, so no task "
+                              "list was retargeted; check the task configuration by hand")
+                else:
+                    self.retarget_task_pous(scope, old_name, new_name, is_application)
 
-    def retarget_task_pous(self, old_name, new_name):
-        """Point every task that ran `old_name` at `new_name`.
+    def retarget_task_pous(self, scope, old_name, new_name, is_application):
+        """Point every task under `scope` that ran `old_name` at `new_name`.
 
         WHY THIS IS NOT OPTIONAL. A task's POU list is stored BY NAME, and rename() does not
         rewrite it - measured: renaming Simulation to Renamed left MainTask listing
@@ -840,11 +861,15 @@ class Importer(object):
           - `replace(index, name)` works, and survives a save and reopen.
 
         BY NAME IS ALL THERE IS, so this is as exact as the toolchain allows: two objects
-        called Simulation in different folders are one entry in a task list, and nothing in
-        the list says which was meant. Renaming one retargets the entry either way - the same
-        ambiguity CODESYS itself has, not one added here.
+        called Simulation in different folders OF ONE APPLICATION are one entry in a task
+        list, and nothing in the list says which was meant. Renaming one retargets the entry
+        either way - the same ambiguity CODESYS itself has, not one added here. Across
+        Applications it is no ambiguity at all - each has its own namespace and its own
+        tasks - which is why `scope` is the renamed object's Application and not the project,
+        and why the walk stops at an Application nested inside it (the second-round review's
+        item 3: the first walk went into one and repointed its task too).
         """
-        for task in self.walk_tasks(self.proj):
+        for task in versio_tree.tasks_under(scope, safe, is_application):
             pous = safe(lambda: list(task.pous), None)
             if not pous:
                 continue
@@ -863,27 +888,6 @@ class Importer(object):
                 emit({"t": "task_pou_retargeted",
                       "task": safe(lambda: task.get_name(), ""),
                       "from": old_name, "to": new_name})
-
-    def walk_tasks(self, node, depth=0):
-        """Every object in the project that carries a POU list.
-
-        Found by probing for the attribute rather than by looking for a TASK type GUID. The
-        type table is incomplete by nature - that is written down in versio_types - and a
-        task under an unmapped container would be missed by a type walk while still holding
-        a reference this has to fix.
-
-        Depth-capped for the same reason the export's walk is: a cycle in the object tree
-        would otherwise hang an import with no output.
-        """
-        if depth > 32:
-            return
-
-        for child in safe(lambda: node.get_children(), []) or []:
-            if safe(lambda: child.pous, None) is not None:
-                yield child
-
-            for found in self.walk_tasks(child, depth + 1):
-                yield found
 
     def delete_planned(self):
         """Remove objects the mirror no longer has any file for.
@@ -939,8 +943,13 @@ class Importer(object):
                 continue
 
             self.removed += 1
+            # olderHash: the check matched the recorded nhash only under a normalisation an
+            # older Versio used (why_not_delete). The host puts it on the removed line, so a
+            # deletion vouched for by an older export's hash is a deletion the log can
+            # explain; the next export records the current one.
             emit({"t": "removed", "name": name, "path": "/".join(chain),
-                  "files": [f.get("path") for f in files]})
+                  "files": [f.get("path") for f in files],
+                  "olderHash": self.older_nhash})
 
     def why_not_delete(self, obj, name, files):
         """(code, detail) when this deletion must not happen, or None to proceed."""
@@ -949,10 +958,16 @@ class Importer(object):
                     "the plan lists no exported file for it, so there is nothing to check "
                     "the live object against")
 
+        self.older_nhash = False
+
         for entry in files:
             form = entry.get("form") or ""
             recorded = entry.get("hash") or ""
             nrecorded = entry.get("nhash") or ""
+            changed = ("DELETE_CONTENT_CHANGED",
+                       "the object in the project no longer matches what was exported to "
+                       "%s, so it has been edited since - the missing file is not "
+                       "permission to destroy that work" % entry.get("path"))
 
             if not can_verify(form, nrecorded):
                 # Either a form that can never be checked, or a native one exported before
@@ -963,36 +978,56 @@ class Importer(object):
                         "it changed since the export is unknowable" % (form or "recorded"))
 
             if form in NATIVE_FORMS:
-                live = self.normalized_native_of(obj, form)
+                live = self.reexported_native_of(obj, form)
                 if live is None:
                     return ("DELETE_UNREADABLE",
                             "its %s file could not be re-exported from the live object, so "
                             "the deletion cannot be checked: %s"
                             % (form, self.reexport_error or "no reason reported"))
-                compare_to = nrecorded
-            else:
-                live = self.exported_text_of(obj, form)
-                if live is None:
-                    # A form that CAN be checked, on an object that would not give up its
-                    # text. Reported apart from the line above because they are different
-                    # problems: one is a limit of this version and the other is this object,
-                    # right now, and merging them would have the log blame the form for
-                    # something it did not do.
-                    return ("DELETE_UNREADABLE",
-                            "its %s file should be rebuildable but the live object returned "
-                            "no text, so the deletion cannot be checked" % form)
-                compare_to = recorded
 
-            if content_hash(live) != compare_to:
-                return ("DELETE_CONTENT_CHANGED",
-                        "the object in the project no longer matches what was exported to "
-                        "%s, so it has been edited since - the missing file is not "
-                        "permission to destroy that work" % entry.get("path"))
+                # Under every normalisation the recorded hash may have been taken over, the
+                # current one first. Comparing under the current one alone refused every
+                # native deletion in every mirror exported before 2026-10-25 as "edited since
+                # the export" (the third review round's item 4; the reasoning is on
+                # normalized_forms). A match under an older one is a match only where that
+                # normalisation can tell an edit from a reordering for this object's shape:
+                # the line sort cannot, for a container with multi-line children, and taking
+                # its word deleted a modified object (the fifth round's item 1; the reasoning
+                # is on form_can_vouch). Such an object waits for the next export, and says
+                # so. A match under an older form that CAN vouch is said on the removed event,
+                # so the log names whose normalisation did.
+                matched = [k for k, text in enumerate(normalized_forms(live))
+                           if content_hash(text) == nrecorded]
+                if not matched:
+                    return changed
+                if not form_can_vouch(live, matched[0]):
+                    return ("DELETE_UNVERIFIABLE",
+                            "its %s file was recorded by an older Versio whose hash cannot "
+                            "tell a reordering from an edit for an object of this shape, so "
+                            "whether it changed since the export is unknowable; export the "
+                            "project again and the hash it records can" % form)
+                if matched[0] > 0:
+                    self.older_nhash = True
+                continue
+
+            live = self.exported_text_of(obj, form)
+            if live is None:
+                # A form that CAN be checked, on an object that would not give up its
+                # text. Reported apart from the line above because they are different
+                # problems: one is a limit of this version and the other is this object,
+                # right now, and merging them would have the log blame the form for
+                # something it did not do.
+                return ("DELETE_UNREADABLE",
+                        "its %s file should be rebuildable but the live object returned "
+                        "no text, so the deletion cannot be checked" % form)
+
+            if content_hash(live) != recorded:
+                return changed
 
         return None
 
-    def normalized_native_of(self, obj, form):
-        """Re-export this object natively and return its comparison form, or None.
+    def reexported_native_of(self, obj, form):
+        """Re-export this object natively and return its scrubbed text, or None.
 
         The native half of the content check, and the thing that closes Phase 2's open
         half. It cannot work the way the textual half does: `hash` in the manifest is over
@@ -1007,11 +1042,14 @@ class Importer(object):
 
           - recursive only for NATIVE_R, which is the rule export_native is called with;
           - scrub_native_xml, which removes the Timestamp CODESYS re-mints per run;
-          - normalize with masking left at its default.
+          - and then, in why_not_delete, normalisation with masking on - under the current
+            form and under each older one an export may have recorded (normalized_forms),
+            because "match versio_export.py" means the versio_export.py that WROTE the hash.
 
         Any divergence turns the check from "unchanged" into "exported by a different
         version of Versio", which would refuse every native deletion for a reason that has
-        nothing to do with the object.
+        nothing to do with the object - and did, for one day, when the normalisation
+        changed and this only knew the new one.
         """
         # The system temp directory, NOT the mirror. The mirror is a git working tree with a
         # RepositoryWatcher on it, and writing into it mid-import would raise a change event
@@ -1036,7 +1074,7 @@ class Importer(object):
 
         self.reexport_error = None
         scrubbed, _ = scrub_native_xml(raw)
-        return normalize(scrubbed)[0]
+        return scrubbed
 
     def run(self):
         """Two phases, in this order, with a save between them.

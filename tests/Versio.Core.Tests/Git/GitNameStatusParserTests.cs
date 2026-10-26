@@ -139,4 +139,37 @@ public class GitNameStatusParserTests
         var file = Assert.Single(GitNameStatusParser.Parse(Z("T", "link.st")));
         Assert.Equal(ChangeKind.Modified, file.Kind);
     }
+
+    /// <summary>
+    /// A rename after a modified file whose name begins with R is still the rename.
+    /// </summary>
+    /// <remarks>
+    /// The client's own field scan treated every field starting with <c>R</c> as a rename
+    /// status, so <c>M\0README.txt\0R100\0old\0new\0</c> read <c>README.txt</c> as the status,
+    /// recorded <c>R100 → old</c>, and lost the real rename — the binding reported broken and
+    /// the new path untracked. The 2026-10-24 review's item 4. The map is derived from the
+    /// parsed records, which walk every record by its own width.
+    /// </remarks>
+    [Fact]
+    public void Renames_survive_a_modified_file_whose_name_starts_with_R()
+    {
+        var renames = GitNameStatusParser.Renames(Z(
+            "M", "README.txt",
+            "R100", "plc/Old.project", "plc/New.project"));
+
+        var rename = Assert.Single(renames);
+        Assert.Equal("plc/Old.project", rename.Key);
+        Assert.Equal("plc/New.project", rename.Value);
+    }
+
+    /// <summary>A copy is not a rename: the original is still where it was.</summary>
+    [Fact]
+    public void A_copy_is_not_reported_as_a_rename()
+    {
+        var renames = GitNameStatusParser.Renames(Z(
+            "C90", "plc/A.project", "plc/B.project",
+            "D", "Removed.st"));
+
+        Assert.Empty(renames);
+    }
 }

@@ -324,10 +324,12 @@ public class StDeclarationTableTests
         var scada = Row(table, "Scada");
         Assert.Equal(["symbol = readwrite"], Chips(scada.Attributes));
         Assert.Equal("readwrite", scada.Attributes[0].Value);
-        // The comment above the pragma is still the variable's, and the row starts at the
-        // pragma, so a changed attribute marks the row and a review comment on it lands here.
+        // The comment above the pragma is still the variable's, and the row starts at that
+        // comment (2026-10-23; at the pragma before): every line the row draws a cell from is
+        // the row's, so a changed comment or attribute marks the row, review coverage vouches
+        // for the line through it, and a review comment on either line lands here.
         Assert.Equal("SCADA", scada.Comment);
-        Assert.Equal(new LineSpan(11, 12), scada.Lines);
+        Assert.Equal(new LineSpan(10, 12), scada.Lines);
 
         Assert.Equal(["implicit-parameter = instance-path"], Chips(Row(table, "InstancePath").Attributes));
         Assert.Empty(table.Members.Where(m => m.IsSectionHeading).SelectMany(m => m.Attributes));
@@ -366,9 +368,36 @@ public class StDeclarationTableTests
     {
         var table = StDeclarationTable.Parse(UpdateMeta, "x")!;
 
-        // The doc comment is drawn nowhere; "FUNCTION" stands for the header, whose name is the
-        // title. Everything else is a row, a heading, an attribute or a comment given to a row.
-        Assert.Equal([new UnshownLine(2, "/// Refreshes a block's SCADA Meta identity."), new UnshownLine(3, "FUNCTION")], table.Unshown);
+        // The doc comment is drawn nowhere. The header says nothing the table does not draw (its
+        // name is the title, its kind the table's kind, its type the Return row), so it is framing
+        // rather than unshown. Everything else is a row, a heading, an attribute or a comment
+        // given to a row.
+        Assert.Equal([new UnshownLine(2, "/// Refreshes a block's SCADA Meta identity.")], table.Unshown);
+    }
+
+    /// <summary>
+    /// The framing: the header, the section keywords and blank lines, as spans. What review coverage
+    /// vouches for through the table (docs/web/PLAN.md, C4), and nothing a row or an attribute draws.
+    /// </summary>
+    [Fact]
+    public void The_declarations_own_syntax_and_its_blank_lines_are_framing()
+    {
+        var table = StDeclarationTable.Parse("FUNCTION_BLOCK FB\nVAR_INPUT\n\tx : INT;\n\n\t// doc\n\ty : INT;\nEND_VAR\n// stray\nVAR\nEND_VAR", "x")!;
+
+        // Line 1 the header, 2 VAR_INPUT, 4 blank, 7 END_VAR, 9 VAR, 10 END_VAR (file lines, from 1);
+        // the stray comment is unshown, the rows are drawn.
+        Assert.Equal([new LineSpan(1, 2), new LineSpan(4, 4), new LineSpan(7, 7), new LineSpan(9, 10)], table.Structural);
+        Assert.Equal(["// stray"], table.Unshown.Select(u => u.Text));
+        Assert.Equal(new LineSpan(5, 6), Row(table, "y").Lines);
+
+        // A header that says more (EXTENDS) is unshown, not framing.
+        var extended = StDeclarationTable.Parse("FUNCTION_BLOCK FB EXTENDS Base\nVAR\nEND_VAR", "x")!;
+        Assert.Equal([new LineSpan(2, 3)], extended.Structural);
+        Assert.Equal(["EXTENDS Base"], extended.Unshown.Select(u => u.Text));
+
+        // Shifted with the rows when the declaration is read out of a larger file.
+        Assert.Equal([new LineSpan(10, 11), new LineSpan(13, 13), new LineSpan(16, 16), new LineSpan(18, 19)],
+            StDeclarationTable.Parse("FUNCTION_BLOCK FB\nVAR_INPUT\n\tx : INT;\n\n\t// doc\n\ty : INT;\nEND_VAR\n// stray\nVAR\nEND_VAR", "x", firstLine: 10)!.Structural);
     }
 
     [Fact]
@@ -377,16 +406,97 @@ public class StDeclarationTableTests
         var table = StDeclarationTable.Parse(
             "FUNCTION_BLOCK B EXTENDS A\nVAR_INPUT\n\tx : INT;\nEND_VAR\n// between\n{warning 'check'}\nVAR\n\ty : INT;\nEND_VAR", "x")!;
 
-        Assert.Equal(["FUNCTION_BLOCK EXTENDS A", "// between", "{warning 'check'}"], table.Unshown.Select(u => u.Text).ToList());
+        // The header stands as what it says beyond its keywords: the kind is the table's kind.
+        Assert.Equal(["EXTENDS A", "// between", "{warning 'check'}"], table.Unshown.Select(u => u.Text).ToList());
         Assert.Empty(table.Attributes);
     }
 
     [Fact]
-    public void A_functions_return_type_is_drawn_so_only_its_keywords_stand_for_the_header()
+    public void A_functions_return_type_is_drawn_and_its_keywords_are_framing_so_nothing_stands_for_the_header()
     {
         var table = StDeclarationTable.Parse("METHOD PRIVATE M : BOOL // ok\nVAR_INPUT\n\tx : INT;\nEND_VAR", "x")!;
 
-        Assert.Equal([new UnshownLine(1, "METHOD PRIVATE")], table.Unshown);
+        // Until 2026-10-23 "METHOD PRIVATE" stood in for the line, so a header that gained PUBLIC
+        // warned "1 declaration change is not shown" beside a code block showing every change (the
+        // owner's MoveHome). The keyword is the kind and the modifier is not reported — stated as a
+        // cost on HeaderResidue — and the type with its comment is the Return row.
+        Assert.Empty(table.Unshown);
+        Assert.Equal(new LineSpan(1, 1), Row(table, "M").Lines);
+    }
+
+    [Fact]
+    public void Several_declarations_on_one_line_are_each_their_own_row()
+    {
+        // Review 2026-10-25, item 9: "a : INT; b : BOOL;" tabled one variable a of type
+        // "INT; b : BOOL", and nothing said b was missing. IEC 61131-3 puts no line breaks in its
+        // grammar; a statement ends at its semicolon, wherever the next one starts.
+        var table = StDeclarationTable.Parse(
+            "FUNCTION_BLOCK B\nVAR\n\ta : INT; b : BOOL; // both\n\tc : STRING := 'x;y'; d : ARRAY[0..1] OF INT;\n\te : INT; f :\n\t\tBOOL;\nEND_VAR", "x")!;
+
+        Assert.Equal(
+            ["[Static]", "a : INT", "b : BOOL", "c : STRING := 'x;y'", "d : ARRAY[0..1] OF INT", "e : INT", "f : BOOL"],
+            Shape(table));
+
+        // The line's comment is written beside both; the line is both rows'. A declaration that
+        // starts after another's semicolon and ends on the next line spans from where it started.
+        Assert.Equal("both", Row(table, "a").Comment);
+        Assert.Equal("both", Row(table, "b").Comment);
+        Assert.Equal(new LineSpan(3, 3), Row(table, "b").Lines);
+        Assert.Equal(new LineSpan(5, 6), Row(table, "f").Lines);
+        Assert.Empty(table.Unshown);
+    }
+
+    [Fact]
+    public void A_semicolon_on_a_line_of_its_own_ends_the_declaration_above_it()
+    {
+        // Review 2026-10-25, third round, item 1: "a : INT", a line holding only ";", then
+        // "b : BOOL;" tabled one variable a of type "INT b : BOOL", and nothing said b was
+        // missing — a regression from the second round's item 9, whose pieces skipped an empty
+        // statement without closing the declaration still open above it.
+        var table = StDeclarationTable.Parse(
+            "FUNCTION_BLOCK B\nVAR\n\ta : INT\n\t; // ends a\n\tb : BOOL;\n\tc : INT\n\t; d : INT;\nEND_VAR", "x")!;
+
+        Assert.Equal(["[Static]", "a : INT", "b : BOOL", "c : INT", "d : INT"], Shape(table));
+
+        // The declaration ends on the semicolon's line, and that line's comment is its.
+        Assert.Equal(new LineSpan(3, 4), Row(table, "a").Lines);
+        Assert.Equal("ends a", Row(table, "a").Comment);
+        Assert.Equal(new LineSpan(5, 5), Row(table, "b").Lines);
+        Assert.Equal(new LineSpan(6, 7), Row(table, "c").Lines);
+        Assert.Equal(new LineSpan(7, 7), Row(table, "d").Lines);
+        Assert.Empty(table.Unshown);
+    }
+
+    [Fact]
+    public void A_section_written_on_one_line_yields_its_rows_and_an_empty_one_is_framing()
+    {
+        // Review 2026-10-25, item 9: "VAR a : INT; END_VAR" on one line opened a section, drew no
+        // row, claimed the line as framing, and so reported nothing unshown either.
+        var table = StDeclarationTable.Parse(
+            "FUNCTION_BLOCK B\nVAR_INPUT x : INT; END_VAR\nVAR CONSTANT k : INT := 1; END_VAR\nVAR END_VAR\nVAR\n\ty : INT;\nEND_VAR", "x")!;
+
+        Assert.Equal(["[Input]", "x : INT", "[Constant]", "k : INT := 1", "[Static]", "y : INT"], Shape(table));
+        Assert.Equal(new LineSpan(2, 2), Row(table, "x").Lines);
+        Assert.Empty(table.Unshown);
+
+        // "VAR END_VAR" says nothing a row would draw: framing, like a VAR on a line of its own.
+        // And the END_VAR on the one-line section closed it: y is under the next VAR, not this one.
+        Assert.Contains(new LineSpan(4, 5), table.Structural);
+
+        var globals = StDeclarationTable.Parse("VAR_GLOBAL CONSTANT g : INT := 2; END_VAR", "Glob_Var")!;
+        Assert.Equal(["g : INT := 2"], Shape(globals));
+        Assert.Empty(globals.Unshown);
+    }
+
+    [Fact]
+    public void A_one_line_section_whose_declaration_draws_no_row_is_reported_not_shown()
+    {
+        // The section keyword claimed its whole line; on a line that also holds a declaration the
+        // table could not draw, that claim hid the declaration. Only a row may claim such a line.
+        var table = StDeclarationTable.Parse("FUNCTION_BLOCK B\nVAR x INT; END_VAR", "x")!;
+
+        Assert.DoesNotContain(table.Members, m => !m.IsSectionHeading);
+        Assert.Equal(["VAR x INT; END_VAR"], table.Unshown.Select(u => u.Text));
     }
 
     [Fact]
@@ -394,7 +504,7 @@ public class StDeclarationTableTests
     {
         var table = StDeclarationTable.Parse(UpdateMeta, "x", firstLine: 10)!;
 
-        Assert.Equal([11, 12], table.Unshown.Select(u => u.Line).ToList());
+        Assert.Equal([11], table.Unshown.Select(u => u.Line).ToList());
         Assert.Equal(new LineSpan(10, 10), table.Attributes[0].Lines);
         Assert.Equal(new LineSpan(20, 20), Row(table, "Scada").Attributes[0].Lines);
     }

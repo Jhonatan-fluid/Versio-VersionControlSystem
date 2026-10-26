@@ -207,6 +207,7 @@ public sealed class ChangeRow(FileChange change) : ObservableObject
     {
         if (_change.Effective == fresh.Effective &&
             _change.IsStaged == fresh.IsStaged &&
+            _change.Unstaged == fresh.Unstaged &&
             _change.OriginalPath == fresh.OriginalPath)
         {
             return false;
@@ -217,8 +218,21 @@ public sealed class ChangeRow(FileChange change) : ObservableObject
         OnPropertyChanged(nameof(BrushKey));
         OnPropertyChanged(nameof(Detail));
         OnPropertyChanged(nameof(IsStaged));
+        OnPropertyChanged(nameof(IsPartlyStaged));
         return true;
     }
+
+    /// <summary>
+    /// True when part of this file is in the index and part is still only in the working
+    /// tree — the shape "Stage hunk" leaves behind.
+    /// </summary>
+    /// <remarks>
+    /// The commit reads this to leave the row alone rather than <c>git add</c> the whole
+    /// path, which re-staged the unstaged hunks and committed them with the one that was
+    /// chosen. The 2026-10-24 review's item 32. A file whose every change is staged, or
+    /// none of it, is not partly staged and is added as before.
+    /// </remarks>
+    public bool IsPartlyStaged => _change.IsStaged && _change.Unstaged is not ChangeKind.Unmodified;
 
     public string Glyph => ChangeGlyph.For(_change.Effective);
 
@@ -227,6 +241,27 @@ public sealed class ChangeRow(FileChange change) : ObservableObject
     public string Detail => _change.OriginalPath is null
         ? string.Empty
         : $"← {_change.OriginalPath}";
+
+    /// <summary>
+    /// The path a staged rename took this file from, or null for anything else.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// A rename is one row and two index entries: the new path added, the old one deleted.
+    /// Anything that takes this row out of the index has to name both, because
+    /// <c>git restore --staged new.st</c> removes the addition and leaves the deletion
+    /// where it was — so excluding a rename from a commit deleted <c>old.st</c> from the
+    /// repository and added nothing in its place. The 2026-10-25 review's P2.
+    /// </para>
+    /// <para>
+    /// Only a <b>rename</b>, not a copy, though both carry an original path. A copy's source is
+    /// still in the index as its own entry, possibly as its own row with its own tick, and
+    /// unstaging it on the copy's behalf would undo a choice made on that row. A rename's
+    /// source has no row to clash with: it is gone from the index, which is the whole point.
+    /// </para>
+    /// </remarks>
+    public string? RenamedFrom =>
+        _change.Staged == ChangeKind.Renamed ? _change.OriginalPath : null;
 
     public bool IsStaged => _change.IsStaged;
 
@@ -2077,8 +2112,14 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         // Before anything is written into .versio/local/, and per clone rather than per
         // project: an auto-stash record that git can see is a record the NEXT auto-stash
         // swallows, leaving real work in the stash with nothing pointing at it.
+        //
+        // The COMMON git directory, not the per-worktree one. git reads info/exclude from
+        // $GIT_COMMON_DIR only; in a linked worktree GitDirectoryAsync answers
+        // .git/worktrees/<name>, and an exclude written there was never read - so
+        // .versio/local/ stayed untracked and the next auto-stash swept its own record. The
+        // 2026-10-24 review's item 25. In the main worktree the two are the same directory.
         await LocalExclude.EnsureAsync(
-            await client.GitDirectoryAsync(busy.Token).ConfigureAwait(true),
+            await client.CommonGitDirectoryAsync(busy.Token).ConfigureAwait(true),
             _logger,
             busy.Token).ConfigureAwait(true);
 
@@ -2421,8 +2462,19 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
     /// <summary>
     /// What the commit button will do right now.
     /// </summary>
+    /// <remarks>
+    /// While a rebase is paused, the button continues the rebase and does not commit. A rebase
+    /// replays commits on a detached HEAD, and a plain <c>git commit</c> there made a stray
+    /// commit nothing pointed at, left the branch where it was and the rest unreplayed, and
+    /// kept the rebase paused — under a banner that said "Continue the rebase" (the 2026-10-25
+    /// review's sixth round, P2). Read from <see cref="MergeState"/>, which comes from git's
+    /// marker file, never from the presence of conflicts: the moment this matters is after the
+    /// last one is resolved.
+    /// </remarks>
     public CommitPlan Commit =>
-        CommitPlan.For(Pending.Count, PendingSelectedCount);
+        _mergeState == MergeState.Rebasing
+            ? CommitPlan.ContinuingRebase
+            : CommitPlan.For(Pending.Count, PendingSelectedCount);
 
     /// <summary>Why the commit button is dead, or empty when it is live.</summary>
     /// <remarks>
@@ -2447,7 +2499,30 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
     public string CommitExplanation =>
         CommitBlockedReason.Length > 0
             ? CommitBlockedReason
-            : $"{Commit.Explanation} (Ctrl+Enter)";
+            : $"{Commit.Explanation}{PartlyStagedNote} (Ctrl+Enter)";
+
+    /// <summary>
+    /// What the commit will do with a file that has a staged hunk and an unstaged one: say
+    /// so before the press, not after (item 32).
+    /// </summary>
+    private string PartlyStagedNote
+    {
+        get
+        {
+            // A paused rebase commits nothing of the list's choosing, so a note about what
+            // the commit will do with a chosen row would describe a commit that is not
+            // happening.
+            if (Commit.Intent == CommitIntent.ContinueRebase)
+            {
+                return string.Empty;
+            }
+
+            var count = Chosen(Pending).Count(r => r.IsPartlyStaged);
+            return count == 0
+                ? string.Empty
+                : $" {Plural(count, "partly staged file")} go in as staged.";
+        }
+    }
 
     /// <summary>
     /// True while git reports an unmerged path.
@@ -2478,14 +2553,37 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
             if (SetProperty(ref _mergeState, value))
             {
                 OnPropertyChanged(nameof(IsMidMerge));
+                OnPropertyChanged(nameof(ShowsConflicts));
                 OnPropertyChanged(nameof(ConflictHeadline));
                 RaiseHealth();
+
+                // The commit button's plan reads this state (a paused rebase turns it into
+                // "Continue rebase"), so its caption and tooltip move with it, not only its
+                // enabled state.
+                RaiseCommitState();
                 RaiseGitCommandStates();
             }
         }
     }
 
-    public bool IsMidMerge => _mergeState is not MergeState.None;
+    /// <summary>True while a merge or rebase is in progress — something that can be abandoned.</summary>
+    /// <remarks>
+    /// Deliberately not <see cref="MergeState.Conflicts"/>: that state has no operation
+    /// behind it, so there is nothing for Abandon to abort, and the merge-finishing paths
+    /// that key on this must not treat a conflicted stash apply as a merge to conclude.
+    /// </remarks>
+    public bool IsMidMerge => _mergeState is MergeState.Merging or MergeState.Rebasing;
+
+    /// <summary>Whether the conflict section is on screen.</summary>
+    /// <remarks>
+    /// The section was bound to <see cref="IsMidMerge"/>, and <c>MergeStateAsync</c> reads
+    /// only the merge and rebase marker files — so a stash apply that stopped at a conflict
+    /// moved its files into <see cref="Conflicted"/>, the commit button said "Resolve the
+    /// conflicts first", and the only buttons that could resolve them were hidden. The
+    /// 2026-10-24 review's item 30. Any unmerged path is reason enough to show the section;
+    /// the operation, when there is one, decides what else it offers.
+    /// </remarks>
+    public bool ShowsConflicts => IsMidMerge || Conflicted.Count > 0;
 
     /// <summary>The conflicted paths, as their own section.</summary>
     /// <remarks>
@@ -2500,6 +2598,15 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         get
         {
             var count = Conflicted.Count;
+
+            if (count > 0 && !IsMidMerge)
+            {
+                // No merge to finish and nothing to abandon: a stash apply stopped here
+                // (item 30). "Mine" is what this branch has, "theirs" what was being applied.
+                return count == 1
+                    ? "1 file conflicts. Keep mine is this branch's version, Keep theirs is the one being applied."
+                    : $"{count} files conflict. Keep mine is this branch's version, Keep theirs is the one being applied.";
+            }
 
             if (count > 0)
             {
@@ -3094,14 +3201,13 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
     /// <summary>
     /// The absolute path of an HTML file that exists, or null. Only <c>.html</c> and
     /// <c>.htm</c>: an <c>.svg</c> or <c>.xml</c> would also load in a browser, but nobody
-    /// asked to "view an XML file as a web page", and every extension added here is another
-    /// kind of repository content the app will hand to a browser engine.
+    /// asked to "view an XML file as a web page", and every extension added there is another
+    /// kind of repository content the app will hand to a browser engine. The list is Core's
+    /// (<see cref="RenderChoice.IsWebPage"/>), the same one the web viewer frames by.
     /// </summary>
     private string? WebPageFor(string? relative)
     {
-        if (relative is null || RepositoryPath is not { } root
-            || !(relative.EndsWith(".html", StringComparison.OrdinalIgnoreCase)
-                 || relative.EndsWith(".htm", StringComparison.OrdinalIgnoreCase)))
+        if (relative is null || RepositoryPath is not { } root || !RenderChoice.IsWebPage(relative))
         {
             return null;
         }
@@ -3345,7 +3451,7 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
     private bool CanCommit() =>
         Ready
         && Commit.CanCommit
-        && !string.IsNullOrWhiteSpace(CommitMessage)
+        && (!Commit.NeedsMessage || !string.IsNullOrWhiteSpace(CommitMessage))
         && Auth.Identity.IsComplete
         && !HasConflicts;
 
@@ -3446,6 +3552,18 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
             return;
         }
 
+        // Before the ticked rows are read: a paused rebase is continued whether or not anything
+        // is listed, because what it commits is the conflicted commit's own content, not a
+        // selection. The plan already carries this decision (Commit.Label says "Continue
+        // rebase"), from the last refresh's reading of git's marker file; the client reads the
+        // marker again before running, so a rebase finished or abandoned from a terminal
+        // between that refresh and this press is refused rather than "continued".
+        if (Commit.Intent == CommitIntent.ContinueRebase)
+        {
+            await ContinueRebaseAsync().ConfigureAwait(true);
+            return;
+        }
+
         var include = Chosen(Pending).ToList();
         if (include.Count == 0)
         {
@@ -3543,10 +3661,22 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
             return;
         }
 
-        _logger.Info(LogCategory.Git,
-            $"{Commit.Label}: staging {include.Count} file(s) before the commit");
+        // A partly staged file - "Stage hunk" put some of it in the index and left the rest
+        // in the working tree - is committed as the index stands. `git add` on its whole
+        // path would re-stage the hunks that were deliberately left out and commit them
+        // with the one that was chosen, which made the button in the diff pane a no-op the
+        // commit quietly undid. The 2026-10-24 review's item 32.
+        var partlyStaged = include.Where(r => r.IsPartlyStaged).ToList();
+        var toStage = include.Where(r => !r.IsPartlyStaged).ToList();
 
-        if (!await StageForCommitAsync(include).ConfigureAwait(true))
+        _logger.Info(LogCategory.Git,
+            $"{Commit.Label}: staging {toStage.Count} file(s) before the commit" +
+            (partlyStaged.Count == 0
+                ? string.Empty
+                : $"; {partlyStaged.Count} partly staged file(s) committed as the index stands: " +
+                  string.Join(", ", partlyStaged.Select(r => r.Path))));
+
+        if (!await StageForCommitAsync(toStage).ConfigureAwait(true))
         {
             return;
         }
@@ -3574,8 +3704,15 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         await RunRefreshAsync(RefreshTrigger.Manual, null).ConfigureAwait(true);
 
         Notifications.Success("Committed.",
-                              "Not pushed, so the direction lock is still held.");
+                              partlyStaged.Count == 0
+                                  ? "Not pushed, so the direction lock is still held."
+                                  : $"Not pushed, so the direction lock is still held. " +
+                                    $"{Plural(partlyStaged.Count, "partly staged file")} went in as " +
+                                    "staged; the rest of each is still in the working tree.");
     }
+
+    private static string Plural(int count, string noun) =>
+        count == 1 ? $"1 {noun}" : $"{count} {noun}s";
 
     /// <summary>
     /// Fix the last commit's message (UX-12). Two presses, message-only, unpushed-only.
@@ -3680,6 +3817,40 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
             }
         }
 
+        // THE COMMIT CONFIRMED IS THE ONLY COMMIT THAT MAY BE REWRITTEN.
+        //
+        // The dialog is modal and takes as long as a person takes; `commit --amend` rewrites
+        // whatever HEAD is when it runs. A commit landing from a terminal, a checkout, or a
+        // push between the question and the answer meant the rewrite hit a commit the user
+        // never saw named - and a pushed one would fork a history somebody else has. The
+        // 2026-10-24 review's item 41. So HEAD and the unpushed set are read again after
+        // the answer, and a HEAD that is not the one named in the dialog is refused.
+        var headNow = await _git.HeadCommitAsync(CancellationToken.None).ConfigureAwait(true);
+        if (!string.Equals(headNow, head, StringComparison.Ordinal))
+        {
+            _logger.Warn(LogCategory.Git,
+                $"amend refused: HEAD moved from {Short(head)} to {Short(headNow)} while the " +
+                "confirmation was open");
+            Notifications.Failure("Not amended.",
+                "The last commit changed while the question was open, so the one you " +
+                "confirmed is no longer the last. Nothing was rewritten.");
+            await RunRefreshAsync(RefreshTrigger.Manual, null).ConfigureAwait(true);
+            return;
+        }
+
+        var unpushedNow = await _git.UnpushedCommitIdsAsync(CancellationToken.None)
+            .ConfigureAwait(true);
+        if (!unpushedNow.Contains(headNow))
+        {
+            _logger.Warn(LogCategory.Git,
+                "amend refused: HEAD was pushed while the confirmation was open");
+            Notifications.Failure("Not amended.",
+                "The last commit was pushed while the question was open — rewriting it now " +
+                "would fork a history somebody else may already have. Nothing was rewritten.");
+            await RunRefreshAsync(RefreshTrigger.Manual, null).ConfigureAwait(true);
+            return;
+        }
+
         using var busy = Busy.Begin(WorkKind.GitWrite, "Amending…");
         var result = await _git.AmendCommitMessageAsync(CommitMessage, busy.Token)
             .ConfigureAwait(true);
@@ -3724,6 +3895,15 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         return false;
     }
 
+    /// <summary>Take the staged rows the commit plan left out back out of the index, so
+    /// nothing unticked rides along.</summary>
+    /// <remarks>
+    /// A staged rename is unstaged by <b>both</b> of its paths. The row is keyed by the new
+    /// path, and <c>git restore --staged new.st</c> on its own puts new.st back to untracked
+    /// and leaves old.st's deletion staged — so "leave the rename out" committed half of it,
+    /// the half that deletes. Confirmed with real git on 2026-10-25; the test is
+    /// <c>CommitPlanFlowTests.Excluding_a_staged_rename_leaves_both_of_its_paths_out_of_the_commit</c>.
+    /// </remarks>
     private async Task<bool> UnstageForCommitAsync(IReadOnlyList<ChangeRow> rows)
     {
         if (_git is null || rows.Count == 0)
@@ -3731,8 +3911,17 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
             return true;
         }
 
+        var paths = rows
+            .SelectMany<ChangeRow, string>(r => r.RenamedFrom is { } from ? [r.Path, from] : [r.Path])
+            .ToList();
+        var renames = rows.Count(r => r.RenamedFrom is not null);
+
+        _logger.Info(LogCategory.Git,
+            $"{Commit.Label}: unstaging {rows.Count} file(s) left out of the commit" +
+            (renames == 0 ? string.Empty : $", {renames} of them renames unstaged by both paths"));
+
         var result = await _git
-            .UnstageAsync([.. rows.Select(r => r.Path)], CancellationToken.None)
+            .UnstageAsync(paths, CancellationToken.None)
             .ConfigureAwait(true);
 
         if (result.Success)
@@ -3778,19 +3967,35 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
     /// Take one side of the selected conflict.
     /// </summary>
     /// <remarks>
-    /// <b>"Ours" and "theirs" swap meaning under a rebase</b> — git replays your commits onto
-    /// the upstream, so during a rebase "ours" is the upstream's version. The labels are chosen
-    /// in the view from <see cref="MergeState"/>; this passes through what the user picked, and
-    /// the log records which side git was actually given.
+    /// <paramref name="mine"/> is what the button says: <b>this branch's</b> version. It is
+    /// mapped to git's side here, because <b>"ours" and "theirs" swap meaning under a
+    /// rebase</b> — git replays your commits onto the upstream, so during a rebase
+    /// <c>--ours</c> is the upstream's version and <c>--theirs</c> is this branch's. The
+    /// first version passed the flag straight through, and "Keep mine" in a rebase quietly
+    /// took the upstream's file (the 2026-10-24 review's item 29); the only test pressed it
+    /// in a merge. The log records both the choice and the side git was given.
     /// </remarks>
-    private async Task ResolveSelectedAsync(bool ours)
+    private async Task ResolveSelectedAsync(bool mine)
     {
         if (_git is null || SelectedConflict is not { } row)
         {
             return;
         }
 
-        _logger.Click(ours ? "Git.ResolveOurs" : "Git.ResolveTheirs");
+        // Under a stash apply (MergeState.Conflicts, item 30) the sides read as they do in
+        // a merge: --ours is HEAD, this branch; --theirs is the stash being applied. Only a
+        // rebase swaps them.
+        var ours = _mergeState == MergeState.Rebasing ? !mine : mine;
+        var during = _mergeState switch
+        {
+            MergeState.Rebasing => "rebase",
+            MergeState.Merging => "merge",
+            _ => "stash apply",
+        };
+        _logger.Click(mine ? "Git.ResolveMine" : "Git.ResolveTheirs");
+        _logger.Info(LogCategory.Git,
+            $"keeping {(mine ? "this branch's" : "the incoming")} {row.Path} during a " +
+            $"{during}: git {(ours ? "--ours" : "--theirs")}");
         using var busy = Busy.Begin(WorkKind.GitWrite, $"Resolving {row.Path}…");
 
         var result = await _git.ResolveWithSideAsync(row.Path, ours, busy.Token)
@@ -3876,6 +4081,96 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
     }
 
     /// <summary>
+    /// Go on with a rebase that stopped at a conflict, now that every conflict is resolved.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>This is what the commit button does while a rebase is paused.</b> Until 2026-10-25 it
+    /// ran the ordinary commit: <c>git commit</c> on the detached HEAD a rebase works on, which
+    /// recorded a commit nothing pointed at, left the branch ref untouched and the later commits
+    /// unreplayed, and kept the rebase paused — while the banner above the button said
+    /// "Continue the rebase" (the review's sixth round, P2). The reproduction is the first test
+    /// in <c>ConflictFlowTests</c> about continuing.
+    /// </para>
+    /// <para>
+    /// <b>No export gate, deliberately.</b> The gate exists so a project is never committed
+    /// beside a stale mirror; it runs CODESYS. The commit this makes is the replay of a commit
+    /// the user already made, whose project and mirror were exported together then, plus a
+    /// conflict resolution to the text. The rebase was started under its <see cref="MergePlan"/>
+    /// (<see cref="RewriteTreeUnderPlanAsync"/>): where it reached a tracked project the mirror
+    /// is authoritative and an import is owed, and an export here would write the project's
+    /// pre-rebase logic over the resolved text — the leak that plan exists to stop. The plan's
+    /// decision persists in the lock, so the continuation needs no second plan: the watcher is
+    /// held for the rewrite, and adopting afterwards skips any binding holding a lock.
+    /// </para>
+    /// <para>
+    /// <b>The message box is left exactly as it is.</b> Each replayed commit keeps its own
+    /// message (the client suppresses git's editor); the box is not the message of anything in
+    /// this operation, so it is neither used nor cleared, and the tooltip says so beforehand.
+    /// </para>
+    /// <para>
+    /// <b>A non-zero exit is not a failure until the tree has been read.</b> Git stops again
+    /// when the next commit to replay conflicts, and exits non-zero to say so. The refresh runs
+    /// first; new unmerged paths mean the rebase stopped at the next conflict and the section
+    /// shows them; no unmerged paths with the rebase still paused means git refused outright —
+    /// a resolution written to disk and never staged, say — so git's words and the way out
+    /// (abandon) are shown. A resolution that takes the upstream's side of everything a
+    /// commit touched is not a refusal: that commit has nothing of its own left, and git
+    /// (<c>--empty=drop</c>, its default) drops it from the replay and goes on, which the
+    /// second continuing test in <c>ConflictFlowTests</c> found out by expecting otherwise.
+    /// </para>
+    /// </remarks>
+    private async Task ContinueRebaseAsync()
+    {
+        if (_git is null)
+        {
+            return;
+        }
+
+        _logger.Click("Git.ContinueRebase");
+        using var scope = _logger.BeginOperation(LoggerExtensions.NewOperationId());
+        _logger.Info(LogCategory.Git,
+            "continuing the paused rebase; the message box is not used and is left as it is");
+
+        using var busy = Busy.Begin(WorkKind.GitWrite, "Continuing the rebase…");
+
+        // Same hold as the rebase itself and its abort: replaying the remaining commits
+        // rewrites the working tree wholesale, and an unheld watcher would report the result
+        // as an edit to the exported text and import it.
+        GitResult result = default!;
+
+        await Sync.WhileGitRewritesTheTreeAsync(
+            "rebase --continue",
+            async () => result = await _git.ContinueRebaseAsync(busy.Token)
+                .ConfigureAwait(true)).ConfigureAwait(true);
+
+        await RunRefreshAsync(RefreshTrigger.GitMetadata, null).ConfigureAwait(true);
+
+        if (result.Success)
+        {
+            _logger.Info(LogCategory.Git, "the rebase finished");
+            Notifications.Success("The rebase finished.",
+                "Every commit was replayed onto the upstream. Not pushed.");
+            return;
+        }
+
+        if (Conflicted.Count > 0)
+        {
+            _logger.Info(LogCategory.Git,
+                $"the rebase stopped again at the next commit: {Conflicted.Count} file(s) conflict");
+            Notifications.Warning(
+                "The rebase stopped at the next conflict.",
+                "Resolve the files below and continue again, or abandon it and nothing changes.");
+            return;
+        }
+
+        _logger.Warn(LogCategory.Git, $"the rebase could not be continued: {result.FailureReason}");
+        Notifications.Failure("Could not continue the rebase.",
+            $"{result.FailureReason ?? string.Empty} The rebase is still paused; abandon it to " +
+            "put the branch back where it was.");
+    }
+
+    /// <summary>
     /// Reconcile a diverged branch, by rebase or by merge.
     /// </summary>
     /// <remarks>
@@ -3891,6 +4186,17 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
     /// been told what it means. The guard runs first, so a held direction lock or an open
     /// project refuses it exactly as it refuses a branch switch — both rewrite the working tree.
     /// </para>
+    /// <para>
+    /// <b>And judged like a named merge.</b> The upstream is asked what it would bring, three
+    /// dots, and when that reaches a tracked project the result is not adopted: the mirror is
+    /// put in charge and an import is raised, exactly as <see cref="MergeBranchAsync"/> does
+    /// (<see cref="RewriteTreeUnderPlanAsync"/>). Until 2026-10-25 only the named merge had that
+    /// protection, and this one adopted the result: the merged mirror held the upstream's logic,
+    /// the binary project kept this branch's, the engine recorded them as synced and answered
+    /// NoChange, and the next project save exported over the incoming logic (the review's fourth
+    /// round, item 2). A rebase replays this branch onto the same upstream and arrives at the
+    /// same tree, so it is asked the same question.
+    /// </para>
     /// </remarks>
     private async Task ReconcileAsync(bool rebase)
     {
@@ -3902,6 +4208,33 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         var what = rebase ? "rebase" : "merge";
         _logger.Click(rebase ? "Git.Rebase" : "Git.Merge");
         using var scope = _logger.BeginOperation(LoggerExtensions.NewOperationId());
+
+        // What the upstream would bring, from the merge base — the same question the named
+        // merge asks, with the upstream's name in the sentence. An empty answer (nothing to
+        // bring, so nothing tracked to protect) is left to git, which says so in its own
+        // words; an unanswerable one is refused, because nothing can be decided about it.
+        var upstream = Branches.FirstOrDefault(b => b.IsCurrent)?.Tracking ?? "the upstream";
+        var incoming = await _git.IncomingPathsAsync("@{u}", CancellationToken.None)
+            .ConfigureAwait(true);
+        var plan = MergePreflight.For(upstream, incoming, Sync.TrackedRoots());
+
+        if (plan.Verdict == MergeVerdict.CannotTell)
+        {
+            _logger.Warn(LogCategory.Git, $"{what} refused: {plan.Verdict}");
+            Notifications.Failure($"Did not {what}.", plan.Explanation);
+            return;
+        }
+
+        // Asked before the guard and before the tree is rewritten, as the named merge asks:
+        // the consequence — a project a step behind its own text until an import — is cheap
+        // to decline here and expensive to undo after.
+        if (plan.NeedsImport
+            && !AskToMerge(rebase ? $"Rebase onto {upstream}?" : $"Merge {upstream}?",
+                           rebase ? "Rebase" : "Merge", plan))
+        {
+            _logger.Info(LogCategory.Git, $"{what} declined at the import warning");
+            return;
+        }
 
         // Guarded like a pull — all three rewrite the project and its mirror together, which
         // is the scenario SAFEGUARDS §5.A calls able to corrupt a project through no user
@@ -3917,8 +4250,8 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
 
         GitResult result = default!;
 
-        await Sync.WhileGitRewritesTheTreeAsync(
-            what,
+        await RewriteTreeUnderPlanAsync(
+            what, plan,
             async () => result = rebase
                 ? await _git.RebaseOntoUpstreamAsync(null, busy.Token).ConfigureAwait(true)
                 : await _git.MergeUpstreamAsync(null, busy.Token).ConfigureAwait(true))
@@ -3929,7 +4262,18 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         if (result.Success)
         {
             Auth.NoteAuthSuccess();
-            Notifications.Success($"The {what} finished.");
+            if (plan.NeedsImport)
+            {
+                Notifications.Warning(
+                    $"The {what} finished. The project still needs the merged text.",
+                    "Review the changes and press Review and import. Exports are held off " +
+                    "until you do, so nothing overwrites them.");
+            }
+            else
+            {
+                Notifications.Success($"The {what} finished.");
+            }
+
             return;
         }
 
@@ -4055,7 +4399,7 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         // consequence and it is cheap to decline BEFORE the tree has been rewritten - after it
         // the only way back is `git merge --abort`, which this panel does offer but which is a
         // worse place to make the decision from.
-        if (plan.NeedsImport && !AskToMerge(chosen, plan))
+        if (plan.NeedsImport && !AskToMerge($"Merge {chosen}?", "Merge", plan))
         {
             _logger.Info(LogCategory.Git, $"merge of {chosen} declined at the import warning");
             return;
@@ -4070,63 +4414,12 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         using var busy = Busy.Begin(WorkKind.GitWrite, $"Merging {chosen}…");
 
         GitResult result = default!;
-        IReadOnlyList<string> unprotected = [];
 
-        // THE HOLD, THE ADOPT DECISION, AND THE MARKING - IN A try/finally, WHICH IS THE
-        // FOURTH THING A RE-READ FOUND WRONG HERE.
-        //
-        // The watcher hold is the same one a pull takes: the watcher cannot know which paths
-        // a merge will touch until it has touched them, and unheld it would report the
-        // rewrite as edits to the exported text.
-        //
-        // NOT ADOPTED WHEN AN IMPORT IS OWED. Adopting takes the project and the mirror as
-        // jointly true, which is right for a checkout or a pull - both arrive from one commit
-        // the gate vetted - and wrong for a merge, where the binary project keeps one side
-        // and the mirror keeps both. Adopting would write a LastSynced claiming they agree;
-        // on a merge that stopped on a conflict it would record the conflict markers
-        // themselves as the synced state.
-        //
-        // AND THE MARKING IS IN A finally BECAUSE THE HAPPY PATH IS NOT THE DANGEROUS ONE.
-        // MergeBranchAsync can throw rather than return a failed GitResult - busy.Token is
-        // cancellable, and a cancelled merge can leave the tree part-way through with the
-        // mirror already rewritten. On that path the exception ran straight past the marking
-        // to AsyncCommand's error handler, leaving the merged text open to the commit gate's
-        // export. The trade is deliberate: a lock taken over a merge that turned out to touch
-        // nothing is recoverable - abandoning releases it, and so does discarding - while an
-        // unprotected merged mirror is not.
-        try
-        {
-            await Sync.WhileGitRewritesTheTreeAsync(
-                "merge",
-                async () => result = await _git.MergeBranchAsync(chosen, null, busy.Token)
-                    .ConfigureAwait(true),
-                adoptResult: !plan.NeedsImport)
-                .ConfigureAwait(true);
-        }
-        finally
-        {
-            // Before the refresh, deliberately: RunRefreshAsync re-reads the tree and
-            // re-evaluates the gate, and it must find the lock already moved.
-            if (plan.NeedsImport)
-            {
-                unprotected = await Sync
-                    .NoteMergedTextAsync([.. plan.Affected.Select(a => a.BindingId)])
-                    .ConfigureAwait(true);
-            }
-        }
-
-        if (unprotected.Count > 0)
-        {
-            // LOUD, BECAUSE THE ONE GUARANTEE THIS PATH RESTS ON DID NOT HOLD. The state
-            // machine blocks TextChanged from ProjectAuthoritative - a project that already
-            // had unexported edits - so the merged text is open to the commit gate's export
-            // with nothing else on screen to say so. Sticky, like every other Failure.
-            Notifications.Failure(
-                "The merged text is not protected.",
-                $"{unprotected.Count} project(s) already had unsynced work, so Versio could " +
-                "not put the merged text in charge. Export or discard that work before " +
-                "committing, or the next export will overwrite what the merge brought in.");
-        }
+        await RewriteTreeUnderPlanAsync(
+            "merge", plan,
+            async () => result = await _git.MergeBranchAsync(chosen, null, busy.Token)
+                .ConfigureAwait(true))
+            .ConfigureAwait(true);
 
         if (result.Success)
         {
@@ -4153,17 +4446,94 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         await RunRefreshAsync(RefreshTrigger.Manual, null).ConfigureAwait(true);
     }
 
+    /// <summary>
+    /// Run a merge or a rebase under the protection its <see cref="MergePlan"/> calls for: the
+    /// watcher held, the result adopted only when no import is owed, and the merged text put
+    /// in charge otherwise — whatever way the operation ends.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// THE HOLD, THE ADOPT DECISION, AND THE MARKING - IN A try/finally, WHICH IS THE FOURTH
+    /// THING A RE-READ FOUND WRONG HERE.
+    /// </para>
+    /// <para>
+    /// The watcher hold is the same one a pull takes: the watcher cannot know which paths a
+    /// merge will touch until it has touched them, and unheld it would report the rewrite as
+    /// edits to the exported text.
+    /// </para>
+    /// <para>
+    /// NOT ADOPTED WHEN AN IMPORT IS OWED. Adopting takes the project and the mirror as jointly
+    /// true, which is right for a checkout or a pull - both arrive from one commit the gate
+    /// vetted - and wrong for a merge, where the binary project keeps one side and the mirror
+    /// keeps both. Adopting would write a LastSynced claiming they agree; on a merge that
+    /// stopped on a conflict it would record the conflict markers themselves as the synced
+    /// state.
+    /// </para>
+    /// <para>
+    /// AND THE MARKING IS IN A finally BECAUSE THE HAPPY PATH IS NOT THE DANGEROUS ONE. The git
+    /// call can throw rather than return a failed GitResult - the busy token is cancellable, and
+    /// a cancelled merge can leave the tree part-way through with the mirror already rewritten.
+    /// On that path the exception ran straight past the marking to AsyncCommand's error
+    /// handler, leaving the merged text open to the commit gate's export. The trade is
+    /// deliberate: a lock taken over a merge that turned out to touch nothing is recoverable -
+    /// abandoning releases it, and so does discarding - while an unprotected merged mirror is
+    /// not.
+    /// </para>
+    /// <para>
+    /// ONE PLACE FOR BOTH BUTTONS. This block was <c>MergeBranchAsync</c>'s alone, and the
+    /// upstream merge and rebase ran the same operation through the adopting default: the
+    /// mirror came back holding the upstream's logic, the project kept its own, the engine
+    /// recorded the two as synced and answered NoChange, and the next project save exported
+    /// over what the upstream had brought (the 2026-10-25 review's fourth round, item 2). The
+    /// hazard is the merge's, not the button's, so the protection is now where every merge
+    /// passes through.
+    /// </para>
+    /// </remarks>
+    private async Task RewriteTreeUnderPlanAsync(string what, MergePlan plan, Func<Task> operation)
+    {
+        IReadOnlyList<string> unprotected = [];
+
+        try
+        {
+            await Sync.WhileGitRewritesTheTreeAsync(what, operation, adoptResult: !plan.NeedsImport)
+                .ConfigureAwait(true);
+        }
+        finally
+        {
+            // Before the refresh, deliberately: RunRefreshAsync re-reads the tree and
+            // re-evaluates the gate, and it must find the lock already moved.
+            if (plan.NeedsImport)
+            {
+                unprotected = await Sync
+                    .NoteMergedTextAsync([.. plan.Affected.Select(a => a.BindingId)])
+                    .ConfigureAwait(true);
+            }
+        }
+
+        if (unprotected.Count > 0)
+        {
+            // LOUD, BECAUSE THE ONE GUARANTEE THIS PATH RESTS ON DID NOT HOLD. The state
+            // machine blocks TextChanged from ProjectAuthoritative - a project that already
+            // had unexported edits - so the merged text is open to the commit gate's export
+            // with nothing else on screen to say so. Sticky, like every other Failure.
+            Notifications.Failure(
+                "The merged text is not protected.",
+                $"{unprotected.Count} project(s) already had unsynced work, so Versio could " +
+                "not put the merged text in charge. Export or discard that work before " +
+                $"committing, or the next export will overwrite what the {what} brought in.");
+        }
+    }
+
     /// <summary>The one question a merge into a tracked project has to ask first.</summary>
     /// <remarks>
     /// Through <c>AskingSomething</c> like every other prompt in this file: it is what stops a
     /// background refresh landing under an open dialog and moving what the user is reading.
     /// </remarks>
-    private bool AskToMerge(string branch, MergePlan plan)
+    private bool AskToMerge(string headline, string verb, MergePlan plan)
     {
         using (AskingSomething())
         {
-            return Prompts.ConfirmDestructive(
-                new DestructivePrompt($"Merge {branch}?", plan.Explanation, "Merge"));
+            return Prompts.ConfirmDestructive(new DestructivePrompt(headline, plan.Explanation, verb));
         }
     }
 
@@ -4838,11 +5208,13 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         // nothing on screen saying so. A stash somebody cannot reach is a stash they will
         // eventually stop believing in.
         //
-        // The list is re-read from the arrival snapshot rather than re-queried between
-        // answers: restoring one pops it, which renumbers every stash@{n} below it, and the
-        // refs held here would then name the wrong entries. RestoreStashAsync and the drop
-        // below both act on THIS binding's captured ref immediately, before anything else
-        // moves, which is what makes that safe.
+        // The refs in the arrival snapshot are positions, and a position is only good until
+        // the next thing that moves the list. Two modal dialogs sit between the snapshot and
+        // the act, and a stash pushed from a terminal while either is open takes stash@{0}:
+        // Discard then dropped the terminal's stash and left ours, and Restore popped the
+        // terminal's work into the tree (the 2026-10-24 review's item 24). So the drop and
+        // the pop below both resolve the ref again from the SHA, from a list read at that
+        // moment — ResolveStashRefAsync — and refuse when the SHA is no longer there.
         for (var i = 0; i < arrival.Restorable.Count; i++)
         {
             var offer = arrival.Restorable[i];
@@ -4871,7 +5243,29 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
                     return;
                 }
 
-                await _git.StashDropAsync(offer.Ref, CancellationToken.None).ConfigureAwait(true);
+                var current = await ResolveStashRefAsync(offer.Record.StashCommitId)
+                    .ConfigureAwait(true);
+                if (current is null)
+                {
+                    // Popped or dropped from a terminal while the dialog was open. Whatever
+                    // sits at its old position is somebody else's stash.
+                    state = AutoStash.Without(state, offer.Record.StashCommitId);
+                    await _autoStash.WriteAsync(state, CancellationToken.None).ConfigureAwait(true);
+                    Notifications.Warning("That stash is already gone.",
+                                          "Nothing was dropped.");
+                    return;
+                }
+
+                var dropped = await _git.StashDropAsync(current, CancellationToken.None)
+                    .ConfigureAwait(true);
+                if (!dropped.Success)
+                {
+                    StatusSummary = dropped.FailureReason ?? "the stash could not be dropped";
+                    _logger.Error(LogCategory.Git,
+                        $"dropping auto-stash {Short(offer.Record.StashCommitId)} failed; the " +
+                        $"record is kept: {dropped.FailureReason}");
+                    return;
+                }
 
                 state = AutoStash.Without(state, offer.Record.StashCommitId);
                 await _autoStash.WriteAsync(state, CancellationToken.None).ConfigureAwait(true);
@@ -4892,6 +5286,27 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         }
     }
 
+    /// <summary>
+    /// The positional ref that names a stash <i>right now</i>, or null when git no longer has it.
+    /// </summary>
+    /// <remarks>
+    /// <c>git stash drop</c> takes a position and not a SHA, and a position is only good until
+    /// the list moves. Every drop or pop here reads the list again at the moment of the act
+    /// and matches the SHA the record keeps; acting on a position captured before a dialog is
+    /// how the wrong stash gets dropped.
+    /// </remarks>
+    private async Task<string?> ResolveStashRefAsync(string stashCommitId)
+    {
+        if (_git is null)
+        {
+            return null;
+        }
+
+        var fresh = await _git.StashListAsync(CancellationToken.None).ConfigureAwait(true);
+        return fresh.FirstOrDefault(s =>
+            string.Equals(s.CommitId, stashCommitId, StringComparison.OrdinalIgnoreCase))?.Ref;
+    }
+
     /// <summary>Restore one stash, and the sync state that went with it.</summary>
     /// <remarks>
     /// <c>pop</c> rather than apply-then-drop, because git drops only when the restore
@@ -4908,12 +5323,33 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
 
         using var busy = Busy.Begin(WorkKind.GitWrite, "Restoring your stashed work…");
 
+        // By SHA, now — not the position captured before the dialog (see OfferStashedWorkAsync).
+        var current = await ResolveStashRefAsync(offer.Record.StashCommitId).ConfigureAwait(true);
+        if (current is null)
+        {
+            var gone = await _autoStash.ReadAsync(CancellationToken.None).ConfigureAwait(true);
+            await _autoStash.WriteAsync(
+                AutoStash.Without(gone, offer.Record.StashCommitId), CancellationToken.None)
+                .ConfigureAwait(true);
+            Notifications.Warning("That stash is already gone.",
+                                  "It was popped or dropped outside Versio; nothing was restored.");
+            return;
+        }
+
+        // NOT ADOPTED. A pop puts edits back that were never synced — that is what made them
+        // worth stashing — and adopting the tree afterwards recorded them as synced: a mirror
+        // edit that had been waiting for its import came back with the banner gone and the
+        // gate beside the direction lock blind to it, and the next project save exported over
+        // the one copy of it anywhere (the 2026-10-25 review's seventh round, item 1). The
+        // tree before the pop is HEAD, which the arrival already adopted; what the pop adds is
+        // work in flight, judged below by the hashes as it was before the stash.
         GitResult result = default!;
         await Sync.WhileGitRewritesTheTreeAsync(
             "restoring an auto-stash",
             async () => result = await _git
-                .StashApplyAsync(offer.Ref, drop: true, busy.Token)
-                .ConfigureAwait(true))
+                .StashApplyAsync(current, drop: true, busy.Token)
+                .ConfigureAwait(true),
+            adoptResult: false)
             .ConfigureAwait(true);
 
         if (!result.Success)
@@ -4922,10 +5358,19 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
             _logger.Error(LogCategory.Git,
                 $"restoring auto-stash {Short(offer.Record.StashCommitId)} failed; the stash is " +
                 $"kept: {result.FailureReason}");
+
+            // A pop that stopped at a conflict has left both sides in the tree. Refreshed
+            // now rather than on the next poll, so the conflict section (item 30) shows the
+            // files while the summary above still says what happened.
+            await RunRefreshAsync(RefreshTrigger.Manual, null).ConfigureAwait(true);
             return;
         }
 
         var refused = await Sync.RestoreStashedLocksAsync(offer.Record.Locks).ConfigureAwait(true);
+
+        // The import a restored mirror edit still owes, offered again: the pop ran under the
+        // watcher hold, so no text event will come to raise it.
+        await Sync.RaisePendingImportsAsync().ConfigureAwait(true);
 
         var state = await _autoStash.ReadAsync(CancellationToken.None).ConfigureAwait(true);
         await _autoStash.WriteAsync(
@@ -5144,6 +5589,7 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
             .OrderBy(c => c.Path, StringComparer.Ordinal)]);
 
         OnPropertyChanged(nameof(ConflictHeadline));
+        OnPropertyChanged(nameof(ShowsConflicts));
 
         _treeIsDirty = Pending.Count > 0 || Conflicted.Count > 0;
         OnPropertyChanged(nameof(IsWorkingTreeClean));
@@ -5190,7 +5636,7 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
     /// typed in their editor.
     /// </para>
     /// </remarks>
-    private static void ReconcileInto(
+    internal static void ReconcileInto(
         ObservableCollection<ChangeRow> rows, IReadOnlyList<FileChange> fresh)
     {
         var live = fresh.Select(c => c.Path).ToHashSet(StringComparer.Ordinal);
@@ -5214,15 +5660,43 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
                 continue;
             }
 
-            if (string.Equals(rows[i].Path, fresh[i].Path, StringComparison.Ordinal))
+            if (!string.Equals(rows[i].Path, fresh[i].Path, StringComparison.Ordinal))
             {
-                // Same row, possibly a different status. Updated in place so whatever the user
-                // has set on it survives.
-                rows[i].Update(fresh[i]);
-                continue;
+                // The row may simply be further down. Inserting on every mismatch, which this
+                // did, never took the stale row out — [a,b] against [b,a] gave [b,a,b], the
+                // tick on whichever copy the user had set it on — and only the callers sorting
+                // by path hid it here; the tree's level had the same pass with unsorted
+                // inputs (the 2026-10-24 review's item 37). A Move keeps the instance, so the
+                // tick and the list selection stay with it. OnStagingListChanged sees a Move
+                // as the same row leaving and arriving, which nets to no subscription change.
+                var later = -1;
+                for (var j = i + 1; j < rows.Count && later < 0; j++)
+                {
+                    if (string.Equals(rows[j].Path, fresh[i].Path, StringComparison.Ordinal))
+                    {
+                        later = j;
+                    }
+                }
+
+                if (later < 0)
+                {
+                    rows.Insert(i, new ChangeRow(fresh[i]));
+                    continue;
+                }
+
+                rows.Move(later, i);
             }
 
-            rows.Insert(i, new ChangeRow(fresh[i]));
+            // Same row, possibly a different status. Updated in place so whatever the user
+            // has set on it survives.
+            rows[i].Update(fresh[i]);
+        }
+
+        // Nothing past the fresh list belongs to it (a path git listed twice would leave a
+        // second row standing, since the removal pass keeps every row whose path is live).
+        while (rows.Count > fresh.Count)
+        {
+            rows.RemoveAt(rows.Count - 1);
         }
     }
 
@@ -5500,6 +5974,17 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
     /// preflight exists at all. Sizes are shown per file, because "large" is an argument
     /// and a number is a fact.
     /// </para>
+    /// <para>
+    /// <b>What is weighed is what the commit records.</b> For a path whose working copy
+    /// still matches the index that is the file on disk, read without a process. For one
+    /// where the two differ — staged and then edited, overwritten or deleted on disk, the
+    /// shape "Stage hunk" leaves and the shape the partly-staged commit leaves alone — the
+    /// disk says nothing about the commit: a file staged at twenty megabytes and replaced
+    /// with five bytes weighed five bytes here and went into history at twenty (the
+    /// 2026-10-24 review's item 4). Those are asked of the index. When git cannot answer,
+    /// the fallback is the disk reading, said so in the log, because a preflight that quietly
+    /// weighed nothing would be the first version over again.
+    /// </para>
     /// </remarks>
     private async Task<bool> ConfirmLargeFilesAsync()
     {
@@ -5509,12 +5994,34 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         }
 
         var status = await _git.StatusAsync(CancellationToken.None).ConfigureAwait(true);
+        var staged = status.Changes.Where(c => c.IsStaged).ToList();
+
+        var fromIndex = staged
+            .Where(c => c.Unstaged is not ChangeKind.Unmodified)
+            .Select(c => c.Path)
+            .ToList();
+        var indexSizes = fromIndex.Count == 0
+            ? new Dictionary<string, long>()
+            : await _git.IndexBlobSizesAsync(fromIndex, CancellationToken.None).ConfigureAwait(true);
+        if (indexSizes is null)
+        {
+            _logger.Warn(LogCategory.Git,
+                "large-file preflight: git did not say what the index holds for " +
+                $"{fromIndex.Count} staged path(s) changed again on disk; weighing their " +
+                "working copies instead");
+        }
 
         var sized = new List<(string Path, long Bytes)>();
-        foreach (var change in status.Changes.Where(c => c.IsStaged))
+        foreach (var change in staged)
         {
-            // A staged deletion has no file to weigh, and a file deleted between the
-            // status and here weighs nothing either way.
+            if (indexSizes is not null && indexSizes.TryGetValue(change.Path, out var inIndex))
+            {
+                sized.Add((change.Path, inIndex));
+                continue;
+            }
+
+            // A staged deletion has no file to weigh and nothing in the index either; a
+            // conflicted path has no stage-0 entry and cannot be committed as it stands.
             var info = new FileInfo(Path.Combine(
                 root, change.Path.Replace('/', Path.DirectorySeparatorChar)));
             if (info.Exists)
@@ -6061,10 +6568,17 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
             // Read whenever the tree has conflicts OR we thought it was mid-merge, so the
             // banner both appears and goes away. Skipped otherwise: it costs a rev-parse and
             // two file probes, and the overwhelmingly common answer is None.
-            if (status.HasConflicts || IsMidMerge)
+            if (status.HasConflicts || _mergeState is not MergeState.None)
             {
-                MergeState = await _git.MergeStateAsync(busy?.Token ?? CancellationToken.None)
+                var marked = await _git.MergeStateAsync(busy?.Token ?? CancellationToken.None)
                     .ConfigureAwait(true);
+
+                // Unmerged paths with no marker file behind them: a stash apply (or a
+                // cherry-pick or revert) stopped at a conflict. The marker files alone read
+                // that as None and hid the section with the Keep buttons - item 30.
+                MergeState = marked == MergeState.None && status.HasConflicts
+                    ? MergeState.Conflicts
+                    : marked;
             }
 
             UpdateStagingLists(status);
@@ -6326,18 +6840,27 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         var result = await _git.StashApplyAsync(entry.CommitId, drop: false, busy.Token)
             .ConfigureAwait(true);
 
-        if (!result.Success)
-        {
-            // Usually a conflict with the working tree, and git's own words say which file.
-            Notifications.Failure("Could not apply the stash.",
-                                  result.FailureReason ?? string.Empty);
-        }
-        else
+        // Refreshed before anything is said, because git exits 1 for an apply that stopped
+        // at a conflict as well as for one that did nothing, and only the status tells the
+        // two apart. The conflict is not a failure: the files are in the tree with both
+        // sides, and the conflict section now shows them (item 30).
+        await RunRefreshAsync(RefreshTrigger.Manual, null).ConfigureAwait(true);
+
+        if (result.Success)
         {
             Notifications.Success("Stash applied. It stays in the list until you drop it.");
         }
-
-        await RunRefreshAsync(RefreshTrigger.Manual, null).ConfigureAwait(true);
+        else if (Conflicted.Count > 0)
+        {
+            Notifications.Warning("The stash applied with conflicts.",
+                                  "Keep a side for each file below. The stash stays in the list.");
+        }
+        else
+        {
+            // Nothing applied at all, and git's own words say which file was in the way.
+            Notifications.Failure("Could not apply the stash.",
+                                  result.FailureReason ?? string.Empty);
+        }
     }
 
     /// <summary>Drop one stash, after a confirmation naming it.</summary>
@@ -7037,12 +7560,6 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
     /// </remarks>
     private sealed record CatalogSource(IReadOnlyList<string> Files, Func<IReadOnlyList<string>, object?> ParseHead);
 
-    /// <summary>A Versio YAML catalog, read back by the reader its suffix names.</summary>
-    private static CatalogSource YamlSource(string file) => new([file], heads =>
-        file.EndsWith(LibraryCatalog.FileSuffix, StringComparison.OrdinalIgnoreCase) ? LibraryCatalog.Parse(heads[0])
-        : file.EndsWith(TaskCatalog.FileSuffix, StringComparison.OrdinalIgnoreCase) ? TaskCatalog.Parse(heads[0])
-        : DeviceCatalog.Parse(heads[0]));
-
     /// <summary>
     /// Counts builds of the rendered half. A late git read compares it with the count it started
     /// under and drops its result when they differ: by then somebody else's block is on screen.
@@ -7395,7 +7912,14 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
             foreach (var each in source.Files)
             {
                 heads.Add(await _git.ShowAtHeadAsync(each, CancellationToken.None).ConfigureAwait(true));
-                nows.Add(File.ReadAllText(Path.Combine(root, each.Replace('/', Path.DirectorySeparatorChar))));
+
+                // A task deleted in the working tree is in the list with no file on disk
+                // (RenderChoice keeps it, review 2026-10-25, item 8): it reads as empty here,
+                // which is not what HEAD has, and the HEAD side is where the deletion is drawn.
+                // Read as a failure it warned and left the table unmarked — the deletion
+                // hidden a second way.
+                var now = Path.Combine(root, each.Replace('/', Path.DirectorySeparatorChar));
+                nows.Add(File.Exists(now) ? File.ReadAllText(now) : string.Empty);
             }
         }
         catch (Exception ex)
@@ -7457,12 +7981,39 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         RenderedContent = marked;
     }
 
+    /// <summary>
+    /// The choice behind <see cref="RenderedContent"/>: what Core decided this row draws, before
+    /// this host drew it. Read by <c>RenderChoiceParityTests</c>, which runs the web viewer over the
+    /// same rows and asserts the same answer.
+    /// </summary>
+    public RenderChoice? RenderedChoice { get; private set; }
+
+    /// <summary>
+    /// The rendered half of a row: Core decides what is drawn (<see cref="RenderChoice.Decide"/>),
+    /// this draws it with the pane's records.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The decision used to be a switch in here, mirrored by hand in the web viewer's
+    /// <c>ViewService</c>, and the two drifted until the owner compared them on a real pull
+    /// request (FINDINGS 2026-10-23). Every arm's reasoning moved to <see cref="RenderChoice"/>
+    /// with it; what stays here is the host's half — reading the disk, the records the XAML
+    /// templates bind to, and the sources the marking reads HEAD through.
+    /// </para>
+    /// <para>
+    /// Deleting the member-table arm returns <see cref="SourceRender"/> for a data block and
+    /// <c>MemberTablePaneFlowTests</c> goes red; the ladder arm, <c>LadderPaneFlowTests</c>; the
+    /// empty-object arm, <c>EmptyObjectPaneFlowTests</c>; the Markdown arm,
+    /// <c>MarkdownPaneFlowTests</c>; the device arm, <c>DeviceTreeFlowTests</c>.
+    /// </para>
+    /// </remarks>
     private object? BuildRenderedContent(TreeRow row)
     {
         _tableSource = null;
         _ladderSource = null;
         _catalogSource = null;
         _renderGeneration++;
+        RenderedChoice = null;
 
         if (RepositoryPath is not { } root)
         {
@@ -7470,9 +8021,6 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         }
 
         var node = row.Node;
-
-        string? CatalogFile(string suffix) => node.Files.FirstOrDefault(
-            f => f.EndsWith(suffix, StringComparison.OrdinalIgnoreCase));
 
         string Absolute(string relative) =>
             Path.Combine(root, relative.Replace('/', Path.DirectorySeparatorChar));
@@ -7490,15 +8038,16 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
             }
         }
 
+        var choice = RenderChoice.Decide(node, ReadOrNull, row.PrimaryFile);
+        RenderedChoice = choice;
+
+        // The committed copy of a catalog is read by the reader that read the working one.
+        CatalogSource Catalog() => new(choice.Files, heads => choice.Reparse!(heads));
+
         // A ladder block, drawn. Unchanged, it is complete at once; changed, it waits for the
         // committed copy (MarkChangesAsync) rather than claiming "no changes" in the meantime.
-        LadderRender? LadderFor(IPlcProjectFormat format, string file, string text)
+        LadderRender Ladder(IPlcProjectFormat format, string file, LadderDocument document)
         {
-            if (format.TryParseLadder(file, text) is not { } document)
-            {
-                return null;
-            }
-
             var pending = node.Status != ChangeKind.Unmodified;
             _ladderSource = (format, file, document, pending);
             var comparison = LadderDiff.Compare(document.Body, document.Body);
@@ -7510,192 +8059,74 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
             return new LadderRender { Path = file, Comparison = comparison, Style = document.Style, Pending = pending };
         }
 
-        switch (node.Kind)
+        switch (choice.Kind)
         {
-            case ProjectNodeKind.Project:
+            case RenderKind.ProjectCard:
                 return BuildProjectSummary(node);
 
-            // A reference or task row renders its whole catalog: the row's own facts are in
-            // the table, highlighted by being the thing the user just clicked at.
-            case ProjectNodeKind.Library
-                when CatalogFile(LibraryCatalog.FileSuffix) is { } yaml
-                     && ReadOrNull(yaml) is { } text
-                     && LibraryCatalog.Parse(text) is { IsValid: true } catalog:
-                _catalogSource = YamlSource(yaml);
-                return catalog;
+            case RenderKind.LibraryCatalog or RenderKind.TaskCatalog or RenderKind.DeviceCatalog:
+                _catalogSource = Catalog();
+                return choice.Model;
 
-            case ProjectNodeKind.Task
-                when CatalogFile(TaskCatalog.FileSuffix) is { } yaml
-                     && ReadOrNull(yaml) is { } text
-                     && TaskCatalog.Parse(text).Tasks.FirstOrDefault(
-                            t => t.Name == node.Name) is { } task:
-                return new TaskDetailRender { Task = task };
+            case RenderKind.TaskCard:
+                return new TaskDetailRender { Task = (TaskRecord)choice.Model! };
 
-            case ProjectNodeKind.Device
-                when CatalogFile(DeviceCatalog.FileSuffix) is { } deviceYaml
-                     && ReadOrNull(deviceYaml) is { } deviceText
-                     && DeviceCatalog.Parse(deviceText) is { IsValid: true } deviceCatalog:
-                return DeviceDetail(deviceCatalog, node);
+            case RenderKind.DeviceCard:
+                return DeviceDetail((DeviceCatalog)choice.Model!, node);
 
-            case ProjectNodeKind.Object or ProjectNodeKind.File:
-                if (CatalogFile(LibraryCatalog.FileSuffix) is { } libraries
-                    && ReadOrNull(libraries) is { } libText
-                    && LibraryCatalog.Parse(libText) is { IsValid: true } libCatalog)
+            case RenderKind.MemberTable:
+            {
+                var table = LinkTypes((MemberTable)choice.Model!, choice.File!);
+                _tableSource = (choice.Format!, choice.File!);
+
+                // A ladder block's code is a diagram, not text: drawn under its table the way the
+                // IDE shows the interface above the networks.
+                if (choice.Code == CodeUnder.Ladder)
                 {
-                    _catalogSource = YamlSource(libraries);
-                    return libCatalog;
+                    return new InterfaceRender { Table = table, Ladder = Ladder(choice.Format!, choice.CodeFile!, choice.CodeLadder!) };
                 }
 
-                if (CatalogFile(TaskCatalog.FileSuffix) is { } tasks
-                    && ReadOrNull(tasks) is { } taskText
-                    && TaskCatalog.Parse(taskText) is { IsValid: true } taskCatalog)
+                // A code block is its interface AND its code. The table alone would take the code
+                // out of the Rendered tab it was always in, so the source rides underneath it.
+                if (choice.Code is CodeUnder.Body or CodeUnder.WholeFile
+                    && SourceRender.Load(Absolute(choice.CodeFile!), choice.CodeFile!,
+                           noChanges: node.Status == ChangeKind.Unmodified) is { } codeView
+                    && !codeView.PseudoDiff.Contains('\0'))
                 {
-                    _catalogSource = YamlSource(tasks);
-                    return taskCatalog;
-                }
-
-                if (CatalogFile(DeviceCatalog.FileSuffix) is { } devices
-                    && ReadOrNull(devices) is { } devicesText
-                    && DeviceCatalog.Parse(devicesText) is { IsValid: true } devicesCatalog)
-                {
-                    _catalogSource = YamlSource(devices);
-                    return devicesCatalog;
-                }
-
-                // A vendor's own files for the same three things: a source project has no
-                // Versio YAML, and before this its library manager, devices and tasks drew as
-                // raw source (the owner, 2026-10-10). The committed copy is read by the same
-                // format, so the marks compare like with like.
-                if (VendorCatalog(node) is { } vendorCatalog)
-                {
-                    return vendorCatalog;
-                }
-
-                // Every registered format, every layer of this object. The readable
-                // sibling is often the primary file; the table lives in a native one
-                // beside it. Asking PrimaryFile alone would highlight that text and
-                // never offer the table. The format that does not understand the
-                // bytes returns null and costs a suffix check.
-                //
-                // Deleting this loop returns SourceRender for a data block and
-                // MemberTablePaneFlowTests goes red — the same class of silent-green
-                // as a dropped subscription.
-                foreach (var format in PlcFormats.All)
-                {
-                    foreach (var file in node.Files)
+                    // Only the body: the declaration above it is the table, and the BEGIN / END_
+                    // marks around it say nothing a reader needs. Core strips its shared indent
+                    // and numbers it from 1 (owner, 2026-10-05). Raw keeps the file.
+                    if (choice.Body is { } body && ReadOrNull(choice.CodeFile!) is { } codeText)
                     {
-                        if (ReadOrNull(file) is { } text
-                            && format.TryParseMemberTable(file, text) is { IsValid: true } parsed
-                            // A table with nothing in it is a husk, not an interface: a
-                            // parameterless method tabled column headers over a blank
-                            // (seen on a real library, 2026-10-14) where its code should
-                            // be. Falling through draws the source with its sections,
-                            // which is what a type with no members has always got. The
-                            // cost is the rare block whose members were ALL deleted: its
-                            // struck rows live in Raw rather than a rendered table.
-                            // Section headings do not count — Members carries them as
-                            // rows, and a heading over nothing is the same husk.
-                            //
-                            // EXCEPT a code block's interface, since 2026-10-23: the owner
-                            // wants a POU with no variables (FsLibrary's Main, VAR END_VAR)
-                            // drawn as every other POU is, an empty table over its code. The
-                            // husk's harm was the table standing where the code should be,
-                            // and an interface now always carries its code underneath, so
-                            // that harm cannot recur. Types and variable lists keep the rule.
-                            && (parsed.IsInterface || parsed.Members.Any(m => !m.IsSectionHeading)))
-                        {
-                            var table = LinkTypes(parsed, file);
-                            _tableSource = (format, file);
-
-                            // A ladder block's code is a diagram, not text: drawn under its
-                            // table the way the IDE shows the interface above the networks.
-                            if (table.IsInterface
-                                && row.PrimaryFile is { } ladderFile
-                                && ReadOrNull(ladderFile) is { } ladderText
-                                && LadderFor(format, ladderFile, ladderText) is { } drawn)
-                            {
-                                return new InterfaceRender { Table = table, Ladder = drawn };
-                            }
-
-                            // A code block is its interface AND its code. The table alone
-                            // would take the code out of the Rendered tab it was always in,
-                            // so the source rides underneath it.
-                            if (table.IsInterface
-                                && row.PrimaryFile is { } code
-                                && SourceRender.Load(Absolute(code), code,
-                                       noChanges: node.Status == ChangeKind.Unmodified) is { } codeView
-                                && !codeView.PseudoDiff.Contains('\0'))
-                            {
-                                // Only the body: the declaration above it is the table, and the
-                                // BEGIN / END_ marks around it say nothing a reader needs. The
-                                // format says where the body is; Core strips its shared indent and
-                                // numbers it from 1 (owner, 2026-10-05). Raw keeps the file.
-                                if (ReadOrNull(code) is { } codeText
-                                    && format.CodeBody(code, codeText) is { } body)
-                                {
-                                    codeView = codeView with
-                                    {
-                                        Rows = Versio.Core.Iec.StSourceLayout.Body(codeText, body.Start, body.End),
-                                    };
-                                }
-
-                                return new InterfaceRender { Table = table, Source = codeView };
-                            }
-
-                            return table;
-                        }
+                        codeView = codeView with { Rows = Versio.Core.Iec.StSourceLayout.Body(codeText, body.Start, body.End) };
                     }
+
+                    return new InterfaceRender { Table = table, Source = codeView };
                 }
 
-                // A ladder block with no table above it (an organisation block has no interface
-                // the table draws): the networks alone. Every format, every layer, as for the
-                // table, and before the source layout, which would otherwise highlight the
-                // vendor's XML. Deleting this loop turns LadderPaneFlowTests red.
-                foreach (var format in PlcFormats.All)
-                {
-                    foreach (var file in node.Files)
-                    {
-                        if (ReadOrNull(file) is { } text && LadderFor(format, file, text) is { } ladder)
-                        {
-                            return ladder;
-                        }
-                    }
-                }
+                return table;
+            }
 
-                // An object with nothing in its own file (a CODESYS Communication Manager, Plc
-                // Logic): the note says so, where one line of archive XML read as a view that had
-                // failed (owner, 2026-10-23). The same wording the web viewer draws, from Core.
-                // Raw keeps the file. Deleting this arm turns EmptyObjectPaneFlowTests red.
-                if (row.PrimaryFile is { } emptyPath
-                    && ReadOrNull(emptyPath) is { } emptyText
-                    && PlcFormats.All.Any(f => f.HoldsNoSettings(emptyPath, emptyText)))
-                {
-                    return MarkdownRender.From(emptyPath, Versio.Core.Projects.EmptyObjectNote.For(hasChildren: node.Children.Count > 0));
-                }
+            case RenderKind.Ladder:
+                return Ladder(choice.Format!, choice.File!, (LadderDocument)choice.Model!);
 
-                // Markdown before the source layout, which would otherwise take it: an ST
-                // layout of a document is the raw text with line numbers, which is what Raw
-                // already shows. Deleting this arm turns MarkdownPaneFlowTests red.
-                if (row.PrimaryFile is { } markdownPath
-                    && MarkdownRender.Handles(markdownPath)
-                    && ReadOrNull(markdownPath) is { } markdownText
-                    && !markdownText.Contains('\0'))
-                {
-                    return MarkdownRender.From(markdownPath, markdownText);
-                }
+            // The same wording the web viewer draws, from Core. Raw keeps the file.
+            case RenderKind.EmptyObject:
+                return MarkdownRender.From(choice.File!, Versio.Core.Projects.EmptyObjectNote.For(hasChildren: node.Children.Count > 0)) with { IsNote = true };
 
-                if (row.PrimaryFile is { } primary
-                    && SourceRender.Load(Absolute(primary), primary,
+            case RenderKind.Markdown when ReadOrNull(choice.File!) is { } markdownText:
+                return MarkdownRender.From(choice.File!, markdownText);
+
+            // A web page's Rendered tab is its markup as source; the page itself is the third
+            // chip (WebPagePath, set by ShowNode from the same primary file).
+            case RenderKind.WebPage or RenderKind.Source:
+                return SourceRender.Load(Absolute(choice.File!), choice.File!,
                            noChanges: node.Status == ChangeKind.Unmodified) is { } source
-
-                    // A NUL says binary — an image or a compiled blob dropped into the
-                    // repository — and a code renderer fed one draws a wall of boxes.
-                    && !source.PseudoDiff.Contains('\0'))
-                {
-                    return source;
-                }
-
-                return null;
+                       // A NUL says binary — an image or a compiled blob dropped into the
+                       // repository — and a code renderer fed one draws a wall of boxes.
+                       && !source.PseudoDiff.Contains('\0')
+                    ? source
+                    : null;
 
             default:
                 return null;
@@ -7706,134 +8137,17 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
     /// One grafted device row: the catalog is the file, this is the highlight.
     /// </summary>
     /// <remarks>
-    /// Deleting the <c>ProjectNodeKind.Device</c> arm above returns null for these rows and
-    /// <c>DeviceTreeFlowTests</c> goes red — the same class of silent-green as a dropped
-    /// subscription. The Object/File <c>*.devices.yaml</c> arm is a second door: selecting
+    /// The facts are Core's (<see cref="Cards.Device"/>), shared with the web viewer since
+    /// 2026-10-23; the vendor's own catalog files are read by <see cref="RenderChoice"/> for both.
+    /// Deleting the <c>DeviceCard</c> arm of <see cref="BuildRenderedContent"/> returns null for
+    /// these rows and <c>DeviceTreeFlowTests</c> goes red — the same class of silent-green as a
+    /// dropped subscription. The Object/File <c>*.devices.yaml</c> arm is a second door: selecting
     /// the device itself must still open the table.
     /// </remarks>
-    /// <summary>
-    /// A library manager, device or task read by a vendor's format from its own file, or a task
-    /// configuration whose child objects are tasks; null when no format reads any of them.
-    /// </summary>
-    private object? VendorCatalog(Versio.Core.Projects.ProjectTreeNode node)
-    {
-        string? Read(string file)
-        {
-            try
-            {
-                return RepositoryPath is { } root
-                    ? File.ReadAllText(Path.Combine(root, file.Replace('/', Path.DirectorySeparatorChar)))
-                    : null;
-            }
-            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-            {
-                return null;
-            }
-        }
-
-        foreach (var format in PlcFormats.All)
-        {
-            foreach (var file in node.Files)
-            {
-                if (Read(file) is not { } text)
-                {
-                    continue;
-                }
-
-                if (format.TryParseLibraryCatalog(file, text) is { IsValid: true } libraries)
-                {
-                    _catalogSource = new CatalogSource([file], heads => format.TryParseLibraryCatalog(file, heads[0]));
-                    return libraries;
-                }
-
-                if (format.TryParseDeviceCatalog(file, text) is { IsValid: true } device)
-                {
-                    _catalogSource = new CatalogSource([file], heads => format.TryParseDeviceCatalog(file, heads[0]));
-                    return device;
-                }
-
-                if (format.TryParseTask(file, text) is { } task)
-                {
-                    return new TaskDetailRender { Task = task };
-                }
-            }
-
-            // A configuration saved as one file per task: its table is its children's tasks,
-            // in the order the tree has them.
-            var children = node.Children
-                .Where(c => c.Files.Count > 0)
-                .Select(c => (File: c.Files[0], Text: Read(c.Files[0])))
-                .Where(c => c.Text is not null)
-                .Select(c => (c.File, Task: format.TryParseTask(c.File, c.Text!)))
-                .Where(c => c.Task is not null)
-                .ToList();
-            if (children.Count > 0)
-            {
-                var files = children.Select(c => c.File).ToList();
-                _catalogSource = new CatalogSource(files, heads => new TaskCatalog
-                {
-                    Schema = 1,
-                    Configuration = node.Name,
-                    Tasks = heads.Select((head, i) => head.Length == 0 ? null : format.TryParseTask(files[i], head)).OfType<TaskRecord>().ToList(),
-                });
-                return new TaskCatalog
-                {
-                    Schema = 1,
-                    Configuration = node.Name,
-                    Path = node.Path,
-                    Tasks = children.Select(c => c.Task!).ToList(),
-                };
-            }
-        }
-
-        return null;
-    }
-
     private static DeviceDetailRender DeviceDetail(
         Versio.Core.Projects.DeviceCatalog catalog,
-        Versio.Core.Projects.ProjectTreeNode node)
-    {
-        var facts = new List<FactRow> { new("Device", catalog.Name) };
-        var path = node.Path;
-        var slotAt = path.LastIndexOf(DeviceCatalog.SlotRowMarker, StringComparison.Ordinal);
-        var paramAt = path.LastIndexOf(DeviceCatalog.ParamRowMarker, StringComparison.Ordinal);
-        var connAt = path.LastIndexOf(DeviceCatalog.ConnectorRowMarker, StringComparison.Ordinal);
-
-        if (slotAt >= 0)
-        {
-            facts.Insert(0, new("Slot", path[(slotAt + DeviceCatalog.SlotRowMarker.Length)..]));
-        }
-        else if (paramAt >= 0)
-        {
-            facts.Insert(0, new("Value", node.Detail.Length > 0 ? node.Detail : "—"));
-        }
-        else if (connAt >= 0)
-        {
-            var key = path[(connAt + DeviceCatalog.ConnectorRowMarker.Length)..];
-
-            // KeyedConnectors, matching the tree's row paths: colliding keys carry #2/#3
-            // there, so a raw-Key lookup would open the first duplicate's facts for both.
-            var connector = catalog.KeyedConnectors()
-                .FirstOrDefault(kv => string.Equals(kv.Key, key, StringComparison.Ordinal))
-                .Value;
-            if (connector is not null)
-            {
-                if (connector.ConnectorId.Length > 0)
-                {
-                    facts.Add(new("Connector id", connector.ConnectorId));
-                }
-
-                if (connector.ModuleType.Length > 0)
-                {
-                    facts.Add(new("Module type", connector.ModuleType));
-                }
-
-                facts.Add(new("Parameters", connector.Parameters.Count.ToString()));
-            }
-        }
-
-        return new DeviceDetailRender { Title = node.Name, Facts = facts };
-    }
+        Versio.Core.Projects.ProjectTreeNode node) =>
+        new() { Title = node.Name, Facts = Cards.Device(catalog, node).Select(f => new FactRow(f.Label, f.Value)).ToList() };
 
     /// <summary>The project card: what a glance at the row should answer.</summary>
     /// <remarks>
@@ -7863,7 +8177,8 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
             }
         }
 
-        facts.Add(new FactRow("Vendor", (manifest?.Vendor ?? PlcVendor.Codesys).ToString()));
+        // As Cards.Project says it: a project with no manifest is not exported, and its vendor is not guessed.
+        facts.Add(new FactRow("Vendor", manifest is { } m ? m.Vendor.ToString() : "not exported yet"));
         facts.Add(new FactRow("Toolchain",
             Sync.ToolchainAvailable
                 ? "installed — version under Settings → System information"

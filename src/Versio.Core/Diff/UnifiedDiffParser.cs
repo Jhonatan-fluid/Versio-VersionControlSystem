@@ -434,8 +434,12 @@ public static class UnifiedDiffParser
     /// enclosing function's first line, and it can start with <c>-</c> or <c>+</c> itself —
     /// reading every token let <c>@@ -1 +1 @@ -x</c> move the old side's start. The counts
     /// default to 1 when git leaves them out, which it does for a one-line range.
+    /// <para>
+    /// Shared with <see cref="HunkPatchBuilder"/> since the 2026-10-24 review's item 19, so
+    /// the two readers of the same header agree on how many lines a hunk owes.
+    /// </para>
     /// </remarks>
-    private static (int Old, int New, int OldCount, int NewCount) ParseHunkHeader(string header)
+    internal static (int Old, int New, int OldCount, int NewCount) ParseHunkHeader(string header)
     {
         var old = 1;
         var @new = 1;

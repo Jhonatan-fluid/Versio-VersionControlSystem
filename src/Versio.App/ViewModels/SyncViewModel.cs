@@ -873,7 +873,37 @@ public sealed class SyncViewModel : ObservableObject
                 continue;
             }
 
-            var status = await toolchain.ProbeAsync(ct).ConfigureAwait(true);
+            PlcToolchainStatus status;
+            try
+            {
+                status = await toolchain.ProbeAsync(ct).ConfigureAwait(true);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                // One vendor's probe reads that vendor's install from disk, and a probe that
+                // throws is that vendor's defect, not the repository's: the CODESYS probe
+                // indexed an empty install list on a machine with only TIA Portal and took the
+                // whole attach down with it, before the vendors after it were asked at all
+                // (the 2026-10-24 review's item 36). Recorded as unavailable, said in the log
+                // with the stack, and the loop goes on to the next vendor.
+                _logger.Error(LogCategory.Plc,
+                    $"the {toolchain.Format.DisplayName} toolchain probe failed", ex);
+                status = new PlcToolchainStatus
+                {
+                    Available = false,
+                    Explanation =
+                        $"{toolchain.Format.DisplayName} unavailable: the probe failed " +
+                        $"({ex.GetType().Name}: {ex.Message})",
+                };
+
+                // Without the toolchain: a pack whose probe threw is not asked for a runner
+                // either, since CreateRunner reads the same install. RunnerFor builds the
+                // generic refusing runner from the explanation instead.
+                _probed[vendor] = new ProbedToolchain(null, status);
+                parts.Add(status.Explanation);
+                continue;
+            }
+
             _probed[vendor] = new ProbedToolchain(toolchain, status);
             parts.Add(status.Explanation
                       ?? (status.Available
@@ -934,8 +964,11 @@ public sealed class SyncViewModel : ObservableObject
                 });
             }
 
+            // A vendor with no pack registered, or one whose probe threw: the latter's status
+            // carries the reason, and "not exported yet" would misdescribe a defect as a gap.
             return new UnavailableToolchainRunner(
-                $"{vendor} projects can be tracked but not exported yet");
+                probed.Status?.Explanation
+                ?? $"{vendor} projects can be tracked but not exported yet");
         }
 
         var fallback = RunnerFor(_config.Bindings[0].Vendor);
@@ -1362,6 +1395,37 @@ public sealed class SyncViewModel : ObservableObject
     /// would offer a button whose whole job is already done.
     /// </para>
     /// </remarks>
+    /// <summary>
+    /// Raise the import question for every binding whose exported text holds an edit nobody
+    /// has imported.
+    /// </summary>
+    /// <remarks>
+    /// For a caller that put edits back into the tree without a watcher seeing them — an
+    /// auto-stash restored under the watcher hold. The orchestrator answers from the hashes
+    /// (<c>HasUnimportedMirrorEditAsync</c>), so the banner comes back from the facts on disk
+    /// rather than from an event that will not come again. Until 2026-10-25 the restore
+    /// adopted the tree instead, which recorded the restored edit as synced: no banner, and
+    /// the next project save exported over it (the review's seventh round, item 1).
+    /// </remarks>
+    public async Task RaisePendingImportsAsync()
+    {
+        if (_orchestrator is null)
+        {
+            return;
+        }
+
+        foreach (var binding in _config.Bindings.Where(b => b.Enabled))
+        {
+            if (await _orchestrator.HasUnimportedMirrorEditAsync(binding.Id, CancellationToken.None)
+                    .ConfigureAwait(true))
+            {
+                _logger.Info(LogCategory.Sync,
+                    $"{binding.Id}: the exported text holds an edit nobody has imported; the import is offered again");
+                NotePendingImport(binding.Id);
+            }
+        }
+    }
+
     public async Task ReleaseLocksWithNothingOutstandingAsync()
     {
         if (_orchestrator is null || _config is null)
@@ -1423,14 +1487,18 @@ public sealed class SyncViewModel : ObservableObject
     /// Whether the state git leaves behind may be taken as the synced truth.
     /// </param>
     /// <remarks>
-    /// <b><paramref name="adoptResult"/> is false for exactly one caller, and it is the reason
-    /// this parameter exists.</b> Adopting is right after a checkout, a pull or a stash: all
-    /// three arrive from a single commit the gate already vetted, so the project and its mirror
+    /// <b><paramref name="adoptResult"/> is false for exactly one path — a merge or rebase
+    /// whose preflight found a tracked project in what it brings — and it is the reason this
+    /// parameter exists.</b> Adopting is right after a checkout, a pull or a stash: all three
+    /// arrive from a single commit the gate already vetted, so the project and its mirror
     /// agree. A <b>merge</b> is the one operation whose working tree came from no commit — the
     /// binary project keeps one side while the mirror three-way merges and keeps both — so
     /// adopting there writes a <c>LastSynced</c> that claims they agree when they do not. On a
     /// merge that stopped on a conflict it is worse still: the mirror on disk holds conflict
-    /// markers at that moment, and adopt would record <i>those</i> as the synced state.
+    /// markers at that moment, and adopt would record <i>those</i> as the synced state. The
+    /// named merge was that one caller from the start; the upstream merge and rebase reached
+    /// this with the adopting default until 2026-10-25 (the review's fourth round, item 2),
+    /// and both go through <c>ShellViewModel.RewriteTreeUnderPlanAsync</c> now.
     /// <para>
     /// Nothing is lost either way, because the caller then makes the mirror authoritative and
     /// the export gate is refused. What this avoids is a false record living in the lock file
@@ -1466,8 +1534,8 @@ public sealed class SyncViewModel : ObservableObject
         else
         {
             _logger.Info(LogCategory.Sync,
-                $"{what}: the result is NOT adopted — the caller is making the exported text " +
-                "authoritative instead");
+                $"{what}: the result is NOT adopted — the caller decides what the rewritten " +
+                "tree means (a merge puts the text in charge; a restored stash owes its import)");
         }
 
         await RescanAsync().ConfigureAwait(true);
@@ -2601,13 +2669,18 @@ public sealed class SyncViewModel : ObservableObject
             {
                 _expansion.Restore(state);
                 _logger.Debug(LogCategory.App,
-                    $"restored tree expansion ({state.Opened.Count} open, " +
-                    $"{state.Closed.Count} closed) from {path}");
+                    $"restored tree expansion ({state.Opened?.Count ?? 0} open, " +
+                    $"{state.Closed?.Count ?? 0} closed) from {path}");
             }
         }
-        catch (Exception ex) when (ex is System.Text.Json.JsonException or IOException
-                                      or UnauthorizedAccessException)
+        catch (Exception ex) when (ex is not OperationCanceledException)
         {
+            // Every failure, not the three a torn or locked file raises. This caught only
+            // JsonException, IOException and UnauthorizedAccessException, so a well-formed
+            // `{}` — which deserialised to null lists and threw ArgumentNullException out of
+            // Restore — escaped it and ended the attach (the 2026-10-24 review's item 12).
+            // The summary above is the whole argument: nothing in this file is worth the
+            // repository not opening, so whatever reading it throws costs the defaults.
             _logger.Warn(LogCategory.App,
                 $"the tree expansion state at {path} is unreadable and was ignored: {ex.Message}");
         }
@@ -3388,6 +3461,13 @@ public sealed class SyncViewModel : ObservableObject
         var setup = new RepoSetup(_repositoryRoot, format: null);
         var adopted = 0;
 
+        // The whole scan travels with each adoption, so an export root is checked against
+        // the projects that are not tracked (yet, or ever) and not only against the bindings
+        // — on a fresh scan there are none, and A.project adopted ahead of A/B.project used
+        // to export over it (the 2026-10-25 review's sixth round, item 1). Handed over rather
+        // than left to RepoSetup's own scan, which it would otherwise run once per project.
+        IReadOnlyCollection<string> discovered = [.. snapshot.ProjectFiles, .. snapshot.SourceProjects];
+
         foreach (var project in snapshot.ProjectFiles.OrderBy(p => p, StringComparer.Ordinal))
         {
             if (IsTemplate(project) ||
@@ -3397,7 +3477,7 @@ public sealed class SyncViewModel : ObservableObject
                 continue;
             }
 
-            var result = await setup.AdoptAsync(project, _git, ProfileFor(project), ct)
+            var result = await setup.AdoptAsync(project, _git, ProfileFor(project), ct, discovered)
                 .ConfigureAwait(true);
             if (result.Adopted)
             {
@@ -3556,7 +3636,11 @@ public sealed class SyncViewModel : ObservableObject
                 // because this is the only place that learns of it — the state machine is
                 // happy, nothing failed, and the row would otherwise say "text ahead" with no
                 // hint that anything is expected of anybody.
-                if (outcome.Verdict is SyncVerdict.AwaitingConfirmation)
+                //
+                // And the export that was refused because of it: the same import is what is
+                // waiting, and the banner is the one place that says how to get unstuck.
+                if (outcome.Verdict is SyncVerdict.AwaitingConfirmation
+                                    or SyncVerdict.BlockedByPendingEdit)
                 {
                     NotePendingImport(binding.Id);
                 }

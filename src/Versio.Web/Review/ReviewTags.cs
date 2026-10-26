@@ -117,7 +117,13 @@ public static partial class ReviewTags
         body is not null && body.Contains(OperationTag(key), StringComparison.Ordinal);
 
     /// <summary>A body without any Versio tag, for drawing: a forged or stale tag never reaches a reader.</summary>
-    public static string Strip(string body) => Tag().Replace(body, "").TrimEnd();
+    /// <remarks>
+    /// Strips EVERY versio: comment, well-formed or not: the recognised tags are bounded and hold no
+    /// <c>&gt;</c>, but a body that carries one with a <c>&gt;</c> in its payload or past the bound
+    /// (hand-written, or copied badly) must not reach a reader either — the threat model says
+    /// every tag is stripped before anything is drawn (review, 2026-10-24).
+    /// </remarks>
+    public static string Strip(string body) => AnyTag().Replace(body, "").TrimEnd();
 
     /// <summary>The payload's fingerprint: the same key with a different payload is refused, never merged.</summary>
     public static string PayloadHash(params string?[] parts) =>
@@ -128,6 +134,9 @@ public static partial class ReviewTags
 
     [GeneratedRegex(@"<!--\s*versio:(?:op|anchor)\b[^>]{0,1024}-->")]
     private static partial Regex Tag();
+
+    [GeneratedRegex(@"<!--\s*versio:.*?-->", RegexOptions.Singleline)]
+    private static partial Regex AnyTag();
 }
 
 public enum KeyCheck

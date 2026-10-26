@@ -16,7 +16,16 @@ namespace Versio.Web.Api;
 /// <param name="Name">For display: hidden characters spelled (security rule 9).</param>
 /// <param name="Path">For navigation: exactly the file's path, which is what the API is asked for.</param>
 /// <param name="Label">The path for display, spelled.</param>
-public sealed record TreeNodeDto(string Name, string Path, string Label, string Kind, string? Primary, IReadOnlyList<string> Files, IReadOnlyList<TreeNodeDto> Children);
+/// <param name="Toolchain">The vendor pill the desktop tree shows on a project row, spelled; empty elsewhere.</param>
+/// <param name="Type">The object's type as the vendor names it (a GUID or a word); null for a file or folder.</param>
+/// <param name="TypeName">The type as the tree's chip says it, spelled; null when there is none.</param>
+/// <param name="Detail">The row's detail text (a device parameter's value, a project's export state), spelled.</param>
+/// <param name="Status">The row's own change: unmodified, added, modified, deleted, renamed.</param>
+/// <param name="RollUp">The strongest change under the row.</param>
+/// <param name="ChangedDescendants">How many rows under this one changed.</param>
+public sealed record TreeNodeDto(
+    string Name, string Path, string Label, string Kind, string? Primary, IReadOnlyList<string> Files, IReadOnlyList<TreeNodeDto> Children,
+    string Toolchain, string? Type, string? TypeName, string Detail, string Status, string RollUp, int ChangedDescendants);
 
 /// <summary>
 /// The JSON API the page calls (docs/web/PLAN.md Step 2). Every route resolves its credential
@@ -127,7 +136,11 @@ public static partial class ApiEndpoints
                 : Refused(branches.Failure, http);
         });
 
-        api.MapGet("/tree", async (string owner, string repo, string? @ref, HttpContext http, Loader load, CancellationToken ct) =>
+        // The project tree at one commit; with `base`, the same tree marked with what changed
+        // since that commit, as the desktop's Project panel marks a working-tree diff (FINISH.md
+        // Step 8): A/M/D on each row, roll-ups on folders, deleted objects struck. `changed=1`
+        // keeps only what changed and the folders that hold it.
+        api.MapGet("/tree", async (string owner, string repo, string? @ref, string? @base, string? changed, HttpContext http, Loader load, CancellationToken ct) =>
         {
             var model = await load.ModelAsync(http, owner, repo, @ref, ct).ConfigureAwait(false);
             if (!model.Ok)
@@ -136,14 +149,140 @@ public static partial class ApiEndpoints
             }
 
             var m = model.Value!.Model;
+            var nodes = m.Nodes;
+            string? baseSha = null;
+            if (@base is not null)
+            {
+                var older = await load.ModelAsync(http, owner, repo, @base, ct).ConfigureAwait(false);
+                if (!older.Ok)
+                {
+                    return Refused(older.Failure, http);
+                }
+
+                baseSha = older.Value!.Model.CommitSha;
+                var changes = ViewService.ChangedPaths(older.Value!.Model, m)
+                    .Select(c => new Versio.Core.Git.FileChange
+                    {
+                        Path = c.Path,
+                        Staged = c.Change switch { "added" => Versio.Core.Git.ChangeKind.Added, "deleted" => Versio.Core.Git.ChangeKind.Deleted, _ => Versio.Core.Git.ChangeKind.Modified },
+                        Unstaged = Versio.Core.Git.ChangeKind.Unmodified,
+                    })
+                    .ToList();
+                nodes = RepoExplorerBuilder.Build(m.Files.Keys.OrderBy(p => p, StringComparer.Ordinal).ToList(), m.Projects,
+                    new ProjectTreeOptions { ChangedOnly = changed == "1", HideUnchangedProjects = changed == "1" }, changes: changes);
+            }
+
             return Results.Ok(new
             {
                 commit = m.CommitSha,
+                @base = baseSha,
                 isVersio = m.IsVersio,
                 truncated = m.Truncated,
                 problems = m.Problems.Select(CodeHtml.Spelled),
-                nodes = m.Nodes.Select(Dto),
+                nodes = nodes.Select(Dto),
             });
+        });
+
+        // One commit, as GitHub's /commit/sha shows it (Step 8): the message, both people, the
+        // parents, the stats and the files; the drawing of each file is the compare view's, from
+        // the first parent.
+        api.MapGet("/commit", async (string owner, string repo, string? sha, HttpContext http, AccessResolver access, IRepoSource source, CancellationToken ct) =>
+        {
+            if (!Valid(owner, repo) || sha is not { Length: >= 7 and <= 40 } || !sha.All(Uri.IsHexDigit))
+            {
+                return Results.NotFound();
+            }
+
+            var who = await access.ResolveAsync(http, owner, repo, ct).ConfigureAwait(false);
+            if (!who.Ok)
+            {
+                return Refused(who.Failure, http);
+            }
+
+            var commit = await source.GetCommitAsync(who.Value!, owner, repo, sha, ct).ConfigureAwait(false);
+            if (!commit.Ok)
+            {
+                return Refused(commit.Failure, http);
+            }
+
+            var c = commit.Value!;
+            var newline = c.Message.IndexOf('\n', StringComparison.Ordinal);
+            return Results.Ok(new
+            {
+                sha = c.Sha,
+                headline = CodeHtml.Spelled(newline < 0 ? c.Message : c.Message[..newline]),
+                body = newline < 0 ? "" : PullEndpoints.SpelledLines(c.Message[(newline + 1)..].Trim('\n')),
+                author = CodeHtml.Spelled(c.AuthorName),
+                login = c.AuthorLogin is { } login ? CodeHtml.Spelled(login) : null,
+                avatar = c.AuthorAvatar,
+                when = c.AuthorDate,
+                committer = c.Committer is { } committer ? CodeHtml.Spelled(committer) : null,
+                committed = c.CommitDate,
+                parents = c.Parents,
+                additions = c.Additions,
+                deletions = c.Deletions,
+                verified = c.Verified,
+                url = c.Url,
+                filesTruncated = c.FilesTruncated,
+                files = c.Files.Select(f => new { path = f.Path, label = CodeHtml.Spelled(f.Path), status = f.Status, additions = f.Additions, deletions = f.Deletions, previousPath = f.PreviousPath, previousLabel = f.PreviousPath is { } prev ? CodeHtml.Spelled(prev) : null }),
+            });
+        });
+
+        // A commit's comments (Step 3b): GitHub's commit comments, on the commit as a whole or on a
+        // line of one of its files, drawn under the commit page's files.
+        api.MapGet("/commit/comments", async (string owner, string repo, string? sha, HttpContext http, AccessResolver access, IRepoSource source, CancellationToken ct) =>
+        {
+            if (!Valid(owner, repo) || sha is not { Length: >= 7 and <= 40 } || !sha.All(Uri.IsHexDigit))
+            {
+                return Results.NotFound();
+            }
+
+            var who = await access.ResolveAsync(http, owner, repo, ct).ConfigureAwait(false);
+            if (!who.Ok)
+            {
+                return Refused(who.Failure, http);
+            }
+
+            var comments = await source.GetCommitCommentsAsync(who.Value!, owner, repo, sha, ct).ConfigureAwait(false);
+            return comments.Ok
+                ? Results.Ok(new
+                {
+                    // Whether the box is drawn: writes on here and a signed-in person (S9, S1).
+                    writable = http.RequestServices.GetRequiredService<Microsoft.Extensions.Options.IOptions<WebOptions>>().Value.Writable(owner, repo) && who.Value!.Kind == AccessKind.User,
+                    truncated = comments.Value!.Truncated,
+                    comments = comments.Value.Comments.Select(c => new
+                    {
+                        id = c.Id,
+                        author = CodeHtml.Spelled(c.Author),
+                        avatar = c.AuthorAvatar,
+                        html = MarkdownFragment(Versio.Web.Review.ReviewTags.Strip(c.Body)),
+                        when = c.When,
+                        path = c.Path,
+                        pathLabel = c.Path is { } p ? CodeHtml.Spelled(p) : null,
+                        line = c.Line,
+                        url = c.Url,
+                    }),
+                })
+                : Refused(comments.Failure, http);
+        });
+
+        api.MapGet("/tags", async (string owner, string repo, HttpContext http, AccessResolver access, IRepoSource source, CancellationToken ct) =>
+        {
+            if (!Valid(owner, repo))
+            {
+                return Results.NotFound();
+            }
+
+            var who = await access.ResolveAsync(http, owner, repo, ct).ConfigureAwait(false);
+            if (!who.Ok)
+            {
+                return Refused(who.Failure, http);
+            }
+
+            var tags = await source.GetTagsAsync(who.Value!, owner, repo, ct).ConfigureAwait(false);
+            return tags.Ok
+                ? Results.Ok(new { tags = tags.Value!.Tags.Select(t => new { name = t.Name, label = CodeHtml.Spelled(t.Name), commit = t.CommitSha }), truncated = tags.Value.Truncated })
+                : Refused(tags.Failure, http);
         });
 
         api.MapGet("/view", async (string owner, string repo, string? @ref, string? path, string? view, string? layout,
@@ -164,6 +303,35 @@ public static partial class ApiEndpoints
             var result = await views.ViewAsync(access, m, path!, Pane(view), SideBySide(layout), ct).ConfigureAwait(false);
             Audit(log, access, m, path!, view);
             return result.Ok ? Results.Ok(result.Value) : Refused(result.Failure, http);
+        });
+
+        // "Used by" (Step 3c): the objects of the same project whose source names this one, read
+        // at this commit. Cut short at a bound, and says so, rather than answering "nowhere".
+        api.MapGet("/usages", async (string owner, string repo, string? @ref, string? path, HttpContext http, Loader load, ViewService views, IVersioLogger log, CancellationToken ct) =>
+        {
+            if (!ValidPath(path))
+            {
+                return Results.NotFound();
+            }
+
+            var model = await load.ModelAsync(http, owner, repo, @ref, ct).ConfigureAwait(false);
+            if (!model.Ok)
+            {
+                return Refused(model.Failure, http);
+            }
+
+            var (access, m) = model.Value!;
+            var result = await views.UsagesAsync(access, m, path!, ct).ConfigureAwait(false);
+            Audit(log, access, m, path!, "usages");
+            return result.Ok
+                ? Results.Ok(new
+                {
+                    name = result.Value!.Name,
+                    usedBy = result.Value.UsedBy.Select(u => new { path = u.Path, label = u.Label, name = u.Name, type = u.Type }),
+                    truncated = result.Value.Truncated,
+                    searched = result.Value.Searched,
+                })
+                : Refused(result.Failure, http);
         });
 
         api.MapGet("/compare", async (string owner, string repo, string? @base, string? head, HttpContext http, Loader load, CancellationToken ct) =>
@@ -201,10 +369,15 @@ public static partial class ApiEndpoints
             });
         });
 
-        api.MapGet("/compare/view", async (string owner, string repo, string? @base, string? head, string? path, string? view, string? layout, string? full,
+        // "from" is a renamed file's old path, as the commit's file list reported it (from GitHub's
+        // previous_filename): the drawing compares the object with itself across the rename rather
+        // than as a delete and an add. The pull request's files/view has taken it since review
+        // slice 1; this route did not until the review of 2026-10-25, so the commit page drew a
+        // renamed-and-edited file as wholly added — every line an addition, the removed ones gone.
+        api.MapGet("/compare/view", async (string owner, string repo, string? @base, string? head, string? path, string? from, string? view, string? layout, string? full,
             HttpContext http, Loader load, ViewService views, IVersioLogger log, CancellationToken ct) =>
         {
-            if (!ValidPath(path))
+            if (!ValidPath(path) || (from is not null && !ValidPath(from)))
             {
                 return Results.NotFound();
             }
@@ -221,7 +394,7 @@ public static partial class ApiEndpoints
                 return Refused(newer.Failure, http);
             }
 
-            var result = await views.CompareAsync(newer.Value!.Access, older.Value!.Model, newer.Value.Model, path!, Pane(view), SideBySide(layout), ct, fullFile: FullFile(full)).ConfigureAwait(false);
+            var result = await views.CompareAsync(newer.Value!.Access, older.Value!.Model, newer.Value.Model, path!, Pane(view), SideBySide(layout), ct, from, FullFile(full)).ConfigureAwait(false);
             Audit(log, newer.Value.Access, newer.Value.Model, path!, $"compare {view}");
             return result.Ok ? Results.Ok(result.Value) : Refused(result.Failure, http);
         });
@@ -298,12 +471,29 @@ public static partial class ApiEndpoints
         // only; one body is fetched and rendered when picked, because fifty rendered Markdown
         // bodies per list load would be paid mostly for rows nobody opens. The view routes render
         // with Core's Markdown, exactly as a README is, so the page places them like any fragment.
-        api.MapGet("/pulls", async (string owner, string repo, HttpContext http, AccessResolver access, IRepoSource source,
+        // GitHub's list (docs/web/FINISH.md, B10): `q` in GitHub's own grammar (the subset PullQuery
+        // takes), the open and closed counts, a page of rows with their labels, people, review and
+        // check state, and the cursor of the next page. A signed-in person gets GitHub's search; a
+        // reader without a token gets REST's list by state, which knows less, and the page says so.
+        api.MapGet("/pulls", async (string owner, string repo, string? q, string? after, int? page, HttpContext http, AccessResolver access, IRepoSource source,
             Microsoft.Extensions.Options.IOptions<WebOptions> options, CancellationToken ct) =>
         {
-            if (!Valid(owner, repo))
+            if (!Valid(owner, repo) || (after is not null && !Cursor(after)) || page is < 1 or > 1000)
             {
                 return Results.NotFound();
+            }
+
+            // GitHub refuses a search over 256 characters; said here as what it is, not as "GitHub
+            // could not be reached" (review, 2026-10-24).
+            if (q is { Length: > Versio.Web.Review.PullQuery.MaxLength })
+            {
+                return Results.Json(new { error = "invalid", field = "q", message = $"A search is at most {Versio.Web.Review.PullQuery.MaxLength} characters." }, statusCode: 400);
+            }
+
+            var (query, refused) = Versio.Web.Review.PullQuery.Parse(q, owner, repo);
+            if (query is null)
+            {
+                return Results.Json(new { error = "invalid", field = "q", message = $"This page does not search by {CodeHtml.Spelled(refused ?? "")}." }, statusCode: 400);
             }
 
             var who = await access.ResolveAsync(http, owner, repo, ct).ConfigureAwait(false);
@@ -312,29 +502,92 @@ public static partial class ApiEndpoints
                 return Refused(who.Failure, http);
             }
 
-            // One more than shown, the history idiom: the 51st only says the list was cut.
-            var pulls = await source.GetPullsAsync(who.Value!, owner, repo, ListLimit + 1, ct).ConfigureAwait(false);
-            return pulls.Ok
-                ? Results.Ok(new
-                {
-                    truncated = pulls.Value!.Count > ListLimit,
-                    // Whether to offer "New merge request": writes on here and a signed-in person (S9, S1).
-                    writable = options.Value.Writable(owner, repo) && who.Value!.Kind == AccessKind.User,
-                    pulls = pulls.Value.Take(ListLimit).Select(p => new
+            var writable = options.Value.Writable(owner, repo) && who.Value!.Kind == AccessKind.User;
+            object Row(PullRow p) => new
+            {
+                number = p.Number,
+                title = CodeHtml.Spelled(p.Title),
+                author = CodeHtml.Spelled(p.Author),
+                authorAvatar = p.AuthorAvatar,
+                when = p.UpdatedAt,
+                createdAt = p.CreatedAt,
+                state = p.State,
+                @base = p.BaseRef,
+                baseLabel = CodeHtml.Spelled(p.BaseRef),
+                head = p.HeadRef,
+                headLabel = CodeHtml.Spelled(p.HeadRef),
+                headSha = p.HeadSha,
+                draft = p.Draft,
+                labels = p.Labels.Select(l => new { name = CodeHtml.Spelled(l.Name), value = l.Name, color = l.Color }),
+                assignees = p.Assignees.Select(a => new { login = CodeHtml.Spelled(a.Login), avatar = a.Avatar }),
+                reviewDecision = p.ReviewDecision,
+                checkRollup = p.CheckRollup,
+                comments = p.CommentCount,
+            };
+
+            if (who.Value!.Token is not null)
+            {
+                // The counts' queries: the same search with its state token swapped — by token, since
+                // a quoted value may hold "is:closed" (review, 2026-10-24: a plain Replace counted a
+                // different query than the one listed).
+                var open = Versio.Web.Review.PullQuery.WithState(query.Search, "open");
+                var closed = Versio.Web.Review.PullQuery.WithState(query.Search, "closed");
+                var found = await source.SearchPullsAsync(who.Value, query.Search, open, closed, ListLimit, after, ct).ConfigureAwait(false);
+                return found.Ok
+                    ? Results.Ok(new
                     {
-                        number = p.Number,
-                        title = CodeHtml.Spelled(p.Title),
-                        author = CodeHtml.Spelled(p.Author),
-                        when = p.Updated,
-                        @base = p.BaseRef,
-                        baseLabel = CodeHtml.Spelled(p.BaseRef),
-                        head = p.HeadRef,
-                        headLabel = CodeHtml.Spelled(p.HeadRef),
-                        headSha = p.HeadSha,
-                        draft = p.Draft,
-                    }),
-                })
-                : Refused(pulls.Failure, http);
+                        query = query.Normalized,
+                        searched = true,
+                        total = found.Value!.Total,
+                        open = found.Value.OpenCount,
+                        closed = found.Value.ClosedCount,
+                        next = found.Value.NextCursor,
+                        truncated = found.Value.NextCursor is not null,
+                        writable,
+                        pulls = found.Value.Pulls.Select(Row),
+                    })
+                    : Refused(found.Failure, http);
+            }
+
+            // A page of exactly the size shown, then a one-row probe at the row after it. The
+            // history idiom (fetch one more than shown, the extra only says the list was cut) does
+            // not survive REST's paging, whose page is in units of per_page: 51 rows at page N
+            // showed 50, and page N+1 of 51 began at the 52nd, so every 51st pull request was
+            // never listed (the 2026-10-24 review's item 35). The probe is per_page=1 at page
+            // N*50+1, which is the 51st row of page N by GitHub's own arithmetic, and is only
+            // asked for when the page was full.
+            var at = page ?? 1;
+            var rows = await source.GetPullRowsAsync(who.Value, owner, repo, query.State, query.Sort, query.Direction, ListLimit, at, ct).ConfigureAwait(false);
+            if (!rows.Ok)
+            {
+                return Refused(rows.Failure, http);
+            }
+
+            var more = false;
+            if (rows.Value!.Count == ListLimit)
+            {
+                var probe = await source.GetPullRowsAsync(who.Value, owner, repo, query.State, query.Sort, query.Direction, 1, (at * ListLimit) + 1, ct).ConfigureAwait(false);
+                if (!probe.Ok)
+                {
+                    return Refused(probe.Failure, http);
+                }
+
+                more = probe.Value!.Count > 0;
+            }
+
+            return Results.Ok(new
+            {
+                query = query.Normalized,
+                // Without a token there is no search: the list is by state, the counts are of what was listed.
+                searched = false,
+                total = more ? (int?)null : rows.Value.Count,
+                open = query.State == "open" ? rows.Value.Count : (int?)null,
+                closed = query.State == "closed" ? rows.Value.Count : (int?)null,
+                next = more ? (at + 1).ToString(System.Globalization.CultureInfo.InvariantCulture) : null,
+                truncated = more,
+                writable,
+                pulls = rows.Value.Select(Row),
+            });
         });
 
         api.MapGet("/pulls/view", async (string owner, string repo, int? number, HttpContext http, AccessResolver access, IRepoSource source, IVersioLogger log, CancellationToken ct) =>
@@ -500,13 +753,22 @@ public static partial class ApiEndpoints
                 return RepoResult<string>.Of(known);
             }
 
-            var result = await _resolving.RunAsync(key, () => source.ResolveCommitAsync(who, owner, repo, reference, CancellationToken.None)).WaitAsync(ct).ConfigureAwait(false);
-            if (result.Ok)
+            // The cache is written INSIDE the flight, before the flight is over: written after it,
+            // a request arriving between the flight's end (SingleFlight retires the key in its
+            // finally) and the write missed both — the flight gone, the cache still empty — and
+            // resolved again. That is the `PerformanceTests` flake seen four times between
+            // 2026-10-19 and 2026-10-23 ("resolve" read twice under four simultaneous page-load
+            // requests), suspected each time and closed in Step 10 (FINDINGS 2026-10-24).
+            return await _resolving.RunAsync(key, async () =>
             {
-                cache.Set(key, result.Value!, new MemoryCacheEntryOptions { Size = 1, AbsoluteExpirationRelativeToNow = ResolutionLifetime });
-            }
+                var result = await source.ResolveCommitAsync(who, owner, repo, reference, CancellationToken.None).ConfigureAwait(false);
+                if (result.Ok)
+                {
+                    cache.Set(key, result.Value!, new MemoryCacheEntryOptions { Size = 1, AbsoluteExpirationRelativeToNow = ResolutionLifetime });
+                }
 
-            return result;
+                return result;
+            }).WaitAsync(ct).ConfigureAwait(false);
         }
 
         public async Task<RepoResult<(RepoAccess Access, RepoModel Model)>> ModelAsync(
@@ -616,8 +878,53 @@ public static partial class ApiEndpoints
 
     internal static bool Valid(string owner, string repo) => Name().IsMatch(owner) && Name().IsMatch(repo) && repo is not ("." or "..");
 
-    internal static bool ValidRef(string? reference) =>
-        reference is null || (reference.Length is > 0 and <= 250 && RefChars().IsMatch(reference) && !reference.Contains("..", StringComparison.Ordinal));
+    /// <summary>A search cursor as GitHub hands them back: opaque, bounded, nothing but the characters a cursor has.</summary>
+    internal static bool Cursor(string cursor) => cursor.Length is >= 1 and <= 256 && cursor.All(c => char.IsAsciiLetterOrDigit(c) || c is '+' or '/' or '=' or '_' or '-');
+
+    /// <summary>
+    /// A ref name as git itself admits one (<c>git check-ref-format</c>), absent meaning the
+    /// default branch. Until 2026-10-25 this was an allow-list of ASCII letters, digits and
+    /// <c>_ . / -</c>, which refused branches git is happy with — <c>release+hotfix</c>,
+    /// <c>Prüfung</c> — on every route that takes a ref, and at the same time admitted shapes
+    /// git refuses (<c>.hidden</c>, <c>a.lock</c>, <c>a//b</c>, a leading dash); the 2026-10-24
+    /// review's item 11. Git's rules are the right gate because the far end is git: a name git
+    /// would not create cannot name anything, and a name git did create must be reachable.
+    /// </summary>
+    /// <remarks>
+    /// Two refusals git does not make, kept on purpose. A leading dash, which git refuses only
+    /// for a branch: nothing here hands a ref to a process today (every ref goes to GitHub over
+    /// HTTP, percent-encoded), and a name that could be read as an option should never qualify
+    /// as a name, so the day one does reach a command line the gate is already in front of it.
+    /// And any control character, not only ASCII's, because every name shown is spelled
+    /// (rule 9) and a C1 control has no spelling worth drawing; <see cref="ValidPath"/> draws
+    /// the same line. Everything else is git's list verbatim: no space, no <c>~ ^ : ? * [ \</c>,
+    /// no <c>..</c>, no <c>@{</c>, not <c>@</c> alone, no component beginning with a dot or
+    /// ending in <c>.lock</c>, no leading, trailing or doubled slash, no trailing dot.
+    /// </remarks>
+    internal static bool ValidRef(string? reference)
+    {
+        if (reference is null)
+        {
+            return true;
+        }
+
+        if (reference.Length is 0 or > 250 || reference == "@" || reference[0] is '-' or '/' || reference[^1] is '/' or '.')
+        {
+            return false;
+        }
+
+        if (reference.Contains("..", StringComparison.Ordinal) || reference.Contains("@{", StringComparison.Ordinal) || reference.Contains("//", StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        if (reference.Any(c => char.IsControl(c) || c is ' ' or '~' or '^' or ':' or '?' or '*' or '[' or '\\'))
+        {
+            return false;
+        }
+
+        return !reference.Split('/').Any(component => component.StartsWith('.') || component.EndsWith(".lock", StringComparison.Ordinal));
+    }
 
     internal static bool ValidPath(string? path) =>
         path is { Length: > 0 and <= 1024 }
@@ -636,12 +943,16 @@ public static partial class ApiEndpoints
     internal static void Audit(IVersioLogger log, RepoAccess access, RepoModel model, string path, string? view) =>
         log.Info(LogCategory.Web, $"view {access} {model.Owner}/{model.Repo}@{model.CommitSha[..Math.Min(8, model.CommitSha.Length)]} {path} {view ?? "rendered"}");
 
+    /// <summary>
+    /// The desktop's row, sent whole: the page draws the pill, the chip, the detail and the marks
+    /// from these rather than deriving them from the path. Every text shown is spelled (rule 9);
+    /// the type is the vendor's identifier and goes as it is, for a link to carry.
+    /// </summary>
     private static TreeNodeDto Dto(ProjectTreeNode node) =>
-        new(CodeHtml.Spelled(node.Name), node.Path, CodeHtml.Spelled(node.Path), node.Kind.ToString().ToLowerInvariant(), node.PrimaryFile, node.Files, node.Children.Select(Dto).ToList());
+        new(CodeHtml.Spelled(node.Name), node.Path, CodeHtml.Spelled(node.Path), node.Kind.ToString().ToLowerInvariant(), node.PrimaryFile, node.Files, node.Children.Select(Dto).ToList(),
+            CodeHtml.Spelled(node.Toolchain), node.Type, node.TypeName is null ? null : CodeHtml.Spelled(node.TypeName), CodeHtml.Spelled(node.Detail),
+            node.Status.ToString().ToLowerInvariant(), node.RollUp.ToString().ToLowerInvariant(), node.ChangedDescendants);
 
     [GeneratedRegex("^[A-Za-z0-9_.-]{1,100}$")]
     private static partial Regex Name();
-
-    [GeneratedRegex("^[A-Za-z0-9_./-]+$")]
-    private static partial Regex RefChars();
 }

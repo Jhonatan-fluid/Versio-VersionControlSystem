@@ -21,7 +21,17 @@ namespace Versio.Core.Iec.Ladder;
 /// draws, and falls back to a plainer placement when a network has no such shape.
 /// </para>
 /// </remarks>
-public sealed record LadderDocument(LadderBody Body, LadderStyle Style);
+public sealed record LadderDocument(LadderBody Body, LadderStyle Style)
+{
+    /// <summary>
+    /// The file lines around and between the networks that are the file's own framing — markup
+    /// wrappers, a storage header — which the parser declares so that review coverage can vouch
+    /// for them (docs/web/PLAN.md, *Pull request review*, C4; <see cref="Projects.MemberTable.Structural"/>
+    /// is the same thing for a table). Empty for a parser that declares none: then every line
+    /// outside a network is a gap, which is the safe default.
+    /// </summary>
+    public IReadOnlyList<LineSpan> Structural { get; init; } = [];
+}
 
 /// <summary>A block's networks, in the order the IDE shows them.</summary>
 public sealed record LadderBody(string BlockName, IReadOnlyList<LadderNetwork> Networks);

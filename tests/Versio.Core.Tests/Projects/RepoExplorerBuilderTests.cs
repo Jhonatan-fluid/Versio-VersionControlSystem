@@ -52,6 +52,47 @@ public sealed class RepoExplorerBuilderTests
     private static IEnumerable<ProjectTreeNode> Flatten(IEnumerable<ProjectTreeNode> roots) =>
         roots.SelectMany(Flatten);
 
+    private static FileChange Change(string path, ChangeKind kind) =>
+        new() { Path = path, Staged = kind, Unstaged = ChangeKind.Unmodified };
+
+    /// <summary>
+    /// A comparison marks the listing as the Project panel marks a working-tree diff (FINISH.md
+    /// Step 8): each changed file carries its state, a folder rolls its descendants up with a
+    /// count, a deleted file is listed struck rather than dropped, and a plain listing marks nothing.
+    /// </summary>
+    [Fact]
+    public void A_comparison_marks_files_rolls_folders_up_and_lists_a_deleted_file()
+    {
+        var files = new[] { "docs/README.md", "src/Pump.st", "src/Valve.st" };
+        var changes = new[] { Change("src/Pump.st", ChangeKind.Modified), Change("src/Old.st", ChangeKind.Deleted), Change("docs/New.md", ChangeKind.Added) };
+
+        var marked = RepoExplorerBuilder.Build(files, [], new ProjectTreeOptions { ChangedOnly = false, HideUnchangedProjects = false }, changes: changes);
+        var plain = RepoExplorerBuilder.Build(files, [], new ProjectTreeOptions { ChangedOnly = false, HideUnchangedProjects = false });
+        var changedOnly = RepoExplorerBuilder.Build(files, [], new ProjectTreeOptions { ChangedOnly = true, HideUnchangedProjects = true }, changes: changes);
+
+        var src = Flatten(marked).Single(n => n.Path == "src");
+        Assert.Equal((ChangeKind.Modified, 2, ChangeKind.Deleted), (src.Children.Single(c => c.Name == "Pump.st").Status, src.ChangedDescendants, src.RollUp));
+        Assert.Equal(ChangeKind.Deleted, src.Children.Single(c => c.Name == "Old.st").Status);
+        Assert.Equal(ChangeKind.Unmodified, src.Children.Single(c => c.Name == "Valve.st").Status);
+        Assert.Equal(ChangeKind.Added, Flatten(marked).Single(n => n.Path == "docs/New.md").Status);
+        Assert.All(Flatten(plain), n => Assert.Equal((ChangeKind.Unmodified, 0), (n.Status, n.ChangedDescendants)));
+        // Changed only: the unchanged files are gone, the folders that hold a change stay.
+        Assert.Equal(["docs/New.md", "src/Old.st", "src/Pump.st"], Flatten(changedOnly).Where(n => n.Kind == ProjectNodeKind.File).Select(n => n.Path).Order());
+    }
+
+    /// <summary>A rename across folders is listed at both places: struck where it was, marked where it is (review, 2026-10-24).</summary>
+    [Fact]
+    public void A_rename_is_struck_at_its_old_path_and_marked_at_its_new_one()
+    {
+        var files = new[] { "src/New.st", "src/Pump.st" };
+        var moved = new FileChange { Path = "src/New.st", Staged = ChangeKind.Renamed, Unstaged = ChangeKind.Unmodified, OriginalPath = "lib/Old.st" };
+
+        var marked = RepoExplorerBuilder.Build(files, [], new ProjectTreeOptions { ChangedOnly = false, HideUnchangedProjects = false }, changes: [moved]);
+
+        Assert.Equal(ChangeKind.Renamed, Flatten(marked).Single(n => n.Path == "src/New.st").Status);
+        Assert.Equal(ChangeKind.Deleted, Flatten(marked).Single(n => n.Path == "lib/Old.st").Status);
+    }
+
     [Fact]
     public void A_bound_project_is_a_project_node_not_a_file_named_project()
     {

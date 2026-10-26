@@ -165,12 +165,13 @@ Phase 7's two prerequisites (§5.A and §5.B) are both built, so it is unblocked
 |---|---|
 | Direction lock, hash gate, self-write suppressor, circuit breaker, in that order | `SyncOrchestrator.AttemptAsync` — `src/Versio.Core/Sync/SyncOrchestrator.cs:342` |
 | Export stages into `<mirror>.versio_staging` and swaps only on success | `src/Versio.Scripts.Codesys/versio_export.py:409` |
-| The project is copied aside before an import writes to it; a failed backup fails the import | `src/Versio.Core/Sync/SyncOrchestrator.cs:806` |
+| The project is copied aside before an import writes to it; a failed backup fails the import — and a copy that stopped partway is neither listed nor restorable, a marker standing beside it until the copy's last byte (2026-10-25, fourth round, item 1: restoring half a tree deleted the other half of the live project) | `SyncOrchestrator.BackUpProjectAsync`, `BackupCatalog.PartialMarkerSuffix` |
+| **A merge or rebase that reaches a tracked project is not adopted** — the preflight asks what it brings, the mirror is put in charge and an import is raised; the named merge since 2026-08-18, the upstream merge and rebase since 2026-10-25 (fourth round, item 2: adopting recorded the mismatch as synced and the next save exported over the incoming logic) | `ShellViewModel.RewriteTreeUnderPlanAsync`, `MergePreflight` |
 | **An import whose mirror is not there is refused, before the backup** — an empty plan means "touch no file", so this used to run, change nothing and report success | `SyncOrchestrator.ImportAsync` |
 | **The plan a person confirmed is the plan executed** — decided before the question, carried to the script, never recomputed after the answer | `SyncViewModel.ConfirmImportAsync` → `SyncJob.Plan` → `PlcProjectJob.Plan` |
 | **An object edited since the export is never deleted**, however plainly its file has gone — the script rebuilds what the exporter would have written, hashes it, and keeps the object when it no longer matches | `versio_import.py` `why_not_delete` |
 | **A deletion nothing can verify is refused rather than assumed** — a native object on a pre-schema-5 mirror has no comparable hash, so whether it changed is unknowable and it is kept until the next export | `versio_types.can_verify`, `versio_import.py` `why_not_delete` |
-| **A native object is checked by re-export, not assumed unchanged** — the live object is exported again, normalised, and compared against the manifest's `nhash`; a real IDE edit is caught, measured | `versio_import.py` `normalized_native_of` |
+| **A native object is checked by re-export, not assumed unchanged** — the live object is exported again, normalised, and compared against the manifest's `nhash`; a real IDE edit is caught, measured. Under every normalisation an export may have recorded the hash with, the current one first: the two changes to the normaliser (2026-10-24, 2026-10-25) each made every older `nhash` unreproducible, and an unchanged object was refused as edited (2026-10-25, third round, item 4). **An older form vouches only where it is lossless for that object**: the line sort cannot tell two values swapped between multi-line children from no change, and a match under it on such an object is `DELETE_UNVERIFIABLE` — wait for the next export — not permission (fifth round, item 1: a modified object was deleted on that hash's word) | `versio_import.py` `reexported_native_of`, `why_not_delete`; `versio_native_equiv.normalized_forms`, `form_can_vouch` |
 | **The dialog says which objects will really go and which will really stay** — it promised objects would stay while the import deleted them, for one commit | `ImportNarrative.Describe`, `PlannedDeletion.CannotVerify` |
 | **A rename is carried out on the object, so the object itself survives** with its GUID — rather than being destroyed and rebuilt | `CodesysImportPlanner.MatchRenames`, `versio_import.py` `rename_planned` |
 | **A renamed object's tasks are repointed at it** — a task's POU list is stored by NAME and a rename does not update it, so without this the project is left running a POU that no longer exists | `versio_import.py` `retarget_task_pous` |
@@ -372,8 +373,11 @@ is orphaned — hidden, holding the project, and mid-write if it was importing.
   CODESYS tree deliberately rather than orphan it, and flush lock state so the next open recovers
   cleanly. A session Job Object with `KILL_ON_JOB_CLOSE` reaps CODESYS.exe and git.exe if Versio
   is Task-Manager-killed. Host.exe is not in that job; it watches the parent PID and Quits COM.
-  Stop also snapshots Portal/XAE PIDs before Host starts and reaps only the ones this run
-  created — `Kill(entireProcessTree)` on Host does not reach those COM servers.
+  Stop also reaps the one Portal/XAE PID the host reports as its own (`ide_pid`, measured
+  across the creation call) — `Kill(entireProcessTree)` on Host does not reach those COM
+  servers. ~~A snapshot of PIDs before Host starts, reaping everything new~~ killed an IDE
+  the engineer opened during the run (FINDINGS 2026-10-24, item 28); no reported PID now
+  means nothing is reaped by name, and the log says so.
 - On every path out, kill orphaned CODESYS children explicitly. `KillTree` already exists.
 
 ---
@@ -503,6 +507,7 @@ friendlier hat.
 | `stash push` fails, or creates nothing | Abort the switch. Never fall through to checkout or discard. |
 | Nothing to stash (clean tree) | The guard never asks in the first place — `WorkingTreeSnapshot` says the tree is clean and the verdict is `Proceed`. |
 | **`pop` conflicts** | Git leaves the stash in place and marks paths unmerged. **Keep the sidecar entry** — the work still exists and is still ours. Report the conflict, and let §5.B refuse both sync directions until it is resolved. |
+| **`pop` succeeds** | **Not adopted.** The tree before the pop is HEAD, which the arrival adopted; what the pop puts back is work in flight, judged by the hashes as it was before the stash. A mirror edit that owed an import owes it again — the restore asks the orchestrator and raises the banner. Until 2026-10-25 the restore adopted the tree, which recorded the edit as synced and let the next save export over it (the review's seventh round, item 1). |
 | Stash popped or dropped from a terminal | SHA is gone from the list. Clear the entry, log at Info, stay quiet. |
 | Branch deleted while its stash is held | Orphaned entry. **Never auto-drop** — surface it in `Findings`, which already exists for exactly this class of "needs a human". |
 | Stash taken on a detached HEAD | Key on `detached@<sha>`; offer restore when HEAD returns to that commit. Refusing to stash mid-switch is worse than an imperfect key. |

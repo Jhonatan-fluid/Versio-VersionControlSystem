@@ -63,13 +63,13 @@ public sealed record ViewResult(
 /// </summary>
 /// <remarks>
 /// <para>
-/// <b>The decision order is the desktop's</b> (<c>ShellViewModel</c>'s rendered-content switch):
-/// a member table from any registered format over any layer of the object, with the block's
-/// ladder or code body underneath when it is an interface; else a ladder; else Markdown; else
-/// the source laid out as the IDE numbers it. The desktop's version is tied to its tree rows,
-/// its disk and its pending marks, so it is mirrored here rather than shared. Moving it into Core
-/// for both is listed as later in docs/web/PLAN.md; until then a change to one is a change to
-/// the other, and <c>ViewServiceTests</c> pins this side's order.
+/// <b>The decision of what is drawn is Core's</b> (<see cref="RenderChoice.Decide"/>), shared with
+/// the desktop pane since 2026-10-23. Until then this class mirrored the desktop's switch by hand,
+/// and the two drifted: no project card, no catalogs, no husk rule, no web page here, and in a
+/// pull request a directory-form project's container objects, which hold nothing, drew as raw metadata and XML
+/// (FINDINGS 2026-10-23). This class reads the layers, hands Core the reader, and draws what it
+/// chose with the renderers the desktop pane draws with; <c>RenderChoiceParityTests</c> runs both
+/// hosts over every fixture object and asserts the same choice.
 /// </para>
 /// <para>
 /// <b>Bounded work</b> (security rule 3). A file over <see cref="WebOptions.MaxDrawBytes"/> is
@@ -84,25 +84,28 @@ public sealed record ViewResult(
 /// a part of the XML the ladder does not draw must not read as an untouched block.
 /// </para>
 /// <para>
-/// <b>Cached by content, commit and the file shown.</b> A fragment's key is the renderer version,
-/// the repository, the commit or commits, the file being shown, the view and every file's blob
+/// <b>Cached by content, commit, row and the file shown.</b> A fragment's key is the renderer version,
+/// the repository, the commit or commits, the row, the file being shown, the view and every file's blob
 /// hash on both sides. The file shown is in it because one object's layers share every blob hash:
 /// without it, a layer chip got the first layer's cached answer back (found in review; the first
-/// test of the chips built a new cache per call and never saw a warm entry). The commit is in it
+/// test of the chips built a new cache per call and never saw a warm entry). The row is in it
+/// because a task row and its configuration share the one YAML file and every blob: without it
+/// the task row was handed the configuration's whole table (RenderChoiceParityTests, 2026-10-23;
+/// unseen before because both drew the YAML as source). The commit is in it
 /// because a member table's links and "type changed" marks depend on files outside the object:
 /// the same blobs at another commit can link elsewhere. A renderer change bumps
 /// <see cref="RendererVersion"/>. The caller resolved both commits with
 /// this person's credential before anything here runs (security rule 2).
 /// </para>
 /// </remarks>
-public sealed class ViewService(
+public sealed partial class ViewService(
     IRepoSource source,
     IMemoryCache cache,
     IOptions<WebOptions> options,
     IVersioLogger log)
 {
     /// <summary>Bumped whenever any renderer's output changes, so no stale fragment is served.</summary>
-    public const int RendererVersion = 5;
+    public const int RendererVersion = 7;
 
     private WebOptions O => options.Value;
 
@@ -117,7 +120,7 @@ public sealed class ViewService(
 
         var files = await ReadAllAsync(access, model, node, ct).ConfigureAwait(false);
         var shown = Shown(node, path);
-        var key = Key("view", model, model.CommitSha + ":" + shown, view, sideBySide, files, null);
+        var key = Key("view", model, model.CommitSha + ":" + node.Path + ":" + shown, view, sideBySide, files, null);
         return await CachedAsync(key, path, () => view == PaneView.Raw
             ? RawSingle(shown, files)
             : Rendered(model, node, shown, files), notice => Plain(shown, files, notice), Lasting(files.Values) && !model.Partial).ConfigureAwait(false);
@@ -144,10 +147,10 @@ public sealed class ViewService(
 
         var oldNode = oldPath is null ? node : older.NodeFor(oldPath) ?? node;
         var reads = await Task.WhenAll(ReadAllAsync(access, older, oldNode, ct), ReadAllAsync(access, newer, node, ct)).ConfigureAwait(false);
-        var before = ReferenceEquals(oldNode, node) ? reads[0] : Renamed(reads[0], node);
-        var after = reads[1];
         var shown = Shown(node, path);
-        var key = Key("compare", newer, older.CommitSha + ".." + newer.CommitSha + ":" + shown + (oldPath is null ? "" : "<-" + oldPath) + (fullFile ? ":full" : ""), view, sideBySide, after, before);
+        var before = ReferenceEquals(oldNode, node) ? reads[0] : Renamed(reads[0], Shown(oldNode, oldPath!), node, shown);
+        var after = reads[1];
+        var key = Key("compare", newer, older.CommitSha + ".." + newer.CommitSha + ":" + node.Path + ":" + shown + (oldPath is null ? "" : "<-" + oldPath) + (fullFile ? ":full" : ""), view, sideBySide, after, before);
         return await CachedAsync(key, path, () => view == PaneView.Raw
             ? RawCompare(shown, before, after, sideBySide, fullFile)
             : RenderedCompare(older, newer, node, shown, before, after, sideBySide, fullFile), notice => Plain(shown, after.ContainsKey(shown) ? after : before, notice),
@@ -155,33 +158,89 @@ public sealed class ViewService(
     }
 
     /// <summary>
-    /// A renamed object's older layers, keyed by the layers they became: each by the part of its file
-    /// name after the object's name (<c>.st</c>, <c>.xml</c>, <c>.gvl.st</c>), which a rename keeps.
+    /// A renamed object's older layers, keyed by the layers they became. The pair the caller named
+    /// decides its own layer: <paramref name="oldPath"/> became <paramref name="newPath"/>, whatever
+    /// the two are called. The object's other layers follow that pair by the stems it reveals
+    /// (<c>GVL_Alarm.gvl.xml</c> follows <c>GVL_Alarm.gvl.st</c> → <c>GVL.Alarm2.gvl.st</c> to
+    /// <c>GVL.Alarm2.gvl.xml</c>); one the pair cannot place is paired by the part of its file name
+    /// after the first dot (a textual layer's suffix, a native one's, a two-part one's), which a
+    /// rename usually keeps.
     /// </summary>
     /// <remarks>
+    /// <para>
     /// The drawing then compares the object with itself, as GitHub's rename does, instead of drawing
     /// the old path as deleted and the new one as wholly added — which reads as every line changed.
     /// A layer with no counterpart keeps its old path and is shown as gone. Moved here from slice 1
     /// of pull request review (docs/web/PLAN.md), because review anchors need the same mapping.
+    /// </para>
+    /// <para>
+    /// The suffix rule was the whole mapping until review 2026-10-25 (P2): every layer, the one the
+    /// caller had just named included, was paired by everything after its file name's first dot, so
+    /// <c>old.txt</c> → <c>new.md</c> found no counterpart and <c>Old.Name.st</c> → <c>New.st</c>
+    /// found none either, and both drew additions without removals — the old side the caller named
+    /// was thrown away for want of a matching extension. The rename is a fact GitHub reported; the
+    /// suffix is a guess about which layer is which, and the guess may not overrule the fact. It is
+    /// kept for the sibling layers only because they are named by nobody: GitHub reports one file's
+    /// rename at a time, and the pair itself says what the siblings became only when the two names
+    /// share a dotted tail to take the stems from.
+    /// </para>
     /// </remarks>
-    private static IReadOnlyDictionary<string, Layer> Renamed(IReadOnlyDictionary<string, Layer> older, ProjectTreeNode node)
+    private static IReadOnlyDictionary<string, Layer> Renamed(IReadOnlyDictionary<string, Layer> older, string oldPath, ProjectTreeNode node, string newPath)
     {
         static string Suffix(string path)
         {
-            var file = path[(path.LastIndexOf('/') + 1)..];
+            var file = Name(path);
             var dot = file.IndexOf('.', StringComparison.Ordinal);
             return dot < 0 ? "" : file[dot..];
         }
 
+        var stems = Stems(Name(oldPath), Name(newPath));
         var result = new Dictionary<string, Layer>(StringComparer.Ordinal);
-        foreach (var layer in older.Values)
+        foreach (var layer in older.Values.OrderByDescending(l => l.Path == oldPath))
         {
-            var match = node.Files.FirstOrDefault(f => Suffix(f) == Suffix(layer.Path) && !result.ContainsKey(f));
+            string? match;
+            if (layer.Path == oldPath)
+            {
+                match = node.Files.Contains(newPath, StringComparer.Ordinal) ? newPath : null;
+            }
+            else
+            {
+                var name = Name(layer.Path);
+                var sibling = stems is { } s && name.StartsWith(s.Old + ".", StringComparison.Ordinal) ? s.New + name[s.Old.Length..] : null;
+                match = node.Files.FirstOrDefault(f => Name(f) == sibling && !result.ContainsKey(f))
+                    ?? node.Files.FirstOrDefault(f => Suffix(f) == Suffix(layer.Path) && !result.ContainsKey(f));
+            }
+
             var target = match ?? layer.Path;
             result[target] = layer with { Path = target };
         }
 
         return result;
+    }
+
+    /// <summary>
+    /// What two file names of a renamed object's layer have in front of the dotted tail they share:
+    /// <c>GVL_Alarm</c> and <c>GVL.Alarm2</c> for <c>GVL_Alarm.gvl.st</c> and <c>GVL.Alarm2.gvl.st</c>.
+    /// Null when they share no tail starting at a dot (<c>old.txt</c>, <c>new.md</c>), since then
+    /// nothing says where one name's stem ends.
+    /// </summary>
+    private static (string Old, string New)? Stems(string oldName, string newName)
+    {
+        var shared = 0;
+        while (shared < oldName.Length && shared < newName.Length && oldName[^(shared + 1)] == newName[^(shared + 1)])
+        {
+            shared++;
+        }
+
+        var dot = oldName[^shared..].IndexOf('.', StringComparison.Ordinal);
+        if (dot < 0)
+        {
+            return null;
+        }
+
+        var tail = shared - dot;
+        var stems = (oldName[..^tail], newName[..^tail]);
+        return stems.Item1.Length == 0 || stems.Item2.Length == 0 ? null : stems;
     }
 
     /// <summary>The paths that differ between two commits, with what happened to each.</summary>
@@ -212,12 +271,22 @@ public sealed class ViewService(
     private sealed record Layer(string Path, string BlobSha, string? Text, RepoFailure Failure, bool TooLargeToDraw, bool Binary);
 
     /// <remarks>
+    /// <para>
     /// Every layer at once: an object is often two or three files (.st and .xml), each a GitHub
     /// round trip, and none waits on another.
+    /// </para>
+    /// <para>
+    /// <b>And each child's first file</b>, since 2026-10-23: a task configuration saved as one
+    /// file per task is drawn from its children's files (<see cref="RenderChoice"/>, as the
+    /// desktop reads them from disk), and a reader handed only the object's own layers found no
+    /// task and drew the configuration's XML as source (RenderChoiceParityTests). The children's
+    /// blobs are in the view's cache key too, which is right: a changed task changes the table.
+    /// A block's methods cost their blob reads once each; the blob cache keeps repeats cheap.
+    /// </para>
     /// </remarks>
     private async Task<IReadOnlyDictionary<string, Layer>> ReadAllAsync(RepoAccess access, RepoModel model, ProjectTreeNode node, CancellationToken ct)
     {
-        var reads = node.Files.Distinct(StringComparer.Ordinal)
+        var reads = node.Files.Concat(node.Children.Select(c => c.Files.FirstOrDefault()).OfType<string>()).Distinct(StringComparer.Ordinal)
             .Where(model.Files.ContainsKey)
             .Select(file => ReadLayerAsync(access, model, file, model.Files[file], ct))
             .ToList();
@@ -267,62 +336,131 @@ public sealed class ViewService(
 
     private ViewResult Rendered(RepoModel model, ProjectTreeNode node, string shown, IReadOnlyDictionary<string, Layer> files)
     {
+        // Core's decision over the layers as fetched: a layer too large to draw, or binary, reads
+        // as unreadable, which is what the desktop's reader answers for a file it cannot open.
+        var choice = Choose(node, f => Text(files, f), shown);
+
+        // The card before the readability check: a project row's own file is the vendor's binary,
+        // or a folder with no file at all, and the card is drawn from the model, not from it.
+        if (choice.Kind == RenderKind.ProjectCard)
+        {
+            return ProjectCard(model, node, shown);
+        }
+
         if (Unreadable(node, shown, files) is { } refused)
         {
             return refused;
         }
 
         var notices = new List<string>();
-        var drawable = files.Values.Where(l => l.Text is not null && !l.TooLargeToDraw).ToList();
-
-        // A member table from any format over any layer: the readable layer is often the primary
-        // file while the table lives in a native one beside it (the desktop's own comment).
-        foreach (var format in PlcFormats.All)
+        switch (choice.Kind)
         {
-            foreach (var layer in drawable)
+            case RenderKind.LibraryCatalog or RenderKind.TaskCatalog or RenderKind.DeviceCatalog:
+                return Catalog(choice, choice.Model!, node, shown, notices, compared: false);
+
+            case RenderKind.TaskCard:
             {
-                if (format.TryParseMemberTable(layer.Path, layer.Text!) is { IsValid: true } table)
-                {
-                    var html = new StringBuilder(MemberTableHtml.Fragment(WebNote(LinkTypes(table, layer.Path, model, null))));
-                    if (table.IsInterface)
-                    {
-                        AppendInterfaceCode(html, format, node, files, older: null);
-                    }
-
-                    return Result("table", node, shown, html.ToString(), notices);
-                }
+                var task = (TaskRecord)choice.Model!;
+                return Result("task", node, shown, CardHtml.Fragment("task", task.Name, Cards.Task(task), choice.File!), notices);
             }
-        }
 
-        foreach (var format in PlcFormats.All)
-        {
-            foreach (var layer in drawable)
+            case RenderKind.DeviceCard:
+                return Result("device", node, shown, CardHtml.Fragment("device", node.Name, Cards.Device((DeviceCatalog)choice.Model!, node), choice.File!), notices);
+
+            case RenderKind.MemberTable:
             {
-                if (format.TryParseLadder(layer.Path, layer.Text!) is { } ladder)
-                {
-                    return Result("ladder", node, shown,
-                        LadderHtml.Fragment(LadderDiff.Compare(ladder.Body, ladder.Body), ladder.Style, wording: SingleWording), notices);
-                }
+                var html = new StringBuilder(MemberTableHtml.Fragment(WebNote(LinkTypes((MemberTable)choice.Model!, choice.File!, model, null))));
+                AppendInterfaceCode(html, choice, files, older: null, links: choice.CodeFile is { } codeFile ? Links(model, codeFile) : null);
+                return Result("table", node, shown, html.ToString(), notices);
             }
+
+            case RenderKind.Ladder:
+            {
+                var ladder = (LadderDocument)choice.Model!;
+                return Result("ladder", node, shown,
+                    LadderHtml.Fragment(LadderDiff.Compare(ladder.Body, ladder.Body), ladder.Style, wording: SingleWording), notices);
+            }
+
+            case RenderKind.EmptyObject:
+                return Result("note", node, shown, Note(node), notices);
+
+            case RenderKind.Markdown:
+                return Result("markdown", node, shown, MarkdownPage(files[shown].Text!), notices);
+
+            case RenderKind.WebPage or RenderKind.Source:
+            {
+                var text = files[shown].Text!;
+                if (choice.Notice is { } notice)
+                {
+                    notices.Add(notice);
+                }
+
+                return Result(choice.Kind == RenderKind.WebPage ? "webpage" : "source", node, shown,
+                    SourceHtml.Fragment(StSourceLayout.Lay(text, PlcFormats.SectionsFor(shown, text)), LanguageFor(shown), links: Links(model, shown)), notices);
+            }
+
+            default:
+                return Missing(node, shown);
         }
-
-        var text = files[shown].Text!;
-
-        // An object with nothing in its own file (a CODESYS Communication Manager): the note says
-        // so, where one line of archive XML read as a view that had failed. Raw keeps the file.
-        if (PlcFormats.All.Any(f => f.HoldsNoSettings(shown, text)))
-        {
-            var note = EmptyObjectNote.For(hasChildren: node.Children.Count > 0);
-            return Result("markdown", node, shown, "<div class=\"md-page\">" + MarkdownHtml.Fragment(Markdown.Parse(note)) + "</div>", notices);
-        }
-
-        if (IsMarkdown(shown))
-        {
-            return Result("markdown", node, shown, "<div class=\"md-page\">" + MarkdownHtml.Fragment(Markdown.Parse(text)) + "</div>", notices);
-        }
-
-        return Result("source", node, shown, SourceHtml.Fragment(StSourceLayout.Lay(text, PlcFormats.SectionsFor(shown, text)), LanguageFor(shown)), notices);
     }
+
+    /// <summary>
+    /// The choice for an object, with the layer chip honoured: a table or a ladder comes from any
+    /// layer and its code from the object's own primary file, whichever chip is pressed; the text
+    /// arms (the note, Markdown, the page, the source) draw the layer asked for.
+    /// </summary>
+    /// <remarks>
+    /// Two calls rather than one with the chip as primary: with the chip on an object's native
+    /// XML, one call would put that XML under the block's interface table where its code body
+    /// belongs. The second call changes only the text arms, since the arms before them do not
+    /// read the primary file.
+    /// </remarks>
+    private static RenderChoice Choose(ProjectTreeNode node, Func<string, string?> read, string shown)
+    {
+        var choice = RenderChoice.Decide(node, read);
+        return shown != node.PrimaryFile
+               && choice.Kind is RenderKind.EmptyObject or RenderKind.Markdown or RenderKind.WebPage or RenderKind.Source or RenderKind.Nothing
+            ? RenderChoice.Decide(node, read, shown)
+            : choice;
+    }
+
+    /// <summary>
+    /// The project row's card, from what the commit holds (<see cref="Cards.Project"/>): the
+    /// model's project for this row, and how many files its folder has for a source project.
+    /// </summary>
+    private static ViewResult ProjectCard(RepoModel model, ProjectTreeNode node, string shown)
+    {
+        var project = model.Projects.FirstOrDefault(p => string.Equals(p.ProjectPath.Replace('\\', '/').TrimEnd('/'), node.Path.TrimEnd('/'), StringComparison.OrdinalIgnoreCase))
+            ?? new WorkspaceProject { ProjectPath = node.Path, ExportPath = node.Path };
+        var prefix = node.Path.TrimEnd('/') + "/";
+        var fileCount = model.Files.Keys.Count(k => k.StartsWith(prefix, StringComparison.Ordinal));
+        return Result("project", node, shown, CardHtml.Fragment("project", node.Name, Cards.Project(project, fileCount)), []);
+    }
+
+    /// <summary>A catalog as its table, with the anchors its rows stand for.</summary>
+    private static ViewResult Catalog(RenderChoice choice, object catalog, ProjectTreeNode node, string shown, List<string> notices, bool compared)
+    {
+        var file = choice.File ?? shown;
+        var (kind, html, anchors) = catalog switch
+        {
+            LibraryCatalog l => ("libraries", CatalogHtml.Fragment(l, compared, file), CatalogHtml.Anchors(l, compared, file)),
+            TaskCatalog t => ("tasks", CatalogHtml.Fragment(t, compared, file), CatalogHtml.Anchors(t, compared, file)),
+            DeviceCatalog d => ("devices", CatalogHtml.Fragment(d, compared, file), CatalogHtml.Anchors(d, compared, file)),
+            _ => throw new InvalidOperationException($"{catalog.GetType().Name} is not a catalog"),
+        };
+        return Result(kind, node, shown, html, notices) with { Anchors = anchors };
+    }
+
+    /// <summary>
+    /// The empty-object note as a page: an object with nothing in its own file (the logic root of
+    /// a device, a communication manager) says so, where one line of archive XML read as a view
+    /// that had failed. Raw keeps the file.
+    /// </summary>
+    private static string Note(ProjectTreeNode node) =>
+        MarkdownPage(EmptyObjectNote.For(hasChildren: node.Children.Count > 0));
+
+    private static string MarkdownPage(string markdown) =>
+        "<div class=\"md-page\">" + MarkdownHtml.Fragment(Markdown.Parse(markdown)) + "</div>";
 
     private ViewResult RawSingle(string shown, IReadOnlyDictionary<string, Layer> files)
     {
@@ -419,19 +557,96 @@ public sealed class ViewService(
             return refused;
         }
 
-        foreach (var format in PlcFormats.All)
+        // Core's decision, from the newer copy of each layer and the older one where the newer is
+        // gone: a deleted object is still drawn as what it was, every row struck.
+        var choice = Choose(node, f => Text(after, f) ?? Text(before, f), shown);
+        switch (choice.Kind)
         {
-            foreach (var path in node.Files)
+            case RenderKind.ProjectCard:
+                // A project row compared: the newer card. Its facts are not compared; the files
+                // under the row are, each as its own object.
+                return ProjectCard(newerModel, node, shown);
+
+            case RenderKind.LibraryCatalog or RenderKind.TaskCatalog or RenderKind.DeviceCatalog:
             {
-                var oldTable = Text(before, path) is { } ot ? format.TryParseMemberTable(path, ot) : null;
-                var newTable = Text(after, path) is { } nt ? format.TryParseMemberTable(path, nt) : null;
-                if (oldTable is not { IsValid: true } && newTable is not { IsValid: true })
+                // Both sides through the one reader the choice carries, so a vendor's file and
+                // Versio's YAML each compare like with like. A side with no file at all is no
+                // catalog, and every row reads as added or removed, which is what happened.
+                var olds = choice.Files.Select(f => Text(before, f)).ToList();
+                var news = choice.Files.Select(f => Text(after, f)).ToList();
+                var compared = RewordCatalog(ComparedCatalog(
+                    olds.All(t => t is null) ? null : choice.Reparse!(olds),
+                    news.All(t => t is null) ? null : choice.Reparse!(news)));
+                var marked = compared switch
                 {
-                    continue;
+                    LibraryCatalog l => l.References.Any(r => r.Mark.Change != MemberChange.None),
+                    TaskCatalog t => t.Tasks.Any(r => r.Mark.Change != MemberChange.None),
+                    DeviceCatalog d => d.Connectors.Any(r => r.Mark.Change != MemberChange.None) || d.ChangeSummary.Length > 0,
+                    _ => false,
+                };
+                if (changedFiles && !marked)
+                {
+                    notices.Add(NothingDrawnChanged);
                 }
 
+                // A catalog's rows carry no line evidence: drawn, and reported whole, so the
+                // view stays partial where its file changed outside the rows.
+                foreach (var file in choice.Files)
+                {
+                    drawn.Add(file);
+                }
+
+                return Catalog(choice, compared, node, shown, notices, compared: true) with { Coverage = Covered() };
+            }
+
+            // A card, a note or a document draws one version and marks nothing, so a change in
+            // its file is said rather than shown: the Raw tab has it.
+            case RenderKind.TaskCard:
+            {
+                var task = (TaskRecord)choice.Model!;
+                if (changedFiles)
+                {
+                    notices.Add(NothingDrawnChanged);
+                }
+
+                return Result("task", node, shown, CardHtml.Fragment("task", task.Name, Cards.Task(task), choice.File!), notices) with { Coverage = Covered() };
+            }
+
+            case RenderKind.DeviceCard:
+                if (changedFiles)
+                {
+                    notices.Add(NothingDrawnChanged);
+                }
+
+                return Result("device", node, shown, CardHtml.Fragment("device", node.Name, Cards.Device((DeviceCatalog)choice.Model!, node), choice.File!), notices) with { Coverage = Covered() };
+
+            case RenderKind.EmptyObject:
+                if (changedFiles)
+                {
+                    notices.Add(NothingDrawnChanged);
+                }
+
+                return Result("note", node, shown, Note(node), notices) with { Coverage = Covered() };
+
+            case RenderKind.Markdown:
+                if (changedFiles)
+                {
+                    notices.Add(NothingDrawnChanged);
+                }
+
+                return Result("markdown", node, shown, MarkdownPage((newer ?? older)!.Text!), notices) with { Coverage = Covered() };
+
+            case RenderKind.MemberTable:
+            {
+                var path = choice.File!;
+                var format = choice.Format!;
+                var oldTable = Text(before, path) is { } ot ? format.TryParseMemberTable(path, ot) : null;
+                var newTable = Text(after, path) is { } nt ? format.TryParseMemberTable(path, nt) : null;
                 var baseline = oldTable is { IsValid: true } ? oldTable : new MemberTable { Name = newTable!.Name, IsInterface = newTable.IsInterface, IsDataType = newTable.IsDataType, IsVariableList = newTable.IsVariableList };
-                var current = newTable is { IsValid: true } ? newTable : baseline with { Members = [] };
+                // A deleted file's "current" table has no rows and no framing either: the older
+                // framing carried over would answer for new-side lines that do not exist (latent,
+                // rule 1 short-circuits a missing side; closed all the same, review 2026-10-24).
+                var current = newTable is { IsValid: true } ? newTable : baseline with { Members = [], Structural = [], Unshown = [] };
                 // A member's type that changed between the two versions changes this block's
                 // meaning while its own text may not move: highlighted, and said above the table.
                 var changedPaths = ChangedPaths(olderModel, newerModel).Select(c => c.Path).ToHashSet(StringComparer.Ordinal);
@@ -448,12 +663,7 @@ public sealed class ViewService(
                 // own changes said "the type changed" and "nothing this view draws did" together
                 // (found in review).
                 var tableChanged = compared.Members.Any(m => m.Change != MemberChange.None || m.ReferenceChanged);
-                var codeChanged = false;
-                if (compared.IsInterface)
-                {
-                    codeChanged = AppendInterfaceCode(html, format, node, after, before, sideBySide, anchors, Vouch, p => drawn.Add(p), fullFile);
-                }
-
+                var codeChanged = AppendInterfaceCode(html, choice, after, before, sideBySide, anchors, Vouch, fullFile, choice.CodeFile is { } codeFile ? Links(newerModel, codeFile) : null);
                 if (changedFiles && !tableChanged && !codeChanged)
                 {
                     notices.Add(NothingDrawnChanged);
@@ -461,19 +671,13 @@ public sealed class ViewService(
 
                 return Result("table", node, shown, html.ToString(), notices) with { Anchors = anchors, Coverage = Covered() };
             }
-        }
 
-        foreach (var format in PlcFormats.All)
-        {
-            foreach (var path in node.Files)
+            case RenderKind.Ladder:
             {
+                var path = choice.File!;
+                var format = choice.Format!;
                 var oldLadder = Text(before, path) is { } ot ? format.TryParseLadder(path, ot) : null;
                 var newLadder = Text(after, path) is { } nt ? format.TryParseLadder(path, nt) : null;
-                if (oldLadder is null && newLadder is null)
-                {
-                    continue;
-                }
-
                 var comparison = newLadder is null
                     ? LadderDiff.Compare(oldLadder!.Body, new LadderBody(oldLadder.Body.BlockName, []))
                     : LadderDiff.Compare(oldLadder?.Body, newLadder.Body);
@@ -482,30 +686,64 @@ public sealed class ViewService(
                     notices.Add(NothingDrawnChanged);
                 }
 
-                // A ladder has no field evidence: drawn, and reported whole, so the view stays partial.
-                drawn.Add(path);
+                // The ladder's evidence (Coverage.Ladder): every network vouches for its span on the sides
+                // it is drawn on, and the parser's framing outside the networks is vouched for too. It
+                // was "drawn, no evidence" until the coverage rewrite of 2026-10-23 (FINDINGS, "the
+                // coverage banner on real code"), which left these two lines to this file.
+                Vouch(path, Versio.Core.Review.Coverage.Ladder(comparison, oldLadder?.Structural ?? [], newLadder?.Structural ?? []));
                 return Result("ladder", node, shown,
                     LadderHtml.Fragment(comparison, (newLadder ?? oldLadder!).Style, sideBySide ? LadderView.SideBySide : LadderView.Merged, CompareWording, path), notices)
                     with { Anchors = LadderHtml.Anchors(comparison, path), Coverage = Covered() };
             }
-        }
 
-        var oldText = older?.Text;
-        var newText = newer?.Text;
-        var rows = StSourceLayout.Mark(StSourceLayout.Lay(newText, PlcFormats.SectionsFor(shown, newText ?? "")), oldText, newText);
-        var marked = rows.Any(r => r is SourceRemovedLine or SourceCodeLine { Change: SourceChange.Added });
-        if (changedFiles && !marked)
-        {
-            // Lines outside what the layout draws (a vendor's header) can be all that changed;
-            // Mark shows those removals at the end, but an edit there with nothing removed would
-            // otherwise read as no change at all.
-            notices.Add(NothingDrawnChanged);
-        }
+            case RenderKind.WebPage or RenderKind.Source:
+            {
+                var oldText = older?.Text;
+                var newText = newer?.Text;
+                var rows = StSourceLayout.Mark(StSourceLayout.Lay(newText, PlcFormats.SectionsFor(shown, newText ?? "")), oldText, newText);
+                var marked = rows.Any(r => r is SourceRemovedLine or SourceCodeLine { Change: SourceChange.Added });
+                if (changedFiles && !marked)
+                {
+                    // Lines outside what the layout draws (a vendor's header) can be all that changed;
+                    // Mark shows those removals at the end, but an edit there with nothing removed would
+                    // otherwise read as no change at all.
+                    notices.Add(NothingDrawnChanged);
+                }
 
-        Vouch(shown, Versio.Core.Review.Coverage.Source(rows));
-        return Result("source", node, shown, SourceHtml.Fragment(rows, LanguageFor(shown), sideBySide ? SourceView.SideBySide : SourceView.Unified, shown, fullFile), notices)
-            with { Coverage = Covered() };
+                if (choice.Notice is { } notice)
+                {
+                    notices.Add(notice);
+                }
+
+                Vouch(shown, Versio.Core.Review.Coverage.Source(rows));
+                return Result(choice.Kind == RenderKind.WebPage ? "webpage" : "source", node, shown,
+                    SourceHtml.Fragment(rows, LanguageFor(shown), sideBySide ? SourceView.SideBySide : SourceView.Unified, shown, fullFile, Links(newerModel, shown)), notices)
+                    with { Coverage = Covered() };
+            }
+
+            default:
+                return Missing(node, shown);
+        }
     }
+
+    /// <summary>
+    /// Two readings of one catalog compared: a side that is no catalog is an empty one, so a
+    /// manager added in the newer version has every reference added, and one deleted has every
+    /// reference removed, as the desktop draws a never-committed file.
+    /// </summary>
+    private static object ComparedCatalog(object? older, object? newer) => (older, newer) switch
+    {
+        (LibraryCatalog { IsValid: true } o, LibraryCatalog n) => CatalogDiff.Compare(o, n),
+        (_, LibraryCatalog n) => CatalogDiff.Compare(null, n),
+        (LibraryCatalog o, _) => CatalogDiff.Compare(o, o with { References = [] }),
+        (TaskCatalog { IsValid: true } o, TaskCatalog n) => CatalogDiff.Compare(o, n),
+        (_, TaskCatalog n) => CatalogDiff.Compare(null, n),
+        (TaskCatalog o, _) => CatalogDiff.Compare(o, o with { Tasks = [] }),
+        (DeviceCatalog { IsValid: true } o, DeviceCatalog n) => CatalogDiff.Compare(o, n),
+        (_, DeviceCatalog n) => CatalogDiff.Compare(null, n),
+        (DeviceCatalog o, _) => CatalogDiff.Compare(o, o with { Connectors = [], Slots = new Dictionary<string, string>(StringComparer.Ordinal) }),
+        _ => throw new InvalidOperationException("neither side is a catalog"),
+    };
 
     private ViewResult RawCompare(string shown, IReadOnlyDictionary<string, Layer> before, IReadOnlyDictionary<string, Layer> after, bool sideBySide, bool fullFile = false)
     {
@@ -538,30 +776,37 @@ public sealed class ViewService(
     }
 
     /// <summary>
-    /// The code under an interface table: the ladder when the primary layer is one, else the
-    /// code body. Returns whether the code changed between the two versions.
+    /// The code under an interface table, as the choice says: the ladder when the primary layer is
+    /// one, the code body when the format finds one, else the whole file as the desktop has always
+    /// drawn it (a block saved as the vendor's XML, a graphical block's text header). Returns
+    /// whether the code changed between the two versions.
     /// </summary>
     /// <param name="anchors">Where a comparison's review anchors go: the code's ladder adds its networks.</param>
     /// <param name="vouch">Where a comparison's coverage evidence goes: a drawn code body vouches for its marked lines.</param>
-    /// <param name="drawnWithoutEvidence">Says a file was drawn though nothing vouches for its lines (the code's ladder).</param>
     private static bool AppendInterfaceCode(
-        StringBuilder html, IPlcProjectFormat format, ProjectTreeNode node,
+        StringBuilder html, RenderChoice choice,
         IReadOnlyDictionary<string, Layer> newer, IReadOnlyDictionary<string, Layer>? older, bool sideBySide = false,
         List<Versio.Core.Review.RenderedAnchor>? anchors = null,
         Action<string, Versio.Core.Review.Coverage.Evidence>? vouch = null,
-        Action<string>? drawnWithoutEvidence = null, bool fullFile = false)
+        bool fullFile = false,
+        Func<string, string?>? links = null)
     {
-        if (node.PrimaryFile is not { } code)
+        if (choice.Code == CodeUnder.None || choice.CodeFile is not { } code || choice.Format is not { } format)
         {
             return false;
         }
 
         var newText = Text(newer, code);
         var oldText = older is null ? null : Text(older, code);
-        var ladderNew = newText is null ? null : format.TryParseLadder(code, newText);
-        var ladderOld = oldText is null ? null : format.TryParseLadder(code, oldText);
-        if (ladderNew is not null || ladderOld is not null)
+        if (choice.Code == CodeUnder.Ladder)
         {
+            var ladderNew = newText is null ? null : format.TryParseLadder(code, newText);
+            var ladderOld = oldText is null ? null : format.TryParseLadder(code, oldText);
+            if (ladderNew is null && ladderOld is null)
+            {
+                return false;
+            }
+
             var comparison = older is null
                 ? LadderDiff.Compare(ladderNew!.Body, ladderNew.Body)
                 : ladderNew is null
@@ -569,35 +814,42 @@ public sealed class ViewService(
                     : LadderDiff.Compare(ladderOld?.Body, ladderNew.Body);
             html.Append(LadderHtml.Fragment(comparison, (ladderNew ?? ladderOld!).Style, sideBySide ? LadderView.SideBySide : LadderView.Merged, older is null ? SingleWording : CompareWording, code));
             anchors?.AddRange(LadderHtml.Anchors(comparison, code));
-            drawnWithoutEvidence?.Invoke(code);
+            vouch?.Invoke(code, Versio.Core.Review.Coverage.Ladder(comparison, ladderOld?.Structural ?? [], ladderNew?.Structural ?? []));
             return older is not null && comparison.HasChanges;
         }
 
         var text = newText ?? oldText;
-        if (text is null || format.CodeBody(code, text) is not { } body)
+        if (text is null)
         {
             return false;
         }
 
-        var rows = StSourceLayout.Body(text, body.Start, body.End);
-        if (older is not null)
+        IReadOnlyList<SourceRow> rows;
+        var hideRemovalsBefore = 0;
+        if (choice.Code == CodeUnder.Body && format.CodeBody(code, text) is { } body)
         {
+            rows = StSourceLayout.Body(text, body.Start, body.End);
+
             // A body drawn under its table draws no declaration, so a removal from the OLD file's
             // declaration must not surface as a struck line at the top of the code: the table
             // already says what the declaration lost. The desktop's MarkSourceChangesAsync rule,
             // through the same seam; without it a method whose header line went drew
             // "METHOD MoveHome" struck above its body here and not in the app (the owner,
             // comparing the two on a real pull request, 2026-10-23).
-            var hideRemovalsBefore = oldText is null ? 0 : format.CodeBody(code, oldText)?.Start ?? 0;
-            rows = StSourceLayout.Mark(rows, oldText, newText, hideRemovalsBefore);
+            hideRemovalsBefore = oldText is null ? 0 : format.CodeBody(code, oldText)?.Start ?? 0;
+        }
+        else
+        {
+            rows = StSourceLayout.Lay(text, PlcFormats.SectionsFor(code, text));
         }
 
         if (older is not null)
         {
+            rows = StSourceLayout.Mark(rows, oldText, newText, hideRemovalsBefore);
             vouch?.Invoke(code, Versio.Core.Review.Coverage.Source(rows));
         }
 
-        html.Append(SourceHtml.Fragment(rows, LanguageFor(code), sideBySide ? SourceView.SideBySide : SourceView.Unified, code, older is null || fullFile));
+        html.Append(SourceHtml.Fragment(rows, LanguageFor(code), sideBySide ? SourceView.SideBySide : SourceView.Unified, code, older is null || fullFile, links));
         return older is not null && rows.Any(r => r is SourceRemovedLine or SourceCodeLine { Change: SourceChange.Added });
     }
 
@@ -715,6 +967,26 @@ public sealed class ViewService(
     /// commits the reader chose. <c>ViewServiceTests</c> pins the phrase this replaces, so a
     /// rewording in Core fails a test instead of reaching the page unnoticed.
     /// </summary>
+    /// <summary>
+    /// A catalog's marks in this page's words, as <see cref="Reword"/> does for a member table:
+    /// <see cref="CatalogDiff"/> writes "since the last commit" for the desktop, and here the two
+    /// versions are the reader's. <c>ViewServiceTests</c> pins the phrase this replaces.
+    /// </summary>
+    internal static object RewordCatalog(object catalog)
+    {
+        static string Words(string text) => text
+            .Replace("Since the last commit", "Since the older version", StringComparison.Ordinal)
+            .Replace("since the last commit", "since the older version", StringComparison.Ordinal);
+        static RowMark Marked(RowMark mark) => mark.Was.Length == 0 ? mark : mark with { Was = Words(mark.Was) };
+        return catalog switch
+        {
+            LibraryCatalog l => l with { ChangeSummary = Words(l.ChangeSummary), References = l.References.Select(r => r with { Mark = Marked(r.Mark) }).ToList() },
+            TaskCatalog t => t with { ChangeSummary = Words(t.ChangeSummary), Tasks = t.Tasks.Select(r => r with { Mark = Marked(r.Mark) }).ToList() },
+            DeviceCatalog d => d with { ChangeSummary = Words(d.ChangeSummary), Connectors = d.Connectors.Select(r => r with { Mark = Marked(r.Mark) }).ToList() },
+            _ => catalog,
+        };
+    }
+
     internal static MemberTable Reword(MemberTable table) => table with
     {
         ChangeSummary = table.ChangeSummary.Replace("Since the last commit", "Since the older version", StringComparison.Ordinal),
@@ -817,11 +1089,16 @@ public sealed class ViewService(
 
     private static string Name(string path) => path[(path.LastIndexOf('/') + 1)..];
 
-    private static bool IsMarkdown(string path) =>
-        path.EndsWith(".md", StringComparison.OrdinalIgnoreCase) || path.EndsWith(".markdown", StringComparison.OrdinalIgnoreCase);
-
-    /// <summary>A vendor names its own extensions (a .gvl is Structured Text); the catalog the rest, as the desktop does.</summary>
+    /// <summary>A vendor names its own extensions (a variable list's is Structured Text); the catalog the rest, as the desktop does.</summary>
     private static SyntaxLanguage LanguageFor(string path) => PlcFormats.LanguageFor(path);
+
+    /// <summary>
+    /// What an identifier in <paramref name="sourceFile"/> opens (Step 3c): the object of that name
+    /// in the same project, as the file the page shows for it — the same target a member table's
+    /// type link has, through Core's <see cref="ObjectLinks"/>. Null for a file no object owns.
+    /// </summary>
+    private static Func<string, string?>? Links(RepoModel model, string sourceFile) =>
+        ObjectLinks.Resolver(model.Objects, sourceFile, files => files.Paths.Select(p => model.NodeFor(p)?.PrimaryFile).FirstOrDefault(p => p is not null) ?? files.Paths[0]);
 
     /// <summary>The file as itself: every line, numbered as the file numbers it.</summary>
     internal static IReadOnlyList<SourceRow> FileRows(string text)

@@ -108,4 +108,45 @@ public sealed class TreeExpansionPersistenceTests
         // cannot be read must cost the defaults, never the open.
         Assert.True(ProjectRow(shell).IsExpanded);
     }
+
+    /// <summary>
+    /// Well-formed JSON that says nothing is the defaults too. <c>{}</c> deserialised to a
+    /// State whose two lists were null, Restore unioned null and threw ArgumentNullException
+    /// — which the unreadable-file catch does not cover, so the attach ended before the
+    /// orchestrator was built or the watcher started (the 2026-10-24 review's item 12).
+    /// </summary>
+    [Theory]
+    [InlineData("{}")]
+    [InlineData("""{"opened":null}""")]
+    [InlineData("""{"opened":null,"closed":null}""")]
+    [InlineData("null")]
+    public async Task A_state_file_that_says_nothing_means_the_defaults(string json)
+    {
+        using var repo = new TempRepo();
+        GivenATrackedProject(repo);
+
+        var state = Path.Combine(repo.Path, ".versio", "local", "tree.json");
+        Directory.CreateDirectory(Path.GetDirectoryName(state)!);
+        File.WriteAllText(state, json);
+
+        using var shell = Shell();
+        await shell.OpenAsync(repo.Path);
+
+        Assert.True(ProjectRow(shell).IsExpanded);
+    }
+
+    /// <summary>
+    /// The set itself, without the shell: the attach now also catches whatever reading the
+    /// file throws, so the shell-level case above would stay green with this regressed.
+    /// </summary>
+    [Fact]
+    public void Restoring_a_state_with_missing_lists_is_restoring_empty_ones()
+    {
+        var expansion = new TreeExpansion();
+
+        expansion.Restore(new TreeExpansion.State(null!, null!));
+
+        Assert.Empty(expansion.Snapshot().Opened);
+        Assert.Empty(expansion.Snapshot().Closed);
+    }
 }

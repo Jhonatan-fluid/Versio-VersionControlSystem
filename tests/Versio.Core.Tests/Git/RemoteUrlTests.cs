@@ -88,6 +88,18 @@ public sealed class RemoteUrlTests
     }
 
     [Fact]
+    public void The_credential_host_keeps_the_port_git_stores_under()
+    {
+        // git's own credential requests say host=git.acme.internal:8443. Looking up, storing
+        // or erasing under the bare host is a different key, so the status read "none" for a
+        // stored credential and Sign out erased nothing. The 2026-10-24 review's item 38.
+        var url = RemoteUrl.Parse("https://git.acme.internal:8443/t/p.git");
+
+        Assert.Equal("git.acme.internal:8443", url.CredentialHost);
+        Assert.Equal("github.com", RemoteUrl.Parse("https://github.com/x/y.git").CredentialHost);
+    }
+
+    [Fact]
     public void Nested_groups_stay_whole()
     {
         // GitLab allows arbitrarily deep groups, and Azure DevOps puts an organisation and a

@@ -225,4 +225,60 @@ public sealed class HunkPatchTests
         Assert.All(document.Lines.Where(l => l.Kind == DiffLineKind.FileHeader),
                    l => Assert.Equal(-1, l.HunkIndex));
     }
+
+    /// <summary>
+    /// A skipped hunk that removes a line beginning <c>-- </c> does not leak into the header.
+    /// </summary>
+    /// <remarks>
+    /// A removed <c>-- comment</c> arrives in the diff as <c>--- comment</c>, and an added
+    /// <c>++ x</c> as <c>+++ x</c>. The builder took every line of an unselected hunk through
+    /// its file-header check, matched those as <c>---</c>/<c>+++</c>, and copied them into
+    /// the header of the hunk it was building: a second <c>---</c> line, which
+    /// <c>git apply</c> rejects. The 2026-10-24 review's item 19 — the 2026-09-21 fix for the
+    /// same confusion reached only the parser. The counts in the @@ header say how many lines
+    /// the hunk owes, and while it owes any, nothing in it is a header.
+    /// </remarks>
+    [Fact]
+    public void A_skipped_hunk_s_removed_dash_dash_line_is_not_copied_as_a_file_header()
+    {
+        const string diff =
+            "diff --git a/Simulation.st b/Simulation.st\n" +
+            "index 1a2b3c4..5d6e7f8 100644\n" +
+            "--- a/Simulation.st\n" +
+            "+++ b/Simulation.st\n" +
+            "@@ -1,3 +1,2 @@\n" +
+            " PROGRAM Simulation\n" +
+            "--- comment\n" +
+            " VAR\n" +
+            "@@ -10,2 +9,3 @@\n" +
+            " END_VAR\n" +
+            "+++ added\n" +
+            " rTemp := 4.0;\n";
+
+        var patch = HunkPatchBuilder.Build(diff, 1);
+
+        Assert.Equal(
+            "diff --git a/Simulation.st b/Simulation.st\n" +
+            "index 1a2b3c4..5d6e7f8 100644\n" +
+            "--- a/Simulation.st\n" +
+            "+++ b/Simulation.st\n" +
+            "@@ -10,2 +9,3 @@\n" +
+            " END_VAR\n" +
+            "+++ added\n" +
+            " rTemp := 4.0;\n",
+            patch);
+
+        // And the first hunk keeps its own "--- comment" as body, where it belongs: the
+        // budget says the hunk owes three old-side lines, and that is the second of them.
+        Assert.Equal(
+            "diff --git a/Simulation.st b/Simulation.st\n" +
+            "index 1a2b3c4..5d6e7f8 100644\n" +
+            "--- a/Simulation.st\n" +
+            "+++ b/Simulation.st\n" +
+            "@@ -1,3 +1,2 @@\n" +
+            " PROGRAM Simulation\n" +
+            "--- comment\n" +
+            " VAR\n",
+            HunkPatchBuilder.Build(diff, 0));
+    }
 }

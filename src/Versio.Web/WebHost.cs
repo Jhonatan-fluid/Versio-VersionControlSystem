@@ -185,8 +185,12 @@ public static class WebHost
             // group's — which is the right bound there: WriteGate refuses everyone without a session
             // before the limiter runs, so only sessions ever reach it (an earlier comment here claimed
             // both applied; caught on the second pass).
+            // Partitioned on a HASH of the session id: the id is the credential, and the limiter's
+            // partition table is a second place it would otherwise sit in plain text (review, 2026-10-24).
             o.AddPolicy(WritePolicy, http => RateLimitPartition.GetFixedWindowLimiter(
-                "session:" + (http.Request.Cookies[AccessResolver.SessionCookie] ?? http.Connection.RemoteIpAddress?.ToString() ?? "unknown"),
+                "session:" + (http.Request.Cookies[AccessResolver.SessionCookie] is { Length: > 0 } id
+                    ? Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(id)))[..32]
+                    : http.Connection.RemoteIpAddress?.ToString() ?? "unknown"),
                 _ => new FixedWindowRateLimiterOptions
                 {
                     PermitLimit = Math.Max(1, options.Writes.PerSessionPerMinute),
@@ -379,9 +383,13 @@ public static class WebHost
             return null;
         }
 
+        // Host too: the sign-in redirect, the forgery check's origin and the frame policy are built
+        // from Request.Host when PublicBaseUrl is empty, and a proxy that rewrites it sent GitHub a
+        // redirect_uri it had never seen (review, 2026-10-24). Trusted only from the proxies
+        // listed, as the other two are.
         var forwarded = new ForwardedHeadersOptions
         {
-            ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto,
+            ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto | ForwardedHeaders.XForwardedHost,
             ForwardLimit = null,
         };
         forwarded.KnownNetworks.Clear();

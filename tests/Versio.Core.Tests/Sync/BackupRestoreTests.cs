@@ -106,6 +106,35 @@ public sealed class BackupRestoreTests
     }
 
     [Fact]
+    public async Task Restoring_the_oldest_of_a_full_set_does_not_prune_it_first()
+    {
+        // Ten copies are kept. The safety copy a restore takes first made eleven, pruning
+        // ran, and the oldest — the one about to be restored — was deleted before it was
+        // read (the 2026-10-24 review's item 22). On disk the copy then failed; in the fake
+        // it used to write an empty project. The restore source is pinned through the prune.
+        var h = new SyncOrchestratorTests.Harness();
+        h.SetProject("the state before restoring");
+        for (var i = 0; i < 10; i++)
+        {
+            GivenABackup(h, $"20260814-09300{i}", $"version {i}");
+        }
+
+        // The safety copy is stamped with the clock: it has to be the NEWEST entry, or the
+        // prune would take it instead and the oldest would survive by accident.
+        h.Clock.Advance(TimeSpan.FromDays(7));
+
+        var oldest = BackupPath("20260814-093000");
+        var outcome = await h.Orchestrator.RestoreBackupAsync(
+            SyncOrchestratorTests.BindingId, oldest, CancellationToken.None);
+
+        Assert.Equal(SyncVerdict.Completed, outcome.Verdict);
+        Assert.Equal(
+            "version 0",
+            await h.Fs.ReadAllTextAsync(Absolute("plc/A.project"), CancellationToken.None));
+        Assert.True(h.Fs.FileExists(Absolute(oldest)), "the restore source was pruned");
+    }
+
+    [Fact]
     public async Task A_project_open_in_the_IDE_is_not_replaced_underneath_it()
     {
         // The same reasoning as an import: the IDE holds its own copy in memory and the next

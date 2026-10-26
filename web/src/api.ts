@@ -62,14 +62,84 @@ export interface TreeNode {
   primary: string | null;
   files: string[];
   children: TreeNode[];
+  /** The desktop's row (FINISH.md Step 8): the vendor's pill, the object's type, the detail phrase, the change marks. */
+  toolchain?: string;
+  type?: string | null;
+  typeName?: string | null;
+  detail?: string;
+  /** unmodified, added, modified, deleted, renamed, copied, untracked, conflicted. */
+  status?: string;
+  rollUp?: string;
+  changedDescendants?: number;
 }
 
 export interface Tree {
   commit: string;
+  /** The commit the marks are against, when the tree is a comparison. */
+  base?: string | null;
   isVersio: boolean;
   truncated: boolean;
   problems: string[];
   nodes: TreeNode[];
+}
+
+/** One commit as GitHub's /commit/sha shows it (Step 8). */
+export interface CommitDetail {
+  sha: string;
+  headline: string;
+  body: string;
+  author: string;
+  login: string | null;
+  avatar: string | null;
+  when: string;
+  committer: string | null;
+  committed: string | null;
+  parents: string[];
+  additions: number;
+  deletions: number;
+  verified: boolean | null;
+  url: string | null;
+  filesTruncated: boolean;
+  files: { path: string; label: string; status: string; additions: number; deletions: number; previousPath: string | null; previousLabel: string | null }[];
+}
+
+export interface Tag {
+  name: string;
+  label: string;
+  commit: string;
+}
+
+/** "Used by" (Step 3c): the objects of the same project whose source names this one, at this commit. */
+export interface Usages {
+  name: string;
+  usedBy: { path: string; label: string; name: string; type: string }[];
+  /** The search stopped at its bound: the list is what was read, not everything. */
+  truncated: boolean;
+  searched: number;
+}
+
+/** A comment on a commit (Step 3b): on the commit as a whole, or one GitHub placed on a line of a file. */
+export interface CommitComment {
+  id: string;
+  author: string;
+  avatar: string | null;
+  html: string;
+  when: string;
+  path: string | null;
+  pathLabel: string | null;
+  line: number | null;
+  url: string | null;
+}
+
+/** One annotation a check run left on the code (Step 3b): where, how bad, and the CI's words, spelled. */
+export interface CheckAnnotation {
+  path: string;
+  pathLabel: string;
+  startLine: number;
+  endLine: number;
+  level: string;
+  message: string;
+  title: string | null;
 }
 
 export interface View {
@@ -108,12 +178,17 @@ export interface Commit {
   when: string;
 }
 
-/** An open pull request as the list shows it; names spelled by the server (rule 9). */
+/** A pull request as the list shows it (docs/web/FINISH.md, B10); names spelled by the server (rule 9). */
 export interface Pull {
   number: number;
   title: string;
   author: string;
+  authorAvatar?: string | null;
+  /** Last updated. */
   when: string;
+  createdAt?: string;
+  /** OPEN, CLOSED or MERGED; absent from an older server's answer. */
+  state?: string;
   base: string;
   baseLabel: string;
   head: string;
@@ -121,13 +196,27 @@ export interface Pull {
   /** For comparing: the head COMMIT, reachable here even when the branch lives in a fork. */
   headSha: string;
   draft: boolean;
+  labels?: { name: string; value: string; color: string }[];
+  assignees?: { login: string; avatar?: string | null }[];
+  reviewDecision?: string | null;
+  checkRollup?: string | null;
+  comments?: number;
 }
 
 export interface PullList {
   truncated: boolean;
-  /** Whether "New merge request" is offered: writes on here and a signed-in person. */
+  /** Whether "New pull request" is offered: writes on here and a signed-in person. */
   writable?: boolean;
   pulls: Pull[];
+  /** The query as the server read it, GitHub's grammar normalised. */
+  query?: string;
+  /** Whether GitHub's search answered (a signed-in person), or REST's list by state (anonymous). */
+  searched?: boolean;
+  total?: number | null;
+  open?: number | null;
+  closed?: number | null;
+  /** The next page's cursor (a search) or number (a list), or null at the end. */
+  next?: string | null;
 }
 
 /** A repository label: value is GitHub's own name, sent back to add or remove; label is shown. */
@@ -225,6 +314,9 @@ export interface ReviewFile {
   object: string | null;
   inline: boolean;
   inlineUnavailable: InlineUnavailable | null;
+  /** GitHub's "+12 −3" for the file, from its patch; absent or null without one. */
+  additions?: number | null;
+  deletions?: number | null;
 }
 
 export interface ReviewFiles {
@@ -289,6 +381,15 @@ export interface MergeStateView {
   autoMerge: { method: string; by: string } | null;
   canDisableAutoMerge: boolean;
   mergeCommit: string | null;
+  /** The rest of GitHub's box (FINISH.md Step 6); absent from an older server's answer. */
+  headRef?: string;
+  headRefLabel?: string;
+  headRefExists?: boolean;
+  isCrossRepository?: boolean;
+  deleteBranchOnMerge?: boolean;
+  hasMergeQueue?: boolean;
+  inMergeQueue?: boolean;
+  queuePosition?: number | null;
 }
 
 /** The viewer's pending review: one per person per pull request, created on the commit it will approve. */
@@ -299,7 +400,8 @@ export interface PendingReviewView {
     onSnapshotHead: boolean;
     /** More comments than were read: said, never shown as all of them. */
     truncated?: boolean;
-    comments: { id: string; path: string; pathLabel: string; html: string }[];
+    /** Each draft's words and place too (Step 5), so the review panel can edit it there; absent from an older server. */
+    comments: { id: string; path: string; pathLabel: string; html: string; markdown?: string; line?: number | null; startLine?: number | null }[];
   } | null;
 }
 
@@ -323,9 +425,39 @@ export interface ReviewStatus {
     /** name is shown; value is the name as GitHub has it, sent back to remove it. */
     labels: { name: string; value: string; color: string }[];
     assignees: string[];
-    reviewers: { login: string; state: string }[];
+    /** A team carries the slug REST asks and withdraws it by. */
+    reviewers: { login: string; state: string; isTeam?: boolean; avatar?: string | null; slug?: string | null }[];
+    /** The pull request's node, what a reaction on its description names (Step 5). */
+    nodeId?: string;
+    milestoneNumber?: number | null;
+    /** The viewer's notifications: SUBSCRIBED, UNSUBSCRIBED, IGNORED; null when GitHub did not say. */
+    viewerSubscription?: string | null;
+    canReact?: boolean;
     /** GitHub refuses an author's approval: the page does not offer it. */
     viewerIsAuthor: boolean;
+    /** What GitHub's header and sidebar show (docs/web/FINISH.md, B1): absent from an older server's answer. */
+    additions?: number;
+    deletions?: number;
+    changedFiles?: number;
+    commits?: number;
+    comments?: number;
+    createdAt?: string | null;
+    closedAt?: string | null;
+    mergedAt?: string | null;
+    mergedBy?: string | null;
+    author?: string;
+    authorAvatar?: string | null;
+    authorAssociation?: string;
+    locked?: boolean;
+    lockReason?: string | null;
+    milestone?: string | null;
+    /** The head's repository as owner/name when it is a fork. */
+    headRepository?: string | null;
+    reactions?: Reaction[];
+    /** The live head's combined check state: SUCCESS, FAILURE, PENDING, ERROR, EXPECTED; null when none. */
+    checkRollup?: string | null;
+    /** The checks branch protection requires on this pull request. */
+    requiredChecks?: string[];
     /** The commit the viewer last reviewed, for "changes since your last review". */
     viewerLastReviewCommit: string | null;
     /** The title and description as they are now: shown, and what an edit starts from and names as replaced. */
@@ -339,13 +471,61 @@ export interface ReviewStatus {
   checksError: string | null;
   /** More checks than were read: shown as cut, so a failure past the bound is never hidden behind passes. */
   checksTruncated?: boolean;
-  checks: { name: string; status: string; conclusion: string | null; url: string | null; source: string }[] | null;
+  /** The LIVE head's checks in counts, once the branch moved (Step 10); null until then, or when they could not be read. */
+  liveChecks?: { head: string; total: number; failed: number; running: number; truncated: boolean } | null;
+  liveChecksError?: string | null;
+  checks: ReviewCheck[] | null;
+}
+
+/** One kind of reaction and how many gave it; whether the viewer is among them. */
+export interface Reaction {
+  content: string;
+  count: number;
+  viewerHasReacted: boolean;
+}
+
+/** One check on the reviewed commit: a check run or a commit status, with what GitHub's checks tab shows of it. */
+export interface ReviewCheck {
+  name: string;
+  status: string;
+  conclusion: string | null;
+  url: string | null;
+  source: string;
+  id?: number | null;
+  startedAt?: string | null;
+  completedAt?: string | null;
+  /** The GitHub App that ran it, or the status's creator. */
+  app?: string | null;
+  suite?: number | null;
+  title?: string | null;
+  /** The run's summary, Markdown by the CI, rendered by Core; the page sanitises it like any body. */
+  summary?: string | null;
+  annotations?: number;
+  description?: string | null;
+  /** Branch protection requires it, as GitHub marks the live head's checks. */
+  required?: boolean;
 }
 
 export interface ReviewComment {
   id: string;
   author: string;
   when: string;
+  /** The review this comment was written in, so the conversation lists its thread under that review. */
+  reviewId?: string | null;
+  /** GitHub's excerpt of the diff the comment sits on: text, drawn as a code block. */
+  diffHunk?: string | null;
+  association?: string;
+  avatar?: string | null;
+  editedAt?: string | null;
+  url?: string | null;
+  reactions?: Reaction[];
+  /** A draft of the viewer's pending review: nobody else sees it yet. */
+  pending?: boolean;
+  /** Hidden on GitHub, and why (SPAM, ABUSE, OFF_TOPIC, OUTDATED, DUPLICATE, RESOLVED): drawn folded. */
+  minimized?: boolean;
+  minimizedReason?: string | null;
+  /** The suggested change the comment carries (its ```suggestion block), as text; null without one. */
+  suggestion?: string | null;
   /** The text to edit, Versio's tags removed; only when the viewer may edit. */
   markdown: string | null;
   canEdit: boolean;
@@ -380,18 +560,78 @@ export interface ReviewThreads {
   threads: ReviewThread[];
 }
 
+/** An issue or pull request a timeline event points at. */
+export interface TimelineReference {
+  number: number;
+  title: string;
+  repository: string;
+  url: string | null;
+  isPull: boolean;
+  state: string;
+}
+
+/**
+ * One entry of the conversation. `kind` is one of comment, review, commit, force-push, merged,
+ * closed, reopened, ready, draft, labeled, unlabeled, assigned, unassigned, review-requested,
+ * review-request-removed, review-dismissed, renamed, base-changed, base-force-push, head-deleted,
+ * head-restored, cross-referenced, referenced, milestoned, demilestoned, locked, unlocked,
+ * auto-merge-on, auto-merge-off, queued, dequeued, deployed.
+ */
+export interface TimelineItem {
+  kind: string;
+  actor: string;
+  when: string;
+  html: string | null;
+  text: string | null;
+  state: string | null;
+  sha: string | null;
+  /** A comment's or a review's node id. */
+  id: string | null;
+  markdown: string | null;
+  canEdit: boolean;
+  canDelete: boolean;
+  /** What the event named: a label, a person, a title, a branch, a milestone, an environment. */
+  target?: string | null;
+  targetColor?: string | null;
+  /** What was there before: the old title, the old base, the commit before a force-push. */
+  previous?: string | null;
+  reference?: TimelineReference | null;
+  /** A dismissal's words, a lock's reason, "closes" on a cross-reference that will close this. */
+  message?: string | null;
+  association?: string;
+  avatar?: string | null;
+  editedAt?: string | null;
+  url?: string | null;
+  reactions?: Reaction[];
+  verified?: boolean | null;
+  minimized?: boolean;
+  minimizedReason?: string | null;
+}
+
 export interface ReviewTimeline {
   truncated: boolean;
-  items: {
-    kind: string; actor: string; when: string; html: string | null; text: string | null; state: string | null; sha: string | null;
-    id: string | null; markdown: string | null; canEdit: boolean; canDelete: boolean;
-  }[];
+  items: TimelineItem[];
+}
+
+export interface ReviewCommit {
+  sha: string;
+  headline: string;
+  author: string;
+  when: string;
+  inSnapshot: boolean;
+  login?: string | null;
+  avatar?: string | null;
+  committer?: string | null;
+  body?: string;
+  verified?: boolean | null;
+  parents?: number;
+  url?: string | null;
 }
 
 export interface ReviewCommits {
   truncated: boolean;
   headFound: boolean;
-  commits: { sha: string; headline: string; author: string; when: string; inSnapshot: boolean }[];
+  commits: ReviewCommit[];
 }
 
 export type PaneView = 'rendered' | 'raw';
@@ -500,18 +740,34 @@ export const api = {
   repos: (signal?: AbortSignal) => get<RepoList>('/api/repos', signal),
   repo: (owner: string, repo: string, signal?: AbortSignal) => get<RepoInfo>(repoBase(owner, repo), signal),
   branches: (owner: string, repo: string, signal?: AbortSignal) => get<BranchList>(`${repoBase(owner, repo)}/branches`, signal),
-  tree: (owner: string, repo: string, ref: string, signal?: AbortSignal) =>
-    get<Tree>(`${repoBase(owner, repo)}/tree${query({ ref })}`, signal),
+  /** The tree at `ref`; with `base`, marked with what changed since it, and with `changed` only what changed. */
+  tree: (owner: string, repo: string, ref: string, signal?: AbortSignal, base?: string, changed?: boolean) =>
+    get<Tree>(`${repoBase(owner, repo)}/tree${query({ ref, base, changed: changed ? '1' : undefined })}`, signal),
+  commit: (owner: string, repo: string, sha: string, signal?: AbortSignal) => get<CommitDetail>(`${repoBase(owner, repo)}/commit${query({ sha })}`, signal),
+  tags: (owner: string, repo: string, signal?: AbortSignal) => get<{ tags: Tag[]; truncated: boolean }>(`${repoBase(owner, repo)}/tags`, signal),
   view: (owner: string, repo: string, ref: string, path: string, view: PaneView, layout: Layout, signal?: AbortSignal) =>
     get<View>(`${repoBase(owner, repo)}/view${query({ ref, path, view, layout })}`, signal),
+  usages: (owner: string, repo: string, ref: string, path: string, signal?: AbortSignal) =>
+    get<Usages>(`${repoBase(owner, repo)}/usages${query({ ref, path })}`, signal),
   compare: (owner: string, repo: string, base: string, head: string, signal?: AbortSignal) =>
     get<Comparison>(`${repoBase(owner, repo)}/compare${query({ base, head })}`, signal),
-  /** `full`: the desktop pane's Show full file; without it a comparison is folded to its changes, as the desktop opens. */
-  compareView: (owner: string, repo: string, base: string, head: string, path: string, view: PaneView, layout: Layout, signal?: AbortSignal, full?: boolean) =>
-    get<View>(`${repoBase(owner, repo)}/compare/view${query({ base, head, path, view, layout, full: full ? '1' : undefined })}`, signal),
+  /**
+   * `from`: a renamed file's old path, when the caller was told one (a commit's files carry GitHub's
+   * previous_filename), so the server compares the object with itself across the rename instead of
+   * drawing it wholly added — the same `from` the review's fileView sends.
+   * `full`: the desktop pane's Show full file; without it a comparison is folded to its changes, as the desktop opens.
+   */
+  compareView: (owner: string, repo: string, base: string, head: string, path: string, view: PaneView, layout: Layout, from?: string, signal?: AbortSignal, full?: boolean) =>
+    get<View>(`${repoBase(owner, repo)}/compare/view${query({ base, head, path, from, view, layout, full: full ? '1' : undefined })}`, signal),
   history: (owner: string, repo: string, ref: string, path?: string, signal?: AbortSignal) =>
     get<Commit[]>(`${repoBase(owner, repo)}/history${query({ ref, path })}`, signal),
-  pulls: (owner: string, repo: string, signal?: AbortSignal) => get<PullList>(`${repoBase(owner, repo)}/pulls`, signal),
+  pulls: (owner: string, repo: string, signal?: AbortSignal, q?: string, after?: string) =>
+    get<PullList>(`${repoBase(owner, repo)}/pulls${query({ q, after: after && !/^\d+$/.test(after) ? after : undefined, page: after && /^\d+$/.test(after) ? after : undefined })}`, signal),
+  /** The new pull request's description previewed through the server's Markdown (a write-shaped call, as the review page's preview is). */
+  previewMarkdown: async (owner: string, repo: string, body: string): Promise<string> => {
+    const answer = await send(`${repoBase(owner, repo)}/markdown`, 'POST', {}, { body });
+    return (answer as unknown as { html?: string }).html ?? '';
+  },
   pullView: (owner: string, repo: string, number: number, signal?: AbortSignal) =>
     get<PullView>(`${repoBase(owner, repo)}/pulls/view${query({ number: String(number) })}`, signal),
   review: {
@@ -537,6 +793,9 @@ export const api = {
       get<{ paths: string[] }>(`${reviewBase(owner, repo, s.number)}/viewed`, signal, sealed(s)),
     coverage: (owner: string, repo: string, s: ReviewSnapshot, signal?: AbortSignal) =>
       get<CoverageSummary>(`${reviewBase(owner, repo, s.number)}/coverage`, signal, sealed(s)),
+    /** The annotations one check run left: listed on the Checks tab, drawn on the file's lines. */
+    annotations: (owner: string, repo: string, s: ReviewSnapshot, runId: number, signal?: AbortSignal) =>
+      get<{ annotations: CheckAnnotation[] }>(`${reviewBase(owner, repo, s.number)}/checks/${runId}/annotations`, signal, sealed(s)),
 
     /**
      * A write. Never throws on a refusal: every answer — done, pending, unknown, refused — is the
@@ -551,12 +810,20 @@ export const api = {
       return (answer as unknown as { html?: string }).html ?? '';
     },
   },
+  /** A commit's comments, and whether the viewer may add one. */
+  commitComments: (owner: string, repo: string, sha: string, signal?: AbortSignal) =>
+    get<{ writable: boolean; comments: CommitComment[]; truncated: boolean }>(`${repoBase(owner, repo)}/commit/comments${query({ sha })}`, signal),
+  /** A comment on a commit as a whole: a write like any other, with no snapshot because a commit is its own revision. */
+  addCommitComment: (owner: string, repo: string, sha: string, body: { opKey: string; body: string }) =>
+    send(`${repoBase(owner, repo)}/commits/${e(sha)}/comments`, 'POST', {}, body),
   /** Opens a pull request: a write like any other (an operation key, never thrown), with no snapshot because there is no pull request yet. */
   createPull: (owner: string, repo: string, body: { opKey: string; base: string; head: string; title: string; body: string; draft: boolean }) =>
     send(`${repoBase(owner, repo)}/pulls`, 'POST', {}, body),
   pullTemplate: (owner: string, repo: string, base: string, signal?: AbortSignal) =>
     get<{ markdown: string | null; path: string | null }>(`${repoBase(owner, repo)}/pulls/template${query({ base })}`, signal),
-  labels: (owner: string, repo: string, signal?: AbortSignal) => get<{ labels: RepoLabel[] }>(`${repoBase(owner, repo)}/labels`, signal),
+  labels: (owner: string, repo: string, signal?: AbortSignal) => get<{ labels: RepoLabel[]; truncated: boolean }>(`${repoBase(owner, repo)}/labels`, signal),
+  /** The open milestones: the number is what a write names, the title is shown. */
+  milestones: (owner: string, repo: string, signal?: AbortSignal) => get<{ milestones: { number: number; title: string }[]; truncated: boolean }>(`${repoBase(owner, repo)}/milestones`, signal),
   releases: (owner: string, repo: string, signal?: AbortSignal) => get<ReleaseList>(`${repoBase(owner, repo)}/releases`, signal),
   releaseView: (owner: string, repo: string, tag: string, signal?: AbortSignal) =>
     get<ReleaseView>(`${repoBase(owner, repo)}/releases/view${query({ tag })}`, signal),

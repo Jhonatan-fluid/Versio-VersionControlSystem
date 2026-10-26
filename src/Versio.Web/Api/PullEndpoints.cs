@@ -144,6 +144,10 @@ public static class PullEndpoints
                     @object = (head.NodeFor(f.Path) ?? mergeBase.NodeFor(f.Path)) is { Kind: ProjectNodeKind.Object } n ? CodeHtml.Spelled(n.Name) : null,
                     inline = f.InlineUnavailable is null,
                     inlineUnavailable = f.InlineUnavailable,
+                    // GitHub's "+12 −3" per file, counted from the patch it gave; null without one
+                    // (binary, too large, past its list), which the page draws as no count rather than 0.
+                    additions = f.Patch is { } p1 ? PatchStats(p1).Added : (int?)null,
+                    deletions = f.Patch is { } p2 ? PatchStats(p2).Removed : (int?)null,
                 }),
             });
         });
@@ -294,6 +298,15 @@ public static class PullEndpoints
                 autoMerge = m.AutoMergeMethod is null ? null : new { method = m.AutoMergeMethod, by = CodeHtml.Spelled(m.AutoMergeBy ?? "") },
                 canDisableAutoMerge = m.ViewerCanDisableAutoMerge,
                 mergeCommit = m.MergeCommit,
+                // The rest of GitHub's box (FINISH.md Step 6): the branch to delete or restore, and the queue.
+                headRef = m.HeadRef,
+                headRefLabel = CodeHtml.Spelled(m.HeadRef),
+                headRefExists = m.HeadRefExists,
+                isCrossRepository = m.IsCrossRepository,
+                deleteBranchOnMerge = m.DeleteBranchOnMerge,
+                hasMergeQueue = m.HasMergeQueue,
+                inMergeQueue = m.InMergeQueue,
+                queuePosition = m.QueuePosition,
             });
         });
     }
@@ -355,8 +368,28 @@ public static class PullEndpoints
             var labels = await source.GetLabelsAsync(who.Value!, owner, repo, ct).ConfigureAwait(false);
             return labels.Ok
                 // value is the name as GitHub has it, sent back to add or remove; label is what is shown.
-                ? Results.Ok(new { labels = labels.Value!.Select(l => new { value = l.Name, label = CodeHtml.Spelled(l.Name), color = l.Color }) })
+                ? Results.Ok(new { labels = labels.Value!.Labels.Select(l => new { value = l.Name, label = CodeHtml.Spelled(l.Name), color = l.Color }), truncated = labels.Value.Truncated })
                 : ApiEndpoints.Refused(labels.Failure, http);
+        });
+
+        // The open milestones, for the sidebar's picker (Step 5): the number is what a write names.
+        repos.MapGet("/milestones", async (string owner, string repo, HttpContext http, AccessResolver access, IRepoSource source, CancellationToken ct) =>
+        {
+            if (!ApiEndpoints.Valid(owner, repo))
+            {
+                return Results.NotFound();
+            }
+
+            var who = await access.ResolveAsync(http, owner, repo, ct).ConfigureAwait(false);
+            if (!who.Ok)
+            {
+                return ApiEndpoints.Refused(who.Failure, http);
+            }
+
+            var milestones = await source.GetMilestonesAsync(who.Value!, owner, repo, ct).ConfigureAwait(false);
+            return milestones.Ok
+                ? Results.Ok(new { milestones = milestones.Value!.Milestones.Select(m => new { number = m.Number, title = CodeHtml.Spelled(m.Title) }), truncated = milestones.Value.Truncated })
+                : ApiEndpoints.Refused(milestones.Failure, http);
         });
     }
 
@@ -379,6 +412,13 @@ public static class PullEndpoints
             var summary = await source.GetPullSummaryAsync(opened.Access!, owner, repo, number, ct).ConfigureAwait(false);
             var checks = await source.GetChecksAsync(opened.Access!, owner, repo, s.HeadSha, ct).ConfigureAwait(false);
             var live = summary.Ok ? summary.Value! : null;
+            // The LIVE head's checks too, once the branch has moved (Step 10): the list below is the
+            // reviewed commit's, which is right for the review, but GitHub's page shows the latest
+            // commit's, and a reviewer told "stale" should also know whether the new commit is red.
+            // Counts only: the rows stay the reviewed commit's.
+            var liveChecks = live is not null && live.HeadSha != s.HeadSha
+                ? await source.GetChecksAsync(opened.Access!, owner, repo, live.HeadSha, ct).ConfigureAwait(false)
+                : null;
             return Results.Ok(new
             {
                 // Unknown is not "unchanged": without the live state, the page cannot vouch for the
@@ -396,7 +436,12 @@ public static class PullEndpoints
                     reviewDecision = live.ReviewDecision,
                     labels = live.Labels.Select(l => new { name = CodeHtml.Spelled(l.Name), value = l.Name, color = l.Color }),
                     assignees = live.Assignees.Select(CodeHtml.Spelled),
-                    reviewers = live.Reviewers.Select(r => new { login = CodeHtml.Spelled(r.Login), state = r.State }),
+                    reviewers = live.Reviewers.Select(r => new { login = CodeHtml.Spelled(r.Login), state = r.State, isTeam = r.IsTeam, avatar = r.AvatarUrl, slug = r.Slug }),
+                    // The pull request's own node: what a reaction on its description names (Step 5).
+                    nodeId = live.NodeId,
+                    milestoneNumber = live.MilestoneNumber,
+                    viewerSubscription = live.ViewerSubscription,
+                    canReact = live.ViewerCanReact,
                     // GitHub refuses an author's approval: the page offers it to nobody else.
                     viewerIsAuthor = live.ViewerIsAuthor,
                     viewerLastReviewCommit = live.ViewerLastReviewCommit,
@@ -407,14 +452,69 @@ public static class PullEndpoints
                     markdown = ReviewTags.Strip(live.Body),
                     html = ApiEndpoints.MarkdownFragment(ReviewTags.Strip(live.Body)),
                     viewerCanUpdate = live.ViewerCanUpdate,
+                    // What GitHub's header and sidebar say (docs/web/FINISH.md, B1): the counts, the
+                    // author, the dates, the lock, the milestone, a fork's repository, the reactions.
+                    additions = live.Additions,
+                    deletions = live.Deletions,
+                    changedFiles = live.ChangedFiles,
+                    commits = live.CommitCount,
+                    comments = live.CommentCount,
+                    createdAt = live.CreatedAt,
+                    closedAt = live.ClosedAt,
+                    mergedAt = live.MergedAt,
+                    mergedBy = live.MergedBy is { } by ? CodeHtml.Spelled(by) : null,
+                    author = CodeHtml.Spelled(live.Author),
+                    authorAvatar = live.AuthorAvatar,
+                    authorAssociation = live.AuthorAssociation,
+                    locked = live.Locked,
+                    lockReason = live.LockReason,
+                    milestone = live.Milestone is { } m ? CodeHtml.Spelled(m) : null,
+                    headRepository = live.HeadRepository is { } hr ? CodeHtml.Spelled(hr) : null,
+                    reactions = live.Reactions.Select(Reaction),
+                    checkRollup = live.CheckRollup,
+                    requiredChecks = live.RequiredChecks.Select(CodeHtml.Spelled),
                 },
                 checksError = checks.Ok ? null : Problem(checks.Failure),
                 checks = checks.Ok
-                    ? checks.Value!.Checks.Select(c => new { name = CodeHtml.Spelled(c.Name), status = c.Status, conclusion = c.Conclusion, url = c.Url, source = c.Source })
+                    ? checks.Value!.Checks.Select(c => new
+                    {
+                        name = CodeHtml.Spelled(c.Name),
+                        status = c.Status,
+                        conclusion = c.Conclusion,
+                        url = c.Url,
+                        source = c.Source,
+                        id = c.Id,
+                        startedAt = c.StartedAt,
+                        completedAt = c.CompletedAt,
+                        app = c.App is { } app ? CodeHtml.Spelled(app) : null,
+                        suite = c.Suite,
+                        title = c.Title is { } t ? CodeHtml.Spelled(t) : null,
+                        // A run's summary is Markdown written by the CI (S6: untrusted): rendered by
+                        // Core and sanitised by the page, as every body is.
+                        summary = c.Summary is { } sm ? ApiEndpoints.MarkdownFragment(sm) : null,
+                        annotations = c.AnnotationCount,
+                        description = c.Description is { } d ? CodeHtml.Spelled(d) : null,
+                        // Required by branch protection, as GitHub marks the LIVE head's checks; the
+                        // list here is the snapshot head's, so a renamed check reads as not required.
+                        required = live is not null && live.RequiredChecks.Contains(c.Name, StringComparer.Ordinal),
+                    })
                     : null,
                 // More checks than were read: the page says the list is cut, so a failure past the
                 // bound is never hidden behind a list of passes.
                 checksTruncated = checks.Ok && checks.Value!.Truncated,
+                // The live head's, in counts, only once the head moved; null otherwise, and null
+                // when they could not be read, which the page says rather than reading as green.
+                liveChecks = liveChecks is { Ok: true } lc
+                    ? new
+                    {
+                        head = live!.HeadSha,
+                        total = lc.Value!.Checks.Count,
+                        failed = lc.Value.Checks.Count(c => c.Conclusion is { } conclusion && conclusion is not ("success" or "neutral" or "skipped")),
+                        running = lc.Value.Checks.Count(c => c.Status != "completed"),
+                        truncated = lc.Value.Truncated,
+                    }
+                    : null,
+                liveChecksError = liveChecks is { Ok: false } failed ? Problem(failed.Failure) : null,
             });
         });
 
@@ -452,9 +552,47 @@ public static class PullEndpoints
                         path = c.Path,
                         pathLabel = CodeHtml.Spelled(c.Path),
                         html = ApiEndpoints.MarkdownFragment(ReviewTags.Strip(c.Body)),
+                        // The draft's own words and place, so the review panel can show and edit each
+                        // one (Step 5), not only name its file.
+                        markdown = ReviewTags.Strip(c.Body),
+                        line = c.Line,
+                        startLine = c.StartLine,
                     }),
                 },
             });
+        });
+
+        // The annotations one check run left (Step 3b): a path, lines, a level and the CI's words.
+        // Listed on the Checks tab and drawn inline on the file's lines, as GitHub does. The run is
+        // named by its id from the /status list, so a stale id is simply an empty list from GitHub.
+        pulls.MapGet("/checks/{runId:long}/annotations", async (string owner, string repo, int number, long runId, HttpContext http, AccessResolver access,
+            ReviewSnapshots snapshots, IRepoSource source, CancellationToken ct) =>
+        {
+            var opened = await OpenAsync(owner, repo, number, http, access, snapshots, ct).ConfigureAwait(false);
+            if (opened.Refusal is { } refusal)
+            {
+                return refusal;
+            }
+
+            var read = await source.GetCheckAnnotationsAsync(opened.Access!, owner, repo, runId, ct).ConfigureAwait(false);
+            return read.Ok
+                ? Results.Ok(new
+                {
+                    annotations = read.Value!.Select(a => new
+                    {
+                        path = a.Path,
+                        pathLabel = CodeHtml.Spelled(a.Path),
+                        startLine = a.StartLine,
+                        endLine = a.EndLine,
+                        // notice | warning | failure, GitHub's words; anything else the page draws as a notice.
+                        level = a.Level,
+                        // The CI's own text (S6: untrusted): hidden characters spelled out, and the
+                        // page draws it as text, so a tag in it is letters, never markup.
+                        message = CodeHtml.Spelled(a.Message),
+                        title = a.Title is { } t ? CodeHtml.Spelled(t) : null,
+                    }),
+                })
+                : ApiEndpoints.Refused(read.Failure, http);
         });
 
         pulls.MapGet("/viewed", async (string owner, string repo, int number, HttpContext http, AccessResolver access,
@@ -509,13 +647,30 @@ public static class PullEndpoints
                         id = c.Id,
                         author = CodeHtml.Spelled(c.Author),
                         when = c.When,
-                        html = ApiEndpoints.MarkdownFragment(ReviewTags.Strip(c.Body)),
+                        // The suggestion fence is drawn by the page as the widget (below), so the
+                        // prose is rendered without it: once, as github.com shows it.
+                        html = ApiEndpoints.MarkdownFragment(Suggestions.Without(ReviewTags.Strip(c.Body))),
                         // The text to edit, tags removed: only ever a textarea's value on the page, never markup.
                         markdown = c.CanEdit ? ReviewTags.Strip(c.Body) : null,
                         commit = c.Commit,
                         originalCommit = c.OriginalCommit,
                         canEdit = c.CanEdit,
                         canDelete = c.CanDelete,
+                        reviewId = c.ReviewId,
+                        // The hunk is text the page draws in a code block: spelled line by line, so a
+                        // hidden character shows while the newlines that make it a hunk stay.
+                        diffHunk = c.DiffHunk is { } hunk ? SpelledLines(hunk) : null,
+                        association = c.AuthorAssociation,
+                        avatar = c.AvatarUrl,
+                        editedAt = c.EditedAt,
+                        url = c.Url,
+                        reactions = c.Reactions.Select(Reaction),
+                        pending = c.Pending,
+                        minimized = c.Minimized,
+                        minimizedReason = c.MinimizedReason,
+                        // The suggested change the comment carries, as text the page draws as a
+                        // diff and offers to apply (Step 5); spelled line by line like a hunk.
+                        suggestion = Suggestions.Read(c.Body) is { } suggestion ? SpelledLines(suggestion) : null,
                     }),
                 }),
             });
@@ -551,6 +706,22 @@ public static class PullEndpoints
                         markdown = i.CanEdit ? ReviewTags.Strip(i.Body ?? "") : null,
                         canEdit = i.CanEdit,
                         canDelete = i.CanDelete,
+                        // The event's own words (FINISH.md, B3): what it named, what was there before,
+                        // what it pointed at, who the author is to the repository, the picture, the
+                        // edit mark, the permalink, the reactions. Everything a person typed is spelled.
+                        target = i.Target is { } target ? CodeHtml.Spelled(target) : null,
+                        targetColor = i.TargetColor,
+                        previous = i.Previous is { } previous ? CodeHtml.Spelled(previous) : null,
+                        reference = i.Reference is { } r ? new { number = r.Number, title = CodeHtml.Spelled(r.Title), repository = CodeHtml.Spelled(r.Repository), url = r.Url, isPull = r.IsPull, state = r.State } : null,
+                        message = i.Message is { } message ? CodeHtml.Spelled(message) : null,
+                        association = i.AuthorAssociation,
+                        avatar = i.AvatarUrl,
+                        editedAt = i.EditedAt,
+                        url = i.Url,
+                        reactions = i.Reactions.Select(Reaction),
+                        verified = i.Verified,
+                        minimized = i.Minimized,
+                        minimizedReason = i.MinimizedReason,
                     }),
                 })
                 : ApiEndpoints.Refused(timeline.Failure, http);
@@ -588,10 +759,49 @@ public static class PullEndpoints
                     author = CodeHtml.Spelled(c.Author),
                     when = c.When,
                     inSnapshot = head >= 0 && i <= head,
+                    login = c.AuthorLogin is { } login ? CodeHtml.Spelled(login) : null,
+                    avatar = c.AuthorAvatar,
+                    committer = c.Committer is { } committer ? CodeHtml.Spelled(committer) : null,
+                    body = SpelledLines(c.Body),
+                    verified = c.Verified,
+                    parents = c.ParentCount,
+                    url = c.Url,
                 }),
             });
         });
     }
+
+    /// <summary>
+    /// Lines added and removed in a unified patch as GitHub writes one: hunks only, no file header,
+    /// so every '+' and '-' line counts except the "\ No newline at end of file" marker.
+    /// </summary>
+    internal static (int Added, int Removed) PatchStats(string patch)
+    {
+        int added = 0, removed = 0;
+        foreach (var raw in patch.Split('\n'))
+        {
+            if (raw.StartsWith("+", StringComparison.Ordinal) && !raw.StartsWith("+++", StringComparison.Ordinal))
+            {
+                added++;
+            }
+            else if (raw.StartsWith("-", StringComparison.Ordinal) && !raw.StartsWith("---", StringComparison.Ordinal))
+            {
+                removed++;
+            }
+        }
+
+        return (added, removed);
+    }
+
+    /// <summary>
+    /// Text of several lines, each spelled (security rule 9) with the newlines between them kept:
+    /// a commit body or a diff hunk spelled whole read as one line of <c>U+000A</c> markers (seen
+    /// in the preview, 2026-10-23).
+    /// </summary>
+    internal static string SpelledLines(string text) => string.Join("\n", text.Split('\n').Select(CodeHtml.Spelled));
+
+    /// <summary>A reaction group as the page draws it: GitHub's content word, the count, whether the viewer is in it.</summary>
+    private static object Reaction(ReactionGroup g) => new { content = g.Content, count = g.Count, viewerHasReacted = g.ViewerHasReacted };
 
     /// <summary>A failure the page words in place, without failing the whole answer.</summary>
     private static string Problem(RepoFailure failure) => failure switch

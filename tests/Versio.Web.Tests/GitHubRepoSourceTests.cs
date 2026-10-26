@@ -61,6 +61,8 @@ public sealed class GitHubRepoSourceTests : IAsyncLifetime
             http.Request.Headers.Accept.ToString() == "application/vnd.github.sha"
                 ? Results.Text(new string('c', 40), "application/vnd.github.sha")
                 : Results.StatusCode(415));
+        // The commit list, empty: the test that calls it reads the wire, not the answer.
+        app.MapGet("/repos/acme/plant/commits", () => Results.Json(Array.Empty<object>()));
         app.MapGet("/repos/acme/plant/branches", (int per_page, int page) =>
             // 250 branches, in GitHub's pages.
             Results.Json(Enumerable.Range(0, 250).Skip((page - 1) * per_page).Take(per_page)
@@ -146,6 +148,34 @@ public sealed class GitHubRepoSourceTests : IAsyncLifetime
                 return Results.Json(new { data = new { node = new { comments = new { pageInfo = new { hasNextPage = false, endCursor = (string?)null }, nodes = new[] { Comment("C3") } } } } });
             }
 
+            if (query.Contains("timelineItems", StringComparison.Ordinal))
+            {
+                var avatar = "https://avatars.githubusercontent.com/u/7";
+                return Results.Json(new { data = new { repository = new { pullRequest = new { timelineItems = new
+                {
+                    pageInfo = new { hasNextPage = false, endCursor = (string?)null },
+                    nodes = new object[]
+                    {
+                        new { __typename = "IssueComment", id = "IC_1", author = new { login = "jo", avatarUrl = avatar }, body = "fine", createdAt = "2026-10-17T09:00:00Z", lastEditedAt = "2026-10-17T09:30:00Z",
+                            url = "https://github.com/acme/plant/pull/7#issuecomment-1", authorAssociation = "MEMBER", viewerCanUpdate = true, viewerCanDelete = false,
+                            reactionGroups = new object[] { new { content = "THUMBS_UP", viewerHasReacted = true, reactors = new { totalCount = 2 } }, new { content = "EYES", viewerHasReacted = false, reactors = new { totalCount = 0 } } } },
+                        new { __typename = "PullRequestReview", id = "PRR_1", author = new { login = "sam", avatarUrl = "http://evil.example/a.png" }, body = "", state = "APPROVED", submittedAt = "2026-10-17T10:00:00Z", createdAt = "2026-10-17T09:59:00Z",
+                            url = "https://github.com/acme/plant/pull/7#pullrequestreview-1", authorAssociation = "OWNER", commit = new { oid = new string('d', 40) } },
+                        new { __typename = "PullRequestCommit", url = "https://github.com/acme/plant/pull/7/commits/" + new string('d', 40),
+                            commit = new { oid = new string('d', 40), messageHeadline = "Fix", committedDate = "2026-10-17T08:00:00Z", author = new { name = "Jo Git", avatarUrl = avatar, user = new { login = "jo" } }, signature = new { isValid = true } } },
+                        new { __typename = "LabeledEvent", actor = new { login = "sam" }, createdAt = "2026-10-17T08:10:00Z", label = new { name = "plc", color = "1A7F37" } },
+                        new { __typename = "ReviewRequestedEvent", actor = new { login = "sam" }, createdAt = "2026-10-17T08:11:00Z", requestedReviewer = new { __typename = "Team", name = "controls" } },
+                        new { __typename = "RenamedTitleEvent", actor = new { login = "sam" }, createdAt = "2026-10-17T08:12:00Z", previousTitle = "fix", currentTitle = "Fix interlock" },
+                        new { __typename = "HeadRefForcePushedEvent", actor = new { login = "jo" }, createdAt = "2026-10-17T08:13:00Z", beforeCommit = new { oid = new string('a', 40) }, afterCommit = new { oid = new string('d', 40) } },
+                        new { __typename = "CrossReferencedEvent", actor = new { login = "lee" }, createdAt = "2026-10-17T08:14:00Z", willCloseTarget = true,
+                            source = new { __typename = "Issue", number = 3, title = "Interlock trips late", url = "https://github.com/acme/plant/issues/3", state = "OPEN", repository = new { nameWithOwner = "acme/plant" } } },
+                        new { __typename = "ReviewDismissedEvent", actor = new { login = "sam" }, createdAt = "2026-10-17T08:15:00Z", dismissalMessage = "stale", review = new { author = new { login = "lee" } } },
+                        new { __typename = "MergedEvent", actor = new { login = "sam" }, createdAt = "2026-10-17T11:00:00Z", commit = new { oid = new string('9', 40) }, mergeRefName = "main" },
+                        new { __typename = "SomethingNewerEvent", actor = new { login = "sam" }, createdAt = "2026-10-17T11:01:00Z" },
+                    },
+                } } } } });
+            }
+
             if (query.Contains("reviewThreads", StringComparison.Ordinal))
             {
                 var second = variables.TryGetProperty("after", out var a) && a.ValueKind == System.Text.Json.JsonValueKind.String;
@@ -174,10 +204,41 @@ public sealed class GitHubRepoSourceTests : IAsyncLifetime
                 headRefOid = new string('d', 40), baseRefName = "main", baseRef = new { target = new { oid = new string('c', 40) } },
                 labels = new { nodes = new[] { new { name = "plc", color = "FF0000" }, new { name = "odd", color = "red;x" } } },
                 assignees = new { nodes = new[] { new { login = "jo" } } },
-                reviewRequests = new { nodes = new object[] { new { requestedReviewer = new { __typename = "Team", name = "controls" } } } },
+                reviewRequests = new { nodes = new object[] { new { requestedReviewer = new { __typename = "Team", name = "controls", slug = "plc-controls" } } } },
+                viewerSubscription = "UNSUBSCRIBED", viewerCanReact = true,
                 latestOpinionatedReviews = new { nodes = new[] { new { author = new { login = "sam" }, state = "APPROVED" } } },
+                additions = 12, deletions = 3, changedFiles = 2, totalCommentsCount = 4, createdAt = "2026-10-15T10:00:00Z", locked = true, activeLockReason = "RESOLVED",
+                isCrossRepository = true, authorAssociation = "MEMBER",
+                author = new { login = "jo", avatarUrl = "https://avatars.githubusercontent.com/u/7?v=4" },
+                milestone = new { title = "v2", number = 5 },
+                headRepository = new { nameWithOwner = "fork/plant" },
+                commits = new { totalCount = 3, nodes = new[] { new { commit = new { statusCheckRollup = new { state = "FAILURE", contexts = new { nodes = new object[]
+                {
+                    new { __typename = "CheckRun", name = "build", isRequired = true },
+                    new { __typename = "StatusContext", context = "legacy", isRequired = false },
+                } } } } } } },
+                reactionGroups = new object[] { new { content = "THUMBS_UP", viewerHasReacted = false, reactors = new { totalCount = 2 } }, new { content = "EYES", viewerHasReacted = false, reactors = new { totalCount = 0 } } },
             } } } });
         });
+
+        // A pull request's commits, in GitHub's shape: a matched login with a picture, a signature,
+        // a committer who is not the author, two parents, a body after the headline.
+        app.MapGet("/repos/acme/plant/pulls/7/commits", () => Results.Json(new object[]
+        {
+            new
+            {
+                sha = new string('d', 40), html_url = "https://github.com/acme/plant/commit/" + new string('d', 40),
+                author = new { login = "jo", avatar_url = "https://avatars.githubusercontent.com/u/7?v=4" },
+                parents = new[] { new { sha = new string('a', 40) }, new { sha = new string('b', 40) } },
+                commit = new
+                {
+                    message = "Fix interlock\n\nThe delay was wrong.\n",
+                    author = new { name = "Jo Git", date = "2026-10-17T08:00:00Z" },
+                    committer = new { name = "GitHub", date = "2026-10-17T08:00:00Z" },
+                    verification = new { verified = true },
+                },
+            },
+        }));
 
         // Checks with an ETag: a request carrying it gets 304, as GitHub answers an unchanged poll.
         app.MapGet("/repos/acme/plant/commits/{sha}/check-runs", (string sha, HttpContext http) =>
@@ -209,12 +270,29 @@ public sealed class GitHubRepoSourceTests : IAsyncLifetime
             }
 
             http.Response.Headers.ETag = "\"runs-1\"";
-            return Results.Json(new { check_runs = new[] { new { name = "build", status = "completed", conclusion = "success", html_url = "https://ci.example/1" } } });
+            return Results.Json(new { check_runs = new[] { new
+            {
+                id = 42L, name = "build", status = "completed", conclusion = "success", html_url = "https://ci.example/1",
+                started_at = "2026-10-17T08:00:00Z", completed_at = "2026-10-17T08:04:00Z", app = new { name = "GitHub Actions", slug = "github-actions" },
+                check_suite = new { id = 7L }, output = new { title = "Built", summary = "All **green**", annotations_count = 3 },
+            } } });
         });
-        app.MapGet("/repos/acme/plant/commits/{sha}", (string sha) => Results.Json(new { sha, parents = new[] { new { sha = new string('a', 40) }, new { sha = new string('b', 40) } } }));
+        app.MapGet("/repos/acme/plant/commits/{sha}", (string sha) => Results.Json(new { sha, parents = new[] { new { sha = new string('a', 40) }, new { sha = new string('b', 40) } }, commit = new { message = "Apply suggestions\n\n<!-- versio:op v1 K -->" } }));
+        app.MapGet("/repos/acme/plant/milestones", () => Results.Json(new object[] { new { number = 5, title = "v2", state = "open" }, new { number = 6, title = "v3", state = "open" } }));
+        // Step 3b: a commit's comments (one on a line of a file, one on the commit) and a run's annotations.
+        app.MapGet("/repos/acme/plant/commits/" + new string('u', 40) + "/comments", () => Results.Json(new object[]
+        {
+            new { node_id = "CC_1", user = new { login = "sam", avatar_url = "https://avatars.githubusercontent.com/u/1" }, body = "On the commit", created_at = "2026-10-24T09:00:00Z", path = (string?)null, line = (int?)null, html_url = "https://github.com/acme/plant/commit/u#commitcomment-1" },
+            new { node_id = "CC_2", user = new { login = "lee", avatar_url = (string?)null }, body = "On a line", created_at = "2026-10-24T09:01:00Z", path = (string?)"src/Pump.st", line = (int?)2, html_url = "http://insecure.example/x" },
+        }));
+        app.MapGet("/repos/acme/plant/check-runs/42/annotations", () => Results.Json(new object[]
+        {
+            new { path = "src/Pump.st", start_line = 2, end_line = 2, annotation_level = "failure", message = "unknown identifier", title = "C0046" },
+            new { path = "src/Pump.st", start_line = 5, end_line = (int?)null, annotation_level = "", message = "odd", title = "" },
+        }));
         app.MapGet("/repos/acme/plant/commits/{sha}/status", () => Results.Json(new
         {
-            statuses = new[] { new { context = "legacy", state = "pending", target_url = "javascript:alert(1)" } },
+            statuses = new[] { new { context = "legacy", state = "pending", target_url = "javascript:alert(1)", description = "Waiting on the rig", creator = new { login = "jenkins-bot" }, created_at = "2026-10-17T08:01:00Z" } },
         }));
         app.MapGet("/repos/acme/plant/releases", () => Results.Json(new object[]
         {
@@ -271,6 +349,15 @@ public sealed class GitHubRepoSourceTests : IAsyncLifetime
             return Results.StatusCode(403);
         });
         app.MapGet("/repos/acme/forbidden", () => Results.StatusCode(403));
+        // GitHub's secondary limit: a 403 with Retry-After and a remaining count that is not zero.
+        app.MapGet("/repos/acme/secondary", (HttpContext http) =>
+        {
+            http.Response.Headers["Retry-After"] = "60";
+            http.Response.Headers["x-ratelimit-remaining"] = "4999";
+            return Results.StatusCode(403);
+        });
+        app.MapGet("/repos/acme/busy", () => Results.StatusCode(429));
+        app.MapGet("/repos/acme/unauthorized", () => Results.StatusCode(401));
         app.MapGet("/repos/acme/held/installation", async () =>
         {
             // GitHub slow to answer for one repository.
@@ -349,6 +436,29 @@ public sealed class GitHubRepoSourceTests : IAsyncLifetime
         var r = Assert.Single(releases.Value!);
         Assert.Equal(new ReleaseInfo("v2", "v2", "jo", new DateTimeOffset(2026, 10, 1, 0, 0, 0, TimeSpan.Zero), true), r);
         Assert.Equal("## Notes", release.Value!.Body);
+    }
+
+    /// <summary>
+    /// A ref travels to GitHub percent-encoded wherever it goes: in a query, a bare <c>+</c> would
+    /// be read as a space and a bare <c>ü</c> is not ASCII, and the path form has the same encoder.
+    /// Pinned because the API's ref gate admits these names since 2026-10-25 (review item 11), so
+    /// the encoding is now what keeps them from being misread by the far end.
+    /// </summary>
+    [Fact]
+    public async Task A_ref_reaches_GitHub_percent_encoded_in_the_path_and_in_the_query()
+    {
+        var source = Source();
+
+        await source.GetCommitsAsync(Alice, "acme", "plant", "release+hotfix", null, 10, CancellationToken.None);
+        await source.GetCommitsAsync(Alice, "acme", "plant", "Prüfung", "docs/Prüfung.md", 10, CancellationToken.None);
+        await source.ResolveCommitAsync(Alice, "acme", "plant", "release+hotfix", CancellationToken.None);
+
+        // The query is recorded as sent; the path is recorded decoded (ASP.NET unescapes a path
+        // segment before a handler sees it), so the last line can only say the name arrived whole.
+        var sent = _requests.Select(r => r.Path).ToList();
+        Assert.Contains("/repos/acme/plant/commits?sha=release%2Bhotfix&per_page=10", sent);
+        Assert.Contains("/repos/acme/plant/commits?sha=Pr%C3%BCfung&per_page=10&path=docs%2FPr%C3%BCfung.md", sent);
+        Assert.Contains("/repos/acme/plant/commits/release+hotfix", sent);
     }
 
     [Fact]
@@ -444,9 +554,111 @@ public sealed class GitHubRepoSourceTests : IAsyncLifetime
 
         Assert.Equal(new string('d', 40), summary.HeadSha);
         Assert.Equal(new string('c', 40), summary.BaseTipSha);
-        Assert.Equal([new PullReviewer("sam", "APPROVED"), new PullReviewer("controls", "REQUESTED")], summary.Reviewers);
+        // A team is asked and withdrawn by its slug, which REST wants, and shown by its name.
+        Assert.Equal([new PullReviewer("sam", "APPROVED"), new PullReviewer("controls", "REQUESTED", IsTeam: true) { Slug = "plc-controls" }], summary.Reviewers);
         // A colour is six hex digits or nothing: it ends up in a style attribute on the page.
         Assert.Equal([new PullLabel("plc", "ff0000"), new PullLabel("odd", "")], summary.Labels);
+    }
+
+    /// <summary>What Step 5's writes need read back: the milestone's number, the viewer's notifications, whether they may react; and the milestones themselves.</summary>
+    [Fact]
+    public async Task The_summary_reads_the_milestone_number_the_subscription_and_the_milestones_list_with_a_commits_message()
+    {
+        var summary = (await Source().GetPullSummaryAsync(Alice, "acme", "plant", 7, CancellationToken.None)).Value!;
+        var milestones = (await Source().GetMilestonesAsync(Alice, "acme", "plant", CancellationToken.None)).Value!;
+        var message = (await Source().GetCommitMessageAsync(Alice, "acme", "plant", new string('u', 40), CancellationToken.None)).Value;
+
+        Assert.Equal((5, "UNSUBSCRIBED", true), (summary.MilestoneNumber, summary.ViewerSubscription, summary.ViewerCanReact));
+        Assert.Equal([new MilestoneInfo(5, "v2", "open"), new MilestoneInfo(6, "v3", "open")], milestones.Milestones);
+        Assert.False(milestones.Truncated);
+        Assert.Equal("Apply suggestions\n\n<!-- versio:op v1 K -->", message);
+    }
+
+    /// <summary>Step 3b's reads: a commit's comments with a line comment's place, https links only; a run's annotations with GitHub's blanks filled in.</summary>
+    [Fact]
+    public async Task A_commits_comments_and_a_runs_annotations_are_read_in_their_shape()
+    {
+        var comments = (await Source().GetCommitCommentsAsync(Alice, "acme", "plant", new string('u', 40), CancellationToken.None)).Value!;
+        var annotations = (await Source().GetCheckAnnotationsAsync(Alice, "acme", "plant", 42, CancellationToken.None)).Value!;
+
+        Assert.Equal(
+        [
+            new CommitComment("CC_1", "sam", "https://avatars.githubusercontent.com/u/1", "On the commit", new DateTimeOffset(2026, 10, 24, 9, 0, 0, TimeSpan.Zero), null, null, "https://github.com/acme/plant/commit/u#commitcomment-1"),
+            // A line comment names its file and line; a link that is not https is dropped, as every link is.
+            new CommitComment("CC_2", "lee", null, "On a line", new DateTimeOffset(2026, 10, 24, 9, 1, 0, TimeSpan.Zero), "src/Pump.st", 2, null),
+        ], comments.Comments);
+        Assert.False(comments.Truncated);
+        Assert.Equal(
+        [
+            new CheckAnnotation("src/Pump.st", 2, 2, "failure", "unknown identifier", "C0046"),
+            // No end line means the start line; no level means a notice; an empty title is none.
+            new CheckAnnotation("src/Pump.st", 5, 5, "notice", "odd", null),
+        ], annotations);
+    }
+
+    /// <summary>
+    /// What GitHub's header and sidebar show, read from the summary (FINISH.md, B1 and B12): the
+    /// counts, the author with a picture only from GitHub's avatar host, the lock, the milestone,
+    /// a fork's repository, which of the live head's checks branch protection requires, and the
+    /// reactions that have anyone in them.
+    /// </summary>
+    [Fact]
+    public async Task The_summary_reads_the_header_counts_the_author_the_required_checks_and_the_reactions()
+    {
+        var summary = (await Source().GetPullSummaryAsync(Alice, "acme", "plant", 7, CancellationToken.None)).Value!;
+
+        Assert.Equal((12, 3, 2, 3, 4), (summary.Additions, summary.Deletions, summary.ChangedFiles, summary.CommitCount, summary.CommentCount));
+        Assert.Equal(new DateTimeOffset(2026, 10, 15, 10, 0, 0, TimeSpan.Zero), summary.CreatedAt);
+        Assert.Null(summary.MergedAt);
+        Assert.Equal(("jo", "https://avatars.githubusercontent.com/u/7?v=4", "MEMBER"), (summary.Author, summary.AuthorAvatar, summary.AuthorAssociation));
+        Assert.Equal((true, "RESOLVED", "v2", "fork/plant"), (summary.Locked, summary.LockReason, summary.Milestone, summary.HeadRepository));
+        Assert.Equal("FAILURE", summary.CheckRollup);
+        Assert.Equal(["build"], summary.RequiredChecks);
+        // A group nobody is in is not shown; the one with people is, with its count.
+        Assert.Equal([new ReactionGroup("THUMBS_UP", 2, false)], summary.Reactions);
+    }
+
+    /// <summary>
+    /// Every kind GitHub's conversation shows, read in its own shape (FINISH.md, B3), each with
+    /// what it named; a kind this server does not know is dropped, never drawn as a raw word. A
+    /// picture from anywhere but GitHub's avatar host is dropped: the page may not load it.
+    /// </summary>
+    [Fact]
+    public async Task The_timeline_reads_every_event_kind_with_what_it_named_and_drops_the_unknown()
+    {
+        var items = (await Source().GetTimelineAsync(Alice, "acme", "plant", 7, CancellationToken.None)).Value!.Items;
+
+        Assert.Equal(["comment", "review", "commit", "labeled", "review-requested", "renamed", "force-push", "cross-referenced", "review-dismissed", "merged"], items.Select(i => i.Kind).ToList());
+        var comment = items[0];
+        Assert.Equal(("IC_1", "MEMBER", "https://avatars.githubusercontent.com/u/7", "https://github.com/acme/plant/pull/7#issuecomment-1"), (comment.Id, comment.AuthorAssociation, comment.AvatarUrl, comment.Url));
+        Assert.Equal(new DateTimeOffset(2026, 10, 17, 9, 30, 0, TimeSpan.Zero), comment.EditedAt);
+        Assert.Equal([new ReactionGroup("THUMBS_UP", 2, true)], comment.Reactions);
+        var review = items[1];
+        Assert.Equal(("PRR_1", "APPROVED", new string('d', 40), "OWNER"), (review.Id, review.State, review.Sha, review.AuthorAssociation));
+        Assert.Null(review.AvatarUrl);
+        Assert.Equal((true, "jo"), (items[2].Verified, items[2].Actor));
+        Assert.Equal(("plc", "1a7f37"), (items[3].Target, items[3].TargetColor));
+        Assert.Equal("controls", items[4].Target);
+        Assert.Equal(("fix", "Fix interlock"), (items[5].Previous, items[5].Target));
+        Assert.Equal((new string('a', 40), new string('d', 40)), (items[6].Previous, items[6].Sha));
+        Assert.Equal(new TimelineReference(3, "Interlock trips late", "acme/plant", "https://github.com/acme/plant/issues/3", false, "OPEN"), items[7].Reference);
+        Assert.Equal("closes", items[7].Message);
+        Assert.Equal(("lee", "stale"), (items[8].Target, items[8].Message));
+        Assert.Equal(("main", new string('9', 40)), (items[9].Target, items[9].Sha));
+    }
+
+    /// <summary>
+    /// A pull request's commits carry what GitHub's commits tab shows (FINISH.md, B4): the matched
+    /// login and picture, the signature, a committer who is not the author, the parents, the body.
+    /// </summary>
+    [Fact]
+    public async Task The_commits_read_the_author_the_signature_the_committer_the_parents_and_the_body()
+    {
+        var commit = Assert.Single((await Source().GetPullCommitsAsync(Alice, "acme", "plant", 7, CancellationToken.None)).Value!.Commits);
+
+        Assert.Equal(("Fix interlock", "jo", "jo", "https://avatars.githubusercontent.com/u/7?v=4"), (commit.Headline, commit.Author, commit.AuthorLogin, commit.AuthorAvatar));
+        Assert.Equal(("GitHub", "The delay was wrong.", true, 2), (commit.Committer, commit.Body, commit.Verified, commit.ParentCount));
+        Assert.Equal("https://github.com/acme/plant/commit/" + new string('d', 40), commit.Url);
     }
 
     /// <summary>
@@ -465,6 +677,10 @@ public sealed class GitHubRepoSourceTests : IAsyncLifetime
         var checks = first.Value.Checks;
         Assert.Equal("https://ci.example/1", checks[0].Url);
         Assert.Equal(("legacy", "pending", (string?)null, (string?)null), (checks[1].Name, checks[1].Status, checks[1].Conclusion, checks[1].Url));
+        // What GitHub's checks tab shows of a run (FINISH.md, B5): who ran it, when, what it said.
+        Assert.Equal((42L, "GitHub Actions", 7L, "Built", "All **green**", 3), (checks[0].Id, checks[0].App, checks[0].Suite, checks[0].Title, checks[0].Summary, checks[0].AnnotationCount));
+        Assert.Equal(new DateTimeOffset(2026, 10, 17, 8, 4, 0, TimeSpan.Zero), checks[0].CompletedAt);
+        Assert.Equal(("Waiting on the rig", "jenkins-bot"), (checks[1].Description, checks[1].App));
         Assert.False(first.Value.Truncated);
         Assert.Equal(2, _requests.Count(r => r.Path.Contains("/check-runs", StringComparison.Ordinal)));
         Assert.Equal(1, _notModified);
@@ -592,6 +808,10 @@ public sealed class GitHubRepoSourceTests : IAsyncLifetime
     [InlineData("limited", RepoFailure.RateLimited)]
     [InlineData("forbidden", RepoFailure.NotFound)]
     [InlineData("missing", RepoFailure.NotFound)]
+    // The secondary limit was "not found" until the review of 2026-10-24; 429 and 401 had no case.
+    [InlineData("secondary", RepoFailure.RateLimited)]
+    [InlineData("busy", RepoFailure.RateLimited)]
+    [InlineData("unauthorized", RepoFailure.Unauthorized)]
     public async Task GitHubs_refusals_become_what_the_page_can_say(string repo, RepoFailure expected)
     {
         var result = await Source().GetRepoAsync(Alice, "acme", repo, CancellationToken.None);

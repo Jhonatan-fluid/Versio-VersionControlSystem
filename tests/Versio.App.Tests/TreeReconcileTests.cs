@@ -165,4 +165,65 @@ public sealed class TreeReconcileTests
 
         Assert.Empty(rows);
     }
+
+    // ------------------------------------------------------------------------- reordering
+
+    /// <summary>
+    /// The same rows in a different order are moved, not duplicated. The forward pass
+    /// inserted on a path mismatch and never took the stale row out, so [A,B] reconciled
+    /// with [B,A] came out as [B,A,B] — reachable, because the library level is sorted by
+    /// system-first then name while identity is the path, and tasks follow the user's
+    /// own order (the 2026-10-24 review's item 37).
+    /// </summary>
+    [Fact]
+    public void Rows_that_swapped_places_are_moved_and_stay_the_same_objects()
+    {
+        var rows = RowsFor(Node("A"), Node("B"));
+        var a = rows[0];
+        var b = rows[1];
+
+        TreeRow.Reconcile(rows, [Node("B"), Node("A")], 0, null);
+
+        Assert.Equal(2, rows.Count);
+        Assert.Equal(["B", "A"], rows.Select(r => r.Name));
+        Assert.Same(b, rows[0]);
+        Assert.Same(a, rows[1]);
+    }
+
+    [Fact]
+    public void A_row_that_moved_to_the_end_leaves_no_copy_behind()
+    {
+        var rows = RowsFor(Node("A"), Node("B"), Node("C"));
+
+        TreeRow.Reconcile(rows, [Node("B"), Node("C"), Node("A")], 0, null);
+
+        Assert.Equal(["B", "C", "A"], rows.Select(r => r.Name));
+    }
+
+    [Fact]
+    public void A_level_that_shrank_to_a_path_it_had_twice_keeps_one_row()
+    {
+        // The removal pass keeps every row whose path is live, so a level that once held a
+        // path twice (a builder listing it twice) would keep both; the trim after the pass
+        // is what takes the second one out.
+        var rows = RowsFor(Node("A"), Node("A"));
+
+        TreeRow.Reconcile(rows, [Node("A")], 0, null);
+
+        Assert.Single(rows);
+    }
+
+    [Fact]
+    public void Children_that_swapped_places_are_moved_too()
+    {
+        var rows = RowsFor(Node("F", Node("F/one"), Node("F/two")));
+        var one = rows[0].Children[0];
+        var two = rows[0].Children[1];
+
+        TreeRow.Reconcile(rows, [Node("F", Node("F/two"), Node("F/one"))], 0, null);
+
+        Assert.Equal(2, rows[0].Children.Count);
+        Assert.Same(two, rows[0].Children[0]);
+        Assert.Same(one, rows[0].Children[1]);
+    }
 }

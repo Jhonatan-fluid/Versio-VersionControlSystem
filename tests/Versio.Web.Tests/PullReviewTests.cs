@@ -208,6 +208,9 @@ public sealed class PullReviewTests
         Assert.True(files["src/Pump.st"].GetProperty("inline").GetBoolean());
         Assert.False(files["src/Logo.bin"].GetProperty("inline").GetBoolean());
         Assert.Equal("no-patch", files["src/Logo.bin"].GetProperty("inlineUnavailable").GetString());
+        // GitHub's per-file "+1 -1", from its patch; no patch, no count (never a zero that reads as "nothing changed").
+        Assert.Equal((1, 1), (files["src/Pump.st"].GetProperty("additions").GetInt32(), files["src/Pump.st"].GetProperty("deletions").GetInt32()));
+        Assert.Equal(JsonValueKind.Null, files["src/Logo.bin"].GetProperty("additions").ValueKind);
     }
 
     /// <summary>
@@ -343,11 +346,14 @@ public sealed class PullReviewTests
         await using var host = await TestHost.StartAsync(w.GitHub);
         var alice = SignIn(host);
         var (token, _) = await SnapshotAsync(host, alice);
+        w.Repo.Checks[w.Head] = [new CheckInfo("build", "completed", "success", "https://ci.example/1", "check-run")];
 
         var fresh = Json(await (await WithSnapshot(host, "/api/repos/acme/plant/pulls/12/status", token, alice)).Body());
         w.Repo.Refs["main"] = w.Start;
         var baseMoved = Json(await (await WithSnapshot(host, "/api/repos/acme/plant/pulls/12/status", token, alice)).Body());
         w.Repo.Refs["main"] = w.MainTip;
+        // The latest commit's checks (Step 10): one red, one still running.
+        w.Repo.Checks[new string('7', 40)] = [new CheckInfo("build", "completed", "failure", null, "check-run"), new CheckInfo("soak", "in_progress", null, null, "check-run")];
         w.Open(new string('7', 40));
         var headMoved = Json(await (await WithSnapshot(host, "/api/repos/acme/plant/pulls/12/status", token, alice)).Body());
 
@@ -357,6 +363,12 @@ public sealed class PullReviewTests
         Assert.False(baseMoved.GetProperty("headMoved").GetBoolean());
         Assert.True(headMoved.GetProperty("stale").GetBoolean());
         Assert.True(headMoved.GetProperty("headMoved").GetBoolean());
+        // The live head's checks come in counts only once the head moved; the list stays the reviewed commit's.
+        Assert.Equal(JsonValueKind.Null, fresh.GetProperty("liveChecks").ValueKind);
+        Assert.Equal(JsonValueKind.Null, baseMoved.GetProperty("liveChecks").ValueKind);
+        var live = headMoved.GetProperty("liveChecks");
+        Assert.Equal((new string('7', 40), 2, 1, 1), (live.GetProperty("head").GetString(), live.GetProperty("total").GetInt32(), live.GetProperty("failed").GetInt32(), live.GetProperty("running").GetInt32()));
+        Assert.Equal(1, headMoved.GetProperty("checks").GetArrayLength());
     }
 
     /// <summary>
@@ -392,6 +404,38 @@ public sealed class PullReviewTests
         var status = Json(await (await WithSnapshot(host, "/api/repos/acme/plant/pulls/12/status", token)).Body());
 
         Assert.True(status.GetProperty("checksTruncated").GetBoolean());
+    }
+
+    /// <summary>
+    /// GitHub's header and checks tab (FINISH.md, B1, B5): the counts and the author come with the
+    /// live state; a check is marked required when branch protection names it on the live head, and
+    /// a run's output reaches the page rendered, since a CI writes Markdown nobody here vouches for.
+    /// </summary>
+    [Fact]
+    public async Task Status_carries_the_header_counts_and_marks_the_checks_branch_protection_requires()
+    {
+        var w = Build();
+        w.Repo.PullHeader[12] = (12, 3, 2, ["build"]);
+        w.Repo.Checks[w.Head] =
+        [
+            new CheckInfo("build", "completed", "success", "https://ci.example/1", "check-run") { Id = 1, App = "GitHub Actions", Title = "Built", Summary = "All **green**", AnnotationCount = 2 },
+            new CheckInfo("lint", "completed", "neutral", null, "check-run"),
+        ];
+        await using var host = await TestHost.StartAsync(w.GitHub);
+        var alice = SignIn(host);
+        var (token, _) = await SnapshotAsync(host, alice);
+
+        var status = Json(await (await WithSnapshot(host, "/api/repos/acme/plant/pulls/12/status", token, alice)).Body());
+
+        var summary = status.GetProperty("summary");
+        Assert.Equal((12, 3, 2), (summary.GetProperty("additions").GetInt32(), summary.GetProperty("deletions").GetInt32(), summary.GetProperty("changedFiles").GetInt32()));
+        Assert.Equal("jo", summary.GetProperty("author").GetString());
+        Assert.Equal(["build"], summary.GetProperty("requiredChecks").EnumerateArray().Select(x => x.GetString()).ToList());
+        var checks = status.GetProperty("checks").EnumerateArray().ToList();
+        Assert.True(checks[0].GetProperty("required").GetBoolean());
+        Assert.False(checks[1].GetProperty("required").GetBoolean());
+        Assert.Equal(("GitHub Actions", "Built", 2), (checks[0].GetProperty("app").GetString(), checks[0].GetProperty("title").GetString(), checks[0].GetProperty("annotations").GetInt32()));
+        Assert.Contains("<strong>green</strong>", checks[0].GetProperty("summary").GetString()!, StringComparison.Ordinal);
     }
 
     /// <summary>
@@ -531,7 +575,7 @@ public sealed class PullReviewTests
         var later = new string('8', 40);
         w.Repo.PullCommits[12] = new PullCommitList(
         [
-            new PullCommit(w.Head, "Fix the default", "jo", When),
+            new PullCommit(w.Head, "Fix the default", "jo", When) { AuthorLogin = "jo", Body = "It was\u202Ewrong.\nTwice.", Verified = true, ParentCount = 2 },
             new PullCommit(later, "And another", "jo", When.AddMinutes(5)),
         ], false);
         await using var host = await TestHost.StartAsync(w.GitHub);
@@ -543,6 +587,10 @@ public sealed class PullReviewTests
         Assert.True(body.GetProperty("headFound").GetBoolean());
         Assert.True(commits[0].GetProperty("inSnapshot").GetBoolean());
         Assert.False(commits[1].GetProperty("inSnapshot").GetBoolean());
+        // What GitHub's commits tab shows of each (FINISH.md, B4); the body is text, spelled like a headline.
+        // Spelled line by line: the hidden character shows, the newline stays a newline.
+        Assert.Equal(("jo", "It wasU+202Ewrong.\nTwice.", true, 2), (commits[0].GetProperty("login").GetString(), commits[0].GetProperty("body").GetString(), commits[0].GetProperty("verified").GetBoolean(), commits[0].GetProperty("parents").GetInt32()));
+        Assert.Equal(JsonValueKind.Null, commits[1].GetProperty("verified").ValueKind);
     }
 
     [Fact]
@@ -551,9 +599,11 @@ public sealed class PullReviewTests
         var w = Build();
         w.Repo.Timelines[12] = new Timeline(
         [
-            new TimelineItem("comment", "jo", When, "Looks **fine**", null, null),
+            new TimelineItem("comment", "jo", When, "Looks **fine**", null, null) { AuthorAssociation = "MEMBER", EditedAt = When.AddMinutes(1), Reactions = [new ReactionGroup("EYES", 1, true)] },
             new TimelineItem("commit", "jo", When, "Fix‮default", null, w.Head),
-            new TimelineItem("review", "sam", When, "", "APPROVED", null),
+            new TimelineItem("review", "sam", When, "", "APPROVED", null, "PRR_1"),
+            new TimelineItem("labeled", "sam", When, null, null, null) { Target = "needs‮soak", TargetColor = "9a6700" },
+            new TimelineItem("cross-referenced", "lee", When, null, null, null) { Reference = new TimelineReference(3, "Trips late", "acme/plant", "https://github.com/acme/plant/issues/3", false, "OPEN"), Message = "closes" },
         ], false);
         await using var host = await TestHost.StartAsync(w.GitHub);
         var alice = SignIn(host);
@@ -565,6 +615,13 @@ public sealed class PullReviewTests
         Assert.Equal("FixU+202Edefault", items[1].GetProperty("text").GetString());
         Assert.Equal("APPROVED", items[2].GetProperty("state").GetString());
         Assert.Equal(JsonValueKind.Null, items[2].GetProperty("html").ValueKind);
+        // The card's chrome and the events' words (FINISH.md, B3): the role, the edit mark, the reactions,
+        // a review's id (its threads are listed under it), what a label event named — spelled, as any text.
+        Assert.Equal(("MEMBER", true), (items[0].GetProperty("association").GetString(), items[0].GetProperty("reactions")[0].GetProperty("viewerHasReacted").GetBoolean()));
+        Assert.Equal(JsonValueKind.String, items[0].GetProperty("editedAt").ValueKind);
+        Assert.Equal("PRR_1", items[2].GetProperty("id").GetString());
+        Assert.Equal(("needsU+202Esoak", "9a6700"), (items[3].GetProperty("target").GetString(), items[3].GetProperty("targetColor").GetString()));
+        Assert.Equal((3, "Trips late", "closes"), (items[4].GetProperty("reference").GetProperty("number").GetInt32(), items[4].GetProperty("reference").GetProperty("title").GetString(), items[4].GetProperty("message").GetString()));
     }
 
     /// <summary>

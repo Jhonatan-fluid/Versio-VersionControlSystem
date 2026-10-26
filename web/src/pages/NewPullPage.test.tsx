@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { NewPullPage } from './NewPullPage';
 import { PullsPage } from './PullsPage';
 
-// Opening a merge request (docs/web/PLAN.md, *Pull request review*, slice 5): in the person's own
+// Opening a pull request (docs/web/PLAN.md, *Pull request review*, slice 5): in the person's own
 // name, between two branches of this repository, from the repository's template, and never twice
 // for one click — the form's words are the operation's until its outcome is known.
 
@@ -24,8 +24,20 @@ function answer(url: string, o: Options): unknown {
   if (url.includes('/pulls/template')) {
     return { markdown: o.template ?? null, path: o.template ? '.github/pull_request_template.md' : null };
   }
-  if (url.endsWith('/pulls')) {
+  if (url.endsWith('/pulls') || url.includes('/pulls?')) {
     return { truncated: false, writable: o.writable ?? true, pulls: [] };
+  }
+  if (url.endsWith('/snapshot')) {
+    return { token: 'sealed', writable: true, number: 13, title: 'Add the valve', author: 'alice', when: '2026-10-17T09:00:00Z', draft: false, baseRef: 'main', baseLabel: 'main', headLabel: 'feature', baseSha: 'a'.repeat(40), mergeBaseSha: 'a'.repeat(40), headSha: 'b'.repeat(40), issuedAt: '2026-10-17T09:00:00Z', html: '' };
+  }
+  if (url.endsWith('/labels')) {
+    return { labels: [{ value: 'plc', label: 'plc', color: '0e8a16' }] };
+  }
+  if (url.endsWith('/milestones')) {
+    return { milestones: [{ number: 5, title: 'v2' }] };
+  }
+  if (url.includes('/compare?')) {
+    return { base: 'main', head: 'feature', total: 2, truncated: false, files: [{ path: 'src/Pump.st', label: 'src/Pump.st', change: 'modified', object: 'Pump' }, { path: 'src/Valve.st', label: 'src/Valve.st', change: 'added', object: 'Valve' }] };
   }
   if (url.endsWith('/branches')) {
     return { branches: [{ name: 'main', commitSha: 'a' }, { name: 'feature', commitSha: 'b' }], truncated: false };
@@ -125,7 +137,7 @@ describe('NewPullPage', () => {
 
     await fill(host.querySelector<HTMLInputElement>('.new-pull-title')!, 'Add the valve');
     await click(host.querySelector('.new-pull-draft input')!);
-    await click(button(host, 'Open as draft')!);
+    await click(button(host, 'Create draft pull request')!);
 
     const posted = creates()[0]!;
     expect(posted.url).toBe('/api/repos/acme/plant/pulls');
@@ -142,7 +154,7 @@ describe('NewPullPage', () => {
     const unknown = { status: 202, body: { outcome: 'unknown', message: 'This may or may not have been posted.' } };
     const { host, root } = await render('/acme/plant/pulls/new?head=feature', { create: unknown });
     await fill(host.querySelector<HTMLInputElement>('.new-pull-title')!, 'Add the valve');
-    await click(button(host, 'Open merge request')!);
+    await click(button(host, 'Create pull request')!);
 
     expect(host.querySelector<HTMLFieldSetElement>('.new-pull-fields')!.disabled).toBe(true);
     await click(button(host, 'Try again')!);
@@ -156,7 +168,7 @@ describe('NewPullPage', () => {
   it('a retry refused by the rate limit keeps the key: the first attempt may have opened one', async () => {
     const { host, root } = await render('/acme/plant/pulls/new?head=feature', { create: [{ status: 202, body: { outcome: 'unknown', message: 'This may or may not have been posted.' } }, { status: 429, body: { error: 'rate-limited', message: 'Too many requests: this one was not acted on.' } }, { status: 202, body: { outcome: 'unknown', message: 'This may or may not have been posted.' } }] });
     await fill(host.querySelector<HTMLInputElement>('.new-pull-title')!, 'Add the valve');
-    await click(button(host, 'Open merge request')!);
+    await click(button(host, 'Create pull request')!);
     await click(button(host, 'Try again')!);
     await click(button(host, 'Try again')!);
 
@@ -169,11 +181,11 @@ describe('NewPullPage', () => {
     const refused = { status: 422, body: { error: 'github-refused', message: 'GitHub refused this: No commits between main and feature' } };
     const { host, root } = await render('/acme/plant/pulls/new?head=feature', { create: refused });
     await fill(host.querySelector<HTMLInputElement>('.new-pull-title')!, 'Add the valve');
-    await click(button(host, 'Open merge request')!);
+    await click(button(host, 'Create pull request')!);
 
     expect(host.querySelector('.comment-note')?.textContent).toContain('No commits between');
     expect(host.querySelector<HTMLFieldSetElement>('.new-pull-fields')!.disabled).toBe(false);
-    await click(button(host, 'Open merge request')!);
+    await click(button(host, 'Create pull request')!);
     const [first, second] = creates();
     expect(second!.body?.opKey).not.toBe(first!.body?.opKey);
     act(() => root.unmount());
@@ -185,10 +197,10 @@ describe('NewPullPage', () => {
     expect(host.textContent).toContain('Choose two different branches');
     // A title, so the only reason left to refuse is the branch into itself.
     await fill(host.querySelector<HTMLInputElement>('.new-pull-title')!, 'Into itself');
-    expect(button(host, 'Open merge request')!.disabled).toBe(true);
+    expect(button(host, 'Create pull request')!.disabled).toBe(true);
     await fill(host.querySelector<HTMLSelectElement>('[aria-label="Branch with the changes"]')!, 'feature');
     await fill(host.querySelector<HTMLInputElement>('.new-pull-title')!, '');
-    expect(button(host, 'Open merge request')!.disabled).toBe(true);
+    expect(button(host, 'Create pull request')!.disabled).toBe(true);
     act(() => root.unmount());
   });
 
@@ -216,14 +228,79 @@ describe('NewPullPage', () => {
     act(() => root.unmount());
   });
 
-  it('the list offers "New merge request" only where one can be opened', async () => {
+  it('the list offers "New pull request" only where one can be opened', async () => {
     const on = await render('/acme/plant/pulls');
-    expect(Array.from(on.host.querySelectorAll('a')).find((a) => a.textContent === 'New merge request')?.getAttribute('href')).toBe('/acme/plant/pulls/new');
+    expect(Array.from(on.host.querySelectorAll('a')).find((a) => a.textContent === 'New pull request')?.getAttribute('href')).toBe('/acme/plant/pulls/new');
     act(() => on.root.unmount());
     document.body.innerHTML = '';
 
     const off = await render('/acme/plant/pulls', { writable: false });
-    expect(Array.from(off.host.querySelectorAll('a')).some((a) => a.textContent === 'New merge request')).toBe(false);
+    expect(Array.from(off.host.querySelectorAll('a')).some((a) => a.textContent === 'New pull request')).toBe(false);
     act(() => off.root.unmount());
+  });
+
+  // Step 7 (FINISH.md B10): the comparison under the form, the preview, what is set beside the
+  // pull request once it is opened, and a fork's branch as the head.
+  it('shows the comparison under the form, previews the description, and sets reviewers, labels, assignees and milestone after opening', async () => {
+    const { host, root } = await render('/acme/plant/pulls/new?head=feature');
+    expect(host.querySelector('.new-pull-compare')?.textContent).toContain('2 files changed');
+    expect(host.querySelector('.new-pull-files')?.textContent).toContain('src/Valve.st');
+
+    await fill(host.querySelector<HTMLTextAreaElement>('.new-pull-body')!, '**bold**');
+    await click(button(host, 'Preview')!);
+    expect(creates().at(-1)!.url).toBe('/api/repos/acme/plant/markdown');
+    expect(host.querySelector('.new-pull-preview')).not.toBeNull();
+    await click(button(host, 'Write')!);
+
+    await fill(host.querySelector<HTMLInputElement>('.new-pull-title')!, 'Add the valve');
+    await fill(host.querySelector<HTMLInputElement>('input[aria-label="Reviewers"]')!, 'kim, acme/controls');
+    await fill(host.querySelector<HTMLInputElement>('input[aria-label="Assignees"]')!, 'sam');
+    await click(host.querySelector('.new-pull-label input')!);
+    await fill(host.querySelector<HTMLSelectElement>('select[aria-label="Milestone"]')!, '5');
+    await click(button(host, 'Create pull request')!);
+
+    const posted = creates().filter((c) => c.url.endsWith('/pulls') || c.url.includes('/pulls/13/'));
+    expect(posted.map((c) => c.url.slice(c.url.lastIndexOf('/')))).toEqual(['/pulls', '/reviewers', '/labels', '/assignees', '/milestone']);
+    expect(posted[1]!.body).toMatchObject({ add: ['kim'], addTeams: ['controls'] });
+    expect(posted[2]!.body).toMatchObject({ add: ['plc'] });
+    expect(posted[3]!.body).toMatchObject({ add: ['sam'] });
+    expect(posted[4]!.body).toMatchObject({ number: 5 });
+    // Each under the new pull request's snapshot, each its own operation.
+    expect(posted.slice(1).every((c) => c.headers['X-Versio-Snapshot'] === 'sealed')).toBe(true);
+    expect(new Set(posted.map((c) => c.body?.opKey)).size).toBe(5);
+    expect(host.querySelector('[data-testid="where"]')?.textContent).toBe('/acme/plant/pull/13');
+    act(() => root.unmount());
+  });
+
+  it('a fork’s branch typed as owner:branch is the head, sent as it is', async () => {
+    const { host, root } = await render('/acme/plant/pulls/new');
+    await fill(host.querySelector<HTMLInputElement>('input[aria-label="A fork\'s branch, as owner:branch"]')!, 'bob:feature');
+    await fill(host.querySelector<HTMLInputElement>('.new-pull-title')!, 'From a fork');
+    await click(button(host, 'Create pull request')!);
+
+    expect(creates()[0]!.body).toMatchObject({ base: 'main', head: 'bob:feature' });
+    act(() => root.unmount());
+  });
+
+  // The field showed form.head only once it held a colon, so before the colon every keystroke
+  // reset it to empty — and each keystroke made a bare character the head, which started a
+  // comparison of a branch named "b" (the 2026-10-24 review's item 34). The test above pastes the
+  // whole value in one fill, which is why it passed.
+  it('a fork’s branch can be typed one character at a time, and no branch "b" is compared', async () => {
+    const { host, root } = await render('/acme/plant/pulls/new');
+    const field = () => host.querySelector<HTMLInputElement>('input[aria-label="A fork\'s branch, as owner:branch"]')!;
+    let typed = '';
+    for (const ch of 'bob:feature') {
+      typed += ch;
+      await fill(field(), field().value + ch);
+      expect(field().value).toBe(typed);
+    }
+    await settle();
+    await fill(host.querySelector<HTMLInputElement>('.new-pull-title')!, 'From a fork');
+    await click(button(host, 'Create pull request')!);
+
+    expect(creates()[0]!.body).toMatchObject({ base: 'main', head: 'bob:feature' });
+    expect(calls.filter((c) => c.url.includes('/compare'))).toEqual([]);
+    act(() => root.unmount());
   });
 });

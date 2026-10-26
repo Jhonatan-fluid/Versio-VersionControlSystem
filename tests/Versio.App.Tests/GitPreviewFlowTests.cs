@@ -166,4 +166,33 @@ public sealed class GitPreviewFlowTests
 
         Assert.False(shell.Remote.IsPreviewOpen);
     }
+
+    [Fact]
+    public async Task The_preview_follows_a_branch_switch_even_when_the_counts_agree()
+    {
+        // NoteStatus compared Ahead/Behind alone, and only a change there reloaded or closed
+        // the open preview. Two branches each one commit ahead of their own upstream have
+        // identical counts, so checking out the other left the first branch's commit on
+        // screen under the second branch's badge. The 2026-10-24 review's item 16.
+        using var repo = new TempRepo(published: true);
+        repo.Commit("on main");
+        repo.Git("checkout -q -b topic origin/main");
+        repo.Commit("on topic");
+        repo.Git("checkout -q main");
+
+        using var shell = Shell();
+        await shell.OpenAsync(repo.Path);
+        await Eventually.Press(shell.Remote.ShowOutgoingCommand, "open");
+        Assert.Equal("on main", Assert.Single(shell.Remote.PreviewCommits).Subject);
+
+        repo.Git("checkout -q topic");
+        await shell.RefreshAsync();
+
+        await Eventually.Until(
+            () => !shell.Remote.IsPreviewOpen
+                  || (shell.Remote.PreviewCommits.Count == 1
+                      && shell.Remote.PreviewCommits[0].Subject == "on topic"),
+            "the preview to follow the branch switch",
+            () => string.Join(", ", shell.Remote.PreviewCommits.Select(c => c.Subject)));
+    }
 }

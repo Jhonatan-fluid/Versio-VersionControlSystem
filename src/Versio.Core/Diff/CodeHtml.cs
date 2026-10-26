@@ -49,11 +49,21 @@ public static class CodeHtml
     /// characters it replaced with markers plus how many names it marked as mixing scripts.
     /// </summary>
     /// <param name="emphasis">Changed-word spans (<see cref="IntralineEmphasis"/>), or null.</param>
+    /// <param name="state">The block-comment state carried between the lines of one file, or null for a line on its own.</param>
+    /// <param name="links">
+    /// What an identifier opens, or null for none (docs/web/FINISH.md, Step 3c): asked for every
+    /// plain word — a name the tokenizer did not class as a keyword, a type or a comment — and
+    /// answered with the target the host understands (a repository path on the web, a guid on the
+    /// desktop), carried as <c>data-link</c> like a member table's type link. Only words: a name
+    /// inside a comment or a string is prose, and linking it would make a remark read as code.
+    /// </param>
     public static int AppendLine(
         StringBuilder html,
         string? text,
         SyntaxLanguage language,
-        IReadOnlyList<TextSpan>? emphasis = null)
+        IReadOnlyList<TextSpan>? emphasis = null,
+        Func<string, string?>? links = null,
+        SyntaxTokenizer.TokenState? state = null)
     {
         ArgumentNullException.ThrowIfNull(html);
         ArgumentNullException.ThrowIfNull(language);
@@ -64,12 +74,61 @@ public static class CodeHtml
         }
 
         var hidden = 0;
-        foreach (var token in SyntaxTokenizer.Tokenize(text, language))
+        // With a state the caller is drawing a whole file in order, and a block comment's body
+        // stays a comment on its second line (no link, no colour of code); without one each line
+        // stands alone, as a diff hunk must.
+        foreach (var token in SyntaxTokenizer.Tokenize(text, language, state))
         {
+            // A word after a dot is a member of whatever precedes it — pump.Start names pump's
+            // method, GVL.Running the list's variable — never the object of that name. The index
+            // keys methods and properties by their bare name, so without this every instance call
+            // linked to the first object called Start in path order (found in review, 2026-10-24).
+            var link = links is not null && token.Kind == TokenKind.Plain && IsWord(text, token.Start, token.Length) && !IsMember(text, token.Start)
+                ? links(text.Substring(token.Start, token.Length))
+                : null;
+            if (link is not null)
+            {
+                html.Append("<span class=\"cd-t-link\" data-link=\"").Append(A(link)).Append("\" title=\"Open ").Append(A(link)).Append("\">");
+            }
+
             hidden += AppendToken(html, text, token.Start, token.Length, token.Kind, emphasis);
+            if (link is not null)
+            {
+                html.Append("</span>");
+            }
         }
 
         return hidden;
+    }
+
+    /// <summary>
+    /// Whether the word at <paramref name="start"/> follows a dot: a member access, which no
+    /// object name is, so no link. The "used by" search (<c>ObjectLinks.NamesReferenced</c>) does
+    /// NOT use it: <c>x.Start()</c> is how a method is used, and the search counts it by name.
+    /// </summary>
+    public static bool IsMember(string text, int start)
+    {
+        ArgumentNullException.ThrowIfNull(text);
+        return start > 0 && text[start - 1] == '.';
+    }
+
+    /// <summary>A plain token that is one identifier: letters, digits and underscores, starting with a letter or underscore.</summary>
+    private static bool IsWord(string text, int start, int length)
+    {
+        if (length == 0 || !(char.IsLetter(text[start]) || text[start] == '_'))
+        {
+            return false;
+        }
+
+        for (var i = start + 1; i < start + length; i++)
+        {
+            if (!(char.IsLetterOrDigit(text[i]) || text[i] == '_'))
+            {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     /// <summary>Rows per <c>.cd-block</c>, the unit the browser may skip laying out.</summary>

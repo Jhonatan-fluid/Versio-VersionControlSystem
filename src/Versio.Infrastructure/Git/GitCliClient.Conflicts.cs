@@ -17,16 +17,47 @@ public sealed partial class GitCliClient
 
     /// <summary>Take one side of a conflicted file and stage it.</summary>
     /// <remarks>
+    /// <para>
     /// Two commands, because <c>checkout --ours</c> writes the working-tree file and leaves the
     /// index entry unmerged. A file that looks resolved on disk and is still conflicted to git
     /// is the state that makes somebody think the button did nothing.
+    /// </para>
+    /// <para>
+    /// <b>Unless the chosen side deleted the file</b> — then there is no version to check out.
+    /// In a modify/delete conflict git keeps the surviving side at stage 2 or 3 and the
+    /// deleting side at no stage at all, and <c>checkout --ours</c> for the side with no stage
+    /// exits 1 with "does not have our version". The first version ran exactly that and
+    /// reported the failure: the conflict stayed, the file stayed, and choosing the deletion
+    /// was impossible from the panel (the 2026-10-25 review, P2). The resolution that side
+    /// asks for is <c>git rm</c>, which takes the file out of the working tree and stages its
+    /// removal in one step. Not <c>rm --cached</c>: that would resolve the index and leave the
+    /// other side's content on disk as an untracked file, which is the deletion half-done.
+    /// Note that <c>rm</c> without <c>-f</c> is <i>not</i> a safeguard here: on an unmerged
+    /// path git has no clean version to compare against and removes the working file even if
+    /// it was edited by hand after the conflict (checked against git 2.55). That matches the
+    /// other side — <c>checkout --ours</c> overwrites a hand edit just the same — so either
+    /// button means "that side, wholesale", and the panel offers nothing in between.
+    /// </para>
     /// </remarks>
     public async Task<GitResult> ResolveWithSideAsync(string path, bool ours, CancellationToken ct)
     {
         var side = ours ? "--ours" : "--theirs";
+        var stages = await UnmergedStagesAsync(path, ct).ConfigureAwait(false);
+
+        // Stage 2 is ours, stage 3 is theirs. A path that is unmerged and has no entry for the
+        // side being taken was deleted on that side. A path with no unmerged entry at all falls
+        // through to the checkout, which then fails in git's words rather than being guessed at
+        // here.
+        if (stages.Count > 0 && !stages.Contains(ours ? 2 : 3))
+        {
+            _log.Info(LogCategory.Git, $"resolving {path} with {side}, which deleted it: git rm");
+            return await RunAsync([LiteralPathspecs, "rm", "--", path], null, ct,
+                                  TimeSpan.FromSeconds(30)).ConfigureAwait(false);
+        }
+
         _log.Info(LogCategory.Git, $"resolving {path} with {side}");
 
-        var taken = await RunAsync(["checkout", side, "--", path], null, ct,
+        var taken = await RunAsync([LiteralPathspecs, "checkout", side, "--", path], null, ct,
                                    TimeSpan.FromSeconds(30)).ConfigureAwait(false);
 
         if (!taken.Success)
@@ -34,8 +65,50 @@ public sealed partial class GitCliClient
             return taken;
         }
 
-        return await RunAsync(["add", "--", path], null, ct, TimeSpan.FromSeconds(30))
+        return await RunAsync([LiteralPathspecs, "add", "--", path], null, ct, TimeSpan.FromSeconds(30))
             .ConfigureAwait(false);
+    }
+
+    /// <summary>Which index stages an unmerged path has: 1 base, 2 ours, 3 theirs.</summary>
+    /// <remarks>
+    /// Empty when the path is not unmerged, and also when git could not answer — a resolution
+    /// then proceeds the way it always did and fails, if it fails, with git's own message
+    /// rather than a guess about stages. <c>-z</c> as every other path listing here, so a
+    /// non-ASCII or space-bearing name is never quoted; the stage is read from the metadata
+    /// column and the path field is not matched at all, because the pathspec already did that.
+    /// </remarks>
+    private async Task<IReadOnlySet<int>> UnmergedStagesAsync(string path, CancellationToken ct)
+    {
+        var listing = await RunAsync([LiteralPathspecs, "ls-files", "-u", "-z", "--", path], null, ct,
+                                     TimeSpan.FromSeconds(30)).ConfigureAwait(false);
+
+        if (!listing.Success)
+        {
+            _log.Warn(LogCategory.Git,
+                      $"could not read the unmerged stages of {path}: {listing.FailureReason}");
+            return new HashSet<int>();
+        }
+
+        // Each record is "<mode> <object> <stage>\t<path>"; the stage is the last token before
+        // the tab, and the path field is not read at all. The runner's one appended newline is
+        // dropped by length as the other -z listings do it (IncomingPathsAsync says why never
+        // by trimming); here it only keeps the last record from carrying a stray newline.
+        var text = listing.StdOut.EndsWith('\n') ? listing.StdOut[..^1] : listing.StdOut;
+        var stages = new HashSet<int>();
+
+        foreach (var record in text.Split('\0', StringSplitOptions.RemoveEmptyEntries))
+        {
+            var tab = record.IndexOf('\t');
+            var meta = tab < 0 ? record : record[..tab];
+            var fields = meta.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+
+            if (fields.Length >= 3 && int.TryParse(fields[2], out var stage))
+            {
+                stages.Add(stage);
+            }
+        }
+
+        return stages;
     }
 
     /// <summary>Merge the upstream in, producing conflicts rather than refusing.</summary>
@@ -76,8 +149,15 @@ public sealed partial class GitCliClient
         // Three dots: what THAT branch has done since the two parted, and not what this one
         // has. Two dots here would report this branch's own work as incoming and refuse a
         // merge over changes that are already present.
+        //
+        // -z, as every other path listing in this client has: without it git's default
+        // core.quotePath writes any non-ASCII name as "Pr\303\274fung.project", quotes and
+        // octal included, and that string equals no project path and starts with no mirror
+        // prefix. The merge guard then found no affected binding and the import protection
+        // was skipped for exactly the merges that touched a project with an umlaut in its
+        // name (the 2026-10-24 review's item 15). NUL-separated output is never quoted.
         var result = await RunAsync(
-            ["diff", "--name-only", $"HEAD...{branch}"], null, ct).ConfigureAwait(false);
+            ["diff", "--name-only", "-z", $"HEAD...{branch}"], null, ct).ConfigureAwait(false);
 
         if (!result.Success)
         {
@@ -86,8 +166,14 @@ public sealed partial class GitCliClient
             return null;
         }
 
-        return [.. result.StdOut
-            .Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)];
+        // The runner appends one newline to stdout, and that one newline is all that is
+        // removed — by length, never by trimming. The first -z version split with
+        // TrimEntries to be rid of it, which also took the spaces off every field: a project
+        // under " plc/" came back as "plc/…", matched no tracked root, and the merge guard
+        // was bypassed for exactly the names -z was added to carry (the second-round review's
+        // item 2). A path is whatever git said it is, spaces included.
+        var listing = result.StdOut.EndsWith('\n') ? result.StdOut[..^1] : result.StdOut;
+        return [.. listing.Split('\0', StringSplitOptions.RemoveEmptyEntries)];
     }
 
     /// <summary>Replay this branch onto the upstream.</summary>
@@ -117,6 +203,44 @@ public sealed partial class GitCliClient
                                                   TimeSpan.FromMinutes(2)).ConfigureAwait(false),
             _ => NoOp(),
         };
+    }
+
+    /// <summary>Go on with the paused rebase, keeping each replayed commit's own message.</summary>
+    /// <remarks>
+    /// <para>
+    /// The state is read first, as the abort does: <c>git rebase --continue</c> outside a
+    /// rebase is an error in git's words, and this client would rather say so in its own than
+    /// hand a caller a message about a state it already knows it is not in.
+    /// </para>
+    /// <para>
+    /// <b>The editor is suppressed through <c>GIT_EDITOR</c>, not <c>-c core.editor</c>.</b>
+    /// After a resolved conflict the sequencer opens an editor on the commit's stored message;
+    /// with stdin and stdout redirected that is a process waiting on a console nobody can
+    /// see, until the ten-minute timeout kills it. Of the ways to turn it off, the environment
+    /// variable is the one git consults first — ahead of <c>core.editor</c>, <c>VISUAL</c> and
+    /// <c>EDITOR</c> — so a <c>-c</c> override would lose to a <c>GIT_EDITOR</c> the user's
+    /// shell exported, and Versio would hang exactly on the machine of somebody who had set
+    /// one up. <c>:</c> rather than <c>true</c>: git special-cases a colon as "no editor" and
+    /// never spawns anything, so there is no helper to fail to find.
+    /// </para>
+    /// </remarks>
+    public async Task<GitResult> ContinueRebaseAsync(CancellationToken ct)
+    {
+        var state = await MergeStateAsync(ct).ConfigureAwait(false);
+
+        if (state != MergeState.Rebasing)
+        {
+            _log.Warn(LogCategory.Git,
+                      $"rebase --continue refused: no rebase is in progress (state is {state})");
+            return new GitResult
+            {
+                Success = false, ExitCode = -1, StdErr = "no rebase is in progress",
+            };
+        }
+
+        _log.Info(LogCategory.Git, "continuing the rebase; each replayed commit keeps its own message");
+        return await RunAsync(["rebase", "--continue"], null, ct, TimeSpan.FromMinutes(10),
+                              noEditor: true).ConfigureAwait(false);
     }
 
     /// <summary>Whether a merge or rebase is part-way through.</summary>

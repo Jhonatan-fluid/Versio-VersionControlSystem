@@ -87,8 +87,9 @@ public sealed record MergePlan
 /// optional:
 /// </para>
 /// <list type="bullet">
-///   <item><b>Adopt the result</b>, as the upstream merge does through
-///   <c>AdoptExternalStateAsync</c>: the disagreement is recorded as the synced truth, the
+///   <item><b>Adopt the result</b>, as the upstream merge did through
+///   <c>AdoptExternalStateAsync</c> until 2026-10-25 (the review's fourth round, item 2; it
+///   goes through this preflight now): the disagreement is recorded as the synced truth, the
 ///   commit gate then sees nothing stale, and the mirror's extra work survives on disk only
 ///   until the next genuine project edit exports over it.</item>
 ///   <item><b>Do nothing</b>: the commit gate compares the project's hash against

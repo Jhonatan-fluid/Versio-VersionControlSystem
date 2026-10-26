@@ -1,7 +1,8 @@
-using System.Text.RegularExpressions;
 using Versio.Core.Diff;
 using Versio.Core.Iec;
+using Versio.Core.Iec.Ladder;
 using Versio.Core.Projects;
+using Versio.Core.Text;
 
 namespace Versio.Core.Review;
 
@@ -30,21 +31,49 @@ public sealed record ReviewCoverage(int Changed, IReadOnlyList<CoverageGap> Gaps
 /// </summary>
 /// <remarks>
 /// <para>
-/// <b>Claim only what is proven.</b> A drawing that shows a member as modified may still hide an
-/// attribute changed on the same line, so being inside a drawn element proves nothing. A changed
-/// line counts as represented only when the renderer can name it: a source row drawn as added, a
-/// removed row drawn struck, or a declaration line whose every token is a field the member table
-/// displays for a row it shows as changed. Everything else is a gap, and the page says "may not
-/// show — check Raw" for it.
+/// <b>Claim only what the renderer drew, and say the rest once.</b> A changed line is represented
+/// when a renderer can name it: a source row drawn as added or struck; a line inside a member
+/// row the table draws as added, changed or removed; a changed attribute chip's line; a network
+/// drawn on a side; or a line the parser declared <i>framing</i> — the declaration's own
+/// keywords, the markup around and between the rows of an XML file, blank lines — which the
+/// drawing has no cell for and which a reviewer would gain nothing from reading on Raw.
+/// Everything else is a gap, and the page says "may not show — check Raw" for it.
 /// </para>
 /// <para>
-/// <b>Evidence is per renderer, and absence of evidence is a gap.</b> A ladder, or a table read
-/// from XML, has no field-level evidence yet: every changed line of its file is reported, so its
-/// view stays labelled partial — the rule is that a renderer leaves "partial" only when its tests
-/// prove it can.
+/// <b>Why the rules loosened (2026-10-23).</b> The first version vouched for a declaration line
+/// only when every token on it was a field the table displays, and for no XML line at all. On the
+/// owner's real pull request (85 files, 2026-10-23) that made the banner
+/// noise: a re-indented interface listed twelve "changed, but not shown" lines, a new 780-line
+/// symbol set drawn as a table with every row marked A said "lines 1–780 not shown", and a method
+/// whose header gained <c>PUBLIC</c> reported the same edit twice, as it was and as it is. Every
+/// one of those was the rule being right about the letters and wrong about the drawing. The
+/// rules now (each has a test and a killed mutation in <c>CoverageTests</c>):
+/// <list type="number">
+/// <item>A file entirely new or entirely deleted, drawn by any renderer with evidence, is complete:
+/// every row is A (or D), and there is nothing a reviewer could be missing.</item>
+/// <item>A row drawn as A / D / M vouches for every line it spans on that side, pragma chips
+/// included; an unchanged row vouches for its lines when their text holds the same words as before
+/// (re-aligned, a comment moved to the end of its line), because the cells it draws are the same cells.</item>
+/// <item>The declaration's framing — the header, <c>VAR</c>, <c>END_VAR</c>, <c>END_TYPE</c> —
+/// is vouched for by the table that draws the object (<see cref="MemberTable.Structural"/>).</item>
+/// <item>A line edited in place is one gap, named as it is now, never once per side.</item>
+/// <item>An XML table vouches for markup-only lines between its rows the same way (the parser
+/// declares them; <see cref="Structural"/>), and keeps "not-shown" for a changed value the table does
+/// not draw.</item>
+/// <item>A ladder has evidence (<see cref="Ladder"/>): every network vouches for its span on the
+/// sides it exists on, and only lines outside every network and outside the declared framing remain.</item>
+/// </list>
+/// What stays a gap, deliberately: a changed line under an unchanged row that is not spacing (a
+/// pragma the table does not read), a comment line no row owns, a changed value in XML the table
+/// has no column for, a <c>EXTENDS</c> added to a header, and anything a renderer did not draw.
+/// </para>
+/// <para>
+/// <b>Evidence is per renderer, and absence of evidence is a gap.</b> A file drawn with no evidence
+/// at all is reported whole, with the caller's reason — the rule is that a renderer leaves "partial"
+/// only when its tests prove it can.
 /// </para>
 /// </remarks>
-public static partial class Coverage
+public static class Coverage
 {
     /// <summary>What one renderer can vouch for in one file: a changed line on a side, shown or not.</summary>
     public delegate bool Evidence(ReviewSide side, int line);
@@ -56,6 +85,22 @@ public static partial class Coverage
     /// </summary>
     /// <param name="files">Each file of the object: its path and both versions' text (null where absent).</param>
     /// <param name="evidence">What each renderer can vouch for, by the path of the file it drew from.</param>
+    /// <remarks>
+    /// <para>
+    /// <b>Rule 1, whole files.</b> A file with no older version (or no newer one) that has evidence is
+    /// complete without reading a line: the renderer drew the whole object as added (or removed),
+    /// so nothing it drew can be hiding a change. The symbol set case: 780 lines, every row A, and
+    /// the old rule listed all 780 because XML lines are not fields.
+    /// </para>
+    /// <para>
+    /// <b>Rule 4, once per edit.</b> The diff reports a line edited in place twice — the old text
+    /// removed, the new text added — and the first version reported both as gaps, so one hidden edit
+    /// read as two. A run of removed-then-added lines is one edit: when its newer side has a gap,
+    /// that is the gap, and the older side's lines are not listed again. The older side is named
+    /// only where it is all there is (a pure deletion, or a replacement whose newer lines are all
+    /// vouched for).
+    /// </para>
+    /// </remarks>
     public static ReviewCoverage Check(
         IEnumerable<(string Path, string? Old, string? New)> files,
         IReadOnlyDictionary<string, IReadOnlyList<Evidence>> evidence,
@@ -69,12 +114,30 @@ public static partial class Coverage
         var changed = 0;
         foreach (var (path, old, @new) in files)
         {
-            var (removed, added) = ChangedLines(old, @new);
-            changed += removed.Count + added.Count;
             var providers = evidence.TryGetValue(path, out var list) ? list : [];
             var reason = providers.Count == 0 ? noEvidence(path) : "not-shown";
-            gaps.AddRange(Runs(path, ReviewSide.Old, removed.Where(l => !providers.Any(p => p(ReviewSide.Old, l))), reason));
-            gaps.AddRange(Runs(path, ReviewSide.New, added.Where(l => !providers.Any(p => p(ReviewSide.New, l))), reason));
+            var oldGaps = new List<int>();
+            var newGaps = new List<int>();
+            foreach (var (removed, added) in Edits(old, @new))
+            {
+                changed += removed.Count + added.Count;
+                if (providers.Count > 0 && (string.IsNullOrEmpty(old) || string.IsNullOrEmpty(@new)))
+                {
+                    continue;
+                }
+
+                var missingNew = added.Where(l => !providers.Any(p => p(ReviewSide.New, l))).ToList();
+                newGaps.AddRange(missingNew);
+                if (removed.Count > 0 && added.Count > 0 && missingNew.Count > 0)
+                {
+                    continue;
+                }
+
+                oldGaps.AddRange(removed.Where(l => !providers.Any(p => p(ReviewSide.Old, l))));
+            }
+
+            gaps.AddRange(Runs(path, ReviewSide.Old, oldGaps, reason));
+            gaps.AddRange(Runs(path, ReviewSide.New, newGaps, reason));
         }
 
         return new ReviewCoverage(changed, gaps);
@@ -83,9 +146,42 @@ public static partial class Coverage
     /// <summary>The removed lines (1-based, in the old text) and added lines (in the new) between two versions.</summary>
     public static (IReadOnlyList<int> Removed, IReadOnlyList<int> Added) ChangedLines(string? old, string? @new)
     {
-        var steps = LineDiff.Compare(Lines(old), Lines(@new));
-        return (steps.Where(s => s.Op == LineOp.Removed).Select(s => s.OldIndex + 1).ToList(),
-            steps.Where(s => s.Op == LineOp.Added).Select(s => s.NewIndex + 1).ToList());
+        var edits = Edits(old, @new).ToList();
+        return (edits.SelectMany(e => e.Removed).ToList(), edits.SelectMany(e => e.Added).ToList());
+    }
+
+    /// <summary>
+    /// The changes between two versions as edits: each a run of removed and added lines with no
+    /// unchanged line inside it, which is how a reader sees one change on Raw.
+    /// </summary>
+    private static IEnumerable<(IReadOnlyList<int> Removed, IReadOnlyList<int> Added)> Edits(string? old, string? @new)
+    {
+        var removed = new List<int>();
+        var added = new List<int>();
+        foreach (var step in LineDiff.Compare(Lines(old), Lines(@new)))
+        {
+            switch (step.Op)
+            {
+                case LineOp.Removed:
+                    removed.Add(step.OldIndex + 1);
+                    continue;
+                case LineOp.Added:
+                    added.Add(step.NewIndex + 1);
+                    continue;
+            }
+
+            if (removed.Count > 0 || added.Count > 0)
+            {
+                yield return (removed, added);
+                removed = [];
+                added = [];
+            }
+        }
+
+        if (removed.Count > 0 || added.Count > 0)
+        {
+            yield return (removed, added);
+        }
     }
 
     /// <summary>
@@ -102,15 +198,31 @@ public static partial class Coverage
 
     /// <summary>
     /// A compared member table's evidence, for the text it was read from: a changed line is shown
-    /// when it lies in one row's lines on that side, that row is drawn as changed, and nothing on
-    /// the line is left over once the row's displayed fields and the declaration syntax around them
-    /// are taken away.
+    /// when a row drawn as changed spans it, when an unchanged row spans it and the row's text
+    /// holds the same words as before, when a changed attribute chip is written on it, or when the
+    /// parser declared it framing (<see cref="MemberTable.Structural"/>).
     /// </summary>
     /// <remarks>
-    /// The leftover test is what keeps this honest. A declaration line of Structured Text is the
-    /// name, the type, the value and the comment, all displayed; a line of XML is mostly markup and
-    /// attributes the table does not show, so it is never vouched for — the view stays partial
-    /// until a parser reports XML fields by location, which is the next renderer to earn it.
+    /// <para>
+    /// <b>The span is the evidence, since 2026-10-23.</b> The first version took the row's displayed
+    /// fields away from the line and vouched only when nothing was left over, so that a pragma
+    /// changed beside a shown value would stay a gap. The table draws pragmas as chips now, so a
+    /// row's span holds nothing the table does not draw — and the token test had turned
+    /// <c>STRING(GVL.LENGTH)</c> against itself, because a parenthesis splits a token the parser kept
+    /// whole. A row marked A, D or M is the drawing saying "this changed"; that is what the line is
+    /// vouched by.
+    /// </para>
+    /// <para>
+    /// <b>The same words under an unchanged row.</b> The owner's FB_Alarm re-aligned twelve
+    /// declarations: twelve changed lines, twelve rows reading unchanged, twelve warnings. The
+    /// cells the table draws are the same cells, and the only thing a reviewer could find on Raw
+    /// is the tab. Its GVL_Logger moved a comment from above <c>BATCH_CAPACITY</c> to the end of
+    /// its line: the same comment cell, drawn the same. So an unchanged row vouches for its lines
+    /// when its old and new text hold the same words — the row's cells are already known equal,
+    /// so equal words mean nothing was added or taken away, only arranged — and for nothing else:
+    /// a pragma the parser does not read, or a comment restyled from <c>//</c> to <c>(* *)</c>,
+    /// changes the words and leaves the line a gap.
+    /// </para>
     /// </remarks>
     public static Evidence Table(MemberTable compared, string? oldText, string? newText)
     {
@@ -118,73 +230,132 @@ public static partial class Coverage
         var oldLines = Lines(oldText);
         var newLines = Lines(newText);
         var rows = compared.Members.Where(r => !r.IsSectionHeading).ToList();
+        var framing = Structural(compared.StructuralBefore, compared.Structural);
+
+        bool SameWords(MemberRow row) =>
+            row.Lines is { } now && row.WasLines is { } was
+            && Words(Text(newLines, now)).SequenceEqual(Words(Text(oldLines, was)), StringComparer.Ordinal);
+
+        // What the table itself says it does not draw, on each side. It overrides every rule
+        // below: a row's span runs from its comment to its declaration, and a pragma or a
+        // conditional line between the two is inside the span and drawn nowhere — vouched for by
+        // the modified row, it was reported "complete" with the change hidden (review, 2026-10-24).
+        var unshownNew = compared.Unshown.Select(u => u.Line).ToHashSet();
+        var unshownOld = compared.UnshownBefore.Select(u => u.Line).ToHashSet();
+
         return (side, line) =>
         {
-            var text = side == ReviewSide.New ? At(newLines, line) : At(oldLines, line);
-
-            // The object's own attributes, drawn as chips over the table: a changed one vouches
-            // for its line on the same leftover test, so the line holds nothing but attributes.
-            var chips = compared.Attributes.Where(a => (side == ReviewSide.New ? a.Lines : a.WasLines) is { } at && at.Contains(line)
-                                                       && (side == ReviewSide.New ? !a.IsRemoved : !a.IsAdded)).ToList();
-            if (chips.Count > 0)
+            if ((side == ReviewSide.New ? unshownNew : unshownOld).Contains(line))
             {
-                return text is not null && chips.Any(a => a.Change != MemberChange.None)
-                    && Tokens(text).All(chips.SelectMany(a => Tokens(Pragma(a, side))).ToHashSet(StringComparer.Ordinal).Contains);
+                return false;
             }
 
             var holders = rows.Where(r => (side == ReviewSide.New ? r.Lines : r.WasLines) is { } span && span.Contains(line)).ToList();
-            if (holders.Count != 1 || holders[0].Change == MemberChange.None)
+            if (holders.Any(r => r.Change != MemberChange.None || SameWords(r)))
             {
-                return false;
+                return true;
             }
 
-            var row = holders[0];
-            if (text is null)
-            {
-                return false;
-            }
-
-            var shown = side == ReviewSide.New
-                ? new[] { row.Name, row.Datatype, row.StartValue, row.ExternalAccess, row.Comment }
-                : [row.Name, row.DatatypeBefore ?? row.Datatype, row.StartValueBefore ?? row.StartValue, row.ExternalAccessBefore ?? row.ExternalAccess, row.CommentBefore ?? row.Comment];
-            // The row's attribute lines are in its span, and its chips draw them on the side
-            // they exist on.
-            var pragmas = row.Attributes.Where(a => side == ReviewSide.New ? !a.IsRemoved : !a.IsAdded).Select(a => Pragma(a, side));
-            // Whole tokens, never substrings: taking "INT" out of "INTERNAL" would leave a line
-            // with a hidden change looking accounted for.
-            var displayed = shown.Concat(pragmas).SelectMany(Tokens).ToHashSet(StringComparer.Ordinal);
-            return Tokens(text).All(displayed.Contains);
+            // The object's own attributes, drawn as chips over the table: a chip drawn as changed
+            // vouches for the line it is written on, on the side it exists on.
+            var chips = compared.Attributes.Where(a => a.Change != MemberChange.None
+                                                       && (side == ReviewSide.New ? a.Lines : a.WasLines) is { } at && at.Contains(line));
+            return chips.Any() || framing(side, line);
         };
     }
 
     /// <summary>
-    /// An attribute as the pragma that writes it, on one side, so its tokens are the ones a line
-    /// spelled the usual way splits into. A pragma spelled any other way leaves tokens over and
-    /// is not vouched for, which is the safe way round.
+    /// Framing a parser declared on each side: lines that are the file's own syntax around what the
+    /// drawing shows — a declaration's keywords, the markup between an XML table's rows, blank lines —
+    /// which no cell could show differently and which a reviewer sent to Raw would read for nothing.
     /// </summary>
-    private static string Pragma(MemberAttribute a, ReviewSide side)
+    /// <remarks>
+    /// The parser decides, never this class: which lines are framing is the format's knowledge
+    /// (<see cref="MarkupLines"/> for XML, the declaration reader for Structured Text), and a line it
+    /// did not declare stays a gap. That is the safe way round: a parser that declares nothing
+    /// changes nothing.
+    /// </remarks>
+    public static Evidence Structural(IReadOnlyList<LineSpan> oldSpans, IReadOnlyList<LineSpan> newSpans)
     {
-        var value = side == ReviewSide.New ? a.Value : a.OlderValue;
-        return value.Length == 0 ? $"{{attribute '{a.Name}'}}" : $"{{attribute '{a.Name}' := '{value}'}}";
+        ArgumentNullException.ThrowIfNull(oldSpans);
+        ArgumentNullException.ThrowIfNull(newSpans);
+        return (side, line) => (side == ReviewSide.New ? newSpans : oldSpans).Any(s => s.Contains(line));
     }
 
-    /// <summary>A line's words, split at spacing and at the declaration syntax around fields: punctuation and comment marks.</summary>
-    private static IEnumerable<string> Tokens(string? value) =>
-        string.IsNullOrEmpty(value) ? [] : Syntax().Split(value).Where(t => t.Length > 0);
+    /// <summary>
+    /// A compared ladder's evidence: every network vouches for its span on each side it is drawn on,
+    /// and the framing each version's parser declared (<see cref="LadderDocument.Structural"/>) is
+    /// vouched for too. What remains a gap is a line outside every network that the parser did not
+    /// declare: a setting the drawing has no element for.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>An unchanged network vouches for its span as well</b> — the owner's rule (2026-10-23).
+    /// A network whose lines changed while its drawing did not is one whose vendor renumbered an
+    /// element id or rewrote layout data: the vendor's bookkeeping, which a diagram cannot show and
+    /// a reviewer cannot act on. A changed network is marked where it changed, so its span is the
+    /// drawing saying so. <b>The cost, stated:</b> the model carries an element's operand, its
+    /// kind and its instance, not everything the file holds for it — an operand's comment, its
+    /// symbol comment, its address, a contact's attributes, a TIA part's flags — and an edit to one
+    /// of those alone compares as Same and is vouched for by this rule. FINISH.md carries it with
+    /// the element anchors, which need the same per-element parsing.
+    /// </para>
+    /// <para>
+    /// Spans come from the networks the rows hold, so a moved network vouches for its old lines as
+    /// well as its new ones, and a replaced row vouches for both networks on their own sides.
+    /// </para>
+    /// </remarks>
+    public static Evidence Ladder(LadderComparison comparison, IReadOnlyList<LineSpan> oldStructural, IReadOnlyList<LineSpan> newStructural)
+    {
+        ArgumentNullException.ThrowIfNull(comparison);
+        // A placeholder network — one in a language the diagram does not draw (an IL network
+        // in a ladder, an SCL compile unit in a LAD block) — holds no elements, so its fingerprint
+        // is its title and its language and nothing of its text: two versions with different
+        // instructions compare as Same. Its span is not vouched for; those lines stay gaps, which is
+        // the honest answer for code the drawing shows as a box with a name (review, 2026-10-24).
+        static bool Drawn(LadderNetwork network) => network.UnsupportedLanguage is null;
+        var newSpans = comparison.Rows.Select(r => r.New?.Network).Where(n => n is not null && Drawn(n)).Select(n => n!.Lines).OfType<LineSpan>().ToList();
+        var oldSpans = comparison.HasOldSide ? comparison.Rows.Select(r => r.Old?.Network).Where(n => n is not null && Drawn(n)).Select(n => n!.Lines).OfType<LineSpan>().ToList() : [];
+        var framing = Structural(oldStructural, newStructural);
+        return (side, line) => (side == ReviewSide.New ? newSpans : oldSpans).Any(s => s.Contains(line)) || framing(side, line);
+    }
 
-    [GeneratedRegex(@"[\s:=;,()\[\]]+|//|\(\*|\*\)")]
-    private static partial Regex Syntax();
+    /// <summary>The text of <paramref name="span"/>'s lines, joined; lines past the end are left out.</summary>
+    private static string Text(IReadOnlyList<string> lines, LineSpan span) =>
+        string.Join('\n', Enumerable.Range(span.Start, span.Length).Select(l => At(lines, l)).Where(t => t is not null));
+
+    /// <summary>A text's words in sorted order: what two arrangements of the same declaration share.</summary>
+    private static IEnumerable<string> Words(string text) =>
+        text.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries).Order(StringComparer.Ordinal);
 
     private static string? At(IReadOnlyList<string> lines, int line) => line >= 1 && line <= lines.Count ? lines[line - 1] : null;
 
-    private static List<string> Lines(string? text) =>
-        string.IsNullOrEmpty(text) ? [] : text.Replace("\r\n", "\n").Split('\n').ToList();
+    /// <summary>
+    /// The file's lines, without the phantom one a trailing newline would add: the layouts count
+    /// lines the same way (<see cref="StSourceLayout"/>), and a newline gained at the end of a
+    /// file is not a line anyone can read.
+    /// </summary>
+    private static List<string> Lines(string? text)
+    {
+        if (string.IsNullOrEmpty(text))
+        {
+            return [];
+        }
+
+        var lines = text.Replace("\r\n", "\n").Split('\n').ToList();
+        if (lines.Count > 1 && lines[^1].Length == 0)
+        {
+            lines.RemoveAt(lines.Count - 1);
+        }
+
+        return lines;
+    }
 
     /// <summary>Consecutive lines folded into ranges, so a ten-line edit is one gap, not ten.</summary>
     private static IEnumerable<CoverageGap> Runs(string path, ReviewSide side, IEnumerable<int> lines, string reason)
     {
         int? start = null, end = null;
-        foreach (var line in lines.Order())
+        foreach (var line in lines.Distinct().Order())
         {
             if (end is { } e && line == e + 1)
             {

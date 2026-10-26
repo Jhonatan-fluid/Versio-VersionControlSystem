@@ -12,9 +12,11 @@ using Xunit;
 namespace Versio.Web.Tests;
 
 /// <summary>
-/// What the page shows for an object, decided as the desktop decides it, over this repository's
-/// real exports: tables, ladders, code under an interface, Markdown, source; and two commits
-/// compared, including a change nothing in the drawing shows.
+/// What the page shows for an object over this repository's real exports: tables, ladders, code
+/// under an interface, Markdown, source; and two commits compared, including a change nothing in
+/// the drawing shows. The decision is Core's (<c>RenderChoice</c>); that both hosts make the same
+/// one is <c>RenderChoiceParityTests</c>' claim, in the desktop suite, which this class once
+/// claimed and could not keep. The kinds added when the choice moved are in <c>RenderedKindsTests</c>.
 /// </summary>
 public sealed class ViewServiceTests
 {
@@ -71,6 +73,38 @@ public sealed class ViewServiceTests
         var result = await views.CompareAsync(RepoAccess.Anonymous, await Model(models, older), await Model(models, newer), path, view, sideBySide, CancellationToken.None, fullFile: fullFile);
         Assert.True(result.Ok, $"{path}: {result.Failure}");
         return result.Value!;
+    }
+
+    /// <summary>
+    /// A ladder drawn on its own — a TIA organization block has no interface table over it — vouches
+    /// for its networks (Coverage.Ladder, the coverage rewrite of 2026-10-23): a comment given to
+    /// the first network is a change inside that network's span, so the comparison is complete, not
+    /// "no-evidence". The second site, a ladder under a table, is pinned by PullAnchorTests.
+    /// </summary>
+    [Fact]
+    public async Task A_ladder_without_a_table_over_it_vouches_for_its_networks()
+    {
+        const string ob = "fixtures/projects/CleaningStation_V20_V21/CleaningStation_V20_V21/ET 200SP station_2/CleaningStation/Program blocks/01_CyclicBlocks/Main_1.xml";
+        var repo = _github.Add("acme", "tia");
+        var files = FakeGitHub.FromDisk(".versio/repo.json", "fixtures/projects/CleaningStation_V20_V21/CleaningStation_V20_V21");
+        _github.Commit(repo, "main", files);
+        var changed = new Dictionary<string, byte[]>(files, StringComparer.Ordinal);
+        // The first network's (empty) comment, in the first culture: one edit inside one network.
+        var text = Encoding.UTF8.GetString(files[ob]);
+        var network = text.IndexOf("<SW.Blocks.CompileUnit", StringComparison.Ordinal);
+        var empty = text.IndexOf("<Text />", network, StringComparison.Ordinal);
+        Assert.True(network > 0 && empty > network);
+        changed[ob] = Encoding.UTF8.GetBytes(text[..empty] + "<Text>Runs the station once per cycle.</Text>" + text[(empty + "<Text />".Length)..]);
+        _github.Commit(repo, "next", changed);
+
+        var (views, models) = Services();
+        var older = (await models.LoadAsync(RepoAccess.Anonymous, "acme", "tia", repo.Refs["main"], CancellationToken.None)).Value!;
+        var newer = (await models.LoadAsync(RepoAccess.Anonymous, "acme", "tia", repo.Refs["next"], CancellationToken.None)).Value!;
+        var result = await views.CompareAsync(RepoAccess.Anonymous, older, newer, ob, PaneView.Rendered, false, CancellationToken.None);
+
+        Assert.True(result.Ok, result.Failure.ToString());
+        Assert.Equal("ladder", result.Value!.Kind);
+        Assert.True(result.Value.Coverage!.Complete, string.Join("; ", result.Value.Coverage.Gaps.Select(g => $"{g.Path} {g.Side} {g.Start}-{g.End} {g.Reason}")));
     }
 
     [Fact]
@@ -357,6 +391,46 @@ public sealed class ViewServiceTests
         Assert.Contains(ViewService.TypeChangedNotice, view.Notices);
     }
 
+    /// <summary>
+    /// Review, 2026-10-25 (P2): a two-layer object renamed to a name with a dot in it. The old path
+    /// the caller names is the <c>.gvl.st</c>; the <c>.gvl.xml</c> beside it is not named by anyone
+    /// and must follow the pair, not the first-dot suffix (<c>.gvl.xml</c> against <c>.Alarm2.gvl.xml</c>),
+    /// which paired neither layer and drew the one edited member as added with the sidecar as a
+    /// coverage gap. The pair places both: the edited row reads modified, and the comparison is complete.
+    /// </summary>
+    [Fact]
+    public async Task A_renamed_objects_other_layers_follow_the_pair_the_caller_named()
+    {
+        const string Manifest = "fixtures/projects/RefrigeratorControl/_manifest.json";
+        const string Gvls = "fixtures/projects/RefrigeratorControl/Device/Plc Logic/Application/Library/Alarm/GVLs/";
+        var files = new Dictionary<string, byte[]>(_github.CommitFiles(_repo, "main"), StringComparer.Ordinal);
+        foreach (var layer in new[] { ".gvl.st", ".gvl.xml" })
+        {
+            files[Gvls + "GVL.Alarm2" + layer] = files[Gvls + "GVL_Alarm" + layer];
+            files.Remove(Gvls + "GVL_Alarm" + layer);
+        }
+
+        Edit(files, Gvls + "GVL.Alarm2.gvl.st", "AlarmConstant : DINT := 3;", "AlarmConstant : DINT := 4;");
+        var manifest = System.Text.Json.Nodes.JsonNode.Parse(files[Manifest])!;
+        foreach (var entry in manifest["objects"]!.AsArray().Where(o => (string?)o!["name"] == "GVL_Alarm"))
+        {
+            entry!["path"] = ((string)entry["path"]!).Replace("GVL_Alarm.", "GVL.Alarm2.", StringComparison.Ordinal);
+        }
+
+        files[Manifest] = Encoding.UTF8.GetBytes(manifest.ToJsonString());
+        _github.Commit(_repo, "renamed", files);
+        var (views, models) = Services();
+
+        var result = await views.CompareAsync(RepoAccess.Anonymous, await Model(models, "main"), await Model(models, "renamed"), Gvls + "GVL.Alarm2.gvl.st", PaneView.Rendered, false, CancellationToken.None, oldPath: Gvls + "GVL_Alarm.gvl.st");
+        Assert.True(result.Ok, result.Failure.ToString());
+        var view = result.Value!;
+
+        Assert.Equal("table", view.Kind);
+        Assert.Contains("data-change=\"modified\"", view.Html, StringComparison.Ordinal);
+        Assert.DoesNotContain("data-change=\"added\"", view.Html, StringComparison.Ordinal);
+        Assert.True(view.Coverage!.Complete, string.Join("; ", view.Coverage.Gaps.Select(g => $"{g.Path} {g.Side} {g.Start}-{g.End} {g.Reason}")));
+    }
+
     [Fact]
     public async Task The_tree_has_each_projects_libraries_tasks_and_devices_from_its_catalogs()
     {
@@ -392,7 +466,7 @@ public sealed class ViewServiceTests
         var rendered = await views.ViewAsync(RepoAccess.Anonymous, model, plcLogic, PaneView.Rendered, false, CancellationToken.None);
         var raw = await views.ViewAsync(RepoAccess.Anonymous, model, plcLogic, PaneView.Raw, false, CancellationToken.None);
 
-        Assert.Equal("markdown", rendered.Value!.Kind);
+        Assert.Equal("note", rendered.Value!.Kind);
         Assert.Contains(EmptyObjectNote.For(hasChildren: true), System.Net.WebUtility.HtmlDecode(rendered.Value.Html), StringComparison.Ordinal);
         Assert.Equal("source", raw.Value!.Kind);
     }

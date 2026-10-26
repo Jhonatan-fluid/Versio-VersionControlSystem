@@ -64,17 +64,101 @@ internal static class JsonFile
         }
     }
 
+    /// <summary>
+    /// One writer per file at a time, within this process.
+    /// </summary>
+    /// <remarks>
+    /// Two bindings persisting their direction locks at the same moment both wrote
+    /// <c>state.json.tmp</c>: the second open failed with a sharing violation, the exception
+    /// escaped the sync engine, and that binding's slot was never released (the 2026-10-25
+    /// review's seventh round, item 2). The gate serialises the writers; the temp name below
+    /// is unique as well, so a writer in another process — a second Versio handing over, a
+    /// tool — cannot collide with this one either. Keyed by full path, case-insensitively,
+    /// because two spellings of one file are one file on Windows.
+    /// </remarks>
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, SemaphoreSlim> Writers =
+        new(StringComparer.OrdinalIgnoreCase);
+
+    private static SemaphoreSlim WriterFor(string path) =>
+        Writers.GetOrAdd(Path.GetFullPath(path), _ => new SemaphoreSlim(1, 1));
+
+    /// <summary>
+    /// A temp name no other writer uses. The last writer still wins the move, which is the
+    /// replace-atomically contract this file has always had; what changes is that two writers
+    /// no longer fight over one half-written temp. A temp left behind by a crash is an orphan
+    /// in a gitignored folder, not a corrupt target.
+    /// </summary>
+    private static string TempFor(string path) => $"{path}.{Guid.NewGuid():N}.tmp";
+
+    /// <summary>
+    /// The replace, tried a few times before it is allowed to fail.
+    /// </summary>
+    /// <remarks>
+    /// On Windows a file that was just written is briefly open elsewhere — the virus scanner,
+    /// the indexer — and replacing it in that window fails with "access to the path is denied"
+    /// or a sharing violation although nothing of ours holds it. Thirty-two writers in a row
+    /// hit it about one run in three under a loaded suite, and before the sync engine learned
+    /// to survive a throw from its store (the seventh round's item 2) one such miss was a
+    /// binding stuck Coalesced. The same remedy <c>WindowsFileSystem</c> uses for its copies:
+    /// a handful of short waits, then the real failure with its real message.
+    /// </remarks>
+    private static async Task MoveWithRetriesAsync(string temp, string path, CancellationToken ct)
+    {
+        for (var attempt = 1; ; attempt++)
+        {
+            try
+            {
+                File.Move(temp, path, overwrite: true);
+                return;
+            }
+            catch (Exception ex) when (attempt < MoveAttempts && ex is IOException or UnauthorizedAccessException)
+            {
+                await Task.Delay(MoveDelay(attempt), ct).ConfigureAwait(false);
+            }
+        }
+    }
+
+    private static void MoveWithRetries(string temp, string path)
+    {
+        for (var attempt = 1; ; attempt++)
+        {
+            try
+            {
+                File.Move(temp, path, overwrite: true);
+                return;
+            }
+            catch (Exception ex) when (attempt < MoveAttempts && ex is IOException or UnauthorizedAccessException)
+            {
+                Thread.Sleep(MoveDelay(attempt));
+            }
+        }
+    }
+
+    private const int MoveAttempts = 6;
+
+    /// <summary>20, 40, 80 ... ms: short enough not to be felt, long enough for a scanner to let go.</summary>
+    private static TimeSpan MoveDelay(int attempt) => TimeSpan.FromMilliseconds(20 << (attempt - 1));
+
     /// <summary>Serialize <paramref name="value"/> and replace <paramref name="path"/> atomically.</summary>
     public static async Task WriteAsync<T>(
         string path, T value, JsonSerializerOptions options, CancellationToken ct)
     {
         EnsureFolder(path);
 
-        var temp = path + ".tmp";
-        await File.WriteAllTextAsync(temp, JsonSerializer.Serialize(value, options), Utf8NoBom, ct)
-            .ConfigureAwait(false);
+        var gate = WriterFor(path);
+        await gate.WaitAsync(ct).ConfigureAwait(false);
+        try
+        {
+            var temp = TempFor(path);
+            await File.WriteAllTextAsync(temp, JsonSerializer.Serialize(value, options), Utf8NoBom, ct)
+                .ConfigureAwait(false);
 
-        File.Move(temp, path, overwrite: true);
+            await MoveWithRetriesAsync(temp, path, ct).ConfigureAwait(false);
+        }
+        finally
+        {
+            gate.Release();
+        }
     }
 
     /// <summary>
@@ -88,9 +172,18 @@ internal static class JsonFile
     {
         EnsureFolder(path);
 
-        var temp = path + ".tmp";
-        File.WriteAllText(temp, JsonSerializer.Serialize(value, options), Utf8NoBom);
+        var gate = WriterFor(path);
+        gate.Wait();
+        try
+        {
+            var temp = TempFor(path);
+            File.WriteAllText(temp, JsonSerializer.Serialize(value, options), Utf8NoBom);
 
-        File.Move(temp, path, overwrite: true);
+            MoveWithRetries(temp, path);
+        }
+        finally
+        {
+            gate.Release();
+        }
     }
 }

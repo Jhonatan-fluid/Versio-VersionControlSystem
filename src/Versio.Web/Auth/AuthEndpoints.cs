@@ -76,7 +76,9 @@ public static class AuthEndpoints
             var user = tokens is null ? null : await oauth.UserAsync(tokens.AccessToken, ct).ConfigureAwait(false);
             if (tokens is null || user is null)
             {
-                log.Warn(LogCategory.Auth, "Sign-in callback refused: GitHub did not exchange the code or name the user");
+                // The usual cause is a redirect_uri GitHub does not know: the one sent is logged so an
+                // operator behind a proxy that rewrites Host can see it (set PublicBaseUrl, or trust the proxy).
+                log.Warn(LogCategory.Auth, $"Sign-in callback refused: GitHub did not exchange the code or name the user (redirect_uri sent: {Callback(http, options.Value)})");
                 return Results.Redirect("/?signin=failed");
             }
 

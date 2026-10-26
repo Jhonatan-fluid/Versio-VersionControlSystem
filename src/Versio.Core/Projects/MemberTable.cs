@@ -333,6 +333,43 @@ public sealed record MemberTable
 
     public bool HasUnshownChange => UnshownChange.Length > 0;
 
+    /// <summary>
+    /// The file lines that are the declaration's own framing in the version this table was read
+    /// from: the header, the section keywords (<c>VAR_INPUT</c>, <c>END_VAR</c>, <c>END_TYPE</c>),
+    /// blank lines, and for an XML file the markup around and between the rows. Empty for a
+    /// format that does not report them.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// For review coverage (docs/web/PLAN.md, *Pull request review*, C4): a change to one of these
+    /// lines is vouched for by the table, because there is nothing a cell could show differently
+    /// and nothing a reviewer sent to Raw would learn — a <c>VAR_IN_OUT</c> block opened, a method
+    /// header that gained <c>PUBLIC</c>, a blank line removed between two declarations. The owner's
+    /// real pull request (2026-10-23) listed every one of those as "changed, but not shown".
+    /// </para>
+    /// <para>
+    /// Declared by the parser, which is the only party that knows what its syntax's framing is;
+    /// a line it did not declare stays a gap. Not <see cref="Unshown"/>: those are lines that say
+    /// something the table does not draw (a doc comment, an <c>EXTENDS</c>), and a change to them
+    /// is one the reviewer must go to Raw for.
+    /// </para>
+    /// </remarks>
+    public IReadOnlyList<LineSpan> Structural { get; init; } = [];
+
+    /// <summary>
+    /// <see cref="Structural"/> for the OLDER version of a comparison, so a framing line taken away
+    /// is vouched for on the side it was on. Set by <see cref="MemberTableDiff.Compare"/>.
+    /// </summary>
+    public IReadOnlyList<LineSpan> StructuralBefore { get; init; } = [];
+
+    /// <summary>
+    /// <see cref="Unshown"/> for the OLDER version of a comparison: what the table said it does not
+    /// draw there. Review coverage refuses to vouch for any line on either list, whatever row's span
+    /// it falls in — a pragma between a row's comment and its declaration sits inside the row's
+    /// span and is drawn nowhere (review, 2026-10-24).
+    /// </summary>
+    public IReadOnlyList<UnshownLine> UnshownBefore { get; init; } = [];
+
     /// <summary>The layout with its name: a bare "Optimized" under a title read as a status.</summary>
     public string MemoryLayoutCaption =>
         MemoryLayout.Length == 0 ? string.Empty : "Memory layout: " + MemoryLayout;

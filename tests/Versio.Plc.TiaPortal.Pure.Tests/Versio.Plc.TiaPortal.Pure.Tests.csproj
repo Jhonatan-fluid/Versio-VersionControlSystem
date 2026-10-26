@@ -5,13 +5,28 @@
     <RootNamespace>Versio.Plc.TiaPortal.Tests</RootNamespace>
     <!-- Everything about TIA Portal that needs neither TIA Portal nor the host process:
          the planner, the format, the protocol, the SCL header, the native scrubber,
-         the data-block member-table parser. -->
+         the data-block member-table parser — and the host's import, driven against
+         fakes (see the Compile item below). -->
   </PropertyGroup>
 
   <ItemGroup>
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.11.1" />
     <PackageReference Include="xunit" Version="2.9.2" />
     <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- The host is a net48 x64 exe that cannot be referenced by a net9 test. It is
+         reflection-only against Openness — every Siemens type is looked up by name at
+         run time — so its sources compile unchanged here, and Import can be driven
+         against fakes shaped like the Openness objects it reads. That is the only way
+         to pin what the host does to a plan without a Portal in the room: the real
+         gate (Versio.Plc.TiaPortal.Tests) needs Openness group membership and skips
+         on most machines. Program.cs is the exe's entry point, IsExternalInit.cs is a
+         net48 shim net9 already has, and OpennessLoader.cs only serves Program. -->
+    <Compile Include="..\..\src\Versio.Plc.TiaPortal.Host\*.cs"
+             Exclude="..\..\src\Versio.Plc.TiaPortal.Host\Program.cs;..\..\src\Versio.Plc.TiaPortal.Host\IsExternalInit.cs;..\..\src\Versio.Plc.TiaPortal.Host\OpennessLoader.cs"
+             Link="Host\%(Filename)%(Extension)" />
   </ItemGroup>
 
   <ItemGroup>

@@ -147,9 +147,39 @@ public sealed class CodesysMemberTableTests
         Assert.Contains(table.Members, m => m.Name.Contains("Settings", StringComparison.Ordinal) && m.Datatype == "ST_AlarmSettings");
         Assert.Contains(table.Members, m => m.Datatype == "ST_AlarmHmiConfiguration");
 
-        // The rows name the file's own lines, header included, so a row finds its line in Raw.
+        // The rows name the file's own lines, header included, so a row finds its line in Raw. The
+        // span starts at the comment CODESYS writes above each persistent variable, which is the
+        // row's comment cell, and ends on the declaration.
         var settings = Assert.Single(table.Members, m => m.Datatype == "ST_AlarmSettings");
-        Assert.Contains("ST_AlarmSettings", text.Replace("\r\n", "\n").Split('\n')[settings.Lines!.Value.Start - 1], StringComparison.Ordinal);
+        var span = settings.Lines!.Value;
+        var lines = text.Replace("\r\n", "\n").Split('\n');
+        Assert.Contains("ST_AlarmSettings", lines[span.End - 1], StringComparison.Ordinal);
+        Assert.StartsWith("// ", lines[span.Start - 1].TrimStart(), StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// The rows are numbered by splitting the decoded declaration, which is the file's numbering
+    /// only while every newline in the value is one in the file. A declaration that spells one
+    /// as <c>&amp;#10;</c> — not CODESYS's doing, but nothing stops a file saying it — put every
+    /// row after it on the wrong line (the 2026-10-24 review's item 18). The table is kept and
+    /// the lines are not: wrong lines would pin comments and vouch for coverage on the wrong
+    /// rows, and no lines do neither.
+    /// </summary>
+    [Fact]
+    public void A_declaration_with_an_encoded_newline_keeps_its_rows_and_loses_their_lines()
+    {
+        const string Relative = Fbs + "PersistentVars.varpersistent.xml.v3";
+        var text = FbsFile(Relative)
+            .Replace("VAR_GLOBAL PERSISTENT RETAIN\r\n", "VAR_GLOBAL PERSISTENT RETAIN&#10;")
+            .Replace("VAR_GLOBAL PERSISTENT RETAIN\n", "VAR_GLOBAL PERSISTENT RETAIN&#10;");
+        Assert.Contains("RETAIN&#10;", text, StringComparison.Ordinal);
+
+        var table = Table(Relative, text);
+
+        Assert.Equal("PersistentVars", table.Name);
+        Assert.Contains(table.Members, m => m.Datatype == "ST_AlarmSettings");
+        Assert.All(table.Members, m => Assert.Null(m.Lines));
+        Assert.Empty(table.Unshown);
     }
 
     [Fact]
@@ -298,5 +328,64 @@ public sealed class CodesysMemberTableTests
             ["SelectionSigns = 0 entries", "LibraryIds = 0 entries", "ExportSymbolComments = True", "SupportOPCUA = True",
              "SymbolAttributeFilterType = None", "SymbolAttributeFilterData = (none)", "EnableDirectIoAccess = False"],
             table.Members.Select(m => $"{m.Name} = {m.StartValue}"));
+    }
+
+    private static bool Framed(MemberTable table, int line) => table.Structural.Any(s => s.Contains(line));
+
+    private static int LineOf(string[] lines, string text) => Array.FindIndex(lines, l => l.Contains(text, StringComparison.Ordinal)) + 1;
+
+    /// <summary>
+    /// What review coverage may vouch for through the table (docs/web/PLAN.md, C4): the storage header,
+    /// the declaration's keywords and the closing line. Never a row, never a comment the table does not draw.
+    /// </summary>
+    [Fact]
+    public void A_file_based_blocks_framing_is_its_metadata_header_its_keywords_and_its_closing_line()
+    {
+        const string Relative = Fbs + "Library/Alarm/POUs/FB_Alarm.fb.st";
+        var text = FbsFile(Relative);
+        var lines = text.Replace("\r\n", "\n").Split('\n');
+
+        var table = Table(Relative, text);
+
+        // The (* METADATA … *) header, every line of it, and the keyword lines.
+        Assert.True(Framed(table, 1));
+        Assert.True(Framed(table, LineOf(lines, "*)")));
+        Assert.True(Framed(table, LineOf(lines, "FUNCTION_BLOCK FB_Alarm")));
+        Assert.True(Framed(table, LineOf(lines, "VAR PERSISTENT")));
+        Assert.True(Framed(table, LineOf(lines, "END_VAR")));
+        Assert.True(Framed(table, Array.FindLastIndex(lines, l => l.Trim() == "END_FUNCTION_BLOCK") + 1));
+        // Not a row's line, nor the object's attribute, nor a line of the code body.
+        Assert.False(Framed(table, LineOf(lines, "{attribute 'linkalways'}")));
+        Assert.False(Framed(table, LineOf(lines, "Settings")));
+        Assert.False(Framed(table, LineOf(lines, "// State Machine")));
+        Assert.False(Framed(table, LineOf(lines, "FUNCTION_BLOCK FB_Alarm") + 50));
+    }
+
+    /// <summary>
+    /// An archive declaration's framing is the envelope and the markup, with the declaration text left to
+    /// its rows and the implementation left to the ladder — each drawing vouches for its own lines only.
+    /// </summary>
+    [Fact]
+    public void An_archive_declarations_framing_is_the_envelope_and_the_markup_around_it_not_the_rows_or_the_implementation()
+    {
+        const string Relative = Fbs + "Signals.pou.xml.v3";
+        var text = FbsFile(Relative);
+        var lines = text.Replace("\r\n", "\n").Split('\n');
+
+        var table = Table(Relative, text);
+
+        // The __V3_META__ header and the XML's own first lines.
+        Assert.True(Framed(table, 1));
+        Assert.True(Framed(table, LineOf(lines, "__V3_CONTENT__")));
+        Assert.True(Framed(table, LineOf(lines, "<?xml")));
+        Assert.True(Framed(table, LineOf(lines, "<Single xml:space=\"preserve\"")));
+        Assert.True(Framed(table, LineOf(lines, "Name=\"TextDocument\"")));
+        // Inside the Implementation, markup or not: the ladder's.
+        Assert.False(Framed(table, LineOf(lines, "<List2 Name=\"NetworkList\">")));
+        Assert.False(Framed(table, LineOf(lines, "<List2 Name=\"NetworkItems\">")));
+        // The declaration's own lines are the rows'.
+        Assert.False(Framed(table, LineOf(lines, "TON_0: TON;")));
+        // A setting with a value is text, not markup.
+        Assert.False(Framed(table, LineOf(lines, "Name=\"SpecialFunc\"")));
     }
 }

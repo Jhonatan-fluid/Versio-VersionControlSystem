@@ -1,3 +1,4 @@
+using System.IO;
 using Versio.App.ViewModels;
 using Versio.Core.Git;
 using Versio.Core.Logging;
@@ -128,6 +129,180 @@ public sealed class CommitPlanFlowTests
 
         var committed = FilesInHead(repo);
         Assert.Equal(["file2.st"], committed);
+    }
+
+    [Fact]
+    public async Task A_selected_file_can_be_the_very_first_commit_while_other_files_are_staged()
+    {
+        // A fresh `git init`, two files staged, one of them ticked. Commit was enabled, and
+        // then unstaging the other one ran `git restore --staged`, which restores from HEAD —
+        // and there is no HEAD yet. "fatal: could not resolve 'HEAD'", and nothing committed.
+        // The 2026-10-25 review's P2, confirmed with the shell and real git. The seed file
+        // TempRepo stages is a third staged file here, and must stay out too.
+        using var repo = new TempRepo(unborn: true, unstagedFiles: 2, stagedFiles: 2);
+        using var shell = Shell();
+
+        await shell.OpenAsync(repo.Path);
+        Assert.Equal(string.Empty, GitOutput(repo, "rev-parse --verify -q HEAD").Trim());
+
+        shell.Pending.Single(r => r.Path == "file0.st").IsSelected = true;
+        Assert.Equal("Commit (1)", shell.Commit.Label);
+
+        shell.CommitMessage = "the first commit, one file of three";
+        await Eventually.Press(shell.CommitCommand, "commit");
+        await Eventually.Until(
+            () => GitOutput(repo, "log -1 --pretty=%s").Trim() == "the first commit, one file of three",
+            "the commit landed");
+
+        // HEAD holds the ticked file and nothing else.
+        Assert.Equal(["file0.st"], FilesInHead(repo));
+        Assert.Equal("file0.st", GitOutput(repo, "ls-tree --name-only HEAD").Trim());
+
+        // The other two were never in a commit, so taking them out of the index leaves them
+        // untracked — exactly what `restore --staged` does to an added file once HEAD exists.
+        Assert.Equal(string.Empty, GitOutput(repo, "diff --cached --name-status").Trim());
+        var status = GitOutput(repo, "status --porcelain");
+        Assert.Contains("?? file1.st", status, StringComparison.Ordinal);
+        Assert.Contains("?? seed.txt", status, StringComparison.Ordinal);
+        Assert.True(File.Exists(Path.Combine(repo.Path, "file1.st")));
+        Assert.True(File.Exists(Path.Combine(repo.Path, "seed.txt")));
+    }
+
+    [Fact]
+    public async Task Excluding_a_staged_rename_leaves_both_of_its_paths_out_of_the_commit()
+    {
+        // `git mv old.st new.st` is one row in the panel and two entries in the index: new.st
+        // added, old.st deleted. Leaving that row out of the commit unstaged only the row's
+        // own path, so new.st came out of the index and old.st's deletion stayed in — and
+        // the commit of "just the other file" quietly deleted old.st without adding
+        // anything in its place. The 2026-10-25 review's P2, confirmed with real git.
+        using var repo = new TempRepo(unstagedFiles: 1);
+        File.WriteAllText(Path.Combine(repo.Path, "old.st"), "PROGRAM Old\n");
+        repo.Git("add old.st");
+        repo.Git("commit -qm old");
+        repo.Git("mv old.st new.st");
+
+        using var shell = Shell();
+        await shell.OpenAsync(repo.Path);
+
+        var rename = shell.Pending.Single(r => r.Path == "new.st");
+        Assert.True(rename.IsStaged);
+        Assert.Equal(ChangeKind.Renamed, rename.Kind);
+
+        shell.Pending.Single(r => r.Path == "file0.st").IsSelected = true;
+        Assert.Equal("Commit (1)", shell.Commit.Label);
+
+        shell.CommitMessage = "just the other file";
+        await Eventually.Press(shell.CommitCommand, "commit");
+        await Eventually.Until(
+            () => GitOutput(repo, "log -1 --pretty=%s").Trim() == "just the other file",
+            "the commit landed");
+
+        // The commit touched the ticked file and nothing else: old.st is still in HEAD,
+        // new.st is not.
+        Assert.Equal(["file0.st"], FilesInHead(repo));
+        var tree = GitOutput(repo, "ls-tree --name-only HEAD");
+        Assert.Contains("old.st", tree, StringComparison.Ordinal);
+        Assert.DoesNotContain("new.st", tree, StringComparison.Ordinal);
+
+        // And the rename is still the user's to commit next time: nothing of it is in the
+        // index, both halves are in the working tree, and the panel lists both.
+        Assert.Equal(string.Empty, GitOutput(repo, "diff --cached --name-status").Trim());
+        var status = GitOutput(repo, "status --porcelain");
+        Assert.Contains(" D old.st", status, StringComparison.Ordinal);
+        Assert.Contains("?? new.st", status, StringComparison.Ordinal);
+        await Eventually.Until(
+            () => shell.Pending.Any(r => r.Path == "old.st") && shell.Pending.Any(r => r.Path == "new.st"),
+            "both halves of the rename to be listed");
+    }
+
+    [Fact]
+    public void A_row_names_the_path_a_staged_rename_came_from_and_nothing_else()
+    {
+        // The unstage above reads RenamedFrom. A copy also carries an original path, but its
+        // source is still its own index entry — possibly its own ticked row — so unstaging it
+        // on the copy's behalf would undo that row's choice. Only a rename's source is fair
+        // game, because a rename's source is gone from the index.
+        static ChangeRow Row(ChangeKind staged, string? from) => new(new FileChange
+        {
+            Path = "new.st",
+            Staged = staged,
+            Unstaged = ChangeKind.Unmodified,
+            OriginalPath = from,
+        });
+
+        Assert.Equal("old.st", Row(ChangeKind.Renamed, "old.st").RenamedFrom);
+        Assert.Null(Row(ChangeKind.Copied, "old.st").RenamedFrom);
+        Assert.Null(Row(ChangeKind.Added, null).RenamedFrom);
+    }
+
+    /// <summary>What git prints for one read-only command in the repository.</summary>
+    private static string GitOutput(TempRepo repo, string arguments)
+    {
+        using var git = System.Diagnostics.Process.Start(
+            new System.Diagnostics.ProcessStartInfo
+            {
+                FileName = "git",
+                Arguments = arguments,
+                WorkingDirectory = repo.Path,
+                UseShellExecute = false,
+                CreateNoWindow = true,
+                RedirectStandardOutput = true,
+            });
+
+        var output = git!.StandardOutput.ReadToEnd();
+        git.WaitForExit();
+        return output;
+    }
+
+    private static string Lines(params (int Line, string Text)[] edits)
+    {
+        var lines = Enumerable.Range(1, 20).Select(n => $"line {n}").ToArray();
+        foreach (var (line, text) in edits)
+        {
+            lines[line - 1] = text;
+        }
+
+        return string.Join("\n", lines) + "\n";
+    }
+
+    [Fact]
+    public async Task A_file_with_one_staged_hunk_commits_only_that_hunk()
+    {
+        // "Stage hunk" put one of two hunks in the index; Commit then ran `git add` on the
+        // whole path - include is every row when nothing is ticked - and the second hunk
+        // went into the commit as well. The button in the diff pane did nothing that the
+        // commit did not undo. The 2026-10-24 review's item 32. A row that is both staged
+        // and still changed in the working tree is committed as the index stands.
+        using var repo = new TempRepo();
+        var seed = Path.Combine(repo.Path, "seed.txt");
+        File.WriteAllText(seed, Lines());
+        repo.Git("commit -qam twenty");
+        File.WriteAllText(seed, Lines((2, "line 2 CHANGED"), (18, "line 18 CHANGED")));
+
+        using var shell = Shell();
+        await shell.OpenAsync(repo.Path);
+
+        await shell.ShowWorkingTreePathAsync("seed.txt");
+        await Eventually.Until(() => shell.CanStageHunks, "the diff to load");
+        await Eventually.Press(shell.HunkCommand, 0, "stage the first hunk");
+        await Eventually.Until(
+            () => shell.Pending.Any(r => r.Path == "seed.txt" && r.IsPartlyStaged),
+            "the row to read as partly staged");
+
+        shell.CommitMessage = "first hunk only";
+        await Eventually.Press(shell.CommitCommand, "commit");
+        await Eventually.Until(
+            () => GitOutput(repo, "log -1 --pretty=%s").Trim() == "first hunk only",
+            "the commit landed");
+
+        var committed = GitOutput(repo, "show HEAD --pretty=format: -- seed.txt");
+        Assert.Contains("+line 2 CHANGED", committed, StringComparison.Ordinal);
+        Assert.DoesNotContain("line 18 CHANGED", committed, StringComparison.Ordinal);
+
+        // The other hunk is still where it was typed, and still listed.
+        Assert.Contains("line 18 CHANGED", File.ReadAllText(seed), StringComparison.Ordinal);
+        await Eventually.Until(() => shell.Pending.Any(r => r.Path == "seed.txt"), "the rest to stay pending");
     }
 
     [Fact]

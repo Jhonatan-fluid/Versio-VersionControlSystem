@@ -58,6 +58,9 @@ internal sealed class FakeGitHub : IRepoSource
 
         public bool Private { get; init; }
 
+        /// <summary>The label and milestone lists answer as cut past GitHub's pages (review, 2026-10-24).</summary>
+        public bool ListsCut { get; set; }
+
         public string DefaultBranch { get; init; } = "main";
 
         /// <summary>Branch or commit name to commit sha.</summary>
@@ -92,6 +95,9 @@ internal sealed class FakeGitHub : IRepoSource
 
         /// <summary>The conversation per pull request.</summary>
         public Dictionary<int, Timeline> Timelines { get; } = [];
+
+        /// <summary>What GitHub's header counts and marks per pull request: the diff's size, and the checks branch protection requires.</summary>
+        public Dictionary<int, (int Additions, int Deletions, int ChangedFiles, IReadOnlyList<string> Required)> PullHeader { get; } = [];
 
         /// <summary>The branch's commits per pull request, oldest first.</summary>
         public Dictionary<int, PullCommitList> PullCommits { get; } = [];
@@ -150,6 +156,42 @@ internal sealed class FakeGitHub : IRepoSource
 
         /// <summary>When set, the merge-state read fails with this: what GitHub refusing the preview field looks like.</summary>
         public RepoFailure? MergeStateFailure { get; set; }
+
+        /// <summary>The repository's open milestones.</summary>
+        public List<MilestoneInfo> Milestones { get; } = [];
+
+        /// <summary>Each pull request's milestone number, when it has one.</summary>
+        public Dictionary<int, int> PullMilestone { get; } = [];
+
+        /// <summary>Locked conversations, with their reason.</summary>
+        public Dictionary<int, string?> Locked { get; } = [];
+
+        /// <summary>Each person's notifications per pull request, by user token; SUBSCRIBED when unset.</summary>
+        public Dictionary<(int Number, string Token), string> Subscriptions { get; } = [];
+
+        /// <summary>Each commit's message, for the commits a writer made here.</summary>
+        public Dictionary<string, string> CommitMessages { get; } = new(StringComparer.Ordinal);
+
+        /// <summary>The repository's "Automatically delete head branches" setting.</summary>
+        public bool DeleteBranchOnMerge { get; set; }
+
+        /// <summary>Base branches with a merge queue.</summary>
+        public HashSet<string> MergeQueueBranches { get; } = new(StringComparer.Ordinal);
+
+        /// <summary>Pull requests in a merge queue, with their position.</summary>
+        public Dictionary<int, int> Queued { get; } = [];
+
+        /// <summary>Pull requests whose head lives in a fork.</summary>
+        public HashSet<int> CrossRepository { get; } = [];
+
+        /// <summary>Tag name to commit sha.</summary>
+        public Dictionary<string, string> Tags { get; } = new(StringComparer.Ordinal);
+
+        /// <summary>Comments per commit, oldest first.</summary>
+        public Dictionary<string, List<CommitComment>> CommitComments { get; } = new(StringComparer.Ordinal);
+
+        /// <summary>Annotations per check run id.</summary>
+        public Dictionary<long, IReadOnlyList<CheckAnnotation>> Annotations { get; } = [];
     }
 
     private readonly Dictionary<string, FakeRepo> _repos = new(StringComparer.OrdinalIgnoreCase);
@@ -314,12 +356,142 @@ internal sealed class FakeGitHub : IRepoSource
             : r.As<IReadOnlyList<CommitInfo>>());
     }
 
+    /// <summary>A commit's page, from what the fake knows: its message, its parents, and the files that differ from its first parent.</summary>
+    public Task<RepoResult<CommitDetail>> GetCommitAsync(RepoAccess access, string owner, string repo, string sha, CancellationToken ct)
+    {
+        var r = See(access, owner, repo, "commit " + sha);
+        if (!r.Ok)
+        {
+            return Task.FromResult(r.As<CommitDetail>());
+        }
+
+        if (!r.Value!.Commits.TryGetValue(sha, out var files))
+        {
+            return Task.FromResult(RepoResult<CommitDetail>.Fail(RepoFailure.NotFound));
+        }
+
+        var parents = r.Value.Parents.TryGetValue(sha, out var p) ? p.ToList() : [];
+        var changed = new List<CommitFile>();
+        if (parents.Count > 0 && r.Value.Commits.TryGetValue(parents[0], out var before))
+        {
+            changed.AddRange(files.Where(f => !before.ContainsKey(f.Key)).Select(f => new CommitFile(f.Key, "added", 1, 0, null)));
+            changed.AddRange(files.Where(f => before.TryGetValue(f.Key, out var was) && !was.AsSpan().SequenceEqual(f.Value)).Select(f => new CommitFile(f.Key, "modified", 1, 1, null)));
+            changed.AddRange(before.Where(f => !files.ContainsKey(f.Key)).Select(f => new CommitFile(f.Key, "removed", 0, 1, null)));
+        }
+
+        var branch = r.Value.Refs.FirstOrDefault(kv => kv.Value == sha).Key;
+        return Task.FromResult(RepoResult<CommitDetail>.Of(new CommitDetail(sha, r.Value.CommitMessages.TryGetValue(sha, out var m) ? m : "commit " + (branch ?? sha[..7]), "Tester", DateTimeOffset.UnixEpoch, parents)
+        {
+            AuthorLogin = "tester",
+            Additions = changed.Sum(c => c.Additions),
+            Deletions = changed.Sum(c => c.Deletions),
+            Files = changed.OrderBy(c => c.Path, StringComparer.Ordinal).ToList(),
+        }));
+    }
+
+    public Task<RepoResult<CommitCommentList>> GetCommitCommentsAsync(RepoAccess access, string owner, string repo, string sha, CancellationToken ct)
+    {
+        var r = See(access, owner, repo, "commit-comments " + sha);
+        return Task.FromResult(r.Ok
+            ? RepoResult<CommitCommentList>.Of(new CommitCommentList(r.Value!.CommitComments.TryGetValue(sha, out var list) ? list.ToList() : [], false))
+            : r.As<CommitCommentList>());
+    }
+
+    public Task<RepoResult<IReadOnlyList<CheckAnnotation>>> GetCheckAnnotationsAsync(RepoAccess access, string owner, string repo, long runId, CancellationToken ct)
+    {
+        var r = See(access, owner, repo, "annotations " + runId.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        return Task.FromResult(r.Ok
+            ? RepoResult<IReadOnlyList<CheckAnnotation>>.Of(r.Value!.Annotations.TryGetValue(runId, out var list) ? list : [])
+            : r.As<IReadOnlyList<CheckAnnotation>>());
+    }
+
+    public Task<RepoResult<TagList>> GetTagsAsync(RepoAccess access, string owner, string repo, CancellationToken ct)
+    {
+        var r = See(access, owner, repo, "tags");
+        return Task.FromResult(r.Ok
+            ? RepoResult<TagList>.Of(new TagList(r.Value!.Tags.Select(kv => new TagInfo(kv.Key, kv.Value)).ToList(), false))
+            : r.As<TagList>());
+    }
+
     public Task<RepoResult<IReadOnlyList<PullInfo>>> GetPullsAsync(RepoAccess access, string owner, string repo, int limit, CancellationToken ct)
     {
         var r = See(access, owner, repo, "pulls");
         return Task.FromResult(r.Ok
             ? RepoResult<IReadOnlyList<PullInfo>>.Of(r.Value!.Pulls.Select(p => p.Info).Take(limit).ToList())
             : r.As<IReadOnlyList<PullInfo>>());
+    }
+
+    /// <summary>A pull request as the list draws it, from the fake's parts: state, labels, assignees, comments, the merge state's decision.</summary>
+    private static PullRow RowOf(FakeRepo r, (PullInfo Info, string Body) p)
+    {
+        var state = r.PullStates.TryGetValue(p.Info.Number, out var s) ? s : "OPEN";
+        var people = r.PullPeople.TryGetValue(p.Info.Number, out var known) ? known : ([], []);
+        var comments = (r.Timelines.TryGetValue(p.Info.Number, out var tl) ? tl.Items.Count(i => i.Kind == "comment") : 0)
+            + (r.Threads.TryGetValue(p.Info.Number, out var th) ? th.Threads.Sum(x => x.Comments.Count) : 0);
+        return new PullRow(p.Info.Number, p.Info.Title, p.Info.Author, null, p.Info.Updated, p.Info.Updated, state, p.Info.Draft, p.Info.BaseRef, p.Info.HeadRef, p.Info.HeadSha,
+            people.Labels, (r.Assignees.TryGetValue(p.Info.Number, out var a) ? a : []).Select(x => (x, (string?)null)).ToList(),
+            people.Reviewers.Any(x => x.State == "CHANGES_REQUESTED") ? "CHANGES_REQUESTED" : people.Reviewers.Any(x => x.State == "APPROVED") ? "APPROVED" : null,
+            r.Checks.TryGetValue(p.Info.HeadSha, out var checks) && checks.Count > 0 ? (checks.Any(c => c.Conclusion is "failure") ? "FAILURE" : checks.All(c => c.Status == "completed") ? "SUCCESS" : "PENDING") : null,
+            comments);
+    }
+
+    /// <summary>
+    /// GitHub's search, as far as the tests need it: the tokens PullQuery writes, matched against the
+    /// fake's rows — is:, author:, label:, assignee:, review:, and words against the title.
+    /// </summary>
+    private static bool Matches(FakeRepo r, PullRow row, string search)
+    {
+        foreach (var token in search.Split(' ', StringSplitOptions.RemoveEmptyEntries))
+        {
+            var colon = token.IndexOf(':', StringComparison.Ordinal);
+            var (key, value) = colon > 0 ? (token[..colon], token[(colon + 1)..].Trim('"')) : ("", token.Trim('"'));
+            var ok = key switch
+            {
+                "repo" or "sort" => true,
+                "is" => value switch { "pr" => true, "open" => row.State == "OPEN", "closed" => row.State != "OPEN", "merged" => row.State == "MERGED", "draft" => row.Draft, _ => false },
+                "author" => row.Author == value,
+                "assignee" => row.Assignees.Any(a => a.Login == value),
+                "label" => row.Labels.Any(l => l.Name == value),
+                "review" => value switch { "approved" => row.ReviewDecision == "APPROVED", "changes_requested" => row.ReviewDecision == "CHANGES_REQUESTED", "none" => row.ReviewDecision is null, _ => true },
+                "" => row.Title.Contains(value, StringComparison.OrdinalIgnoreCase),
+                _ => true,
+            };
+            if (!ok)
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    public Task<RepoResult<PullSearch>> SearchPullsAsync(RepoAccess access, string search, string open, string closed, int first, string? after, CancellationToken ct)
+    {
+        // The repository is named in the query, as GitHub's search names it.
+        var slug = search.Split(' ')[0]["repo:".Length..];
+        var r = SeeGraph(access, slug.Split('/')[0], slug.Split('/')[1], "search " + search);
+        if (!r.Ok)
+        {
+            return Task.FromResult(r.As<PullSearch>());
+        }
+
+        var rows = r.Value!.Pulls.Select(p => RowOf(r.Value, p)).ToList();
+        var matched = rows.Where(row => Matches(r.Value, row, search)).OrderByDescending(row => row.UpdatedAt).ToList();
+        var skip = after is null ? 0 : int.Parse(after, System.Globalization.CultureInfo.InvariantCulture);
+        var page = matched.Skip(skip).Take(first).ToList();
+        return Task.FromResult(RepoResult<PullSearch>.Of(new PullSearch(page, matched.Count,
+            rows.Count(row => Matches(r.Value, row, open)), rows.Count(row => Matches(r.Value, row, closed)),
+            skip + first < matched.Count ? (skip + first).ToString(System.Globalization.CultureInfo.InvariantCulture) : null)));
+    }
+
+    public Task<RepoResult<IReadOnlyList<PullRow>>> GetPullRowsAsync(RepoAccess access, string owner, string repo, string state, string sort, string direction, int limit, int page, CancellationToken ct)
+    {
+        var r = See(access, owner, repo, "pull-rows " + state);
+        return Task.FromResult(r.Ok
+            ? RepoResult<IReadOnlyList<PullRow>>.Of(r.Value!.Pulls.Select(p => RowOf(r.Value, p))
+                .Where(row => state == "all" || (state == "open" ? row.State == "OPEN" : row.State != "OPEN"))
+                .OrderByDescending(row => row.UpdatedAt).Skip((page - 1) * limit).Take(limit).ToList())
+            : r.As<IReadOnlyList<PullRow>>());
     }
 
     public Task<RepoResult<PullDetail>> GetPullAsync(RepoAccess access, string owner, string repo, int number, CancellationToken ct)
@@ -415,7 +587,36 @@ internal sealed class FakeGitHub : IRepoSource
             ViewerIsAuthor = access.Token is { } token && r.Value.PullAuthorToken.TryGetValue(number, out var author) && author == token,
             ViewerLastReviewCommit = access.Token is { } t && r.Value.LastReviewCommit.TryGetValue((number, t), out var last) ? last : null,
             NodeId = "PR_" + number.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            Author = p.Author,
+            CreatedAt = p.Updated,
+            CommitCount = r.Value.PullCommits.TryGetValue(number, out var commits) ? commits.Commits.Count : 0,
+            // GitHub's totalCommentsCount: conversation comments and review comments together.
+            CommentCount = (r.Value.Timelines.TryGetValue(number, out var tl) ? tl.Items.Count(i => i.Kind == "comment") : 0)
+                + (r.Value.Threads.TryGetValue(number, out var th) ? th.Threads.Sum(x => x.Comments.Count) : 0),
+            Additions = r.Value.PullHeader.TryGetValue(number, out var header) ? header.Additions : 0,
+            Deletions = header.Deletions,
+            ChangedFiles = header.ChangedFiles,
+            RequiredChecks = header.Required ?? [],
+            Locked = r.Value.Locked.ContainsKey(number),
+            LockReason = r.Value.Locked.TryGetValue(number, out var why) ? why : null,
+            MilestoneNumber = r.Value.PullMilestone.TryGetValue(number, out var milestone) ? milestone : null,
+            Milestone = r.Value.PullMilestone.TryGetValue(number, out var m2) ? r.Value.Milestones.FirstOrDefault(x => x.Number == m2)?.Title : null,
+            ViewerSubscription = access.Token is { } st ? r.Value.Subscriptions.TryGetValue((number, st), out var sub) ? sub : "SUBSCRIBED" : null,
+            ViewerCanReact = access.Kind == AccessKind.User,
         }));
+    }
+
+    public Task<RepoResult<MilestoneList>> GetMilestonesAsync(RepoAccess access, string owner, string repo, CancellationToken ct)
+    {
+        var r = See(access, owner, repo, "milestones");
+        return Task.FromResult(r.Ok ? RepoResult<MilestoneList>.Of(new MilestoneList(r.Value!.Milestones.ToList(), r.Value.ListsCut)) : r.As<MilestoneList>());
+    }
+
+    public Task<RepoResult<string>> GetCommitMessageAsync(RepoAccess access, string owner, string repo, string sha, CancellationToken ct)
+    {
+        var r = See(access, owner, repo, "message " + sha);
+        return Task.FromResult(!r.Ok ? r.As<string>()
+            : r.Value!.CommitMessages.TryGetValue(sha, out var message) ? RepoResult<string>.Of(message) : RepoResult<string>.Fail(RepoFailure.NotFound));
     }
 
     public Task<RepoResult<PendingReviewRead>> GetPendingReviewAsync(RepoAccess access, string owner, string repo, int number, CancellationToken ct)
@@ -480,7 +681,16 @@ internal sealed class FakeGitHub : IRepoSource
             state, state == "MERGED", found[0].HeadSha, r.Value.MergeStatus.TryGetValue(number, out var status) ? status : "CLEAN",
             r.Value.MergeMethods.ToList(), r.Value.AutoMergeAllowed, auto?.Item1, auto?.Item2,
             state == "OPEN" && auto is null, auto is not null, "PR_" + number.ToString(System.Globalization.CultureInfo.InvariantCulture),
-            r.Value.MergeCommits.TryGetValue(number, out var commit) ? commit : null)));
+            r.Value.MergeCommits.TryGetValue(number, out var commit) ? commit : null)
+        {
+            HeadRef = found[0].HeadRef,
+            HeadRefExists = r.Value.Refs.ContainsKey(found[0].HeadRef),
+            IsCrossRepository = r.Value.CrossRepository.Contains(number),
+            DeleteBranchOnMerge = r.Value.DeleteBranchOnMerge,
+            HasMergeQueue = r.Value.MergeQueueBranches.Contains(found[0].BaseRef),
+            InMergeQueue = r.Value.Queued.ContainsKey(number),
+            QueuePosition = r.Value.Queued.TryGetValue(number, out var position) ? position : null,
+        }));
     }
 
     public Task<RepoResult<IReadOnlyList<string>>> GetCommitParentsAsync(RepoAccess access, string owner, string repo, string sha, CancellationToken ct)
@@ -490,10 +700,10 @@ internal sealed class FakeGitHub : IRepoSource
             : r.Value!.Parents.TryGetValue(sha, out var parents) ? RepoResult<IReadOnlyList<string>>.Of(parents.ToList()) : RepoResult<IReadOnlyList<string>>.Fail(RepoFailure.NotFound));
     }
 
-    public Task<RepoResult<IReadOnlyList<PullLabel>>> GetLabelsAsync(RepoAccess access, string owner, string repo, CancellationToken ct)
+    public Task<RepoResult<LabelList>> GetLabelsAsync(RepoAccess access, string owner, string repo, CancellationToken ct)
     {
         var r = See(access, owner, repo, "labels");
-        return Task.FromResult(r.Ok ? RepoResult<IReadOnlyList<PullLabel>>.Of(r.Value!.Labels.ToList()) : r.As<IReadOnlyList<PullLabel>>());
+        return Task.FromResult(r.Ok ? RepoResult<LabelList>.Of(new LabelList(r.Value!.Labels.ToList(), r.Value.ListsCut)) : r.As<LabelList>());
     }
 
     public Task<RepoResult<bool>> CanAssignAsync(RepoAccess access, string owner, string repo, string login, CancellationToken ct)

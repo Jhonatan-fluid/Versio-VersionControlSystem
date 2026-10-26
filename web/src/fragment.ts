@@ -46,16 +46,45 @@ export function hasLadder(html: string): boolean {
 }
 
 /**
+ * A URL the server relayed from GitHub (a comment's permalink, a check's details page), as an
+ * href: only http(s). The server validates what it sends, and this is the page's own wall against
+ * a `javascript:` link reaching an anchor should that ever slip (review, 2026-10-24).
+ */
+export function safeHref(url: string | null | undefined): string | null {
+  return url && /^https?:\/\//i.test(url) ? url : null;
+}
+
+/**
  * Where a Markdown link may go. Core writes links into data-href, never href, so nothing in a
- * document can navigate by itself; this decides what a click does. Same-repository relative
- * paths stay in the viewer; http(s) opens a new tab with no opener and no referrer; anything else
- * (javascript:, data:, file:) goes nowhere.
+ * document can navigate by itself; this decides what a click does. A same-repository relative
+ * path to another Markdown document stays in the viewer — the desktop's rule (ShellViewModel
+ * .OpenLink): a document is a web of `.md` links, and a source file has its own row to click, so a
+ * link to one goes nowhere rather than opening the pane on something the document did not mean
+ * to show (aligned 2026-10-24, FINISH.md D2); http(s) opens a new tab with no opener and no
+ * referrer; anything else (javascript:, data:, file:) goes nowhere.
  */
 export function linkTarget(href: string, currentPath: string): { kind: 'internal'; path: string } | { kind: 'external'; url: string } | null {
   const value = href.trim();
   if (/^https?:\/\//i.test(value)) {
     return { kind: 'external', url: value };
   }
+  const path = repoPath(value, currentPath);
+  return path !== null && /\.(md|markdown)$/i.test(path) ? { kind: 'internal', path } : null;
+}
+
+/**
+ * A member's type or an identifier linked by the server (data-link): the repository path of the
+ * object it names, which the viewer opens whatever its extension is. The same path rule as a
+ * Markdown link, without the Markdown-only condition: that condition, added for documents on
+ * 2026-10-24, also went on type links for a while and silenced every one of them, which no test
+ * caught until the peek's did (FINDINGS 2026-10-24).
+ */
+export function objectLink(href: string): string | null {
+  return repoPath(href.trim(), '');
+}
+
+/** A relative or root-relative path resolved against the current file, inside the repository, or null. */
+function repoPath(value: string, currentPath: string): string | null {
   if (/^[a-z][a-z0-9+.-]*:/i.test(value) || value.startsWith('//')) {
     return null;
   }
@@ -78,5 +107,5 @@ export function linkTarget(href: string, currentPath: string): { kind: 'internal
     }
     parts.push(part);
   }
-  return parts.length ? { kind: 'internal', path: parts.join('/') } : null;
+  return parts.length ? parts.join('/') : null;
 }

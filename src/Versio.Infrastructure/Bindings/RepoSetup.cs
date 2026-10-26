@@ -64,11 +64,26 @@ public sealed class RepoSetup(
     /// <summary>Adopt a discovered project: guard it, write the attributes, write the binding.</summary>
     /// <param name="projectPath">Repo-relative, as the scanner reports it.</param>
     /// <param name="profile">Toolchain profile to pin, when one has been resolved.</param>
+    /// <param name="discoveredProjects">
+    /// Every project and source project the caller's scan found, so the export root can be
+    /// checked against the ones that are not tracked (<see cref="Adoption.Plan"/>). Null
+    /// when the caller has no scan in hand: this gate then scans for itself rather than let
+    /// the question go unanswered, since the answer is what stops an export from deleting a
+    /// neighbouring project (the 2026-10-25 review's sixth round, item 1).
+    /// </param>
     public async Task<AdoptionResult> AdoptAsync(
-        string projectPath, IGitClient? git, string? profile, CancellationToken ct)
+        string projectPath, IGitClient? git, string? profile, CancellationToken ct,
+        IReadOnlyCollection<string>? discoveredProjects = null)
     {
         var store = new RepoConfigStore(repositoryRoot, _log);
         var config = await store.LoadAsync(ct).ConfigureAwait(false);
+
+        if (discoveredProjects is null)
+        {
+            var snapshot = await new RepoScanner(repositoryRoot, format is null ? null : [format], _log)
+                .ScanAsync(git, ct).ConfigureAwait(false);
+            discoveredProjects = [.. snapshot.ProjectFiles, .. snapshot.SourceProjects];
+        }
 
         // Whichever vendor claims the extension. A pinned format still wins, and nothing
         // claiming it at all is an explicit refusal rather than a CODESYS assumption.
@@ -85,7 +100,8 @@ public sealed class RepoSetup(
         }
 
         var decision = Adoption.Plan(
-            projectPath, config, resolved, Guid.NewGuid().ToString("N")[..12], profile);
+            projectPath, config, resolved, Guid.NewGuid().ToString("N")[..12], profile,
+            discoveredProjects);
 
         if (!decision.CanAdopt)
         {

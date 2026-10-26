@@ -443,12 +443,20 @@ public sealed class GitRemoteViewModel : ObservableObject, IDisposable
             ? string.Empty
             : $"↑{branch.Ahead} ↓{branch.Behind}";
 
-        var countsMoved = _branch is null
-                          || _branch.Ahead != branch.Ahead
-                          || _branch.Behind != branch.Behind;
+        // The branch and its upstream are part of what moved, not only the counts. Two
+        // branches each one commit ahead of their own upstream have identical counts, and
+        // comparing Ahead/Behind alone left the first branch's commit list on screen under
+        // the second branch's badge after a checkout — the 2026-10-24 review's item 16. The
+        // range the preview reads is built from the upstream, so a changed upstream is a
+        // changed list even when nothing else is.
+        var moved = _branch is null
+                    || _branch.Ahead != branch.Ahead
+                    || _branch.Behind != branch.Behind
+                    || !string.Equals(_branch.Name, branch.Name, StringComparison.Ordinal)
+                    || !string.Equals(_branch.Upstream, branch.Upstream, StringComparison.Ordinal);
         _branch = branch;
 
-        if (countsMoved)
+        if (moved)
         {
             OnPropertyChanged(nameof(HasAhead));
             OnPropertyChanged(nameof(HasBehind));
@@ -459,6 +467,7 @@ public sealed class GitRemoteViewModel : ObservableObject, IDisposable
             // zero — after the very push it previewed, staying open would show yesterday's
             // list under a badge that is gone — and reloaded when the count changes, so a
             // fetch that finds one more commit does not leave a preview quietly one short.
+            // A branch switch takes the same two exits: the new branch's count decides.
             if (IsPreviewOpen)
             {
                 var current = _previewIncoming ? branch.Behind : branch.Ahead;

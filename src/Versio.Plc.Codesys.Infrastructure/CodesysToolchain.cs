@@ -22,9 +22,25 @@ namespace Versio.Plc.Codesys.Infrastructure;
 /// mean asking rather than guessing.
 /// </para>
 /// </remarks>
-public sealed class CodesysToolchain(IVersioLogger? logger = null) : IPlcToolchain
+public sealed class CodesysToolchain : IPlcToolchain
 {
-    private readonly IVersioLogger _log = logger ?? NullLogger.Instance;
+    private readonly IVersioLogger _log;
+    private readonly IEnumerable<string>? _searchRoots;
+
+    public CodesysToolchain(IVersioLogger? logger = null)
+        : this(logger, searchRoots: null)
+    {
+    }
+
+    /// <summary>
+    /// With the folders the locator searches, so a test can hand it an empty one and probe
+    /// a machine with no CODESYS without needing one.
+    /// </summary>
+    internal CodesysToolchain(IVersioLogger? logger, IEnumerable<string>? searchRoots)
+    {
+        _log = logger ?? NullLogger.Instance;
+        _searchRoots = searchRoots;
+    }
 
     public IPlcProjectFormat Format => CodesysProjectFormat.Instance;
 
@@ -40,7 +56,7 @@ public sealed class CodesysToolchain(IVersioLogger? logger = null) : IPlcToolcha
     /// </remarks>
     public Task<PlcToolchainStatus> ProbeAsync(CancellationToken ct)
     {
-        var installs = new CodesysLocator(logger: _log).FindInstalls();
+        var installs = new CodesysLocator(_searchRoots, logger: _log).FindInstalls();
         var resolution = ProfileResolver.Resolve(installs);
 
         // The install that OWNS the resolved profile, not simply the first one found.
@@ -50,13 +66,19 @@ public sealed class CodesysToolchain(IVersioLogger? logger = null) : IPlcToolcha
         // second install's profile beside the FIRST install's executable and version - and
         // CreateRunner then launched that executable with a profile it may not have. Silent,
         // and exactly the kind of version mix-up the profile is resolved so carefully to avoid.
+        //
+        // Null when there is no install at all. This used to be `?? installs[0]`, which on a
+        // machine with no CODESYS threw ArgumentOutOfRange before the resolver's NoInstallFound
+        // below could be reported — and the probe runs inside the repository attach, so a
+        // TIA-only machine aborted the attach and never probed the vendors after this one
+        // (the 2026-10-24 review's item 36). Only the Resolved arm needs an owner.
         var owner = installs.FirstOrDefault(
             i => i.Profiles.Contains(resolution.Profile, StringComparer.OrdinalIgnoreCase))
-            ?? installs[0];
+            ?? installs.FirstOrDefault();
 
         var status = resolution.Outcome switch
         {
-            ProfileResolution.Resolved => new PlcToolchainStatus
+            ProfileResolution.Resolved when owner is not null => new PlcToolchainStatus
             {
                 Available = true,
                 Profile = resolution.Profile,

@@ -63,6 +63,137 @@ public class NativeXmlNormalizerTests
     }
 
     [Fact]
+    public void Values_swapped_between_two_multi_line_siblings_are_still_a_change()
+    {
+        // Sorting LINES inside a container threw away which line belonged to which child:
+        // with every line of both children in one sorted bag, A holding x and B holding y
+        // normalised to exactly the same text as A holding y and B holding x. The export
+        // compares a fresh export against the file on disk and keeps the old file when the
+        // two are "equivalent" — so this change never reached the mirror (the 2026-10-24
+        // review's item 20). Siblings are sorted as whole elements now.
+        const string a = """
+            <List>
+            <Single Name="A">
+            <Id>1</Id>
+            <Value>x</Value>
+            </Single>
+            <Single Name="B">
+            <Id>2</Id>
+            <Value>y</Value>
+            </Single>
+            </List>
+            """;
+        const string b = """
+            <List>
+            <Single Name="A">
+            <Id>1</Id>
+            <Value>y</Value>
+            </Single>
+            <Single Name="B">
+            <Id>2</Id>
+            <Value>x</Value>
+            </Single>
+            </List>
+            """;
+
+        Assert.False(NativeXmlNormalizer.AreEquivalent(a, b));
+    }
+
+    [Fact]
+    public void Reordered_multi_line_siblings_are_not_a_change_and_their_insides_keep_their_order()
+    {
+        const string a = """
+            <List>
+            <Single Name="B">
+            <Id>2</Id>
+            <Value>y</Value>
+            </Single>
+            <Single Name="A">
+            <Id>1</Id>
+            <Value>x</Value>
+            </Single>
+            </List>
+            """;
+        const string b = """
+            <List>
+            <Single Name="A">
+            <Id>1</Id>
+            <Value>x</Value>
+            </Single>
+            <Single Name="B">
+            <Id>2</Id>
+            <Value>y</Value>
+            </Single>
+            </List>
+            """;
+        const string insideReordered = """
+            <List>
+            <Single Name="A">
+            <Value>x</Value>
+            <Id>1</Id>
+            </Single>
+            <Single Name="B">
+            <Id>2</Id>
+            <Value>y</Value>
+            </Single>
+            </List>
+            """;
+
+        Assert.True(NativeXmlNormalizer.AreEquivalent(a, b));
+        // A child's own lines are ordered content (Id before Value is a real difference).
+        Assert.False(NativeXmlNormalizer.AreEquivalent(a, insideReordered));
+    }
+
+    [Fact]
+    public void Reordered_siblings_that_carry_guids_are_not_a_change_with_masking_on()
+    {
+        // The GUID mask used to be "<masked-guid>", and the sibling sort counts tags by
+        // shape: it read the mask as an element that opens and never closes, every chunk
+        // after the first GUID was swallowed into one, and this pair compared different
+        // with masking on — the only setting an import's delete check uses — while
+        // comparing equivalent with masking off (the second-round review's item 7). A
+        // native object CODESYS had merely reordered was then refused as
+        // DELETE_CONTENT_CHANGED.
+        const string a = """
+            <List>
+            <Single Name="B">
+            <Guid>6f9619ff-8b86-d011-b42d-00c04fc964ff</Guid>
+            <Value>y</Value>
+            </Single>
+            <Single Name="A">
+            <Guid>0f8fad5b-d9cb-469f-a165-70867728950e</Guid>
+            <Value>x</Value>
+            </Single>
+            </List>
+            """;
+        const string b = """
+            <List>
+            <Single Name="A">
+            <Guid>0f8fad5b-d9cb-469f-a165-70867728950e</Guid>
+            <Value>x</Value>
+            </Single>
+            <Single Name="B">
+            <Guid>6f9619ff-8b86-d011-b42d-00c04fc964ff</Guid>
+            <Value>y</Value>
+            </Single>
+            </List>
+            """;
+
+        Assert.True(NativeXmlNormalizer.AreEquivalent(a, b, maskGuids: false));
+        Assert.True(NativeXmlNormalizer.AreEquivalent(a, b, maskGuids: true));
+        Assert.Equal(2, NativeXmlNormalizer.Normalize(a).GuidsMasked);
+    }
+
+    [Fact]
+    public void A_container_nested_inside_a_sibling_is_sorted_too()
+    {
+        const string a = "<List>\n<Single Name=\"A\">\n<Properties>\n<b/>\n<a/>\n</Properties>\n</Single>\n</List>";
+        const string b = "<List>\n<Single Name=\"A\">\n<Properties>\n<a/>\n<b/>\n</Properties>\n</Single>\n</List>";
+
+        Assert.True(NativeXmlNormalizer.AreEquivalent(a, b));
+    }
+
+    [Fact]
     public void Content_OUTSIDE_an_unordered_container_keeps_its_order()
     {
         // Sorting everything would hide real reordering of things that are ordered,

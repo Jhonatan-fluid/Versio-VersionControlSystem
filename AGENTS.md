@@ -20,7 +20,7 @@ distinction is the project's central architectural rule rather than an aspiratio
 | `Versio.Plc.TwinCat` | **One vendor, pure.** `.tsproj` conventions, directory payload, import planner, ST header |
 | `Versio.Plc.TwinCat.Infrastructure` | **One vendor, driven.** TcXaeShell locator, net9 host spawn, Automation Interface session |
 | `Versio.Plc.TwinCat.Host` | **One vendor, net9 x64 exe.** COM into `TcXaeShell.DTE.17.0`; never shipped as Beckhoff DLLs |
-| `Versio.Web` + `web/` | **The read-only web viewer** (`docs/web/PLAN.md`). A composition root like `Versio.App`, but references only the *pure* packs and names vendors only in `WebHost.RegisterFormats`; the React page draws no code. Arch tests enforce both |
+| `Versio.Web` + `web/` | **The web viewer** (`docs/web/PLAN.md`; read-only at first, and a pull request reviewer with writes on since 2026-10). A composition root like `Versio.App`, but references only the *pure* packs and names vendors only in `WebHost.RegisterFormats`; the React page draws no code. Arch tests enforce both |
 | everything else | Vendor-neutral: git, diff, sync, locking, watching, logging, bindings |
 
 Adding a vendor means a new project implementing `IPlcRunner`, `IPlcProjectFormat` and
@@ -252,19 +252,19 @@ stays that way.
 
 | Suite | Count | Time | Needs |
 |---|---|---|---|
-| `Versio.Core.Tests` | 1,837 | under a second | nothing |
-| `Versio.Integration.Tests` | 176 | ~10 s | real git |
-| `Versio.App.Tests` | 800 | ~3.6 min on 2026-09-22, 8 m 38 s on 2026-10-05, 10 m 46 s on 2026-10-19, 10 m 42 s on 2026-10-22, 10 m 36 s on 2026-10-23 (idleness not checked); STA, no window shown; it was ~50 s once | nothing |
+| `Versio.Core.Tests` | 2,080 | under a second | nothing |
+| `Versio.Integration.Tests` | 254 | ~1 m | real git |
+| `Versio.App.Tests` | 846 | 10 m 57 s on 2026-10-25 (843/846; three catch-up waits, green alone), 12 m 15 s on 2026-10-25 (845/845), 9 m 3 s on 2026-10-25 (838/842; four clipboard tests, `CLIPBRD_E_CANT_OPEN`, environmental), 12 m 49 s on 2026-10-25 (840/841; the same `SourceProjectTests` wait red for the second full run today, green alone), 13 m 29 s on 2026-10-25 (loaded, 835/836; a 21 s catch-up wait passed alone), 13 m 9 s on 2026-10-25 (loaded, 835/836; the 30 s catch-up wait passed alone), 11 m 23 s on 2026-10-24 (loaded), ~3.6 min on 2026-09-22, 8 m 38 s on 2026-10-05, 10 m 46 s on 2026-10-19, 10 m 42 s on 2026-10-22, 10 m 36 s on 2026-10-23 (idleness not checked); STA, no window shown; it was ~50 s once | nothing |
 | `Versio.Arch.Tests` | 36 | instant | nothing — it reads assembly metadata, IL and the `.csproj` files |
-| `Versio.Plc.Codesys.Pure.Tests` | 396 | under a second | nothing — the planner, the codecs, the protocol |
-| `Versio.Plc.Codesys.Parity.Tests` | 100 | ~15 s | `python` on PATH — **skips cleanly without it, so check the count, not the colour** |
-| `Versio.Plc.TiaPortal.Pure.Tests` | 98 | instant | nothing — format, planner, protocol, LAD and FBD parser |
-| `Versio.Plc.TiaPortal.Tests` | 5 | seconds when skipped; minutes when Portal runs the import gate | **real TIA Portal** — skips cleanly without Openness membership or LFS content. Import Fact is green |
-| `Versio.Plc.TwinCat.Pure.Tests` | 23 | instant | nothing — format, planner, protocol |
-| `Versio.Plc.TwinCat.Tests` | 6 | seconds when skipped; ~5 min when XAE runs the import gate | **real TwinCAT XAE** — skips cleanly without `TcXaeShell.DTE.17.0` or the fixture. Import Fact is green |
-| `Versio.Web.Tests` | 364 | a few seconds | nothing — GitHub is faked; one test starts the built server as its own process |
-| `web/` (vitest) | 128 | ~20 s | the pinned Node in `web/.node` (`dotnet build src/Versio.Web -p:BuildWeb=true` fetches it), then `npm test` in `web/` |
-| `Versio.Plc.Codesys.Tests` | 55 | **~30 min**; 41 m 14 s, 55/55, on 2026-10-11 | **real CODESYS** — every test launches it, which is the whole cost |
+| `Versio.Plc.Codesys.Pure.Tests` | 405 | under a second | nothing — the planner, the codecs, the protocol |
+| `Versio.Plc.Codesys.Parity.Tests` | 104 | ~15 s | `python` on PATH — **skips cleanly without it, so check the count, not the colour** |
+| `Versio.Plc.TiaPortal.Pure.Tests` | 108 | instant | nothing — format, planner, protocol, LAD and FBD parser |
+| `Versio.Plc.TiaPortal.Tests` | 5 | seconds when skipped; 3 m 1 s on 2026-10-25 when Portal is installed but refuses the host (1 passed, 4 skipped, not an Openness member); minutes when Portal runs the import gate | **real TIA Portal** — skips cleanly without Openness membership or LFS content. Import Fact is green |
+| `Versio.Plc.TwinCat.Pure.Tests` | 27 | instant | nothing — format, planner, protocol, and the host's text rules compiled in as source |
+| `Versio.Plc.TwinCat.Tests` | 6 | seconds when skipped (4 s, 6 skipped, 2026-10-25); ~5 min when XAE runs the import gate | **real TwinCAT XAE** — skips cleanly without `TcXaeShell.DTE.17.0` or the fixture. Import Fact is green |
+| `Versio.Web.Tests` | 504 | ~25 s | nothing — GitHub is faked; one test starts the built server as its own process |
+| `web/` (vitest) | 211 | ~20 s | the pinned Node in `web/.node` (`dotnet build src/Versio.Web -p:BuildWeb=true` fetches it), then `npm test` in `web/` |
+| `Versio.Plc.Codesys.Tests` | 55 | **~30 min**; 41 m 14 s, 55/55, on 2026-10-11; 1 h 22 m, 53/55, on 2026-10-25 with the owner's IDEs open (STATUS item 11 names the two red) | **real CODESYS** — every test launches it, which is the whole cost |
 
 The TIA gate fixture is `fixtures/projects/CleaningStation_V20_V21/` (Git LFS). Never the
 OneDrive original. `docs/vendors/tia/DRIVING.md` is this vendor's driving notes. The TwinCAT

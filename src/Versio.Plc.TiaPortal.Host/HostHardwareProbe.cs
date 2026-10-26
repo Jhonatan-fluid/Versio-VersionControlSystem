@@ -155,7 +155,7 @@ internal static partial class HostApp
             ["positionNumber"] = TryStr(obj, "PositionNumber")
                                  ?? TryAttribute(obj, "PositionNumber") ?? "",
             ["author"] = TryStr(obj, "Author") ?? TryAttribute(obj, "Author") ?? "",
-            ["comment"] = TryStr(obj, "Comment") ?? TryAttribute(obj, "Comment") ?? "",
+            ["comment"] = Clip(TryStr(obj, "Comment") ?? TryAttribute(obj, "Comment") ?? ""),
         };
         return rec;
     }
@@ -210,7 +210,7 @@ internal static partial class HostApp
             var value = TryAttribute(obj, name);
             if (value is not null)
             {
-                values[name] = value;
+                values[name] = Clip(value);
             }
         }
 
@@ -733,7 +733,14 @@ internal static partial class HostApp
                 .FirstOrDefault(m => m.Name == "GetAttribute"
                                      && m.GetParameters().Length == 1);
             var value = method?.Invoke(obj, [name]);
-            return Scalar(value)?.ToString();
+
+            // The string comes back whole. Scalar clips a string to 240 characters for the
+            // probe's listing, and this went through it for every caller — the device
+            // catalog's export, its before-write check and its read-back included. A
+            // station comment longer than that was exported cut, edited cut, stored cut
+            // and verified against its own cut (the 2026-10-24 review's item 27). Callers
+            // that list clip for themselves with Clip.
+            return value is string s ? s : Scalar(value)?.ToString();
         }
         catch
         {
@@ -802,6 +809,9 @@ internal static partial class HostApp
             : null;
     }
 
+    /// <summary>The probe's display length for one value: a listing, not a payload.</summary>
+    private static string Clip(string s) => s.Length > 240 ? s.Substring(0, 240) + "..." : s;
+
     private static object? Scalar(object? value)
     {
         switch (value)
@@ -809,7 +819,7 @@ internal static partial class HostApp
             case null:
                 return null;
             case string s:
-                return s.Length > 240 ? s.Substring(0, 240) + "..." : s;
+                return Clip(s);
             case bool or byte or sbyte or short or ushort or int or uint or long or ulong
                 or float or double or decimal:
                 return value;

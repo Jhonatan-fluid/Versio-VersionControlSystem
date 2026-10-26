@@ -1,9 +1,27 @@
 import type { ReactNode } from 'react';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { hasLadder, linkTarget, mermaidBlocks, sanitize } from '../fragment';
+import { hasLadder, linkTarget, mermaidBlocks, objectLink, sanitize } from '../fragment';
+import { effectiveColorMode } from '../theme';
 
 let ladderRun = 0;
+
+/**
+ * A row's own text: the code element of the cell the gutter sits in (a Raw row, a split cell,
+ * a drawn source line all put theirs in `.cd-code`), or failing that the row less its numbers
+ * and its diff marker. What a suggested change starts from, so the person edits the line rather
+ * than retypes it.
+ */
+function rowText(row: HTMLElement, gutter: HTMLElement): string {
+  const cell = gutter.closest<HTMLElement>('.cd-cell') ?? row;
+  const code = cell.querySelector<HTMLElement>('.cd-code');
+  if (code) {
+    return code.textContent ?? '';
+  }
+  const copy = cell.cloneNode(true) as HTMLElement;
+  copy.querySelectorAll('.cd-num, .cd-marker, .thread-slot, .thread-slot-row').forEach((e) => e.remove());
+  return copy.textContent ?? '';
+}
 
 /**
  * Something the page draws BETWEEN the fragment's rows — a review thread under its line — placed
@@ -34,7 +52,9 @@ interface Props {
    * A gutter click on a diff row, with both of its file lines: the new side's (data-line) and the
    * old side's (data-old-line). A review comment needs the side; a link to a line does not.
    */
-  onRowPick?: (row: { line: number | null; oldLine: number | null; fileLine: number | null; oldFileLine: number | null; srcPath: string | null }) => void;
+  onRowPick?: (row: { line: number | null; oldLine: number | null; fileLine: number | null; oldFileLine: number | null; srcPath: string | null; shift: boolean; text: string }) => void;
+  /** A folded stretch ("N unchanged lines") was clicked: the page asks for the whole file. */
+  onUnfold?: () => void;
   /**
    * A click on a drawn element a review comment can sit on — a member's name, a network's heading —
    * with the anchor ids it stands for (its <c>data-anchors</c>). Only those two targets, so a click
@@ -48,7 +68,7 @@ interface Props {
  * fragment is sanitised (the third wall), placed, and then only read, through the data-* markers
  * the renderers promise.
  */
-export function FragmentHost({ html, path, onOpenPath, line, onLine, annotations, onPlaced, onRowPick, onAnchorPick }: Props) {
+export function FragmentHost({ html, path, onOpenPath, line, onLine, annotations, onPlaced, onRowPick, onAnchorPick, onUnfold }: Props) {
   const host = useRef<HTMLDivElement>(null);
   const clean = useMemo(() => sanitize(html), [html]);
   const [slots, setSlots] = useState<Map<string, HTMLElement>>(() => new Map());
@@ -71,21 +91,48 @@ export function FragmentHost({ html, path, onOpenPath, line, onLine, annotations
         if (!target) {
           continue;
         }
-        let after: Element = target.closest('.cd-drow, .cd-split, .cd-row, tr.mt-row, section.ld-row') ?? target;
+        const row: Element = target.closest('.cd-drow, .cd-split, .cd-row, tr.mt-row, section.ld-row') ?? target;
+        let after: Element = row;
         // Several threads on one row stack in the order given.
-        while (after.nextElementSibling?.classList.contains('thread-slot')) {
+        while (after.nextElementSibling?.classList.contains('thread-slot') || after.nextElementSibling?.classList.contains('thread-slot-row')) {
           after = after.nextElementSibling;
         }
         // A table row's slot is a table row of its own, one cell across: a div between rows of a
         // tbody is invalid markup, and browsers move it out of the table, away from its row.
         let slot: HTMLElement;
-        if (after instanceof HTMLTableRowElement || after.closest('tbody')) {
-          const row = document.createElement('tr');
-          row.className = 'thread-slot thread-row';
+        const cell = target.closest<HTMLElement>('.cd-split > .cd-cell');
+        // Which column the line is in, read from the LINE's row: once a slot row follows it, `after`
+        // is that slot row, whose first cell is never the line's — comparing against it put the
+        // second thread on a pair of lines under the wrong column (found by the test, 2026-10-24).
+        const onLeft = cell !== null && row.querySelector('.cd-cell') === cell;
+        if (cell && row.classList.contains('cd-split')) {
+          // Side by side (Step 3b): the slot is a split row of its own with the thread under the
+          // column the line is in and the other column empty, as GitHub draws it — a slot across
+          // both columns read as if the comment were on both sides' lines.
+          const slotRow = document.createElement('div');
+          slotRow.className = 'cd-split thread-slot-row';
+          const left = document.createElement('div');
+          left.className = 'cd-cell thread-slot-cell';
+          const rule = document.createElement('span');
+          rule.className = 'cd-rule';
+          const right = document.createElement('div');
+          right.className = 'cd-cell thread-slot-cell';
+          slotRow.append(left, rule, right);
+          after.after(slotRow);
+          slot = document.createElement('div');
+          slot.className = 'thread-slot';
+          (onLeft ? left : right).appendChild(slot);
+        } else if (after instanceof HTMLTableRowElement || after.closest('tbody')) {
+          const slotRow = document.createElement('tr');
+          slotRow.className = 'thread-slot thread-row';
           const cell = document.createElement('td');
-          cell.colSpan = Math.max(1, (after as HTMLTableRowElement).cells?.length ?? 1);
-          row.appendChild(cell);
-          after.after(row);
+          // The span is the MEMBER row's column count, as the side-by-side branch reads its column
+          // from the line's row: for a second thread on one row, `after` is the first thread's
+          // one-cell slot row, and counting its cells put the second thread in one column of a
+          // four-column table (the 2026-10-24 review's item 17).
+          cell.colSpan = Math.max(1, row instanceof HTMLTableRowElement ? row.cells.length : 1);
+          slotRow.appendChild(cell);
+          after.after(slotRow);
           slot = cell;
         } else {
           slot = document.createElement('div');
@@ -97,9 +144,33 @@ export function FragmentHost({ html, path, onOpenPath, line, onLine, annotations
     }
     setSlots(made);
     placedReport.current?.([...made.keys()]);
-    return () => made.forEach((slot) => (slot.closest('tr.thread-row') ?? slot).remove());
+    return () => made.forEach((slot) => (slot.closest('tr.thread-row, .thread-slot-row') ?? slot).remove());
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [clean, wantedKey]);
+
+  // Where a drawn line lives (FINISH.md, C2 "origin"): the gutter's tooltip names the layer file
+  // and the file line the renderer recorded, so a line under a table says which file it is of —
+  // a code body under a table is another file than the table's. Read from the renderers' own
+  // markers, never from text; a block naming no file gets no tooltip.
+  useEffect(() => {
+    const root = host.current;
+    if (!root) {
+      return;
+    }
+    for (const block of root.querySelectorAll<HTMLElement>('[data-src-path]')) {
+      const file = block.dataset.srcPath;
+      if (!file) {
+        continue;
+      }
+      for (const cell of block.querySelectorAll<HTMLElement>('[data-file-line], [data-old-file-line]')) {
+        const line = cell.dataset.fileLine ?? cell.dataset.oldFileLine;
+        const gutter = cell.querySelector<HTMLElement>('.cd-num');
+        if (gutter && line) {
+          gutter.title = `${file}:${line}${cell.dataset.fileLine ? '' : ' (as it was)'}`;
+        }
+      }
+    }
+  }, [clean]);
 
   // The ladder's navigation script works over the .ld-page it finds when it runs, and a page
   // like this places fragments long after load. It is re-run per fragment, from this origin, as
@@ -123,7 +194,9 @@ export function FragmentHost({ html, path, onOpenPath, line, onLine, annotations
     if (!root) {
       return;
     }
-    const dark = window.matchMedia?.('(prefers-color-scheme: dark)').matches ?? false;
+    // The page's own colour mode (the header's switch, else the OS): a diagram drawn for the OS's
+    // mode inside a page the person switched was the one dark thing on a light page.
+    const dark = effectiveColorMode() === 'dark';
     const frames = new Map<Window, { frame: HTMLIFrameElement; pre: HTMLElement; id: number; source: string }>();
     mermaidBlocks(root).forEach(({ element, source }, id) => {
       const frame = document.createElement('iframe');
@@ -185,6 +258,12 @@ export function FragmentHost({ html, path, onOpenPath, line, onLine, annotations
 
   function onClick(event: React.MouseEvent<HTMLDivElement>) {
     const element = event.target as HTMLElement;
+    // A click inside a NESTED host — a review thread's comment drawn in a slot between this
+    // drawing's rows — reaches only that host: the slot is a DOM descendant of this div, but the
+    // portal's React parent is this component's fragment root, not the div, so React's bubbling
+    // never brings it here. Suspected in review (2026-10-24) and pinned by FragmentHost.test.tsx
+    // rather than guarded against, because a guard for a path that cannot happen would be
+    // read as if it could.
     const link = element.closest<HTMLElement>('[data-href]');
     if (link) {
       event.preventDefault();
@@ -203,21 +282,29 @@ export function FragmentHost({ html, path, onOpenPath, line, onLine, annotations
     const typeLink = element.closest<HTMLElement>('[data-link]');
     if (typeLink) {
       event.preventDefault();
-      const target = linkTarget(typeLink.dataset.link ?? '', '');
-      if (target?.kind === 'internal') {
-        onOpenPath(target.path);
+      const target = objectLink(typeLink.dataset.link ?? '');
+      if (target !== null) {
+        onOpenPath(target);
       }
       return;
     }
 
     if (onAnchorPick) {
-      const target = element.closest<HTMLElement>('td.mt-name, td.mt-mark, .ld-head');
+      // A member's name or mark, a network's heading, a catalog row's name or mark (a library, a
+      // task, a device: `CatalogHtml` gives its rows anchors too, and they were unreachable here
+      // until the review of 2026-10-24).
+      const target = element.closest<HTMLElement>('td.mt-name, td.mt-mark, .ld-head, td.ct-name, td.ct-mark');
       const anchored = target?.closest<HTMLElement>('[data-anchors]');
       const ids = anchored?.dataset.anchors?.split(' ').filter((id) => id.length > 0) ?? [];
       if (ids.length > 0) {
         onAnchorPick(ids);
         return;
       }
+    }
+
+    if (onUnfold && element.closest<HTMLElement>('.cd-fold')) {
+      onUnfold();
+      return;
     }
 
     const gutter = element.closest<HTMLElement>('.cd-num');
@@ -233,6 +320,10 @@ export function FragmentHost({ html, path, onOpenPath, line, onLine, annotations
         fileLine: n(row.dataset.fileLine),
         oldFileLine: n(row.dataset.oldFileLine),
         srcPath: row.closest<HTMLElement>('[data-src-path]')?.dataset.srcPath || null,
+        shift: event.shiftKey,
+        // The line's own text, for a suggested change to start from (Step 5): the row without its
+        // gutter, and without the diff's leading sign on a Raw row.
+        text: rowText(row, gutter),
       });
       return;
     }

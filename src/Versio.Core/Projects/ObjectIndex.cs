@@ -200,6 +200,17 @@ public sealed class ObjectIndex
     public ObjectFiles? FindByName(string project, string name) =>
         _byName.GetValueOrDefault((project, name));
 
+    /// <summary>
+    /// Every object of <paramref name="project"/>, once each, with its files: what a "used by"
+    /// search reads through (<see cref="ObjectLinks"/>). Ordered by name, so an answer is stable.
+    /// </summary>
+    public IReadOnlyList<(NamedObject Object, ObjectFiles Files)> ObjectsIn(string project) =>
+        _byName
+            .Where(e => string.Equals(e.Key.Project, project, StringComparison.OrdinalIgnoreCase))
+            .Select(e => (_byPath[e.Value.Paths[0]], e.Value))
+            .OrderBy(e => e.Item1.Name, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
     private sealed class ProjectNameComparer : IEqualityComparer<(string Project, string Name)>
     {
         public bool Equals((string Project, string Name) x, (string Project, string Name) y) =>

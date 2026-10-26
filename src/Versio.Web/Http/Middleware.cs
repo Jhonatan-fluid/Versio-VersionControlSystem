@@ -66,6 +66,15 @@ public sealed class SecurityHeaders(RequestDelegate next)
     public const string RawCsp = "default-src 'none'; frame-ancestors 'self'; base-uri 'none'; form-action 'none'";
 
     /// <summary>
+    /// The raw route's policy for an HTML document (a <c>.html</c> the page frames as the object's
+    /// web page, the desktop's third chip): <see cref="RawCsp"/> plus <c>sandbox</c>, so the
+    /// document runs with an opaque origin and no script, form or popup wherever it is opened —
+    /// framed by the page, or navigated to directly. The page's frame adds its own <c>sandbox</c>
+    /// attribute, as the diagram frame does; this header holds when the frame is not there.
+    /// </summary>
+    public const string RawPageCsp = RawCsp + "; sandbox";
+
+    /// <summary>
     /// Whether this is the raw document route: /api/repos/{owner}/{repo}/raw, five segments. A
     /// repository itself named "raw" has four and keeps the ordinary headers.
     /// </summary>
@@ -95,7 +104,8 @@ public sealed class SecurityHeaders(RequestDelegate next)
             var path = context.Request.Path;
             var frame = path.Equals(MermaidFrame, StringComparison.OrdinalIgnoreCase);
             var raw = IsRawDocument(path);
-            h.ContentSecurityPolicy = frame ? FramePolicy(context) : raw ? RawCsp : Csp;
+            var page = raw && Versio.Core.Projects.RenderChoice.IsWebPage(context.Request.Query["path"].ToString());
+            h.ContentSecurityPolicy = frame ? FramePolicy(context) : page ? RawPageCsp : raw ? RawCsp : Csp;
             h.XContentTypeOptions = "nosniff";
             h.XFrameOptions = frame || raw ? "SAMEORIGIN" : "DENY";
             h["Referrer-Policy"] = "no-referrer";

@@ -16,10 +16,29 @@ public sealed class FakeFileSystem : IFileSystem
     public int FailCopyTimes { get; set; }
 
     /// <summary>
+    /// Make the Nth copy from now fail (1-based; 0 never), standing in for a tree copy that
+    /// stops partway — a locked file in the middle of a directory project, a full disk.
+    /// <see cref="FailCopyTimes"/> fails the FIRST copies, which leaves nothing behind; a
+    /// backup that is half there needs the first file to land and a later one to fail.
+    /// </summary>
+    public int FailCopyAt { get; set; }
+
+    private int _copies;
+
+    /// <summary>
     /// Paths that throw on read, standing in for a pointer the toolchain still holds
     /// after the export child has exited.
     /// </summary>
     public HashSet<string> LockedFiles { get; } = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// Called with the path before every read, standing in for a filesystem that honours
+    /// cancellation: a test cancels its token from here and throws, which is what a real
+    /// read does when Stop is pressed while it is in flight. The fake's reads otherwise
+    /// ignore the token, so without this hook no test can reach the code that runs after a
+    /// cancelled read.
+    /// </summary>
+    public Action<string>? BeforeRead { get; set; }
 
     public void Write(string path, string content)
     {
@@ -42,6 +61,7 @@ public sealed class FakeFileSystem : IFileSystem
 
     public Task<byte[]> ReadAllBytesAsync(string path, CancellationToken ct)
     {
+        BeforeRead?.Invoke(path);
         if (LockedFiles.Contains(path))
         {
             throw new IOException("the file is in use by another process");
@@ -79,13 +99,27 @@ public sealed class FakeFileSystem : IFileSystem
 
     public Task CopyAsync(string source, string destination, CancellationToken ct)
     {
+        if (FailCopyAt > 0 && ++_copies == FailCopyAt)
+        {
+            FailCopyAt = 0;
+            throw new IOException("the file is in use by another process");
+        }
+
         if (FailCopyTimes > 0)
         {
             FailCopyTimes--;
             throw new IOException("the file is in use by another process");
         }
 
-        _files[destination] = _files.TryGetValue(source, out var b) ? b : [];
+        if (!_files.TryGetValue(source, out var b))
+        {
+            // As the real one: File.Copy of a missing source throws. The fake used to write
+            // an empty file instead, which turned "the restore source was pruned away" into
+            // a project silently emptied — the one answer a fake must never give.
+            throw new FileNotFoundException("the source does not exist", source);
+        }
+
+        _files[destination] = b;
         RememberAncestors(destination);
         return Task.CompletedTask;
     }
@@ -194,11 +228,23 @@ public sealed class InMemoryLockStore : ILockStore
     public LockState? State { get; set; }
     public int Writes { get; private set; }
 
+    /// <summary>
+    /// Thrown by the next write and then cleared, standing in for the real store refusing a
+    /// write — two bindings persisting into one temp file at the same moment was the case.
+    /// </summary>
+    public Exception? ThrowOnNextWrite { get; set; }
+
     public Task<LockState?> ReadAsync(CancellationToken ct) => Task.FromResult(State);
 
     public Task WriteAsync(LockState state, CancellationToken ct)
     {
         ct.ThrowIfCancellationRequested();
+        if (ThrowOnNextWrite is { } failure)
+        {
+            ThrowOnNextWrite = null;
+            throw failure;
+        }
+
         State = state;
         Writes++;
         return Task.CompletedTask;

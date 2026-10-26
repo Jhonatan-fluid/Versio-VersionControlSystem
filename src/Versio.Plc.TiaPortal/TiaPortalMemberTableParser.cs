@@ -94,6 +94,17 @@ public static class TiaPortalMemberTableParser
             members = ForInterface(members, isFunction: block.Name.LocalName == Function);
         }
 
+        // The framing review coverage may vouch for (docs/web/PLAN.md, C4): every markup-only
+        // line outside the rows and outside the block's ObjectList, which holds its code (the
+        // compile units a ladder draws, or an SCL block's tokens) and its comment, none of it
+        // this table's to vouch for. The document header's values (Created, the product list) are
+        // text and stay gaps when they change; the export scrubber is what keeps them still.
+        var drawn = members.Select(m => m.Lines).OfType<Versio.Core.Text.LineSpan>().ToList();
+        if (Child(block, "ObjectList") is { } objects && Versio.Core.Text.SafeXml.LinesOf(objects) is { } o)
+        {
+            drawn.Add(o);
+        }
+
         return new MemberTable
         {
             Name = name,
@@ -103,6 +114,7 @@ public static class TiaPortalMemberTableParser
             Members = members,
             IsDataType = block.Name.LocalName == PlcStruct,
             IsInterface = isInterface,
+            Structural = Versio.Core.Text.MarkupLines.Structural(content.TrimStart('﻿'), drawn),
         };
     }
 

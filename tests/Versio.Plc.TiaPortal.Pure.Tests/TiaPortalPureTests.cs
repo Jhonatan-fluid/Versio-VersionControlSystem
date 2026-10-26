@@ -507,6 +507,19 @@ public sealed class TiaPortalProtocolTests
         Assert.Equal("Motor.scl", output.Events[0].String("path"));
         Assert.True(output.Completed);
     }
+
+    [Fact]
+    public void The_host_names_the_portal_it_created()
+    {
+        // ide_pid is what lets Stop reap the one Portal this run started rather than every
+        // Portal that appeared during it (the 2026-10-24 review's item 28). The runner reads
+        // it as a string field and parses the number itself; the pid travels as text.
+        var output = TiaPortalProtocol.Parse("@@VERSIO@@{\"t\":\"ide_pid\",\"pid\":\"4242\"}\n");
+
+        var evt = Assert.Single(output.Events);
+        Assert.Equal("ide_pid", evt.Type);
+        Assert.Equal("4242", evt.String("pid"));
+    }
 }
 
 public sealed class TiaPortalObjectTypeNamesTests

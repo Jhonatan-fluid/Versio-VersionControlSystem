@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Text.Json;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Hosting.Server;
@@ -62,6 +63,19 @@ public sealed class GitHubWriterTests : IAsyncLifetime
             Results.Json(Enumerable.Range(0, 100).Select(i => new { node_id = $"PRR_x{i}", user = new { login = "jo" }, body = "" }).ToArray()));
         app.MapPost("/repos/acme/plant/pulls", () => Results.Json(new { number = 13, node_id = "PR_13" }, statusCode: 201));
         app.MapPatch("/repos/acme/plant/pulls/12", () => Results.Json(new { number = 12 }));
+        app.MapPatch("/repos/acme/plant/issues/12", () => Results.Json(new { number = 12 }));
+        // A deleted ref answers 204 with no body; one already gone, 422 in GitHub's words; a created ref, 201.
+        app.MapDelete("/repos/acme/plant/git/refs/heads/fix", () => Results.StatusCode(204));
+        app.MapDelete("/repos/acme/plant/git/refs/heads/gone", () => Results.Json(new { message = "Reference does not exist" }, statusCode: 422));
+        app.MapPost("/repos/acme/plant/git/refs", () => Results.Json(new { @ref = "refs/heads/fix" }, statusCode: 201));
+        app.MapPost("/repos/acme/plant/pulls/12/requested_reviewers", () => Results.Json(new { number = 12 }, statusCode: 201));
+        // Step 3b: a comment on a commit, and the list it is found in again when the answer is lost.
+        app.MapPost("/repos/acme/plant/commits/" + new string('u', 40) + "/comments", () => Results.Json(new { node_id = "CC_9" }, statusCode: 201));
+        app.MapGet("/repos/acme/plant/commits/" + new string('u', 40) + "/comments", () => Results.Json(new object[]
+        {
+            new { node_id = "CC_8", user = new { login = "sam" }, body = "theirs <!-- versio:op v1 K -->" },
+            new { node_id = "CC_9", user = new { login = "alice" }, body = "mine <!-- versio:op v1 K -->" },
+        }));
         app.MapDelete("/repos/acme/plant/issues/12/labels/gone", () => Results.Json(new { message = "Label does not exist" }, statusCode: 404));
         app.MapDelete("/repos/acme/plant/issues/12/labels/{name}", () => Results.Json(Array.Empty<object>()));
         app.MapGet("/repos/acme/plant/pulls", () => Results.Json(new object[]
@@ -106,6 +120,16 @@ public sealed class GitHubWriterTests : IAsyncLifetime
             if (query.Contains("addPullRequestReview(", StringComparison.Ordinal))
             {
                 return Results.Json(new { data = new { addPullRequestReview = new { pullRequestReview = new { id = "PRR_pending" } } } });
+            }
+
+            if (query.Contains("createCommitOnBranch(", StringComparison.Ordinal))
+            {
+                return Results.Json(new { data = new { createCommitOnBranch = new { commit = new { oid = new string('s', 40) } } } });
+            }
+
+            if (query.Contains("on Reactable", StringComparison.Ordinal))
+            {
+                return Results.Json(new { data = new { node = new { reactionGroups = new object[] { new { content = "HEART", viewerHasReacted = true }, new { content = "EYES", viewerHasReacted = false } } } } });
             }
 
             return query.Contains("resolveReviewThread", StringComparison.Ordinal)
@@ -275,6 +299,14 @@ public sealed class GitHubWriterTests : IAsyncLifetime
         var query = _requests.Single(r => r.Method == "GET").Path;
         Assert.Contains("head=acme%3Afeature", query, StringComparison.Ordinal);
         Assert.Contains("state=all", query, StringComparison.Ordinal);
+
+        // A fork's head is already owner:branch, and is asked for as it is (review, 2026-10-24:
+        // prefixed again it asked for acme:bob:feature, which lists nothing, so a lost answer to
+        // opening a fork's pull request could never be reconciled).
+        _requests.Clear();
+        var fork = await Writer().FindCreatedPullAsync(Alice, "acme", "plant", "bob:feature", "main", "<!-- versio:op v1 K -->", CancellationToken.None);
+        Assert.Equal(22, fork.Value);
+        Assert.Contains("head=bob%3Afeature", _requests.Single(r => r.Method == "GET").Path, StringComparison.Ordinal);
     }
 
     /// <summary>The merge carries the reviewed head as GitHub's precondition, and GitHub's 409 for a moved head is a refusal, never "unknown".</summary>
@@ -297,10 +329,19 @@ public sealed class GitHubWriterTests : IAsyncLifetime
     public async Task Updating_the_branch_and_auto_merge_name_the_reviewed_head()
     {
         var head = new string('d', 40);
-        var updated = await Writer().UpdateBranchAsync(Alice, "acme", "plant", 12, head, CancellationToken.None);
+        var updated = await Writer().UpdateBranchAsync(Alice, "acme", "plant", 12, head, "MERGE", "PR_12", CancellationToken.None);
         var auto = await Writer().EnableAutoMergeAsync(Alice, "PR_12", "MERGE", head, CancellationToken.None);
 
+        var rebased = await Writer().UpdateBranchAsync(Alice, "acme", "plant", 12, head, "REBASE", "PR_12", CancellationToken.None);
+        var deleted = await Writer().DeleteBranchAsync(Alice, "acme", "plant", "fix", CancellationToken.None);
+        var gone = await Writer().DeleteBranchAsync(Alice, "acme", "plant", "gone", CancellationToken.None);
+        var restored = await Writer().CreateBranchAsync(Alice, "acme", "plant", "fix", head, CancellationToken.None);
+
         Assert.Equal((WriteOutcome.Done, WriteOutcome.Done), (updated.Outcome, auto.Outcome));
+        // A 204 has no body and is done; a ref already gone is what was asked; a rebase goes by GraphQL with the head named.
+        Assert.Equal((WriteOutcome.Done, WriteOutcome.Done, WriteOutcome.Done, WriteOutcome.Done), (rebased.Outcome, deleted.Outcome, gone.Outcome, restored.Outcome));
+        Assert.Contains($"\"head\":\"{head}\"", _requests.Single(r => r.Body.Contains("updatePullRequestBranch", StringComparison.Ordinal)).Body, StringComparison.Ordinal);
+        Assert.Contains("\"ref\":\"refs/heads/fix\"", _requests.Single(r => r.Method == "POST" && r.Path.EndsWith("/git/refs", StringComparison.Ordinal)).Body, StringComparison.Ordinal);
         Assert.Contains($"\"expected_head_sha\":\"{head}\"", _requests.Single(r => r.Path.EndsWith("/update-branch", StringComparison.Ordinal)).Body, StringComparison.Ordinal);
         var mutation = _requests.Single(r => r.Body.Contains("enablePullRequestAutoMerge", StringComparison.Ordinal)).Body;
         Assert.Contains("expectedHeadOid", mutation, StringComparison.Ordinal);
@@ -326,6 +367,55 @@ public sealed class GitHubWriterTests : IAsyncLifetime
         Assert.Equal(WriteOutcome.Unknown, untyped.Outcome);
         Assert.Equal(WriteOutcome.Refused, invalid.Outcome);
         Assert.Equal(WriteOutcome.Refused, refused.Outcome);
+    }
+
+    /// <summary>
+    /// Step 5's writes, in GitHub's shapes: teams ride beside people in the reviewers call; a commit
+    /// carries the expected head and base64 contents; a reaction, a lock and a milestone name what
+    /// they change; the viewer's reaction is read back from the subject's groups.
+    /// </summary>
+    [Fact]
+    public async Task Reviewers_commits_reactions_locks_and_milestones_are_sent_in_GitHubs_shapes()
+    {
+        var head = new string('d', 40);
+        var reviewers = await Writer().SetReviewersAsync(Alice, "acme", "plant", 12, new ReviewerChange(["sam"], [], ["plc-controls"], []), CancellationToken.None);
+        var commit = await Writer().CommitFilesAsync(Alice, "acme", "plant", "fix", head, "Apply suggestion from code review\n\n<!-- versio:op v1 K -->", [new FileChange("src/Pump.st", "x\n"u8.ToArray())], CancellationToken.None);
+        var reaction = await Writer().SetReactionAsync(Alice, "IC_1", "HEART", true, CancellationToken.None);
+        var locked = await Writer().SetLockedAsync(Alice, "PR_12", true, "RESOLVED", CancellationToken.None);
+        var milestone = await Writer().SetMilestoneAsync(Alice, "acme", "plant", 12, null, CancellationToken.None);
+        var reacted = await Writer().ViewerReactedAsync(Alice, "IC_1", "HEART", CancellationToken.None);
+        var notReacted = await Writer().ViewerReactedAsync(Alice, "IC_1", "EYES", CancellationToken.None);
+
+        Assert.Equal((WriteOutcome.Done, WriteOutcome.Done, WriteOutcome.Done, WriteOutcome.Done, WriteOutcome.Done), (reviewers.Outcome, commit.Outcome, reaction.Outcome, locked.Outcome, milestone.Outcome));
+        Assert.Equal(new string('s', 40), commit.Value);
+        Assert.Contains("\"team_reviewers\":[\"plc-controls\"]", _requests.Single(r => r.Path.EndsWith("/requested_reviewers", StringComparison.Ordinal)).Body, StringComparison.Ordinal);
+        var made = _requests.Single(r => r.Body.Contains("createCommitOnBranch", StringComparison.Ordinal)).Body;
+        Assert.Contains($"\"head\":\"{head}\"", made, StringComparison.Ordinal);
+        Assert.Contains("\"headline\":\"Apply suggestion from code review\"", made, StringComparison.Ordinal);
+        Assert.Contains($"\"contents\":\"{Convert.ToBase64String("x\n"u8.ToArray())}\"", made, StringComparison.Ordinal);
+        Assert.Contains("\"content\":\"HEART\"", _requests.Single(r => r.Body.Contains("addReaction", StringComparison.Ordinal)).Body, StringComparison.Ordinal);
+        Assert.Contains("\"reason\":\"RESOLVED\"", _requests.Single(r => r.Body.Contains("lockLockable", StringComparison.Ordinal)).Body, StringComparison.Ordinal);
+        // The field is sent even when null: that is how a milestone is cleared.
+        Assert.Equal("{\"milestone\":null}", _requests.Single(r => r.Path.EndsWith("/issues/12", StringComparison.Ordinal)).Body);
+        Assert.Equal((true, false), (reacted.Value, notReacted.Value));
+    }
+
+    /// <summary>Step 3b: a comment on a commit is a REST post naming the sha; a lost answer is found again by the viewer's own tagged comment, never somebody else's with the same tag.</summary>
+    [Fact]
+    public async Task A_commit_comment_is_posted_to_the_commit_and_found_again_by_the_viewers_tag()
+    {
+        var sha = new string('u', 40);
+
+        var posted = await Writer().AddCommitCommentAsync(Alice, "acme", "plant", sha, "mine <!-- versio:op v1 K -->", CancellationToken.None);
+        var found = await Writer().FindTaggedCommitCommentAsync(Alice, "acme", "plant", sha, "<!-- versio:op v1 K -->", CancellationToken.None);
+        var missing = await Writer().FindTaggedCommitCommentAsync(Alice, "acme", "plant", sha, "<!-- versio:op v1 Z -->", CancellationToken.None);
+
+        Assert.Equal((WriteOutcome.Done, "CC_9"), (posted.Outcome, posted.Value));
+        var sent = JsonDocument.Parse(_requests.Single(r => r.Method == "POST" && r.Path.EndsWith("/comments", StringComparison.Ordinal)).Body).RootElement;
+        Assert.Equal("mine <!-- versio:op v1 K -->", sent.GetProperty("body").GetString());
+        Assert.Single(sent.EnumerateObject());
+        Assert.Equal("CC_9", found.Value);
+        Assert.Equal("", missing.Value);
     }
 
     /// <summary>

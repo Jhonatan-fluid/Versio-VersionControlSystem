@@ -82,7 +82,17 @@ public static class BranchInventory
 
             if (byName.TryGetValue(name, out var existing))
             {
-                byName[name] = existing with { Existence = BranchExistence.Both };
+                // Both means "local and remote", and only a row that came from refs/heads
+                // can earn it. A row a first remote put here is remote-only, and a second
+                // remote carrying the same name does not make it local: marked Both, the
+                // delete dialog ran `git branch -d` on a branch this clone never had, the
+                // failure stopped the walk, and the remote half was skipped. The 2026-10-24
+                // review's item 39. The first remote's ref is kept as the row's RemoteRef.
+                if (existing.Existence == BranchExistence.LocalOnly)
+                {
+                    byName[name] = existing with { Existence = BranchExistence.Both };
+                }
+
                 continue;
             }
 

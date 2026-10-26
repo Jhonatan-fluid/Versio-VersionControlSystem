@@ -205,7 +205,7 @@ Versio.sln
 │  ├─ Versio.Plc.TwinCat.Infrastructure/
 │  │                            ONE VENDOR, driven. Locator, runner, TwinCatPack.
 │  ├─ Versio.Plc.TwinCat.Host/   ONE VENDOR, net9 x64 exe. COM into TcXaeShell.DTE.17.0.
-│  └─ Versio.Web/               The read-only web viewer's server (docs/web/PLAN.md): reads a
+│  └─ Versio.Web/               The web viewer's server (docs/web/PLAN.md; reviews too, writes on): reads a
 │                               repository from GitHub, renders with Core and the three PURE
 │                               packs, signs in through a GitHub App. Never an Infrastructure
 │                               pack, never a process; Arch tests hold it to that.
@@ -214,27 +214,27 @@ Versio.sln
 ├─ tests/
 │  ├─ Versio.TestSupport/       not a test project: the three helpers more than one suite
 │  │                            needs (TestPaths, TestLogger, VendorSeamScanner, LadderInvariants)
-│  ├─ Versio.Core.Tests/        1,837 unit tests — pure, no IO, under a second
-│  ├─ Versio.Integration.Tests/ 176 tests against real git and the real filesystem, ~10 s.
+│  ├─ Versio.Core.Tests/        1,951 unit tests — pure, no IO, under a second
+│  ├─ Versio.Integration.Tests/ 188 tests against real git and the real filesystem, ~40 s.
 │  │                            NO CODESYS: that is a different project now, so this one
 │  │                            needs no filter and cannot accidentally cost half an hour
-│  ├─ Versio.App.Tests/         800 tests that build the real windows and panels against
+│  ├─ Versio.App.Tests/         833 tests that build the real windows and panels against
 │  │                            the real stylesheet on an STA thread — none is ever shown
-│  ├─ Versio.Plc.Codesys.Pure.Tests/ 396 pure vendor tests — the planner, the codecs, the
+│  ├─ Versio.Plc.Codesys.Pure.Tests/ 404 pure vendor tests — the planner, the codecs, the
 │  │                            protocol, the LD/FBD parser, the File-Based Storage layout —
 │  │                            under a second, needing nothing
-│  ├─ Versio.Plc.Codesys.Parity.Tests/ 100 CPython parity tests over the vendor's python,
+│  ├─ Versio.Plc.Codesys.Parity.Tests/ 101 CPython parity tests over the vendor's python,
 │  │                            ~15 s, no CODESYS — python on PATH, skips cleanly without
 │  ├─ Versio.Plc.Codesys.Tests/ 55 tests against real CODESYS, ~30 min. The CODESYS gate
 │  │                            before a commit, and the only suite that needs that toolchain
-│  ├─ Versio.Plc.TiaPortal.Pure.Tests/ 98 pure vendor tests — format, planner, protocol,
+│  ├─ Versio.Plc.TiaPortal.Pure.Tests/ 102 pure vendor tests — format, planner, protocol,
 │  │                            data-block member table, LAD and FBD parser and approved drawings
 │  ├─ Versio.Plc.TiaPortal.Tests/ 5 tests against real TIA Portal; skip with a count when
 │                               Openness membership or the install is missing
-│  ├─ Versio.Plc.TwinCat.Pure.Tests/ 23 pure vendor tests — format, planner, protocol
+│  ├─ Versio.Plc.TwinCat.Pure.Tests/ 27 pure vendor tests — format, planner, protocol
 │  ├─ Versio.Plc.TwinCat.Tests/ 6 tests against real TwinCAT XAE; skip with a count when
 │  │                            TcXaeShell.DTE.17.0 or the fixture is missing
-│  └─ Versio.Web.Tests/         364 tests of the web viewer against a faked GitHub: the
+│  └─ Versio.Web.Tests/         450 tests of the web viewer against a faked GitHub: the
 │                               renderers' choices over the real fixtures, the security
 │                               rules against the real host, sign-in end to end
 ├─ tools/                       PowerShell and python harnesses. tools/tia/ is the second
@@ -401,21 +401,21 @@ dotnet test tests/Versio.Core.Tests
 > `%LOCALAPPDATA%\Microsoft\dotnet\dotnet.exe`, or set `DOTNET_ROOT` to it — the same install
 > layout that makes a framework-dependent `Versio.exe` fail to start, noted again below.
 
-**Twelve suites, and they need different things** (plus the web page's own vitest suite in `web/`, 22 tests, which needs the pinned Node):
+**Twelve suites, and they need different things** (plus the web page's own vitest suite in `web/`, 209 tests, which needs the pinned Node):
 
 | Suite | Tests | Needs | Runs in |
 |---|---|---|---|
-| `Versio.Core.Tests` | 1,833 | nothing — pure, no IO, no clock, no UI | ~0.3 s |
-| `Versio.Integration.Tests` | 176 | a real `git.exe` and the real filesystem | ~10 s |
+| `Versio.Core.Tests` | 2,080 | nothing — pure, no IO, no clock, no UI | ~0.3 s |
+| `Versio.Integration.Tests` | 254 | a real `git.exe` and the real filesystem | ~55 s |
 | `Versio.Arch.Tests` | 36 | nothing — it reads assembly metadata, IL, and the project files | instant |
-| `Versio.App.Tests` | 800 | Windows (WPF). Builds the real dialogs against the real stylesheet on an STA thread; **no window is ever shown** | ~3.6–8.6 min |
-| `Versio.Plc.Codesys.Pure.Tests` | 396 | nothing — the vendor's planner, codecs, protocol, LD/FBD parser and File-Based Storage layout, pure | under a second |
-| `Versio.Plc.Codesys.Parity.Tests` | 100 | `python` on PATH, no CODESYS — **skips cleanly without python, so check the count** | ~15 s |
-| `Versio.Plc.TiaPortal.Pure.Tests` | 98 | nothing — format, planner, protocol, scrubber, member table, LAD and FBD parser | instant |
+| `Versio.App.Tests` | 846 | Windows (WPF). Builds the real dialogs against the real stylesheet on an STA thread; **no window is ever shown**. One test runs the web viewer too, over every fixture row, and references `Versio.Web.Tests` for its fake GitHub | ~3.6–11 min |
+| `Versio.Plc.Codesys.Pure.Tests` | 405 | nothing — the vendor's planner, codecs, protocol, LD/FBD parser and File-Based Storage layout, pure | under a second |
+| `Versio.Plc.Codesys.Parity.Tests` | 104 | `python` on PATH, no CODESYS — **skips cleanly without python, so check the count** | ~15 s |
+| `Versio.Plc.TiaPortal.Pure.Tests` | 108 | nothing — format, planner, protocol, scrubber, member table, LAD and FBD parser | instant |
 | `Versio.Plc.TiaPortal.Tests` | 5 | **a real TIA Portal**; skips cleanly without Openness membership | seconds when skipped |
-| `Versio.Plc.TwinCat.Pure.Tests` | 23 | nothing — the vendor's planner, format and protocol, pure | instant |
+| `Versio.Plc.TwinCat.Pure.Tests` | 27 | nothing — the vendor's planner, format and protocol, and the host's text rules compiled in as source | instant |
 | `Versio.Plc.TwinCat.Tests` | 6 | **a real TwinCAT XAE**; skips cleanly without `TcXaeShell.DTE.17.0` | seconds when skipped; ~5 min when XAE runs the import gate |
-| `Versio.Web.Tests` | 359 | nothing — the web viewer against a faked GitHub; one test starts the built server | a few seconds |
+| `Versio.Web.Tests` | 504 | nothing — the web viewer against a faked GitHub; one test starts the built server | a few seconds |
 | `Versio.Plc.Codesys.Tests` | 55 | **a real CODESYS**, and **skips cleanly** without one | **~30 min** |
 
 The first ten are the loop to work in. The last is the gate before a commit — and it is a

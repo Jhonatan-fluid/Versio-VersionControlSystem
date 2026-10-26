@@ -255,6 +255,7 @@ public sealed class PullReviewWriteTests
         (await Post(host, alice, token, "/reviewers", new { opKey = Key(), add = new[] { "sam" }, remove = new[] { "lee" } })).AssertStatus(HttpStatusCode.OK);
 
         Assert.Equal(("sam", "lee"), writer.ReviewerChanges.Single());
+        Assert.Equal("sam|lee||", writer.Writes.Single().Detail);
     }
 
     [Fact]

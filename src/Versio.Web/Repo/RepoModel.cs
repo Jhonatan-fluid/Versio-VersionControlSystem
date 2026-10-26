@@ -58,7 +58,14 @@ public sealed record RepoModel(
         var index = new Dictionary<string, ProjectTreeNode>(StringComparer.Ordinal);
         foreach (var node in Flatten(Nodes))
         {
-            var keys = node.Kind == ProjectNodeKind.File ? node.Files.Append(node.Path) : node.Files;
+            // A row whose path is not one of its files is still a row the page can ask for: a
+            // project (its file is the vendor's binary, or a folder of readable source with no
+            // file of its own), a device object (its path is the device, its file the catalog
+            // beside it), and a reference, task or device row grafted from a catalog (its path
+            // carries a row marker). Until 2026-10-23 those asked for 404s, so the tree offered
+            // rows the pane could not open — RenderChoiceParityTests found every one of them
+            // against the desktop, which draws them. Folders alone have nothing to open.
+            var keys = node.Kind == ProjectNodeKind.Folder ? node.Files : node.Files.Append(node.Path);
             foreach (var file in keys)
             {
                 if (node.Kind == ProjectNodeKind.Object || !index.ContainsKey(file))
@@ -111,7 +118,7 @@ public sealed record RepoModel(
 /// for half an hour after GitHub answered again (found reviewing a review, 2026-10-11).
 /// </para>
 /// <para>
-/// Catalogs (<see cref="ReadCatalogsAsync"/>) and File-Based Storage projects
+/// Catalogs (<see cref="ReadCatalogsAsync"/>) and directory-form projects
 /// (<see cref="SourceProjects"/>) are read. This remark said they were not until 2026-10-11, long
 /// after both were built, and it is the paragraph a later edit would have trusted (found in review).
 /// </para>
@@ -245,7 +252,10 @@ public sealed class RepoModelLoader(IRepoSource source, IMemoryCache cache, IVer
         projects.AddRange(SourceProjects(files));
 
         var nodes = RepoExplorerBuilder.Build(files.Keys.OrderBy(p => p, StringComparer.Ordinal).ToList(), projects);
-        var model = new RepoModel(owner, repo, commitSha, files, nodes, isVersio, tree.Value.Truncated, problems) { Projects = projects, Partial = partial };
+        // "Set up for Versio" is having a PLC project to draw, not only a repo.json: a source
+        // project (an FBS export) with no repo.json drew its Devices and POUs under a notice that
+        // the repository was not set up (seen on the real pull request, FINISH.md A.8).
+        var model = new RepoModel(owner, repo, commitSha, files, nodes, isVersio || projects.Count > 0, tree.Value.Truncated, problems) { Projects = projects, Partial = partial };
         if (!partial)
         {
             cache.Set(key, model, new MemoryCacheEntryOptions { Size = Math.Max(1, files.Count / 100), SlidingExpiration = TimeSpan.FromMinutes(30) });
@@ -332,9 +342,9 @@ public sealed class RepoModelLoader(IRepoSource source, IMemoryCache cache, IVer
     }
 
     /// <summary>
-    /// Folders a vendor saves as its own readable source (CODESYS File-Based Storage's
-    /// <c>.fbsproj</c>), described by their format from the file list alone, as the desktop's
-    /// explorer does. Never synced, never adopted: shown and drawn.
+    /// Folders a vendor saves as its own readable source (the extensions each format claims as
+    /// <c>SourceProjectExtensions</c>), described by their format from the file list alone, as the
+    /// desktop's explorer does. Never synced, never adopted: shown and drawn.
     /// </summary>
     /// <remarks>
     /// <c>DescribeSourceProject</c> takes the list, never the disk, which is exactly what GitHub's
@@ -388,13 +398,26 @@ public sealed class RepoModelLoader(IRepoSource source, IMemoryCache cache, IVer
 
         try
         {
-            // The desktop's own reader, so a committed file means the same thing in both.
-            return RepoConfigStore.Parse(Encoding.UTF8.GetString(bytes.Value!));
+            // The desktop's own reader, so a committed file means the same thing in both - the
+            // defaults it fills in for a null list included, said on the page and in the log as
+            // the desktop says them, because a bindings list read as empty is a page with no
+            // projects and nothing else to explain why.
+            var config = RepoConfigStore.Parse(Encoding.UTF8.GetString(bytes.Value!), out var repairs);
+            foreach (var repair in repairs)
+            {
+                problems.Add($"{ConfigPath}: {repair}.");
+                log.Warn(LogCategory.Web, $"{owner}/{repo}: {ConfigPath}: {repair}");
+            }
+
+            return config;
         }
-        catch (JsonException)
+        catch (JsonException ex)
         {
-            problems.Add($"{ConfigPath} is not valid JSON; the repository is shown as plain folders.");
-            log.Warn(LogCategory.Web, $"{owner}/{repo}: {ConfigPath} is corrupt; shown as plain folders");
+            // The reason travels with the problem: the store refuses a file for its shape as well
+            // as its syntax, and "not valid JSON" would send a reader of the page hunting for a
+            // missing comma in a file whose only fault is a null where a binding belongs.
+            problems.Add($"{ConfigPath} could not be read as a Versio configuration ({ex.Message}); the repository is shown as plain folders.");
+            log.Warn(LogCategory.Web, $"{owner}/{repo}: {ConfigPath} is corrupt ({ex.Message}); shown as plain folders");
             return null;
         }
     }

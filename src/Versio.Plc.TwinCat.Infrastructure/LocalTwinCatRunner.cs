@@ -210,6 +210,7 @@ public sealed class LocalTwinCatRunner(
 
         var buffer = new StringBuilder();
         var stopwatch = Stopwatch.StartNew();
+        int? xaePid = null;
         var gate = new object();
 
         using var process = new Process { StartInfo = psi, EnableRaisingEvents = true };
@@ -234,6 +235,14 @@ public sealed class LocalTwinCatRunner(
                     job.OperationId, evt.String("phase") ?? "running",
                     null, null, evt.String("detail"), stopwatch.Elapsed));
             }
+
+            // The host names the XAE it created, measured across the creation call alone.
+            // That PID is the only one a reap may touch — see ChildProcess.KillOwned.
+            if (evt is not null && evt.Type == "ide_pid"
+                && int.TryParse(evt.String("pid"), out var reported))
+            {
+                xaePid = reported;
+            }
         }
 
         process.OutputDataReceived += OnData;
@@ -241,9 +250,10 @@ public sealed class LocalTwinCatRunner(
 
         _log.Debug(TwinCatLog.Category, $"exec {hostExecutablePath} {psi.Arguments}");
         ChildProcess.StampParent(psi);
-        // XAE is a COM server, not a child of Host.exe. Snapshot before start so a later
-        // kill reaps only the instance this run created, not one the user had open.
-        var xaeBefore = ChildProcess.PidsNamed("TcXaeShell");
+        // XAE is a COM server, not a child of Host.exe. The host reports the PID it
+        // created; a later kill reaps that one, not an instance the engineer opened
+        // meanwhile (the 2026-10-24 review's item 28).
+        var hostStarted = DateTime.Now;
         process.Start();
         process.BeginOutputReadLine();
         process.BeginErrorReadLine();
@@ -254,14 +264,14 @@ public sealed class LocalTwinCatRunner(
             if (!ChildProcess.WaitForExitOrKill(
                     process, timeout, cancellationToken, closeStdinOnCancel: true))
             {
-                LogReaped(ChildProcess.KillNew(xaeBefore, "TcXaeShell"), "TcXaeShell");
+                LogReaped(xaePid, hostStarted);
                 _log.Error(TwinCatLog.Category, $"timed out after {timeout} — killed the host");
                 return PlcResult.Failure("the TwinCAT host did not finish within the timeout");
             }
         }
         catch (OperationCanceledException)
         {
-            LogReaped(ChildProcess.KillNew(xaeBefore, "TcXaeShell"), "TcXaeShell");
+            LogReaped(xaePid, hostStarted);
             _log.Warn(TwinCatLog.Category,
                 "cancelled — closed stdin so the host can Quit COM, then killed the host if it stayed up");
             throw;
@@ -343,15 +353,28 @@ public sealed class LocalTwinCatRunner(
     private static string Quote(string path) =>
         path.Contains(' ', StringComparison.Ordinal) ? "\"" + path + "\"" : path;
 
-    private void LogReaped(int count, string processName)
+    private void LogReaped(int? xaePid, DateTime hostStarted)
     {
+        const string name = "TcXaeShell";
+        if (xaePid is null)
+        {
+            // Never a kill by name: the only XAE this run could identify as its own is the
+            // one the host named, and the host named none. Said out loud, because an XAE
+            // left running is the recoverable failure and a stranger's XAE killed is not.
+            _log.Warn(TwinCatLog.Category,
+                $"the host reported no {name} pid; nothing was reaped by name — " +
+                "an XAE this run started may still be running");
+            return;
+        }
+
+        var count = ChildProcess.KillOwned(xaePid, name, hostStarted);
         if (count <= 0)
         {
             return;
         }
 
         _log.Warn(TwinCatLog.Category,
-            $"reaped {count} leftover {processName} process(es) this run started — not ones already open");
+            $"reaped the {name} process this run started (pid {xaePid}) — nothing else");
     }
 
     private static string WriteJobFile(TwinCatJob job)

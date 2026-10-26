@@ -104,6 +104,64 @@ public sealed partial class GitCliClient(
             : [];
     }
 
+    /// <summary>What the index holds for each path, in bytes. See the interface for why the index.</summary>
+    /// <remarks>
+    /// <para>
+    /// One <c>cat-file --batch-check</c> with every <c>:0:path</c> on standard input, LF
+    /// separated. Stage 0 is the entry a commit records; a conflicted path has stages 1–3
+    /// and no 0, and comes back <c>missing</c>, which is right — it cannot be committed as
+    /// it stands. The answers carry no path, so they are paired with the names by position,
+    /// and a count that does not match is treated as git not having answered rather than
+    /// guessed at: a size attributed to the wrong file would pass the preflight for the one
+    /// that mattered.
+    /// </para>
+    /// <para>
+    /// LF rather than NUL on the input because <c>-z</c> on <c>cat-file</c> arrived in git
+    /// 2.38 and was renamed <c>-Z</c> two releases later; a path with a newline in it is
+    /// already unreadable through this client's line-based stdout, so nothing is lost that
+    /// was ever had.
+    /// </para>
+    /// </remarks>
+    public async Task<IReadOnlyDictionary<string, long>?> IndexBlobSizesAsync(
+        IReadOnlyList<string> paths, CancellationToken ct)
+    {
+        var sizes = new Dictionary<string, long>(StringComparer.Ordinal);
+        if (paths.Count == 0)
+        {
+            return sizes;
+        }
+
+        var names = paths.Select(p => $":0:{p.Replace('\\', '/').TrimStart('/')}").ToList();
+        var result = await RunAsync(
+            ["cat-file", "--batch-check=%(objectsize) %(objecttype)"], null, ct,
+            TimeSpan.FromSeconds(30), stdin: string.Join('\n', names) + "\n")
+            .ConfigureAwait(false);
+
+        if (!result.Success)
+        {
+            return null;
+        }
+
+        var answers = ObjectSizeParser.Parse(result.StdOut);
+        if (answers.Count != paths.Count)
+        {
+            _log.Warn(LogCategory.Git,
+                $"cat-file answered {answers.Count} line(s) for {paths.Count} path(s); " +
+                "index sizes not trusted");
+            return null;
+        }
+
+        for (var i = 0; i < paths.Count; i++)
+        {
+            if (answers[i] is { } bytes)
+            {
+                sizes[paths[i]] = bytes;
+            }
+        }
+
+        return sizes;
+    }
+
     /// <summary>Local branches with their upstream and divergence counts.</summary>
     /// <remarks>Ahead/behind needs a second command per branch: <c>for-each-ref</c> cannot
     /// produce both counts in one pass consistently across git versions.</remarks>
@@ -192,10 +250,72 @@ public sealed partial class GitCliClient(
             : RunWithPathspecsAsync(["add"], paths, ct);
 
     /// <summary>Remove the given paths from the index, leaving the working tree alone.</summary>
-    public Task<GitResult> UnstageAsync(IReadOnlyList<string> paths, CancellationToken ct) =>
-        paths.Count == 0
-            ? Task.FromResult(NoOp())
-            : RunWithPathspecsAsync(["restore", "--staged"], paths, ct);
+    /// <remarks>
+    /// <c>restore --staged</c> puts the index entry back to what HEAD has, and a repository
+    /// with no commit yet has no HEAD to read: <c>fatal: could not resolve 'HEAD'</c>. The
+    /// commit button hit that on the first day of a repository — two files staged, one
+    /// ticked, and unstaging the other failed the whole commit (the 2026-10-25 review's P2).
+    /// Before the first commit the index is a diff against the empty tree, so that is the tree
+    /// restored from; the command is otherwise the same one, which is the point.
+    /// <para>
+    /// <c>git rm --cached</c> was the other candidate and was rejected: it refuses a path whose
+    /// working copy has been edited since it was staged ("staged content different from both
+    /// the file and the HEAD") unless given <c>-f</c>, and a line reading <c>rm -f</c> in the
+    /// log of an unstage is the wrong thing to make a reader of this log reason about, even
+    /// though <c>--cached</c> keeps it off the working tree.
+    /// </para>
+    /// <para>
+    /// A repository with a HEAD runs exactly what it ran before — the one extra
+    /// <c>rev-parse</c> is the whole cost, on a user-pressed action, never on a poll.
+    /// </para>
+    /// </remarks>
+    public async Task<GitResult> UnstageAsync(IReadOnlyList<string> paths, CancellationToken ct)
+    {
+        if (paths.Count == 0)
+        {
+            return NoOp();
+        }
+
+        if (await HasHeadAsync(ct).ConfigureAwait(false))
+        {
+            return await RunWithPathspecsAsync(["restore", "--staged"], paths, ct)
+                .ConfigureAwait(false);
+        }
+
+        var emptyTree = await EmptyTreeIdAsync(ct).ConfigureAwait(false);
+        if (!emptyTree.Success)
+        {
+            return emptyTree;
+        }
+
+        _log.Info(LogCategory.Git,
+            $"unstaging {paths.Count} path(s) on an unborn branch: restoring from the empty tree");
+        return await RunWithPathspecsAsync(
+                ["restore", "--staged", $"--source={emptyTree.StdOut.Trim()}"], paths, ct)
+            .ConfigureAwait(false);
+    }
+
+    /// <summary>Whether HEAD names a commit — false on an unborn branch.</summary>
+    /// <remarks>
+    /// Quiet: <c>--verify -q</c> exits 1 and prints nothing when there is no HEAD, and that
+    /// is the answer being asked for, not a fault to put a <c>WRN</c> in the log over.
+    /// </remarks>
+    private async Task<bool> HasHeadAsync(CancellationToken ct)
+    {
+        var result = await RunAsync(
+            ["rev-parse", "--verify", "-q", "HEAD"], null, ct, quietFailure: true)
+            .ConfigureAwait(false);
+        return result.Success;
+    }
+
+    /// <summary>The id of the empty tree, asked of git rather than hard-coded.</summary>
+    /// <remarks>
+    /// It is a well-known constant for SHA-1 repositories and a different one under
+    /// <c>--object-format=sha256</c>; hashing an empty tree object is the one form that is
+    /// right in both without this client knowing which it is in.
+    /// </remarks>
+    private Task<GitResult> EmptyTreeIdAsync(CancellationToken ct) =>
+        RunAsync(["hash-object", "-t", "tree", "--stdin"], null, ct, stdin: string.Empty);
 
     /// <summary>Commit whatever is staged.</summary>
     /// <remarks>An empty message is refused here rather than by git, so the user gets a
@@ -301,6 +421,11 @@ public sealed partial class GitCliClient(
     }
 
     /// <summary>Where git keeps its own state for this working tree.</summary>
+    /// <remarks>
+    /// Per worktree: in a linked worktree this is <c>.git/worktrees/&lt;name&gt;</c>, which is
+    /// what the merge-state reader needs and what <c>info/exclude</c> must not be written
+    /// under — see <see cref="CommonGitDirectoryAsync"/>.
+    /// </remarks>
     public async Task<string> GitDirectoryAsync(CancellationToken ct)
     {
         var result = await RunAsync(
@@ -308,6 +433,33 @@ public sealed partial class GitCliClient(
             .ConfigureAwait(false);
 
         return result.Success ? result.StdOut.Trim() : string.Empty;
+    }
+
+    /// <summary>The directory every worktree of this repository shares.</summary>
+    /// <remarks>
+    /// <c>--path-format=absolute</c> is what makes the answer usable as a path from anywhere;
+    /// it arrived in git 2.31, and an older git ignores the option and answers relative to
+    /// the working tree (plain <c>.git</c> in the main worktree), so a relative answer is
+    /// resolved against the repository path here rather than handed on as-is. The 2026-10-24
+    /// review's item 25: the exclude rule was written under the per-worktree directory,
+    /// where git never reads it.
+    /// </remarks>
+    public async Task<string> CommonGitDirectoryAsync(CancellationToken ct)
+    {
+        var result = await RunAsync(
+            ["rev-parse", "--path-format=absolute", "--git-common-dir"], null, ct,
+            TimeSpan.FromSeconds(10))
+            .ConfigureAwait(false);
+
+        if (!result.Success)
+        {
+            return string.Empty;
+        }
+
+        var answer = result.StdOut.Trim();
+        return answer.Length == 0 || Path.IsPathRooted(answer)
+            ? answer
+            : Path.GetFullPath(Path.Combine(repositoryPath, answer));
     }
 
     /// <summary>Who git will attribute a commit to, as git itself resolves it.</summary>
@@ -601,9 +753,28 @@ public sealed partial class GitCliClient(
         string[] verb, IReadOnlyList<string> paths, CancellationToken ct)
     {
         var stdin = string.Join('\0', paths);
-        string[] args = [.. verb, "--pathspec-from-file=-", "--pathspec-file-nul"];
+        string[] args = [LiteralPathspecs, .. verb, "--pathspec-from-file=-", "--pathspec-file-nul"];
         return RunAsync(args, null, ct, stdin: stdin);
     }
+
+    /// <summary>
+    /// Put before the verb of any command whose operand is a file path.
+    /// </summary>
+    /// <remarks>
+    /// Every path this client hands git is a name somebody ticked or a path a binding
+    /// recorded — never a pattern. Git reads a pathspec as a glob unless told otherwise, so
+    /// <c>part[1].st</c> also matched <c>part1.st</c>: discarding the one file the owner
+    /// selected threw away the other file's edits, and staging or resolving it reached the same
+    /// way (the 2026-10-24 review's item 1). Literal pathspecs still match a directory's
+    /// contents by prefix, which is all the tree-staging calls rely on.
+    /// <para>
+    /// Per call, not <c>GIT_LITERAL_PATHSPECS</c> on every process: under that variable
+    /// <c>stash push --include-untracked</c> records the untracked file and then leaves it on
+    /// disk, because git's own clean step inside stash is written with pathspec magic. The
+    /// integration suite caught it on the first run.
+    /// </para>
+    /// </remarks>
+    private const string LiteralPathspecs = "--literal-pathspecs";
 
     /// <param name="stdin">
     /// Written to the child's standard input and then closed, for the commands that read a
@@ -623,10 +794,17 @@ public sealed partial class GitCliClient(
     /// helper's own window - GCM, a browser for OAuth, a token box - is the entire point.
     /// </para>
     /// </param>
+    /// <param name="noEditor">
+    /// Tell git there is no editor, so a command that would open one on a message keeps the
+    /// message it already has. Only <c>rebase --continue</c> asks for this: every other command
+    /// here either takes its message as an argument or has none, and an editor under a
+    /// redirected console is a hang. <c>GIT_EDITOR</c> is the variable git reads before any
+    /// config or <c>VISUAL</c>/<c>EDITOR</c>, and <c>:</c> is its spelling for "none".
+    /// </param>
     private async Task<GitResult> RunAsync(
         string[] args, IProgress<GitProgress>? progress, CancellationToken ct,
         TimeSpan? timeout = null, string? stdin = null, bool allowPrompt = false,
-        bool quietFailure = false)
+        bool quietFailure = false, bool noEditor = false)
     {
         var psi = new ProcessStartInfo
         {
@@ -669,6 +847,12 @@ public sealed partial class GitCliClient(
             psi.Environment["GIT_TERMINAL_PROMPT"] = "0";
         }
         psi.Environment["GIT_OPTIONAL_LOCKS"] = "0";
+
+        if (noEditor)
+        {
+            psi.Environment["GIT_EDITOR"] = ":";
+        }
+
         GitExecutable.ApplyBundledDefaults(psi, gitExecutable);
 
         var stdout = new StringBuilder();

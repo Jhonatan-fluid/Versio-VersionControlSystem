@@ -78,6 +78,7 @@ public static partial class StDeclarationTable
             }).ToList(),
             Attributes = Shifted(table.Attributes, firstLine),
             Unshown = table.Unshown.Select(u => u with { Line = u.Line + firstLine }).ToList(),
+            Structural = table.Structural.Select(s => s.Shift(firstLine)).ToList(),
         };
     }
 
@@ -152,21 +153,69 @@ public static partial class StDeclarationTable
         }
 
         // The header is shown in part (the name in the title, a function's type as its Return
-        // row) and in part not (a modifier, EXTENDS, IMPLEMENTS). The part that is not stands in
-        // for the line, so a changed EXTENDS warns and a changed return type does not warn twice.
-        if (HeaderResidue(lines, header, words, first) is { } residue)
+        // row, its kind as the table's kind) and in part not (EXTENDS, IMPLEMENTS, a comment).
+        // The part that is not stands in for the line, so a changed EXTENDS warns and a changed
+        // return type does not warn twice. A header with no such part is framing (below).
+        var residue = HeaderResidue(lines, header, words, first);
+        if (residue is not null)
         {
             unshown.Add(new UnshownLine(header, residue));
             unshown.Sort((a, b) => a.Line.CompareTo(b.Line));
         }
 
-        return table with { Attributes = attributes, Unshown = unshown };
+        // The framing: every line claimed by the declaration's own syntax rather than by a row or
+        // an attribute (the header when it says nothing the table does not draw, VAR … END_VAR,
+        // STRUCT, END_TYPE), and every blank line. Review coverage vouches for a change there —
+        // the owner's real pull request (2026-10-23) listed a VAR_IN_OUT block opened, a blank
+        // line removed and a method header that gained PUBLIC as "changed, but not shown", and
+        // Raw had nothing more to say about any of them than the table did.
+        var drawn = new HashSet<int>();
+        foreach (var span in table.Members.Select(r => r.Lines).Concat(table.Members.SelectMany(r => r.Attributes).Select(a => a.Lines))
+                     .Concat(attributes.Select(a => a.Lines)).OfType<LineSpan>())
+        {
+            drawn.UnionWith(Enumerable.Range(span.Start, span.Length));
+        }
+
+        var structural = Enumerable.Range(0, lines.Count)
+            .Where(i => (lines[i].Text.Length == 0 || (claimed.Contains(i) && !drawn.Contains(i))) && !(i == header && residue is not null))
+            .ToList();
+
+        return table with { Attributes = attributes, Unshown = unshown, Structural = Spans(structural) };
+    }
+
+    /// <summary>Line indexes folded into spans, so a table carries a few ranges rather than a line list.</summary>
+    private static IReadOnlyList<LineSpan> Spans(IReadOnlyList<int> lines)
+    {
+        var spans = new List<LineSpan>();
+        foreach (var line in lines.Order())
+        {
+            if (spans.Count > 0 && spans[^1].End == line - 1)
+            {
+                spans[^1] = spans[^1] with { End = line };
+            }
+            else
+            {
+                spans.Add(new LineSpan(line, line));
+            }
+        }
+
+        return spans;
     }
 
     /// <summary>
     /// What a block's header line says that the table does not draw, or null when it is all
     /// drawn (or the header is not a block's, whose lines the kinds claim themselves).
     /// </summary>
+    /// <remarks>
+    /// The keyword and the modifiers are not part of it, since 2026-10-23. The keyword is the
+    /// table's kind, which is drawn; a modifier (<c>PUBLIC</c>, <c>ABSTRACT</c>) is not drawn,
+    /// and is not reported either: on the owner's real pull request a method header that gained
+    /// <c>PUBLIC</c> made its empty table say "1 declaration change is not shown" beside a code
+    /// block that showed every change, and the owner's rule is that the header line is framing.
+    /// The cost, stated: an access modifier changed from one value to another is not drawn and
+    /// not warned about. What remains is what says something the table has no cell for — an
+    /// <c>EXTENDS</c>, an <c>IMPLEMENTS</c>, the line's comment.
+    /// </remarks>
     private static string? HeaderResidue(List<Line> lines, int header, List<string> words, string first)
     {
         if (first is "TYPE" or "VAR_GLOBAL" or "NAMESPACE")
@@ -177,16 +226,16 @@ public static partial class StDeclarationTable
         var function = first is "FUNCTION" or "METHOD" || first.StartsWith("PROPERTY", StringComparison.Ordinal);
         // By word, not by IndexOf: "B" is inside "FUNCTION_BLOCK".
         var at = words.FindIndex(1, w => !Modifiers.Contains(w, StringComparer.OrdinalIgnoreCase));
-        var prefix = string.Join(' ', at < 0 ? words : words.Take(at));
         if (function || at < 0)
         {
-            // The type and the line's comment are the Return row; only the keywords are not.
-            return prefix;
+            // The type and the line's comment are the Return row; the keywords are the kind.
+            return null;
         }
 
         var after = string.Join(' ', words.Skip(at + 1));
         var comment = lines[header].Comment;
-        return Collapse($"{prefix} {after}{(comment.Length > 0 ? " // " + comment : "")}");
+        var residue = Collapse($"{after}{(comment.Length > 0 ? " // " + comment : "")}");
+        return residue.Length == 0 ? null : residue;
     }
 
     /// <summary>
@@ -250,14 +299,13 @@ public static partial class StDeclarationTable
             return null;
         }
 
-        // The header line stands as its residue (HeaderResidue), not as itself.
-        claimed.Add(header);
         var name = rest[0].TrimEnd(':');
         var rows = new List<MemberRow>();
 
         // "FUNCTION F : INT" / "METHOD M : BOOL" / "PROPERTY P : REAL": the result, under the
         // block's own name, which is how Structured Text assigns it.
         var colon = lines[header].Code.IndexOf(':', StringComparison.Ordinal);
+        var returnRow = false;
         if (kind == Kind.Function && colon >= 0)
         {
             var type = UntilKeyword(lines[header].Code[(colon + 1)..].Trim());
@@ -265,7 +313,17 @@ public static partial class StDeclarationTable
             {
                 AddHeading(rows, "Return");
                 rows.Add(Row(name, type, "", lines[header].Comment, "Return", new LineSpan(header, header)));
+                returnRow = true;
             }
+        }
+
+        // The header line stands as its residue (HeaderResidue), not as itself — except a
+        // function's or method's with a comment and no Return row to draw the comment in: a
+        // residue is not made for those kinds, so the comment was framing and a change to it
+        // went unreported (review, 2026-10-24). Unclaimed, the line is listed as not shown.
+        if (kind != Kind.Function || returnRow || lines[header].Comment.Length == 0)
+        {
+            claimed.Add(header);
         }
 
         string? section = null;
@@ -276,7 +334,7 @@ public static partial class StDeclarationTable
             {
                 // Closed by END_VAR: anything before the next VAR is not a variable.
                 section = SectionOf(d.Structural, kind);
-                claimed.Add(d.First);
+                ClaimKeywordLines(lines, d, claimed);
                 continue;
             }
 
@@ -367,11 +425,40 @@ public static partial class StDeclarationTable
         {
             if (IsEnd(lines[i].Code, "END_" + opener) || IsEnd(lines[i].Code, "END_TYPE"))
             {
-                claimed.Add(i);
+                ClaimKeywordLine(lines, i, claimed);
             }
         }
 
         return new MemberTable { Name = name, Members = rows, IsDataType = true };
+    }
+
+    /// <summary>
+    /// A keyword line (<c>VAR_INPUT</c>, <c>END_VAR</c>, <c>END_STRUCT</c>) is the declaration's
+    /// own syntax and framing — until it carries a comment, which is drawn nowhere: then the line
+    /// stays unclaimed and is reported as not shown. The STRUCT line always checked its comment;
+    /// the section and end lines did not (review, 2026-10-24).
+    /// </summary>
+    private static void ClaimKeywordLine(List<Line> lines, int index, HashSet<int> claimed)
+    {
+        if (lines[index].Comment.Length == 0)
+        {
+            claimed.Add(index);
+        }
+    }
+
+    /// <summary>
+    /// A section line's claim, as <see cref="Declarations"/> handed it back: its line when the
+    /// keyword is all the line holds, nothing when a declaration shares the line. That line is
+    /// the row's to claim — or nobody's, and then it is reported as not shown. The keyword claimed
+    /// its whole line regardless until the 2026-10-25 review's item 9, so <c>VAR x INT; END_VAR</c>
+    /// drew no row and was framing, and the lost declaration was reported nowhere.
+    /// </summary>
+    private static void ClaimKeywordLines(List<Line> lines, Declaration structural, HashSet<int> claimed)
+    {
+        foreach (var index in structural.Claimed)
+        {
+            ClaimKeywordLine(lines, index, claimed);
+        }
     }
 
     /// <summary>
@@ -380,13 +467,12 @@ public static partial class StDeclarationTable
     /// </summary>
     private static MemberTable Enumeration(List<Line> lines, int header, string name, string afterColon, HashSet<int> claimed)
     {
-        // Every line from the header to END_TYPE is a value, its comment or the base type, all
-        // drawn. The one thing claimed here that is not drawn is a pragma on a single value,
-        // rare enough in an enumeration to leave unreported rather than to split this loop.
-        for (var i = header; i < lines.Count; i++)
-        {
-            claimed.Add(i);
-        }
+        // Claimed line by line: a value's line and the comment lines a value draws, the opener,
+        // the closer with the base type, and END_TYPE. Not a pragma on a value, not a comment no
+        // value took, not a comment on the header: those are drawn nowhere, and once review
+        // coverage trusted the claims (2026-10-23) "claim every line" made a changed pragma read
+        // as shown (review, 2026-10-24).
+        ClaimKeywordLine(lines, header, claimed);
 
         var close = afterColon.LastIndexOf(')');
         var baseType = close >= 0
@@ -396,6 +482,7 @@ public static partial class StDeclarationTable
         var rows = new List<MemberRow>();
         var depth = 0;
         var pending = new List<string>();
+        var pendingLines = new List<int>();
         for (var i = header; i < lines.Count; i++)
         {
             var line = lines[i];
@@ -429,6 +516,7 @@ public static partial class StDeclarationTable
             if (items.Length == 0 && line.Code.Length == 0 && line.Comment.Length > 0)
             {
                 pending.Add(line.Comment);
+                pendingLines.Add(i);
                 continue;
             }
 
@@ -442,8 +530,30 @@ public static partial class StDeclarationTable
                 pending.Clear();
             }
 
+            if (items.Length > 0)
+            {
+                // A value's line is drawn with its comment; the comment lines above it are drawn in
+                // its cell. Those are the row's.
+                claimed.Add(i);
+                claimed.UnionWith(pendingLines);
+                pendingLines.Clear();
+            }
+            else if (i > header && line.Code.Length > 0 && line.Comment.Length == 0)
+            {
+                // The opener, or the closer with the base type: syntax, drawn as the table's kind.
+                claimed.Add(i);
+            }
+
             if (line.Code.Contains(')', StringComparison.Ordinal) && depth == 0 && i > header)
             {
+                for (var k = i + 1; k < lines.Count; k++)
+                {
+                    if (IsEnd(lines[k].Code, "END_TYPE"))
+                    {
+                        ClaimKeywordLine(lines, k, claimed);
+                    }
+                }
+
                 break;
             }
         }
@@ -472,7 +582,7 @@ public static partial class StDeclarationTable
             if (d.Structural is not null)
             {
                 section = First(d.Structural) == "VAR_GLOBAL" ? Qualified("Global", Words(d.Structural).Skip(1)) : null;
-                claimed.Add(d.First);
+                ClaimKeywordLines(lines, d, claimed);
                 continue;
             }
 
@@ -521,6 +631,17 @@ public static partial class StDeclarationTable
     /// A declaration's span starts at its first attribute, so a changed attribute marks its row
     /// and a review comment on that line lands on it (2026-10-23).
     /// </para>
+    /// <para>
+    /// <b>A line is not a unit.</b> IEC 61131-3 has no line break in its grammar: a declaration
+    /// ends at its semicolon wherever the next begins, and a section can open, declare and close
+    /// on one line. Each line's code is taken in pieces (<see cref="Pieces"/>) — a section
+    /// keyword, every statement that ends on the line, and whatever is left open for the next —
+    /// since the 2026-10-25 review's item 9. Before that a line was one thing: one declaration,
+    /// so <c>a : INT; b : BOOL;</c> tabled a variable <c>a</c> of type <c>INT; b : BOOL</c>; or
+    /// one keyword line, so <c>VAR a : INT; END_VAR</c> opened a section, drew nothing and claimed
+    /// the line as framing. Neither was reported as not shown, which is the part that matters: a
+    /// table that silently reads a declaration wrong is read as the truth before a commit.
+    /// </para>
     /// </remarks>
     private static IEnumerable<Declaration> Declarations(List<Line> lines, int from, Func<string, bool> isStructural)
     {
@@ -536,10 +657,21 @@ public static partial class StDeclarationTable
         Declaration Flush(string declaration)
         {
             var comment = bufferComment.Length > 0 ? bufferComment : string.Join(' ', pending);
-            var first = attributeLines.Count > 0 ? Math.Min(attributeLines.Min(), bufferFirst) : bufferFirst;
-            var used = Enumerable.Range(first, bufferLast - first + 1)
-                .Concat(bufferComment.Length > 0 ? [] : pendingLines);
-            var result = new Declaration(declaration, comment, null, first, bufferLast, [.. attributes], [.. used]);
+            // What the row accounts for: its attribute lines, its comment lines and the declaration
+            // itself — never the range between, which a pragma the table does not draw ({warning
+            // …}, {IF …}) can sit in. The first version claimed the whole range from the first
+            // attribute, so such a line was "shown" by a row that drew nothing of it and a change
+            // there was reported complete (review, 2026-10-24).
+            var used = attributeLines
+                .Concat(Enumerable.Range(bufferFirst, bufferLast - bufferFirst + 1))
+                .Concat(bufferComment.Length > 0 ? [] : pendingLines)
+                .Distinct()
+                .ToList();
+            // The span starts at the first line the row accounts for, its comment lines above
+            // included (2026-10-23): a comment the table draws in the row's cell is the row's,
+            // so an edit to it is marked on the row and vouched for by it, and a review comment
+            // on that line lands on the row rather than on nothing.
+            var result = new Declaration(declaration, comment, null, used.Min(), bufferLast, [.. attributes], used);
             buffer.Clear();
             bufferComment = "";
             attributes.Clear();
@@ -572,49 +704,67 @@ public static partial class StDeclarationTable
                 continue;
             }
 
-            // A structural line also ends a declaration still open: one missing its semicolon
-            // must not swallow END_VAR and the next section's variables into a single row.
-            if (line.Code.Length > 0 && isStructural(line.Code))
+            var pieces = Pieces(line.Code, isStructural, buffer.Length == 0 ? "" : buffer + " ");
+            // The keyword claims its line only when it is the whole line: shared with a
+            // declaration, the line is the row's to claim (ClaimKeywordLines).
+            var keywordsOnly = pieces.All(p => p.Structural);
+            var continuing = buffer.Length > 0;
+            var ended = false;
+            foreach (var piece in pieces)
             {
-                if (buffer.Length > 0)
+                // A structural piece also ends a declaration still open: one missing its
+                // semicolon must not swallow END_VAR and the next section's variables into a
+                // single row.
+                if (piece.Structural)
                 {
-                    yield return Flush(buffer.ToString().Trim().TrimEnd(';').Trim());
+                    if (buffer.Length > 0)
+                    {
+                        yield return Flush(buffer.ToString().Trim().TrimEnd(';').Trim());
+                    }
+
+                    pending.Clear();
+                    pendingLines.Clear();
+                    attributes.Clear();
+                    attributeLines.Clear();
+                    yield return new Declaration(null, "", piece.Text, i, i, [], keywordsOnly ? [i] : []);
+                    continue;
                 }
 
+                if (buffer.Length == 0)
+                {
+                    bufferFirst = i;
+                }
+                else if (continuing && line.Attributes.Count > 0)
+                {
+                    // Written inside a declaration that spans lines: still this one's.
+                    attributes.AddRange(line.Attributes.Select(a => a with { Lines = new LineSpan(i, i) }));
+                    continuing = false;
+                }
+
+                bufferLast = i;
+                buffer.Append(buffer.Length == 0 ? "" : " ").Append(piece.Text);
+                // The line's comment is every declaration's that ends on it: it is written
+                // beside them all, and an edit to it must mark each row it stands beside.
+                if (line.Comment.Length > 0)
+                {
+                    bufferComment = line.Comment;
+                }
+
+                if (!piece.Complete)
+                {
+                    continue;
+                }
+
+                yield return Flush(buffer.ToString().TrimEnd().TrimEnd(';').Trim());
                 pending.Clear();
                 pendingLines.Clear();
-                attributes.Clear();
-                attributeLines.Clear();
-                yield return new Declaration(null, "", line.Code, i, i, [], [i]);
-                continue;
+                ended = true;
             }
 
-            if (buffer.Length == 0)
+            if (ended)
             {
-                bufferFirst = i;
+                Trail(i);
             }
-            else if (line.Attributes.Count > 0)
-            {
-                // Written inside a declaration that spans lines: still this one's.
-                attributes.AddRange(line.Attributes.Select(a => a with { Lines = new LineSpan(i, i) }));
-            }
-
-            bufferLast = i;
-            buffer.Append(buffer.Length == 0 ? "" : " ").Append(line.Code);
-            if (line.Comment.Length > 0)
-            {
-                bufferComment = line.Comment;
-            }
-
-            if (!EndsStatement(buffer.ToString()))
-            {
-                continue;
-            }
-
-            yield return Flush(buffer.ToString().TrimEnd().TrimEnd(';').Trim());
-            pending.Clear();
-            pendingLines.Clear();
-            Trail(i);
         }
 
         // Written after this line's code, so they wait for the declaration that follows.
@@ -628,12 +778,118 @@ public static partial class StDeclarationTable
         }
     }
 
-    /// <summary>One declaration, or one section line in its place, as <see cref="Declarations"/> hands them back.</summary>
+    /// <summary>One declaration, or one section keyword in its place, as <see cref="Declarations"/> hands them back.</summary>
     /// <param name="First">Its first line, from its first attribute when it has one; zero-based.</param>
-    /// <param name="Claimed">Every line it accounts for: its own, its attributes', and the comment lines above it that became its comment.</param>
+    /// <param name="Claimed">
+    /// Every line it accounts for: its own, its attributes', and the comment lines above it that
+    /// became its comment. For a section keyword, its line when the keyword is all the line
+    /// holds, and nothing when a declaration shares the line.
+    /// </param>
     private sealed record Declaration(
         string? Text, string Comment, string? Structural, int First, int Last,
         IReadOnlyList<MemberAttribute> Attributes, IReadOnlyList<int> Claimed);
+
+    /// <summary>One piece of a line's code: a section keyword, or a statement, complete at its semicolon or left open for the next line.</summary>
+    private sealed record Piece(string Text, bool Structural, bool Complete);
+
+    /// <summary>
+    /// A line's code in the pieces <see cref="Declarations"/> reads: each section keyword (with
+    /// its CONSTANT / RETAIN / PERSISTENT qualifiers, or a namespace's name) on its own, each
+    /// statement up to its semicolon on its own, and the tail with no semicolon left open.
+    /// </summary>
+    /// <param name="open">
+    /// The declaration still open from the lines above, for the depth a semicolon is judged at:
+    /// a bracket opened on the line above is still open here, and <c>3];</c> ends the statement
+    /// it closes, not none.
+    /// </param>
+    /// <remarks>
+    /// A keyword is cut from what follows only when that holds a declaration (a top-level colon),
+    /// ends a statement (a top-level semicolon) or is another keyword. A keyword line with some
+    /// other word after it — a qualifier this reader does not know — stays one keyword, as it
+    /// always was, rather than becoming a keyword and an open statement that the next line's
+    /// declaration would be glued onto.
+    /// </remarks>
+    private static List<Piece> Pieces(string code, Func<string, bool> isStructural, string open)
+    {
+        var pieces = new List<Piece>();
+        while (code.Length > 0)
+        {
+            if (isStructural(code))
+            {
+                var (keyword, rest) = SplitKeyword(code);
+                if (rest.Length > 0
+                    && (TopLevel(rest, ':', skipAssign: true) >= 0 || TopLevel(rest, ';', skipAssign: false) >= 0 || isStructural(rest)))
+                {
+                    pieces.Add(new Piece(keyword, true, true));
+                    code = rest;
+                    open = "";
+                    continue;
+                }
+
+                pieces.Add(new Piece(code, true, true));
+                break;
+            }
+
+            var end = TopLevel(open + code, ';', skipAssign: false) - open.Length;
+            if (end < 0)
+            {
+                pieces.Add(new Piece(code, false, false));
+                break;
+            }
+
+            var statement = code[..end].Trim();
+            if (statement.Length > 0)
+            {
+                pieces.Add(new Piece(statement, false, true));
+            }
+            else if (open.Length > 0)
+            {
+                // A semicolon with nothing before it on its line ends the declaration left
+                // open above: an empty piece, complete, so the caller flushes what it holds.
+                // Skipping it as "no statement" left that declaration open, and the next
+                // line's was glued onto it — `a : INT`, then `;`, then `b : BOOL;` tabled one
+                // variable a of type `INT b : BOOL`, and nothing said b was missing. A
+                // regression from the pieces themselves (the 2026-10-25 review's item 9),
+                // found by that review's third round, item 1.
+                pieces.Add(new Piece("", false, true));
+            }
+
+            code = code[(end + 1)..].Trim();
+            open = "";
+        }
+
+        return pieces;
+    }
+
+    private static readonly string[] SectionQualifiers = ["CONSTANT", "RETAIN", "NON_RETAIN", "PERSISTENT"];
+
+    /// <summary>The section keyword with its qualifiers, and the rest of the line's code after it.</summary>
+    private static (string Keyword, string After) SplitKeyword(string code)
+    {
+        var words = Words(code);
+        var take = words[0].Equals("NAMESPACE", StringComparison.OrdinalIgnoreCase) && words.Count > 1 ? 2 : 1;
+        while (take < words.Count && SectionQualifiers.Contains(words[take], StringComparer.OrdinalIgnoreCase))
+        {
+            take++;
+        }
+
+        // By position in the original, so the rest keeps its own spacing.
+        var at = 0;
+        for (var w = 0; w < take; w++)
+        {
+            while (at < code.Length && code[at] is ' ' or '\t')
+            {
+                at++;
+            }
+
+            while (at < code.Length && code[at] is not (' ' or '\t'))
+            {
+                at++;
+            }
+        }
+
+        return (code[..at].Trim(), code[at..].Trim());
+    }
 
     /// <summary>One declaration's rows: <c>a, b : INT := 0</c> is two rows, with the same attributes.</summary>
     private static IEnumerable<MemberRow> Rows(Declaration d, string section) =>
@@ -776,9 +1032,6 @@ public static partial class StDeclarationTable
 
     private static List<string> Words(string line) =>
         [.. line.Split([' ', '\t'], StringSplitOptions.RemoveEmptyEntries)];
-
-    /// <summary>A statement is finished at a semicolon outside parentheses, brackets and strings.</summary>
-    private static bool EndsStatement(string text) => TopLevel(text, ';', skipAssign: false) >= 0;
 
     private static int TopLevelAssign(string text)
     {

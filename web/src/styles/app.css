@@ -1,305 +1,695 @@
-/* The page around the fragments. The fragments' own look is CodePageAssets.Css and
-   LadderPageAssets.Css from Versio.Core, linked in index.html; nothing here restyles them
-   beyond fitting them into the pane. Colours follow the desktop palette.
+/* The page around the fragments, drawn in github.com's grammar (docs/web/FINISH.md, E) and
+   Versio's colours (tokens.css is the desktop palette under Primer's names, 2026-10-24). The
+   fragments' own look is CodePageAssets.Css and LadderPageAssets.Css from Versio.Core, linked
+   in index.html; nothing here restyles them beyond fitting them in and pointing their colour
+   variables at the page's tokens (tokens.css).
 
-   The layout is the desktop shell's (MainWindow.xaml): a top bar, a rail that swaps one panel
-   card, and the pane card beside it — cards on a sunken background, which is why there are two
-   surface tokens. --surface-sunken is the window behind everything; --surface-card is the top
-   bar, the rail and both cards. The desktop's Surface.Sunken / Surface.Base, by other names. */
+   Layout: a global header, the repository header with its underline nav, then a centred page
+   (1280 px, GitHub's container) — or full width for the code view, whose tree sidebar and
+   object pane want the room. Cards are bordered boxes on a plain canvas; nothing floats on a
+   sunken background any more (that was the desktop shell, superseded 2026-10-23). */
 
-:root {
-  --bg: #ffffff;
-  --surface-sunken: #eef1f4;
-  --surface-card: #ffffff;
-  --fg: #1f2328;
-  --muted: #656d76;
-  --border: #d0d7de;
-  --accent: #0969da;
-  --accent-fg: #ffffff;
-  --danger: #cf222e;
-  --notice-bg: rgba(212, 167, 44, 0.18);
-  --notice-border: #9a6700;
-  --selected: rgba(9, 105, 218, 0.12);
-  --ui: "Segoe UI", system-ui, -apple-system, sans-serif;
-  --mono: "Cascadia Mono", Consolas, monospace;
-  color-scheme: light;
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #0d1117;
-    --surface-sunken: #0d1117;
-    --surface-card: #161b22;
-    --fg: #e6edf3;
-    --muted: #8d96a0;
-    --border: #30363d;
-    --accent: #58a6ff;
-    --accent-fg: #0d1117;
-    --danger: #f85149;
-    --notice-bg: rgba(187, 128, 9, 0.2);
-    --notice-border: #d29922;
-    --selected: rgba(56, 139, 253, 0.18);
-    color-scheme: dark;
-  }
-}
+@import './tokens.css';
 
 * { box-sizing: border-box; }
-html, body { margin: 0; height: 100%; background: var(--surface-sunken); color: var(--fg); font: 14px/1.45 var(--ui); }
-#root { height: 100%; }
-a { color: var(--accent); }
+html, body { margin: 0; min-height: 100%; background: var(--color-canvas-default); color: var(--color-fg-default); font: 14px/1.5 var(--font-ui); }
+#root { min-height: 100vh; }
+a { color: var(--color-accent-fg); text-decoration: none; }
+a:hover { text-decoration: underline; }
 button { font: inherit; color: inherit; }
+code, kbd, pre { font-family: var(--font-mono); }
+:focus-visible { outline: 2px solid var(--color-focus); outline-offset: -2px; border-radius: var(--radius); }
 .visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
-.muted { color: var(--muted); }
-.pad { padding: 8px 14px; }
-.error-text { color: var(--danger); }
+.text-muted, .muted { color: var(--color-fg-muted); }
+.text-small { font-size: 12px; }
+.text-bold { font-weight: 600; }
+.text-danger, .error-text { color: var(--color-danger-fg); }
+.text-success { color: var(--color-success-fg); }
+.text-attention { color: var(--color-attention-fg); }
+.pad { padding: 8px 16px; }
+.octicon { vertical-align: text-bottom; flex: none; fill: currentColor; }
 
-.app { display: flex; flex-direction: column; height: 100%; }
+.app { display: flex; flex-direction: column; min-height: 100vh; }
 
-.topbar { display: flex; align-items: center; gap: 12px; padding: 8px 16px; background: var(--surface-card); flex-wrap: wrap; }
-.brand { font-weight: 700; color: var(--fg); text-decoration: none; letter-spacing: 0.2px; }
-.crumb a { color: var(--fg); font-weight: 600; text-decoration: none; }
+/* The global header. */
+.app-header { background: var(--color-header-bg); border-bottom: 1px solid var(--color-border-default); }
+.app-header-inner { display: flex; align-items: center; gap: 8px; padding: 12px 16px; max-width: 100%; }
+.app-header-mark { color: var(--color-fg-default); display: inline-flex; margin-right: 4px; }
+.app-header-crumbs { display: flex; align-items: center; gap: 4px; min-width: 0; font-size: 14px; }
+.crumb { color: var(--color-fg-default); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding: 4px 6px; border-radius: var(--radius); }
+.crumb:hover { background: var(--color-neutral-muted); text-decoration: none; }
+.crumb-repo, .crumb-page { font-weight: 600; }
+.crumb-sep { color: var(--color-fg-muted); }
+.app-header-spacer { flex: 1; }
+.avatar-button { background: none; border: 0; padding: 0; cursor: pointer; border-radius: 50%; display: inline-flex; }
+.menu-host { position: relative; }
+.menu { position: absolute; right: 0; top: calc(100% + 6px); min-width: 220px; background: var(--color-canvas-overlay); border: 1px solid var(--color-border-default);
+  border-radius: 12px; box-shadow: var(--color-shadow-large); padding: 6px; z-index: 30; display: flex; flex-direction: column; }
+.menu-head { display: flex; align-items: center; gap: 8px; padding: 8px 10px; font-size: 13px; }
+.menu-login { font-weight: 600; }
+.menu-label { font-size: 12px; color: var(--color-fg-muted); padding: 6px 10px 2px; }
+.menu-divider { height: 1px; background: var(--color-border-muted); margin: 6px 0; }
+.menu-item { display: flex; align-items: center; gap: 8px; width: 100%; text-align: left; background: none; border: 0; padding: 7px 10px; border-radius: var(--radius); cursor: pointer; font-size: 14px; }
+.menu-item:hover { background: var(--color-neutral-muted); }
+.menu-check { margin-left: auto; color: var(--color-fg-muted); }
+
+/* The repository header and its underline nav. */
+.repo-header { background: var(--color-canvas-subtle); border-bottom: 1px solid var(--color-border-default); }
+.repo-header-inner { padding: 16px 16px 0; }
+.repo-title { display: flex; align-items: center; gap: 6px; font-size: 20px; margin-bottom: 12px; flex-wrap: wrap; }
+.repo-title-icon { color: var(--color-fg-muted); }
+.repo-title-owner { color: var(--color-fg-default); }
+.repo-title-sep { color: var(--color-fg-muted); }
+.repo-title-name { font-weight: 600; }
+.label-outline { font: 500 12px var(--font-ui); border: 1px solid var(--color-border-default); border-radius: 999px; padding: 0 7px; color: var(--color-fg-muted); margin-left: 4px; line-height: 18px; }
+
+.underline-nav { display: flex; gap: 8px; overflow-x: auto; scrollbar-width: none; }
+.underline-nav::-webkit-scrollbar { display: none; }
+.underline-nav-item { display: inline-flex; align-items: center; gap: 8px; padding: 8px 8px 12px; color: var(--color-fg-default); white-space: nowrap; border-bottom: 2px solid transparent; position: relative; }
+.underline-nav-item:hover { text-decoration: none; }
+.underline-nav-item:hover::before { content: ""; position: absolute; inset: 2px 0 8px; background: var(--color-neutral-muted); border-radius: var(--radius); z-index: -1; }
+.underline-nav-item.is-current { font-weight: 600; border-bottom-color: #fd8c73; }
+.underline-nav-icon { color: var(--color-fg-muted); }
+
+/* The page and its layouts. */
+.page { flex: 1; width: 100%; max-width: 1280px; margin: 0 auto; padding: 24px 16px 48px; min-width: 0; }
+.page-wide { max-width: none; padding: 16px 16px 48px; }
+.layout { display: grid; grid-template-columns: minmax(0, 1fr) 296px; gap: 24px; align-items: start; }
+.layout-sidebar-start { grid-template-columns: 296px minmax(0, 1fr); }
+.layout-sidebar-start .layout-sidebar { order: -1; }
+.layout-no-sidebar { grid-template-columns: minmax(0, 1fr); }
+.layout-main { min-width: 0; }
+.layout-sidebar { min-width: 0; }
+.sidebar-section { padding: 0 0 16px; border-bottom: 1px solid var(--color-border-muted); margin-bottom: 16px; }
+.sidebar-section:last-child { border-bottom: 0; }
+.sidebar-heading { display: flex; align-items: center; justify-content: space-between; font: 600 12px var(--font-ui); color: var(--color-fg-muted); margin-bottom: 6px; }
+.sidebar-body { font-size: 12px; }
+.sidebar-body p { margin: 0 0 4px; }
+
+/* Buttons. */
+.btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; padding: 5px 16px; font: 500 14px/20px var(--font-ui); border-radius: var(--radius);
+  border: 1px solid var(--color-btn-border); background: var(--color-btn-bg); color: var(--color-fg-default); cursor: pointer; white-space: nowrap; box-shadow: var(--color-shadow-small); text-decoration: none; }
+.btn:hover { background: var(--color-btn-hover-bg); text-decoration: none; }
+.btn-small { padding: 3px 12px; font-size: 12px; }
+.btn-large { padding: 9px 20px; font-size: 16px; }
+.btn-primary { background: var(--color-btn-primary-bg); color: #ffffff; border-color: rgba(31, 35, 40, 0.15); }
+.btn-primary:hover { background: var(--color-btn-primary-hover-bg); }
+.btn-danger { color: var(--color-btn-danger-fg); }
+.btn-danger:hover { background: var(--color-danger-emphasis); color: #ffffff; border-color: transparent; }
+.btn-invisible { background: transparent; border-color: transparent; box-shadow: none; color: var(--color-accent-fg); }
+.btn-invisible:hover { background: var(--color-neutral-muted); }
+.btn-icon { color: var(--color-fg-muted); }
+.btn-primary .btn-icon, .btn-danger:hover .btn-icon { color: inherit; }
+.btn:disabled, .link-button:disabled { opacity: 0.5; cursor: default; }
+.btn:disabled:hover { background: var(--color-btn-bg); }
+.btn-primary:disabled:hover { background: var(--color-btn-primary-bg); }
+.btn-group { display: inline-flex; }
+.btn-group .btn { border-radius: 0; margin-left: -1px; }
+.btn-group .btn:first-child { border-radius: var(--radius) 0 0 var(--radius); margin-left: 0; }
+.btn-group .btn:last-child { border-radius: 0 var(--radius) var(--radius) 0; }
+/* The old names, still used by the review components until they are redrawn. */
+.button, .button-quiet { display: inline-flex; align-items: center; gap: 6px; padding: 5px 16px; font: 500 14px/20px var(--font-ui); border-radius: var(--radius); cursor: pointer; text-decoration: none; white-space: nowrap; box-shadow: var(--color-shadow-small); }
+.button { background: var(--color-btn-primary-bg); color: #ffffff; border: 1px solid rgba(31, 35, 40, 0.15); }
+.button:hover { background: var(--color-btn-primary-hover-bg); text-decoration: none; }
+.button-quiet { background: var(--color-btn-bg); color: var(--color-fg-default); border: 1px solid var(--color-btn-border); }
+.button-quiet:hover { background: var(--color-btn-hover-bg); text-decoration: none; }
+.button:disabled, .button-quiet:disabled { opacity: 0.5; cursor: default; }
+.button-quiet:disabled:hover { background: var(--color-btn-bg); }
+.link-button { background: none; border: 0; color: var(--color-accent-fg); cursor: pointer; padding: 0; font: inherit; }
+.link-button:hover { text-decoration: underline; }
+
+/* Counters, labels, badges, avatars. */
+.counter { display: inline-block; min-width: 20px; padding: 0 6px; font: 500 12px/18px var(--font-ui); text-align: center; border-radius: 999px; background: var(--color-neutral-muted); color: var(--color-fg-default); }
+.counter-primary { background: var(--color-neutral-emphasis); color: var(--color-fg-on-emphasis); }
+.issue-label { display: inline-flex; align-items: center; gap: 4px; padding: 0 7px; font: 500 12px/18px var(--font-ui); border-radius: 999px; border: 1px solid var(--color-border-default); white-space: nowrap; }
+.issue-label button { background: none; border: 0; padding: 0; color: inherit; cursor: pointer; display: inline-flex; }
+.state { display: inline-flex; align-items: center; gap: 4px; padding: 5px 12px; font: 500 14px/20px var(--font-ui); border-radius: 999px; color: #ffffff; white-space: nowrap; }
+.state-small { padding: 0 8px; font-size: 12px; line-height: 18px; }
+.state-small .octicon { width: 12px; height: 12px; }
+.state-open { background: var(--color-success-emphasis); }
+.state-draft { background: var(--color-neutral-emphasis); }
+.state-merged { background: var(--color-done-emphasis); }
+.state-closed { background: var(--color-danger-emphasis); }
+.avatar { border-radius: 50%; flex: none; vertical-align: middle; }
+.avatar-letter { display: inline-flex; align-items: center; justify-content: center; background: var(--color-neutral-emphasis); color: var(--color-fg-on-emphasis); font-weight: 600; }
+
+/* Boxes, blank slates, flashes, loading. */
+.box { border: 1px solid var(--color-border-default); border-radius: var(--radius); background: var(--color-canvas-default); }
+.box-header { padding: 12px 16px; background: var(--color-canvas-subtle); border-bottom: 1px solid var(--color-border-default); border-radius: var(--radius) var(--radius) 0 0; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.box-body { padding: 16px; }
+.blankslate { text-align: center; padding: 32px 24px; }
+.blankslate-spacious { padding: 80px 40px; }
+.blankslate-icon { color: var(--color-fg-muted); margin-bottom: 8px; }
+.blankslate-heading { font: 600 20px var(--font-ui); margin: 0 0 4px; }
+.blankslate-text { color: var(--color-fg-muted); margin: 0 auto 16px; max-width: 520px; }
+.flash { display: flex; gap: 10px; padding: 12px 16px; border: 1px solid var(--color-accent-emphasis); background: var(--color-accent-subtle); border-radius: var(--radius); margin: 0 0 16px; }
+.flash-icon { color: var(--color-accent-fg); margin-top: 2px; }
+.flash-success { border-color: var(--color-success-emphasis); background: var(--color-success-subtle); }
+.flash-success .flash-icon { color: var(--color-success-fg); }
+.flash-warning { border-color: var(--color-attention-emphasis); background: var(--color-attention-subtle); }
+.flash-warning .flash-icon { color: var(--color-attention-fg); }
+.flash-danger { border-color: var(--color-danger-emphasis); background: var(--color-danger-subtle); }
+.flash-danger .flash-icon { color: var(--color-danger-fg); }
+.flash-body { min-width: 0; flex: 1; }
+.flash-body p { margin: 0 0 4px; }
+.notice { margin: 0 0 12px; padding: 8px 12px; border: 1px solid var(--color-attention-emphasis); background: var(--color-attention-subtle); border-radius: var(--radius); }
+.loading { display: flex; align-items: center; gap: 8px; padding: 24px 16px; color: var(--color-fg-muted); }
+.spinner { animation: spin 1s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.relative-time { white-space: nowrap; }
+
+/* Form fields. */
+.form-control, .branch select, .tree-filter, .open-row input, .reviewers-add input, .title-editor input, .labels-editor select, .base-editor select, .new-pull select,
+.merge-fields input, .merge-fields select, .merge-fields textarea, .comment-box textarea, .new-pull-title, .new-pull-body, .list-search input {
+  font: 14px/20px var(--font-ui); color: var(--color-fg-default); background: var(--color-canvas-default); border: 1px solid var(--color-border-default);
+  border-radius: var(--radius); padding: 5px 12px; box-shadow: inset 0 1px 0 rgba(208, 215, 222, 0.2); }
+.form-control:focus, .comment-box textarea:focus { border-color: var(--color-accent-emphasis); outline: 2px solid var(--color-accent-emphasis); outline-offset: -1px; }
 .branch { display: inline-flex; align-items: center; gap: 6px; min-width: 0; }
-.branch select, .tree-filter, .open-row input { font: inherit; color: var(--fg); background: var(--bg); border: 1px solid var(--border);
-  border-radius: 6px; padding: 4px 8px; }
-.branch select { min-width: 0; }
-.spacer { flex: 1; }
-.user { display: flex; align-items: center; gap: 8px; }
-.avatar { border-radius: 50%; }
-.button { display: inline-block; background: var(--accent); color: var(--accent-fg); border: 0; border-radius: 6px; padding: 6px 12px;
-  text-decoration: none; cursor: pointer; font-weight: 600; }
-.link-button { background: none; border: 0; color: var(--accent); cursor: pointer; padding: 0; }
-.icon-button { background: none; border: 1px solid var(--border); border-radius: 6px; padding: 2px 8px; cursor: pointer; }
-.tree-toggle { display: none; }
+.branch select { min-width: 0; max-width: 100%; }
 
-/* The shell: the rail owns the left edge, the workspace holds the two cards. */
-.workbench { flex: 1; display: flex; min-height: 0; }
-.rail { width: 46px; flex: none; display: flex; flex-direction: column; gap: 4px; padding: 10px 5px; background: var(--surface-card); }
-.rail-tile { width: 36px; height: 36px; display: flex; align-items: center; justify-content: center; border-radius: 8px;
-  color: var(--muted); }
-.rail-tile:hover { background: var(--surface-sunken); color: var(--fg); }
-.rail-tile.is-active { background: var(--selected); color: var(--accent); }
+/* The code view: a tree sidebar beside the object pane, GitHub's new file-tree layout. */
+.code-view { display: grid; grid-template-columns: 300px minmax(0, 1fr); gap: 0; align-items: start; border: 1px solid var(--color-border-default); border-radius: var(--radius); overflow: hidden; }
+.code-sidebar { border-right: 1px solid var(--color-border-default); background: var(--color-canvas-default); position: sticky; top: 0; max-height: 100vh; overflow: auto; display: flex; flex-direction: column; }
+.code-sidebar-head { display: flex; align-items: center; gap: 8px; padding: 10px 12px; border-bottom: 1px solid var(--color-border-muted); font-weight: 600; position: sticky; top: 0; background: var(--color-canvas-default); z-index: 1; }
+.code-sidebar-body { flex: 1; min-height: 0; }
+.code-main { min-width: 0; }
+.code-toolbar { display: flex; align-items: center; gap: 8px; padding: 12px 16px; flex-wrap: wrap; }
+.panel-title { font: 600 12px var(--font-ui); color: var(--color-fg-muted); padding: 12px 16px 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
-.workspace { flex: 1; display: grid; grid-template-columns: minmax(240px, 320px) minmax(0, 1fr); gap: 8px; padding: 8px 8px 8px 0;
-  min-height: 0; }
-
-/* The panel card: one card the rail swaps, titled like the desktop's PanelTitle. */
-.panel { background: var(--surface-card); border-radius: 8px; display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
-.panel-title { font: 600 11px var(--ui); letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted);
-  padding: 12px 14px 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: none; }
-.panel-body { flex: 1; min-height: 0; overflow: auto; }
-
-.pane { background: var(--surface-card); border-radius: 8px; overflow: auto; min-width: 0; padding: 12px 16px 48px; }
-.pane-empty { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; text-align: center; }
+.pane { min-width: 0; padding: 12px 16px 48px; }
+.pane-empty { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; text-align: center; min-height: 240px; }
 
 .tree { padding: 0 0 8px; }
-.tree-filter { margin: 2px 8px 8px; width: calc(100% - 16px); }
-.tree-note { margin: 4px 14px 8px; color: var(--muted); font-size: 13px; }
-.tree-list, .tree ul, .changes { list-style: none; margin: 0; padding: 0; }
-.tree-row { display: flex; align-items: center; gap: 6px; width: 100%; text-align: left; background: none; border: 0;
-  padding: 3px 8px; cursor: pointer; white-space: nowrap; }
-.tree-row:hover { background: var(--surface-sunken); }
-.tree-row.is-selected { background: var(--selected); }
-.tree-caret { width: 12px; color: var(--muted); flex: none; }
-.tree-kind { font: 600 10px var(--mono); border: 1px solid var(--border); border-radius: 3px; padding: 0 3px; color: var(--muted); flex: none; }
-.tree-kind.kind-project { color: var(--accent); border-color: var(--accent); }
+.tree-filter { margin: 8px 12px; width: calc(100% - 24px); }
+.tree-note { margin: 4px 14px 8px; color: var(--color-fg-muted); font-size: 12px; }
+.tree-list, .tree ul, .changes, .row-list { list-style: none; margin: 0; padding: 0; }
+.tree-row { display: flex; align-items: center; gap: 6px; width: 100%; text-align: left; background: none; border: 0; padding: 4px 8px; cursor: pointer; white-space: nowrap; border-radius: var(--radius); color: var(--color-fg-default); font-size: 14px; }
+.tree-row:hover { background: var(--color-neutral-muted); }
+.tree-row.is-selected { background: var(--color-accent-subtle); font-weight: 600; }
+.tree-caret { width: 14px; color: var(--color-fg-muted); flex: none; display: inline-flex; }
+.tree-icon { color: var(--color-fg-muted); }
+.tree-icon-folder { color: #54aeff; }
 .tree-name { overflow: hidden; text-overflow: ellipsis; }
-.change { font: 700 11px var(--mono); width: 14px; flex: none; }
-.change-added { color: #1a7f37; }
-.change-modified { color: #9a6700; }
-.change-deleted { color: var(--danger); }
+.change { font: 700 11px var(--font-mono); width: 14px; flex: none; text-align: center; }
+.change-added { color: var(--color-success-fg); }
+.change-modified { color: var(--color-attention-fg); }
+.change-deleted { color: var(--color-danger-fg); }
+.change-renamed { color: var(--color-accent-fg); }
+/* The desktop's tree row (TreeRow), drawn here since Step 8: the vendor's pill on a project, the
+   type or detail beside the name, the change glyph at the end, a struck deleted name, and on a
+   folder the count of changes below it in the strongest state's colour. */
+.tree-filter-row { display: flex; gap: 4px; align-items: center; }
+.tree-pill { font: 600 10px/16px var(--font-ui); border: 1px solid var(--color-accent-fg); color: var(--color-accent-fg); border-radius: 999px; padding: 0 6px; flex: none; }
+.tree-annotation { font-size: 11px; color: var(--color-fg-muted); overflow: hidden; text-overflow: ellipsis; flex: none; max-width: 40%; }
+.tree-badge { margin-left: auto; font: 600 11px/16px var(--font-ui); border-radius: 999px; padding: 0 6px; background: var(--color-neutral-muted); color: var(--color-fg-muted); flex: none; }
+.tree-badge.tone-added { color: var(--color-success-fg); background: var(--color-success-subtle); }
+.tree-badge.tone-modified { color: var(--color-attention-fg); background: var(--color-attention-subtle); }
+.tree-badge.tone-deleted { color: var(--color-danger-fg); background: var(--color-danger-subtle); }
+.tree-row > .change { margin-left: auto; }
+.tree-row > .tree-badge + .change { margin-left: 4px; }
+.tree-row.is-deleted .tree-name { text-decoration: line-through; color: var(--color-fg-muted); }
+.tree-row.tone-added .tree-name { color: var(--color-success-fg); }
+.tree-row.tone-modified .tree-name { color: var(--color-attention-fg); }
+.tree-row.tone-deleted .tree-name { color: var(--color-danger-fg); }
+.tree-icon-project { color: var(--color-accent-fg); }
+/* An HTML object's Web page tab (Step 9): the file framed sandboxed, as the desktop's third chip. */
+.page-frame { width: 100%; min-height: 480px; height: 70vh; border: 1px solid var(--color-border-default); border-radius: var(--radius); background: #fff; }
+.code-refs-link { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; color: var(--color-fg-muted); }
+.code-refs-link:hover { color: var(--color-accent-fg); text-decoration: none; }
+/* GitHub's commit page with the desktop's card (Step 8). */
+.commit-card { margin: 0 0 16px; }
+.commit-card-head { display: flex; gap: 12px; align-items: flex-start; padding: 12px 16px; background: var(--color-canvas-subtle); border-bottom: 1px solid var(--color-border-default); }
+.commit-card-text { flex: 1; min-width: 0; }
+.commit-card-title { font: 600 18px/1.3 var(--font-ui); margin: 0; overflow-wrap: anywhere; }
+.commit-card-actions { display: flex; gap: 6px; flex: none; }
+.commit-card-foot { display: flex; gap: 12px; align-items: center; padding: 8px 16px; flex-wrap: wrap; font-size: 13px; }
+.commit-card-meta { margin-left: auto; display: inline-flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+.refs-row .branch-name { font-size: 14px; }
+.refs-row .row-badge { margin-left: 8px; }
+.file-review .pane-head .diffstat { margin-left: auto; font-size: 12px; }
 
-/* The pane header, in the desktop's PaneHeading grammar: a small label for the KIND of view,
-   the name in the face an ellipsis cannot eat, the folder after it in the quiet one. The name
-   column gives way last; the folder trims first (min-width: 0 on the folder alone). */
-.pane-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 8px; }
-.pane-title { display: flex; align-items: baseline; gap: 10px; min-width: 0; }
-.pane-label { font: 600 11px var(--ui); letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); flex: none; }
-.pane-title h1 { font: 600 15px var(--ui); margin: 0; overflow-wrap: anywhere; }
-.pane-folder { color: var(--muted); font: 12px var(--mono); min-width: 0; overflow: hidden; text-overflow: ellipsis;
-  white-space: nowrap; }
-.pane-tools { display: flex; gap: 8px; flex-wrap: wrap; }
-.segmented { display: inline-flex; border: 1px solid var(--border); border-radius: 6px; overflow: hidden; }
-.segmented button { background: var(--surface-card); border: 0; padding: 4px 10px; cursor: pointer; }
-.segmented button + button { border-left: 1px solid var(--border); }
-.segmented button[aria-selected="true"], .segmented button[aria-pressed="true"] { background: var(--selected); font-weight: 600; }
+/* The pane header: the object's name, the file after it, the view switches. Sticky, as a
+   file header is on GitHub. */
+.pane-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; padding: 8px 0 12px; margin-bottom: 8px; border-bottom: 1px solid var(--color-border-muted); }
+.pane-title { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
+.pane-label { font: 600 11px var(--font-ui); letter-spacing: 0.06em; text-transform: uppercase; color: var(--color-fg-muted); flex: none; }
+.pane-title h1 { font: 600 16px var(--font-ui); margin: 0; overflow-wrap: anywhere; }
+.pane-folder { color: var(--color-fg-muted); font: 12px var(--font-mono); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pane-tools { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.segmented { display: inline-flex; border: 1px solid var(--color-btn-border); border-radius: var(--radius); overflow: hidden; background: var(--color-btn-bg); }
+.segmented button { background: transparent; border: 0; padding: 3px 12px; cursor: pointer; font-size: 12px; font-weight: 500; }
+.segmented button + button { border-left: 1px solid var(--color-btn-border); }
+.segmented button:hover { background: var(--color-btn-hover-bg); }
+.segmented button[aria-selected="true"], .segmented button[aria-pressed="true"] { background: var(--color-canvas-default); font-weight: 600; box-shadow: inset 0 0 0 1px var(--color-border-default); }
 .layers { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 8px; }
-.chip { border: 1px solid var(--border); background: var(--surface-card); border-radius: 999px; padding: 1px 10px; font-size: 12px; cursor: pointer; }
-.chip.is-on { border-color: var(--accent); color: var(--accent); }
-.notice { margin: 0 0 8px; padding: 6px 10px; border-left: 4px solid var(--notice-border); background: var(--notice-bg); }
+.chip { border: 1px solid var(--color-border-default); background: var(--color-canvas-default); border-radius: 999px; padding: 1px 10px; font-size: 12px; cursor: pointer; }
+.chip.is-on { border-color: var(--color-accent-emphasis); color: var(--color-accent-fg); background: var(--color-accent-subtle); }
 
-.fragment { min-width: 0; }
+/* The fragments: scroll inside their box rather than clip at the pane's edge (seen on the real
+   pull request: every long ST line cut off). */
+.fragment { min-width: 0; overflow-x: auto; }
 .fragment .cd-num { cursor: pointer; }
-.review-bar { border: 1px solid var(--border); border-radius: 6px; background: var(--surface-card); padding: 8px 10px; margin: 0 0 10px; font-size: 13px; }
+.fragment .is-target { outline: 2px solid var(--color-accent-emphasis); outline-offset: -2px; }
+.fragment .cd-page, .fragment .mt-page, .fragment .ld-page { margin-bottom: 16px; }
+
+/* Lists: commits, pulls, releases, documents. */
+.row-title { display: block; font-weight: 600; overflow-wrap: anywhere; }
+.row-meta { display: block; margin-top: 2px; font-size: 12px; overflow-wrap: anywhere; color: var(--color-fg-muted); }
+.row-badge { font: 500 12px var(--font-ui); color: var(--color-fg-muted); border: 1px solid var(--color-border-default); border-radius: 999px; padding: 0 7px; margin-right: 6px; }
+.list-box { border: 1px solid var(--color-border-default); border-radius: var(--radius); }
+.list-head { display: flex; align-items: center; gap: 12px; padding: 12px 16px; background: var(--color-canvas-subtle); border-bottom: 1px solid var(--color-border-default); border-radius: var(--radius) var(--radius) 0 0; flex-wrap: wrap; }
+.list-head-states { display: flex; gap: 12px; font-size: 14px; }
+.list-head-states a, .list-head-states button { background: none; border: 0; padding: 0; color: var(--color-fg-muted); cursor: pointer; display: inline-flex; align-items: center; gap: 4px; font: inherit; }
+.list-head-states .is-current { color: var(--color-fg-default); font-weight: 600; }
+.list-search { display: flex; align-items: center; gap: 8px; flex: 1; min-width: 200px; }
+.list-search input { flex: 1; min-width: 0; }
+.list-row { display: flex; gap: 12px; padding: 8px 16px; border-top: 1px solid var(--color-border-muted); align-items: flex-start; }
+.list-row:first-child { border-top: 0; }
+.list-row:hover { background: var(--color-canvas-subtle); }
+.list-row-icon { margin-top: 2px; flex: none; }
+.list-row-icon.is-open { color: var(--color-success-fg); }
+.list-row-icon.is-draft { color: var(--color-fg-muted); }
+.list-row-icon.is-merged { color: var(--color-done-fg); }
+.list-row-icon.is-closed { color: var(--color-danger-fg); }
+.list-row-main { flex: 1; min-width: 0; }
+.list-row-title { font-weight: 600; font-size: 16px; color: var(--color-fg-default); overflow-wrap: anywhere; }
+.list-row-title:hover { color: var(--color-accent-fg); text-decoration: none; }
+.list-row-labels { display: inline-flex; gap: 4px; flex-wrap: wrap; margin-left: 6px; vertical-align: middle; }
+.list-row-meta { font-size: 12px; color: var(--color-fg-muted); margin-top: 2px; }
+.list-row-side { display: flex; gap: 12px; align-items: center; color: var(--color-fg-muted); font-size: 12px; flex: none; }
+.list-row-side a { color: inherit; display: inline-flex; align-items: center; gap: 4px; }
+.list-foot { padding: 12px 16px; border-top: 1px solid var(--color-border-muted); color: var(--color-fg-muted); font-size: 12px; }
+/* GitHub's list page (FINISH.md B10, Step 7): the search box and the New button above the box,
+   the state tabs and the filter menus in its head, each row's marks and people at its side. */
+.list-toolbar { display: flex; gap: 8px; align-items: center; margin: 0 0 16px; flex-wrap: wrap; }
+.list-toolbar .list-search { flex: 1; min-width: 240px; border: 1px solid var(--color-border-default); border-radius: var(--radius); padding: 0 8px; background: var(--color-canvas-default); }
+.list-toolbar .list-search input { border: 0; box-shadow: none; background: transparent; }
+.list-filters { margin-left: auto; display: flex; gap: 4px; flex-wrap: wrap; }
+.list-filter select { font: 500 12px var(--font-ui); border: 0; background: transparent; color: var(--color-fg-muted); cursor: pointer; padding: 2px 4px; }
+.list-filter select:hover { color: var(--color-fg-default); }
+.list-note { padding: 8px 16px; border-bottom: 1px solid var(--color-border-muted); background: var(--color-canvas-subtle); }
+.label-button { background: none; border: 0; padding: 0; cursor: pointer; font: inherit; }
+.list-row-mark { display: inline-flex; }
+.list-row-assignees { display: inline-flex; }
+.list-row-assignees .avatar + .avatar { margin-left: -6px; }
+.list-paging { display: flex; gap: 8px; align-items: center; justify-content: center; }
+.list-row-meta .link-button { font-size: 12px; color: var(--color-fg-muted); }
+.list-row-meta .link-button:hover { color: var(--color-accent-fg); }
+
+.commits { list-style: none; padding: 0; margin: 0; }
+.commit-day { font-size: 14px; color: var(--color-fg-muted); margin: 16px 0 8px; display: flex; align-items: center; gap: 6px; }
+.commit-group { border: 1px solid var(--color-border-default); border-radius: var(--radius); }
+.commit-row { display: flex; gap: 12px; align-items: center; padding: 10px 16px; border-top: 1px solid var(--color-border-muted); }
+.commit-row:first-child { border-top: 0; }
+.commit-main { flex: 1; min-width: 0; }
+.commit-subject { font-weight: 600; overflow-wrap: anywhere; color: var(--color-fg-default); }
+.commit-subject:hover { color: var(--color-accent-fg); }
+.commit-byline { font-size: 12px; color: var(--color-fg-muted); margin-top: 2px; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.commit-byline .text-bold { color: var(--color-fg-default); }
+.commit-side { display: flex; gap: 4px; align-items: center; flex: none; }
+.commit-sha { font: 12px var(--font-mono); color: var(--color-fg-muted); border: 1px solid var(--color-border-default); border-radius: var(--radius) 0 0 var(--radius); padding: 3px 8px; background: var(--color-canvas-default); }
+.commit-side .btn-small { border-radius: 0 var(--radius) var(--radius) 0; margin-left: -1px; }
+.commit-new { background: var(--color-attention-subtle); }
+
+/* The Documentation list. */
+.doc-folder { font: 600 12px var(--font-ui); color: var(--color-fg-muted); padding: 10px 16px 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.doc-ext { font: 600 10px var(--font-mono); border: 1px solid var(--color-border-default); border-radius: 3px; padding: 0 3px; color: var(--color-fg-muted); flex: none; min-width: 26px; text-align: center; }
+.doc-ext-pdf { color: var(--color-danger-fg); border-color: var(--color-danger-fg); }
+.doc-ext-text { color: var(--color-accent-fg); border-color: var(--color-accent-fg); }
+.pane-doc { display: flex; flex-direction: column; }
+.doc-frame { flex: 1; width: 100%; min-height: 70vh; border: 1px solid var(--color-border-default); border-radius: var(--radius); background: var(--color-canvas-subtle); }
+
+/* The Compare page's two pickers. */
+.compare-pick { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 8px 12px; }
+
+/* Home. */
+.home { max-width: 760px; margin: 0 auto; padding: 32px 16px; width: 100%; }
+.home h1 { font-size: 24px; margin: 0 0 8px; font-weight: 600; }
+.repo-list { list-style: none; margin: 20px 0; padding: 0; border: 1px solid var(--color-border-default); border-radius: var(--radius); overflow: hidden; }
+.repo-list li + li { border-top: 1px solid var(--color-border-muted); }
+.repo-row { display: flex; align-items: center; gap: 10px; padding: 12px 16px; color: var(--color-fg-default); }
+.repo-row:hover { background: var(--color-canvas-subtle); text-decoration: none; }
+.repo-name { font-weight: 600; overflow-wrap: anywhere; color: var(--color-accent-fg); }
+.repo-private { font: 500 12px var(--font-ui); color: var(--color-fg-muted); border: 1px solid var(--color-border-default); border-radius: 999px; padding: 0 7px; }
+.open-form { margin: 24px 0 12px; display: flex; flex-direction: column; gap: 6px; }
+.open-row { display: flex; gap: 8px; }
+.open-row input { flex: 1; min-width: 0; }
+
+/* Markdown, which Core renders as plain elements inside .md-page: GitHub's markdown body. */
+.md-page { max-width: 1012px; line-height: 1.5; font-size: 16px; }
+.md-page h1, .md-page h2 { padding-bottom: .3em; border-bottom: 1px solid var(--color-border-muted); font-weight: 600; }
+.md-page h1 { font-size: 2em; } .md-page h2 { font-size: 1.5em; } .md-page h3 { font-size: 1.25em; }
+.md-page code { font-family: var(--font-mono); font-size: 85%; background: var(--color-neutral-muted); padding: .2em .4em; border-radius: var(--radius); }
+.md-page pre { background: var(--color-canvas-subtle); border-radius: var(--radius); padding: 16px; overflow-x: auto; font-size: 85%; }
+.md-page pre code { background: none; padding: 0; }
+.md-page blockquote { margin-left: 0; padding: 0 1em; color: var(--color-fg-muted); border-left: .25em solid var(--color-border-default); }
+.md-page table { border-collapse: collapse; display: block; overflow-x: auto; max-width: 100%; }
+.md-page th, .md-page td { border: 1px solid var(--color-border-default); padding: 6px 13px; vertical-align: top; }
+.md-page th { font-weight: 600; text-align: left; }
+.md-page tr:nth-child(2n) { background: var(--color-canvas-subtle); }
+.md-page a[data-href] { color: var(--color-accent-fg); cursor: pointer; }
+.md-page a[data-href]:hover { text-decoration: underline; }
+.md-page img { max-width: 100%; }
+
+/* Pull requests (docs/web/PLAN.md, *Pull request review*; redrawn to GitHub's page, FINISH.md B). */
+.pr-head { margin-bottom: 16px; padding-bottom: 8px; border-bottom: 1px solid var(--color-border-muted); }
+.pr-title-row { display: flex; align-items: flex-start; gap: 12px; flex-wrap: wrap; }
+.pr-title { font: 400 32px/1.25 var(--font-ui); margin: 0; overflow-wrap: anywhere; flex: 1; min-width: 0; }
+.pr-title .pr-number { color: var(--color-fg-muted); font-weight: 300; }
+.pr-title-actions { display: flex; gap: 8px; flex: none; margin-top: 4px; }
+.pr-meta { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: 8px 0 0; color: var(--color-fg-muted); }
+.pr-meta .text-bold { color: var(--color-fg-default); }
+.branch-name { display: inline-block; font: 12px/18px var(--font-mono); color: var(--color-accent-fg); background: var(--color-accent-subtle); padding: 0 6px; border-radius: var(--radius); max-width: 320px; overflow: hidden; text-overflow: ellipsis; vertical-align: middle; white-space: nowrap; }
+.pr-tabs { margin-top: 12px; }
+.pr-tabs .underline-nav { gap: 0; }
+.pr-tabs .underline-nav-item { padding: 8px 12px 12px; }
+.diffstat { font: 12px var(--font-mono); display: inline-flex; align-items: center; gap: 4px; }
+.diffstat-add { color: var(--color-success-fg); }
+.diffstat-del { color: var(--color-danger-fg); }
+.diffstat-bar { display: inline-flex; gap: 1px; }
+.diffstat-bar span { width: 8px; height: 8px; display: inline-block; background: var(--color-neutral-muted); }
+.diffstat-bar .is-add { background: var(--color-success-emphasis); }
+.diffstat-bar .is-del { background: var(--color-danger-emphasis); }
+
+.review-bar { border: 1px solid var(--color-border-default); border-radius: var(--radius); background: var(--color-canvas-subtle); padding: 8px 12px; margin: 0 0 16px; font-size: 13px; }
 .review-bar-row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
 .review-bar-tools { margin-left: auto; display: inline-flex; gap: 10px; align-items: center; }
-.review-old { color: var(--notice-border); }
+.review-old { color: var(--color-attention-fg); }
 .review-pending-comments, .review-notes { margin: 6px 0 0; font-size: 12px; overflow-wrap: anywhere; }
 .review-pending-comments .link-button, .review-notes .link-button { text-align: left; }
-.review-dialog { margin-top: 10px; }
+.review-dialog { margin-top: 10px; border-top: 1px solid var(--color-border-muted); padding-top: 10px; }
 .review-events { border: 0; padding: 0; margin: 0; display: flex; gap: 14px; flex-wrap: wrap; align-items: baseline; }
 .review-notes summary { cursor: pointer; }
-.review-gaps { margin: 4px 0 0; padding-left: 18px; font-size: 12px; }
+.review-gaps { margin: 4px 0 0; padding-left: 18px; font-size: 12px; text-align: left; }
 .review-complete { font-size: 12px; margin: 0 0 8px; }
 .review-viewed { margin: 0 8px 0 4px; flex: none; }
 .review-viewed-label, .full-file-label { font-size: 12px; display: inline-flex; gap: 4px; align-items: center; }
-.changes li:has(.review-viewed) { display: flex; align-items: center; }
+/* The direct child only: a folder row's li also HAS a checkbox below it, and flexing it put the
+   folder's list beside its button (seen 2026-10-23). */
+.changes li:has(> .review-viewed) { display: flex; align-items: center; }
 .reviewers-editor .row-list button { margin-left: 6px; font-size: 12px; }
-.title-edit { margin-left: 8px; font: 12px var(--ui); vertical-align: middle; }
 .base-edit { font-size: 12px; white-space: nowrap; flex: none; }
-.title-editor, .base-editor { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; margin: 2px 0; }
-.title-editor input { flex: 1; min-width: 0; font: 600 16px var(--ui); color: var(--fg); background: var(--surface-card); border: 1px solid var(--border); border-radius: 6px; padding: 3px 6px; }
+.title-editor, .base-editor { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; margin: 2px 0; flex: 1; }
+.title-editor input { flex: 1; min-width: 0; font: 600 20px var(--font-ui); }
 .title-editor .notice, .base-editor .notice { flex-basis: 100%; }
 .state-actions { display: flex; gap: 12px; font-size: 12px; }
-.labels-editor .label button { margin-left: 4px; }
-.labels-editor select, .base-editor select, .new-pull select { font: 13px var(--ui); color: var(--fg); background: var(--surface-card); border: 1px solid var(--border); border-radius: 6px; padding: 2px 4px; max-width: 100%; }
+.labels-editor .issue-label button, .labels-editor .label button { margin-left: 4px; }
 .assignees-editor .row-list button { margin-left: 6px; font-size: 12px; }
-.new-pull-fields { border: 0; padding: 0; margin: 0 0 10px; display: flex; flex-direction: column; gap: 8px; max-width: 900px; }
-.new-pull-branches { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; font-size: 13px; }
+.new-pull-fields { border: 0; padding: 0; margin: 0 0 10px; display: flex; flex-direction: column; gap: 8px; }
+.new-pull-branches { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; font-size: 14px; }
 .new-pull-branches label { display: inline-flex; gap: 6px; align-items: center; }
-.new-pull-title { font: 600 15px var(--ui); color: var(--fg); background: var(--surface-card); border: 1px solid var(--border); border-radius: 6px; padding: 6px 8px; }
-.new-pull-body { width: 100%; min-height: 220px; font: 13px/1.45 var(--ui); color: var(--fg); background: var(--surface-card); border: 1px solid var(--border); border-radius: 6px; padding: 8px; resize: vertical; }
-.merge-box { border: 1px solid var(--border); border-radius: 6px; background: var(--surface-card); padding: 10px 12px; margin: 16px 0; font-size: 13px; display: flex; flex-direction: column; gap: 8px; }
+.new-pull-title { font-size: 16px; }
+.new-pull-body { width: 100%; min-height: 220px; resize: vertical; }
+.merge-box { border: 1px solid var(--color-border-default); border-radius: var(--radius); background: var(--color-canvas-default); padding: 16px; margin: 16px 0; font-size: 14px; display: flex; flex-direction: column; gap: 8px; }
 .merge-box p { margin: 0; }
 .merge-fields { display: flex; flex-direction: column; gap: 6px; width: 100%; max-width: 700px; }
-.merge-fields input, .merge-fields select { font: 13px var(--ui); color: var(--fg); background: var(--surface-card); border: 1px solid var(--border); border-radius: 6px; padding: 4px 6px; max-width: 100%; }
-.merge-fields textarea { min-height: 60px; font: 13px var(--ui); color: var(--fg); background: var(--surface-card); border: 1px solid var(--border); border-radius: 6px; padding: 6px; }
+.merge-fields textarea { min-height: 60px; resize: vertical; }
 .merge-ready { display: flex; flex-direction: column; gap: 8px; align-items: flex-start; }
 .merge-auto .link-button { margin-left: 8px; }
 .merge-accept { display: flex; gap: 6px; align-items: baseline; margin: 6px 0; }
-.merge-confirm { border: 1px solid var(--notice-border); border-radius: 6px; padding: 8px 10px; background: var(--notice-bg); }
-.new-pull-draft { font-size: 13px; display: inline-flex; gap: 6px; align-items: center; }
+.merge-confirm { border: 1px solid var(--color-attention-emphasis); border-radius: var(--radius); padding: 8px 12px; background: var(--color-attention-subtle); display: flex; flex-direction: column; gap: 8px; }
+.merge-confirm p { margin: 0; }
+/* GitHub's split button (Step 6): the primary half acts, the caret opens the method menu under it. */
+.merge-split { position: relative; display: inline-block; }
+.merge-method-caret { padding-left: 8px; padding-right: 8px; }
+.merge-method-menu { position: absolute; top: 100%; left: 0; z-index: 5; margin-top: 4px; min-width: 300px; padding: 4px 0; background: var(--color-canvas-overlay, var(--color-canvas-default)); border: 1px solid var(--color-border-default); border-radius: var(--radius); box-shadow: var(--color-shadow-medium, 0 3px 6px rgba(140, 149, 159, 0.15)); display: flex; flex-direction: column; }
+.merge-method-option { display: flex; gap: 8px; align-items: flex-start; padding: 8px 12px; font-size: 13px; text-align: left; cursor: pointer; color: var(--color-fg-default); }
+.merge-method-option:hover { background: var(--color-neutral-muted); text-decoration: none; }
+.merge-method-option input { margin-top: 3px; }
+.merge-branch { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; font-size: 13px; }
+.merge-queued .link-button { margin-left: 8px; }
+.merge-summary-text { min-width: 0; flex: 1; }
+.merge-summary-checks { margin-top: 6px; font-size: 13px; }
+.merge-summary-checks summary { cursor: pointer; font-size: 12px; }
+.merge-summary-check { display: flex; gap: 8px; align-items: center; padding: 4px 0; }
+.merge-summary-check .check-name { font-weight: 400; }
+.new-pull-draft { font-size: 14px; display: inline-flex; gap: 6px; align-items: center; }
+.new-pull-fork { display: inline-flex; gap: 6px; align-items: center; }
+.new-pull-fork input { width: 180px; }
+.new-pull-compare .box-header { justify-content: space-between; }
+.new-pull-files { padding: 4px 12px; font-size: 13px; }
+.new-pull-files li { display: flex; gap: 6px; align-items: baseline; padding: 2px 0; }
+.new-pull-preview { min-height: 220px; }
+.new-pull-extras { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 10px; font-size: 13px; }
+.new-pull-extras > label { display: flex; flex-direction: column; gap: 4px; }
+.new-pull-labels { border: 0; padding: 0; margin: 0; display: flex; flex-wrap: wrap; gap: 8px; }
+.new-pull-labels legend { padding: 0; margin-bottom: 4px; }
+.new-pull-label { display: inline-flex; gap: 4px; align-items: center; }
 .reviewers-add { display: flex; gap: 6px; margin-top: 4px; }
-.reviewers-add input { flex: 1; min-width: 0; font: 13px var(--ui); color: var(--fg); background: var(--surface-card); border: 1px solid var(--border); border-radius: 6px; padding: 3px 6px; }
+.reviewers-add input { flex: 1; min-width: 0; }
 .can-comment td.mt-name, .can-comment .ld-head { cursor: pointer; }
 .can-comment td.mt-name:hover, .can-comment .ld-head:hover { text-decoration: underline dotted; }
 tr.thread-row > td { padding: 4px 8px 8px 32px; background: transparent; }
-.fragment .is-target { outline: 2px solid var(--accent); outline-offset: -2px; }
-.fragment .cd-page, .fragment .mt-page, .fragment .ld-page { margin-bottom: 16px; }
 
-/* The Compare panel's two pickers, at the top of the card the way the desktop's git panel
-   leads with what it acts on. */
-.compare-pick { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 2px 14px 8px; }
-.compare-count { margin: 0; padding-top: 0; }
-
-.home { max-width: 760px; margin: 0 auto; padding: 32px 16px; width: 100%; }
-.home h1 { font-size: 24px; margin: 0 0 8px; }
-.repo-list { list-style: none; margin: 20px 0; padding: 0; background: var(--surface-card); border-radius: 8px; overflow: hidden; }
-.repo-list li + li { border-top: 1px solid var(--border); }
-.repo-row { display: flex; align-items: center; gap: 10px; padding: 12px 16px; text-decoration: none; color: var(--fg); }
-.repo-row:hover { background: var(--selected); }
-.repo-name { font-weight: 600; overflow-wrap: anywhere; }
-.repo-private { font: 600 11px var(--ui); letter-spacing: 0.05em; text-transform: uppercase; color: var(--muted);
-  border: 1px solid var(--border); border-radius: 999px; padding: 1px 8px; }
-.open-form { margin: 24px 0 12px; display: flex; flex-direction: column; gap: 6px; }
-.open-row { display: flex; gap: 8px; }
-.open-row input { flex: 1; min-width: 0; padding: 8px 10px; }
-/* The Documentation panel: folder headings, and a format chip on every row. */
-.doc-folder { font: 600 11px var(--ui); letter-spacing: 0.05em; text-transform: uppercase; color: var(--muted);
-  padding: 10px 14px 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.doc-ext { font: 600 10px var(--mono); border: 1px solid var(--border); border-radius: 3px; padding: 0 3px;
-  color: var(--muted); flex: none; min-width: 26px; text-align: center; }
-.doc-ext-pdf { color: var(--danger); border-color: var(--danger); }
-.doc-ext-text { color: var(--accent); border-color: var(--accent); }
-.pane-doc { display: flex; flex-direction: column; overflow: hidden; }
-.doc-frame { flex: 1; width: 100%; min-height: 380px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface-sunken); }
-
-/* The pulls and releases panels: one button per row, title over quiet meta, like the commits. */
-.row-list { list-style: none; margin: 0; padding: 0; }
-.row-pick { display: block; width: 100%; text-align: left; background: none; border: 0; border-bottom: 1px solid var(--border);
-  padding: 10px 14px; cursor: pointer; }
-.row-pick:hover { background: var(--surface-sunken); }
-.row-pick.is-selected { background: var(--selected); }
-.row-title { display: block; font-weight: 600; overflow-wrap: anywhere; }
-.row-meta { display: block; margin-top: 2px; font-size: 12px; overflow-wrap: anywhere; }
-.row-badge { font: 600 10px var(--ui); letter-spacing: 0.05em; text-transform: uppercase; color: var(--notice-border);
-  border: 1px solid var(--notice-border); border-radius: 999px; padding: 0 6px; margin-right: 6px; vertical-align: 2px; }
-
-.commits { list-style: none; padding: 0; margin: 0; }
-.commits li { padding: 10px 14px; border-bottom: 1px solid var(--border); }
-.commits li:last-child { border-bottom: 0; }
-.commit-subject { font-weight: 600; overflow-wrap: anywhere; }
-.commit-links { display: flex; gap: 16px; margin-top: 4px; flex-wrap: wrap; }
-
-/* Markdown, which Core renders as plain elements inside .md-page: the desktop page's styles. */
-.md-page { max-width: 980px; line-height: 1.55; }
-.md-page h1, .md-page h2 { padding-bottom: .3em; border-bottom: 1px solid var(--border); }
-.md-page h1 { font-size: 1.75em; } .md-page h2 { font-size: 1.35em; } .md-page h3 { font-size: 1.12em; }
-.md-page code { font-family: var(--mono); font-size: .9em; background: var(--surface-sunken); padding: .12em .35em; border-radius: 4px; }
-.md-page pre { background: var(--surface-sunken); border: 1px solid var(--border); border-radius: 6px; padding: 10px 14px; overflow-x: auto; }
-.md-page pre code { background: none; padding: 0; }
-.md-page blockquote { margin-left: 0; padding: 2px 0 2px 14px; color: var(--muted); border-left: 3px solid var(--border); }
-.md-page table { border-collapse: collapse; display: block; overflow-x: auto; max-width: 100%; }
-.md-page th, .md-page td { border: 1px solid var(--border); padding: 5px 10px; vertical-align: top; }
-.md-page th { background: var(--surface-sunken); text-align: left; }
-.md-page a[data-href] { color: var(--accent); cursor: pointer; text-decoration: underline; }
-
-/* Pull request review (docs/web/PLAN.md, *Pull request review*). */
-.button-quiet { display: inline-block; border: 1px solid var(--border); border-radius: 6px; padding: 5px 12px; color: var(--fg); text-decoration: none; background: var(--surface-card); }
-.button-quiet:hover { background: var(--surface-sunken); }
-/* A disabled button must look it: without this, "Open merge request" with no title, or a
-   comment box mid-post, looked exactly as clickable as ever (seen in the preview, 2026-10-20). */
-.button:disabled, .button-quiet:disabled, .link-button:disabled { opacity: 0.5; cursor: default; }
-.button-quiet:disabled:hover { background: var(--surface-card); }
-.change-renamed { color: var(--accent); }
-.review-tabs { display: flex; flex-direction: column; border-bottom: 1px solid var(--border); padding: 4px 0; }
-.review-count { margin-left: auto; font-size: 11px; border: 1px solid var(--border); border-radius: 999px; padding: 0 6px; }
-.review-flag { font-size: 11px; margin-left: 4px; }
 .review-summary p { margin: 0 0 6px; }
-.review-revision { font-size: 12px; margin: 0 0 8px; }
-.review-heading { font: 600 13px var(--ui); margin: 20px 0 8px; }
-.review-file { font: 600 14px var(--ui); margin: 0; overflow-wrap: anywhere; }
+.review-revision { font-size: 12px; margin: 0 0 8px; color: var(--color-fg-muted); }
+.review-file { font: 600 14px var(--font-ui); margin: 0; overflow-wrap: anywhere; }
 .review-labels { display: flex; flex-wrap: wrap; gap: 4px; }
-.label { border: 1px solid var(--border); border-radius: 999px; padding: 0 8px; font-size: 12px; }
-.state { font: 600 12px var(--ui); border-radius: 999px; padding: 2px 10px; color: var(--accent-fg); background: var(--muted); }
-.state-open { background: #1a7f37; }
-.state-merged { background: #8250df; }
-.state-closed { background: var(--danger); }
-.timeline { list-style: none; margin: 0; padding: 0; border-left: 2px solid var(--border); }
-.timeline li { padding: 6px 0 10px 14px; }
-.timeline-meta { display: block; font-size: 13px; }
-.timeline-text { display: block; overflow-wrap: anywhere; }
-.commit-new { background: var(--notice-bg); }
-.checks li { display: flex; gap: 10px; align-items: baseline; padding: 6px 0; border-bottom: 1px solid var(--border); }
-.check-name { font-weight: 600; flex: 1; overflow-wrap: anywhere; }
-.check-success .check-mark { color: #1a7f37; }
-.check-failure .check-mark, .check-timed_out .check-mark, .check-cancelled .check-mark, .check-action_required .check-mark, .check-error .check-mark { color: var(--danger); }
+.label { display: inline-flex; align-items: center; gap: 4px; border: 1px solid var(--color-border-default); border-radius: 999px; padding: 0 7px; font: 500 12px/18px var(--font-ui); }
+.review-count { margin-left: auto; font: 500 12px/18px var(--font-ui); background: var(--color-neutral-muted); border-radius: 999px; padding: 0 6px; }
+.review-flag { font-size: 11px; margin-left: 4px; }
+
+/* The timeline: GitHub's rail with an icon badge per item and a comment card per comment. */
+.timeline { list-style: none; margin: 0; padding: 0; position: relative; }
+.timeline::before { content: ""; position: absolute; left: 15px; top: 0; bottom: 0; width: 2px; background: var(--color-border-muted); }
+.timeline-item { position: relative; padding: 8px 0 8px 48px; display: flex; flex-direction: column; gap: 4px; }
+.timeline-badge { position: absolute; left: 0; top: 10px; width: 32px; height: 32px; border-radius: 50%; display: flex; align-items: center; justify-content: center; background: var(--color-canvas-subtle); border: 2px solid var(--color-canvas-default); color: var(--color-fg-muted); }
+.timeline-badge.is-success { background: var(--color-success-emphasis); color: #fff; }
+.timeline-badge.is-danger { background: var(--color-danger-emphasis); color: #fff; }
+.timeline-badge.is-done { background: var(--color-done-emphasis); color: #fff; }
+.timeline-meta { font-size: 14px; color: var(--color-fg-muted); display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.timeline-meta .text-bold { color: var(--color-fg-default); }
+.timeline-text { overflow-wrap: anywhere; }
+.timeline-commit { display: flex; align-items: center; gap: 8px; font-size: 13px; }
+.timeline-commit code { font-size: 12px; color: var(--color-fg-muted); }
+.timeline-comment { padding-left: 0; }
+.comment { border: 1px solid var(--color-border-default); border-radius: var(--radius); background: var(--color-canvas-default); }
+.comment-head { display: flex; align-items: center; gap: 6px; padding: 8px 16px; background: var(--color-canvas-subtle); border-bottom: 1px solid var(--color-border-default); border-radius: var(--radius) var(--radius) 0 0; color: var(--color-fg-muted); font-size: 14px; flex-wrap: wrap; }
+.comment-head .text-bold { color: var(--color-fg-default); }
+.comment-head-tools { margin-left: auto; display: inline-flex; gap: 10px; font-size: 12px; }
+.comment-body { padding: 16px; }
+.comment-body .md-page { font-size: 14px; }
 .thread-slot { margin: 4px 0 8px 48px; max-width: 900px; }
-.thread { border: 1px solid var(--border); border-radius: 6px; background: var(--surface-card); padding: 6px 10px; margin: 0 0 8px; font-family: var(--ui); white-space: normal; }
+.thread { border: 1px solid var(--color-border-default); border-radius: var(--radius); background: var(--color-canvas-default); padding: 8px 12px; margin: 0 0 8px; font-family: var(--font-ui); white-space: normal; }
 .thread.is-resolved { opacity: 0.75; }
 .thread-head { font-size: 12px; margin-bottom: 4px; }
-.thread-comment + .thread-comment { border-top: 1px solid var(--border); margin-top: 6px; padding-top: 6px; }
+.thread-comment + .thread-comment { border-top: 1px solid var(--color-border-muted); margin-top: 6px; padding-top: 6px; }
 .thread-meta { display: block; font-size: 12px; }
 .unplaced { margin: 0 0 12px; }
 .comment-box { margin: 10px 0; display: flex; flex-direction: column; gap: 6px; }
-.comment-box textarea { width: 100%; min-height: 84px; font: 13px/1.45 var(--ui); color: var(--fg); background: var(--surface-card); border: 1px solid var(--border); border-radius: 6px; padding: 8px; resize: vertical; }
-.comment-box textarea[readonly] { background: var(--surface-sunken); }
-.comment-preview { border: 1px solid var(--border); border-radius: 6px; padding: 6px 10px; min-height: 84px; }
+.comment-box textarea { width: 100%; min-height: 100px; resize: vertical; font-size: 14px; }
+.comment-box textarea[readonly] { background: var(--color-canvas-subtle); }
+.comment-preview { border: 1px solid var(--color-border-default); border-radius: var(--radius); padding: 8px 12px; min-height: 100px; }
 .comment-actions { display: flex; gap: 8px; justify-content: flex-end; flex-wrap: wrap; }
 .comment-note { margin: 0; }
-.comment-note-inline { margin-left: 6px; font-size: 12px; color: var(--notice-border); }
+.comment-note-inline { margin-left: 6px; font-size: 12px; color: var(--color-attention-fg); }
 .comment-tools, .thread-tools { margin-left: 10px; display: inline-flex; gap: 10px; font-size: 12px; }
 .thread-reply { font-size: 12px; margin-top: 4px; }
-.thread-draft { border-color: var(--accent); }
+.thread-draft { border-color: var(--color-accent-emphasis); }
 .file-comment { margin: 0 0 10px; font-size: 13px; }
-.fragment .cd-num { cursor: pointer; }
 
-/* Phone width: the panel becomes a drawer over the pane, opened from the header. The rail
-   stays — it is 46 px, and it is the only navigation between the three views. */
-@media (max-width: 760px) {
-  .topbar { padding: 8px 16px; gap: 8px; }
-  .tree-toggle { display: inline-block; }
-  .workspace { grid-template-columns: minmax(0, 1fr); position: relative; padding: 8px 8px 8px 0; }
-  /* The label, the title and the branch line each take the width they need, one under another,
-     rather than the title squeezed into a column a word wide. */
-  .pane-title { flex-wrap: wrap; row-gap: 2px; }
-  .pane-title h1 { flex-basis: 100%; }
-  .panel { display: none; position: absolute; inset: 8px 20% 8px 0; z-index: 2; box-shadow: 0 0 24px rgba(0, 0, 0, .25); }
-  .workspace.panel-open .panel { display: flex; }
-  .user-name { display: none; }
-}
+/* Step 3b (docs/web/FINISH.md): comments everywhere. A side-by-side thread sits under its own
+   column; an outdated thread shows the hunk it was written on; a check's annotation is drawn
+   under its line in GitHub's three tones; a commit's comments sit under its files. */
+.thread-slot-row { background: var(--color-canvas-subtle); }
+.thread-slot-cell > .thread-slot { margin: 4px 8px 8px 46px; max-width: none; }
+.thread-side-switch { margin-left: 8px; font-size: 12px; }
+.thread-hunk { margin: 0 0 8px; }
+.thread-hunk-code { margin: 0 0 4px; padding: 6px 8px; font-size: 12px; line-height: 1.4; background: var(--color-canvas-subtle); border: 1px solid var(--color-border-muted); border-radius: var(--radius); overflow-x: auto; white-space: pre; }
+.check-note { display: flex; gap: 8px; padding: 8px 12px; margin: 4px 0 8px; border: 1px solid var(--color-border-default); border-left-width: 4px; border-radius: var(--radius); background: var(--color-canvas-default); font-family: var(--font-ui); white-space: normal; }
+.check-note-danger { border-left-color: var(--color-danger-emphasis); }
+.check-note-attention { border-left-color: var(--color-attention-emphasis); }
+.check-note-accent { border-left-color: var(--color-accent-emphasis); }
+.check-note-mark { flex: none; padding-top: 2px; }
+.check-note-body { min-width: 0; }
+.check-note-text { margin: 4px 0 0; white-space: pre-wrap; font-size: 12px; line-height: 1.4; }
+.check-annotations { margin-top: 8px; }
+/* Step 3c: links, origin and reveal. The peek beside a review or a comparison; the "used by" list under the layer chips. */
+.peek { position: fixed; top: 64px; right: 16px; bottom: 16px; width: min(560px, calc(100vw - 32px)); display: flex; flex-direction: column; background: var(--color-canvas-default); border: 1px solid var(--color-border-default); border-radius: var(--radius); box-shadow: var(--color-shadow-large, 0 8px 24px rgba(140, 149, 159, 0.3)); z-index: 30; }
+.peek-head { display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-bottom: 1px solid var(--color-border-default); background: var(--color-canvas-subtle); border-radius: var(--radius) var(--radius) 0 0; }
+.peek-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.peek-body { flex: 1; min-height: 0; overflow: auto; padding: 8px 12px; }
+.usages { padding: 4px 16px; font-size: 13px; }
+.usages-list { margin: 4px 0 0; padding-left: 16px; }
+.usages-list li { margin: 2px 0; }
+.commit-comments { margin-top: 16px; max-width: 900px; }
+.commit-comments .comment-row + .comment-row { margin-top: 12px; }
+.commit-comment-new { margin-top: 12px; }
+
+/* Step 5 (docs/web/FINISH.md): the writes GitHub's page has. Reactions as toggles with the
+   picker; a hidden comment folded behind its reason; a suggested change as a mini diff with its
+   apply buttons; the review dropdown with its pending count and editable drafts; the reason
+   forms under Dismiss, Hide and Lock; the batch bar over Files changed. */
+button.reaction { cursor: pointer; background: var(--color-canvas-default); }
+button.reaction:hover { border-color: var(--color-accent-emphasis); }
+.reaction-add { position: relative; display: inline-flex; }
+.reaction-add-button { padding: 2px 6px; }
+.reaction-picker { position: absolute; top: 100%; left: 0; z-index: 5; margin-top: 4px; display: flex; gap: 2px; padding: 4px; background: var(--color-canvas-overlay, var(--color-canvas-default)); border: 1px solid var(--color-border-default); border-radius: var(--radius); box-shadow: var(--color-shadow-medium, 0 3px 6px rgba(140, 149, 159, 0.15)); }
+.reaction-pick { font-size: 16px; line-height: 1; padding: 4px 6px; border: 0; background: transparent; border-radius: var(--radius); cursor: pointer; }
+.reaction-pick:hover { background: var(--color-neutral-muted); }
+.reaction-pick.is-mine { background: var(--color-accent-subtle); }
+.comment-minimized-note { margin: 0; padding: 8px 16px; font-size: 13px; display: flex; gap: 8px; align-items: baseline; }
+.thread-comment .comment-minimized-note { padding: 4px 0; }
+.is-minimized > .comment > .comment-head, .thread-comment.is-minimized > .thread-meta { opacity: 0.7; }
+.suggestion { margin: 8px 0 4px; border: 1px solid var(--color-border-default); border-radius: var(--radius); overflow: hidden; font-family: var(--font-ui); }
+.suggestion-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 6px 10px; background: var(--color-canvas-subtle); border-bottom: 1px solid var(--color-border-default); font-size: 12px; }
+.suggestion-tools { margin-left: auto; display: inline-flex; gap: 6px; align-items: center; }
+.suggestion-body { margin: 0; padding: 6px 10px; font: 12px/1.5 var(--font-mono); background: var(--color-diff-add-line, var(--color-success-subtle)); white-space: pre; overflow-x: auto; }
+.comment-toolbar { display: flex; gap: 4px; }
+.review-changes { display: inline-flex; align-items: center; gap: 6px; }
+.review-pending-comments .review-draft { border: 1px solid var(--color-border-muted); border-radius: var(--radius); padding: 6px 10px; margin-top: 6px; }
+.review-draft-head { display: flex; gap: 6px; align-items: baseline; flex-wrap: wrap; }
+.review-draft-body { font-size: 13px; margin-top: 4px; }
+.reviewer-row { display: flex; align-items: center; gap: 6px; }
+.reviewer-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.reviewer-mark { display: inline-flex; }
+.reason-action { display: inline; }
+.reason-form { display: flex; flex-direction: column; gap: 6px; margin: 6px 0; padding: 8px; border: 1px solid var(--color-border-default); border-radius: var(--radius); background: var(--color-canvas-default); min-width: 240px; font-size: 13px; }
+.reason-form textarea { width: 100%; resize: vertical; font-size: 13px; }
+.batch-bar { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin: 0 0 12px; padding: 8px 12px; border: 1px solid var(--color-attention-emphasis); border-radius: var(--radius); background: var(--color-attention-subtle); font-size: 13px; }
+.comment-state-actions { margin-top: 6px; justify-content: flex-start; }
+.milestone-editor p { display: flex; align-items: center; gap: 6px; }
+.subscription-action p { margin: 6px 0 0; }
+.lock-action { margin-top: 6px; }
+
+.checks { list-style: none; margin: 0; padding: 0; }
+.checks li { display: flex; gap: 10px; align-items: center; padding: 8px 16px; border-top: 1px solid var(--color-border-muted); }
+.checks li:first-child { border-top: 0; }
+.check-mark { display: inline-flex; flex: none; }
+.check-name { font-weight: 600; flex: 1; overflow-wrap: anywhere; }
+.check-success .check-mark { color: var(--color-success-fg); }
+.check-failure .check-mark, .check-timed_out .check-mark, .check-cancelled .check-mark, .check-action_required .check-mark, .check-error .check-mark { color: var(--color-danger-fg); }
+.check-running .check-mark { color: var(--color-attention-fg); }
+.check-neutral .check-mark, .check-skipped .check-mark { color: var(--color-fg-muted); }
+
+/* The Files changed view: the tree of changed files beside the stacked diffs. */
+.files-view { display: grid; grid-template-columns: 300px minmax(0, 1fr); gap: 16px; align-items: start; }
+.files-tree { position: sticky; top: 8px; max-height: calc(100vh - 16px); overflow: auto; border: 1px solid var(--color-border-default); border-radius: var(--radius); }
+.files-main { min-width: 0; }
+.file-review { border: 1px solid var(--color-border-default); border-radius: var(--radius); margin-bottom: 16px; }
+.file-review > .pane-head { position: sticky; top: 0; z-index: 2; background: var(--color-canvas-subtle); padding: 8px 12px; margin: 0; border-bottom: 1px solid var(--color-border-default); border-radius: var(--radius) var(--radius) 0 0; }
+.file-review-body { padding: 8px 12px 12px; }
+
+/* The conversation as GitHub draws it (FINISH.md B3): a comment card with the person's picture
+   beside it, rows on the rail for events, a review card with its threads under it, the merge
+   summary and box after the timeline, the comment box last. */
+.pr-meta-line { display: inline-flex; align-items: center; gap: 4px; flex-wrap: wrap; }
+.pr-tabs { display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.pr-diffstat { padding-bottom: 12px; }
+.comment-row { display: flex; gap: 12px; align-items: flex-start; margin: 0 0 16px; }
+.comment-row > .avatar { flex: none; margin-top: 2px; }
+.comment-row > .comment { flex: 1; min-width: 0; }
+.comment-row-success > .comment { border-color: var(--color-success-emphasis); }
+.comment-row-danger > .comment { border-color: var(--color-danger-emphasis); }
+.comment-row-success > .comment > .comment-head { background: var(--color-success-subtle); border-bottom-color: var(--color-success-emphasis); }
+.comment-row-danger > .comment > .comment-head { background: var(--color-danger-subtle); border-bottom-color: var(--color-danger-emphasis); }
+.comment-time { color: var(--color-fg-muted); }
+.comment-time:hover { color: var(--color-accent-fg); text-decoration: underline; }
+.comment-head-tools a { color: var(--color-fg-muted); display: inline-flex; }
+.comment-new .comment-body { padding: 8px 8px 4px; }
+.comment-new .comment-box { margin: 0; }
+.role-badge { font: 500 12px/18px var(--font-ui); color: var(--color-fg-muted); border: 1px solid var(--color-border-default); border-radius: 999px; padding: 0 7px; }
+.reactions { display: flex; gap: 6px; flex-wrap: wrap; padding: 0 16px 12px; }
+.comment-review-summary .reactions, .thread-comment .reactions { padding: 6px 0 0; }
+.reaction { display: inline-flex; align-items: center; gap: 4px; font: 500 12px/18px var(--font-ui); border: 1px solid var(--color-border-default); border-radius: 999px; padding: 2px 8px; color: var(--color-fg-muted); }
+.reaction.is-mine { border-color: var(--color-accent-emphasis); background: var(--color-accent-subtle); color: var(--color-accent-fg); }
+.timeline-item.timeline-comment { padding-left: 0; }
+.timeline-item.timeline-comment .comment-row { margin: 8px 0; }
+.timeline-item.timeline-comment .comment-row > .avatar { width: 40px; height: 40px; position: relative; z-index: 1; }
+.timeline-commit-line { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; min-width: 0; flex-wrap: wrap; }
+.timeline-commit-line code { font-size: 12px; }
+.verified-badge { font: 500 12px/18px var(--font-ui); color: var(--color-success-fg); border: 1px solid var(--color-success-fg); border-radius: 999px; padding: 0 7px; }
+.timeline-review-body { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.timeline-review-body > .timeline-meta { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.comment-review-summary { margin: 0; }
+.review-threads { display: flex; flex-direction: column; gap: 12px; }
+.review-thread { border: 1px solid var(--color-border-default); border-radius: var(--radius); overflow: hidden; }
+.review-thread-file { display: flex; align-items: center; gap: 8px; padding: 8px 12px; background: var(--color-canvas-subtle); border-bottom: 1px solid var(--color-border-default); font-size: 13px; }
+.review-thread-file a { font-family: var(--font-mono); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.review-thread > .thread { border: 0; border-radius: 0; margin: 0; }
+.diff-hunk { margin: 0; padding: 8px 12px; font: 12px/1.5 var(--font-mono); background: var(--color-canvas-default); border-bottom: 1px solid var(--color-border-muted); overflow-x: auto; color: var(--color-fg-muted); white-space: pre; }
+.thread-comment.is-pending { background: var(--color-attention-subtle); margin: 0 -12px; padding: 6px 12px; }
+.thread-meta { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.merge-summary { margin: 16px 0 0; }
+.merge-summary + .merge-box { margin-top: 0; border-top-left-radius: 0; border-top-right-radius: 0; border-top: 0; }
+.merge-summary:has(+ .merge-box) { border-bottom-left-radius: 0; border-bottom-right-radius: 0; }
+.merge-summary-row { display: flex; gap: 12px; align-items: flex-start; padding: 12px 16px; border-top: 1px solid var(--color-border-muted); }
+.merge-summary-row:first-child { border-top: 0; }
+.merge-summary-icon { margin-top: 2px; }
+.tone-success .merge-summary-icon { color: var(--color-success-fg); }
+.tone-danger .merge-summary-icon { color: var(--color-danger-fg); }
+.tone-attention .merge-summary-icon { color: var(--color-attention-fg); }
+.tone-muted .merge-summary-icon { color: var(--color-fg-muted); }
+.merge-box { margin-top: 0; }
+.commit-subject-line { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.commit-expand { padding: 0 6px; line-height: 14px; }
+.commit-body { margin: 6px 0; padding: 8px 12px; font: 12px/1.5 var(--font-mono); background: var(--color-canvas-subtle); border-radius: var(--radius); white-space: pre-wrap; overflow-wrap: anywhere; }
+.commit-new-badge { color: var(--color-attention-fg); border-color: var(--color-attention-fg); }
+.commit-sha { text-decoration: none; }
+a.commit-sha:hover { color: var(--color-accent-fg); }
+.checks-summary { display: flex; gap: 16px; flex-wrap: wrap; margin: 0 0 16px; font-size: 14px; }
+.checks-summary span { display: inline-flex; align-items: center; gap: 4px; }
+.checks-group { margin-bottom: 16px; }
+.checks-group .box-header { justify-content: space-between; }
+.checks li { display: block; padding: 0; }
+.check-line { display: flex; gap: 10px; align-items: center; padding: 8px 16px; flex-wrap: wrap; }
+.check-required { margin-left: 6px; }
+.check-output { padding: 8px 16px 12px 42px; border-top: 1px solid var(--color-border-muted); background: var(--color-canvas-subtle); font-size: 13px; }
+.check-output .md-page { font-size: 13px; }
+
+/* Files changed (FINISH.md Step 3): the changed-file tree, and every file stacked under a
+   sticky header; a folded (viewed) file is its header alone. */
+.files-tree-nav { font-size: 13px; }
+.files-tree-nav ul { list-style: none; margin: 0; padding: 0; }
+.files-tree-nav .tree-row { min-width: 0; }
+.files-tree-nav .tree-name { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: left; }
+.files-tree-nav .tree-caret, .files-tree-nav .tree-icon, .files-tree-nav .change { flex: none; }
+.files-tree .changes li:has(> .review-viewed) > .tree-row { flex: 1; min-width: 0; }
+.files-tree-head { padding: 8px 8px 4px; border-bottom: 1px solid var(--color-border-muted); }
+.files-tree-head .tree-filter { margin: 0 0 6px; width: 100%; }
+.files-progress { display: flex; flex-direction: column; gap: 3px; }
+.files-progress-bar { display: block; height: 4px; background: var(--color-neutral-muted); border-radius: 2px; overflow: hidden; }
+.files-progress-bar > span { display: block; height: 100%; background: var(--color-success-emphasis); }
+.tree-folder .tree-name { font-weight: 600; }
+.tree-count { margin-left: auto; }
+.tree-stat { margin-left: auto; font-size: 11px; }
+.files-tree li.is-viewed > .tree-row .tree-name { color: var(--color-fg-muted); }
+.file-review.is-folded > .pane-head { border-radius: var(--radius); border-bottom: 0; }
+.file-review > .pane-head .pane-title { align-items: center; }
+.file-chevron { padding: 0 4px; }
+.file-review .review-file { font: 600 14px var(--font-mono); margin: 0; white-space: nowrap; flex: none; }
+.file-review > .pane-head .pane-title { flex: 1; min-width: 0; }
+.file-review > .pane-head .pane-tools { flex: none; }
+.file-review.is-viewed > .pane-head { background: var(--color-canvas-subtle); }
+.file-resolved-toggle { margin: 0 0 8px; }
+.file-resolved-toggle label { display: inline-flex; gap: 6px; align-items: center; }
+.fragment .cd-fold { cursor: pointer; }
+.fragment .cd-fold:hover { background: var(--color-accent-subtle); }
 
 /* Mermaid diagrams, drawn in sandboxed frames. The frame is born at height 0 and grows to the
    height its diagram reports — never display:none, which would void the frame's layout and make
    the diagram measure itself in a zero-size viewport (FragmentHost has the story). */
 .mermaid-frame { width: 100%; border: 0; display: block; margin: 0 0 12px; background: transparent; }
 .md-page pre.mermaid { white-space: pre-wrap; }
+
+/* Narrow screens: the sidebars stack under the content, the tree becomes a drawer. */
+@media (max-width: 1011px) {
+  .layout, .layout-sidebar-start { grid-template-columns: minmax(0, 1fr); }
+  .layout-sidebar-start .layout-sidebar { order: 0; }
+  .files-view { grid-template-columns: minmax(0, 1fr); }
+  .files-tree { position: static; max-height: 40vh; }
+}
+@media (max-width: 767px) {
+  .page { padding: 16px 16px 48px; }
+  .code-view { grid-template-columns: minmax(0, 1fr); position: relative; }
+  .code-sidebar { display: none; position: absolute; inset: 0 20% 0 0; z-index: 5; box-shadow: var(--color-shadow-large); max-height: none; }
+  .code-view.sidebar-open .code-sidebar { display: flex; }
+  .pr-title { font-size: 24px; }
+  .pane-title { flex-wrap: wrap; row-gap: 2px; }
+  .pane-title h1 { flex-basis: 100%; }
+  .repo-title { font-size: 16px; }
+}
+
+/* The sidebar label with its remove button, and the drawer toggle only at phone width (review, 2026-10-24). */
+.label-with-remove { display: inline-flex; align-items: center; gap: 2px; }
+@media (min-width: 768px) { .tree-toggle-button { display: none; } }
