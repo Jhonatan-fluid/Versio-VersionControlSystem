@@ -65,6 +65,35 @@ public sealed class BrowseTests
         (await host.GetAsync(route + "&from=..%2Fsrc%2FOld.st")).AssertStatus(HttpStatusCode.NotFound);
     }
 
+    /// <summary>
+    /// Review, 2026-10-25 (P2, after the commit page learnt <c>from</c>): the old path reached the
+    /// renderer, which then paired the older layers to the newer by everything after the file name's
+    /// first dot, so a rename that changed the extension (old.txt to new.md) or dropped a dotted part
+    /// of the name (Old.Name.st to New.st) lost its old side all the same and drew additions only.
+    /// The pair the caller names decides; here each draws the one line that changed.
+    /// </summary>
+    [Theory]
+    [InlineData("notes/old.txt", "notes/new.md")]
+    [InlineData("src/Old.Name.st", "src/New.st")]
+    public async Task A_renamed_file_whose_extension_changed_is_still_compared_from_its_old_path(string oldPath, string newPath)
+    {
+        var github = new FakeGitHub();
+        var repo = github.Add("acme", "plant");
+        var start = github.Commit(repo, "main", new Dictionary<string, byte[]> { [oldPath] = Encoding.UTF8.GetBytes("alpha\nbeta\n") });
+        var head = github.Commit(repo, "fix", new Dictionary<string, byte[]> { [newPath] = Encoding.UTF8.GetBytes("alpha\ngamma\n") });
+        await using var host = await TestHost.StartAsync(github);
+        var route = $"/api/repos/acme/plant/compare/view?base={start}&head={head}&path={Uri.EscapeDataString(newPath)}&view=raw";
+
+        var cold = Json(await (await host.GetAsync(route)).Body()).GetProperty("html").GetString()!;
+        var told = Json(await (await host.GetAsync(route + "&from=" + Uri.EscapeDataString(oldPath))).Body()).GetProperty("html").GetString()!;
+
+        static int Count(string html, string mark) => html.Split(mark).Length - 1;
+        Assert.Equal((2, 0), (Count(cold, "cd-added"), Count(cold, "cd-removed")));
+        Assert.Equal((1, 1), (Count(told, "cd-added"), Count(told, "cd-removed")));
+        Assert.Matches("cd-removed[^\n]*beta", told);
+        Assert.Matches("cd-added[^\n]*gamma", told);
+    }
+
     [Fact]
     public async Task The_tree_compared_with_a_base_marks_each_row_rolls_folders_up_and_lists_the_deleted_file_struck()
     {

@@ -147,9 +147,9 @@ public sealed partial class ViewService(
 
         var oldNode = oldPath is null ? node : older.NodeFor(oldPath) ?? node;
         var reads = await Task.WhenAll(ReadAllAsync(access, older, oldNode, ct), ReadAllAsync(access, newer, node, ct)).ConfigureAwait(false);
-        var before = ReferenceEquals(oldNode, node) ? reads[0] : Renamed(reads[0], node);
-        var after = reads[1];
         var shown = Shown(node, path);
+        var before = ReferenceEquals(oldNode, node) ? reads[0] : Renamed(reads[0], Shown(oldNode, oldPath!), node, shown);
+        var after = reads[1];
         var key = Key("compare", newer, older.CommitSha + ".." + newer.CommitSha + ":" + node.Path + ":" + shown + (oldPath is null ? "" : "<-" + oldPath) + (fullFile ? ":full" : ""), view, sideBySide, after, before);
         return await CachedAsync(key, path, () => view == PaneView.Raw
             ? RawCompare(shown, before, after, sideBySide, fullFile)
@@ -158,33 +158,89 @@ public sealed partial class ViewService(
     }
 
     /// <summary>
-    /// A renamed object's older layers, keyed by the layers they became: each by the part of its file
-    /// name after the object's name (a textual layer's suffix, a native one's, a two-part one's), which a rename keeps.
+    /// A renamed object's older layers, keyed by the layers they became. The pair the caller named
+    /// decides its own layer: <paramref name="oldPath"/> became <paramref name="newPath"/>, whatever
+    /// the two are called. The object's other layers follow that pair by the stems it reveals
+    /// (<c>GVL_Alarm.gvl.xml</c> follows <c>GVL_Alarm.gvl.st</c> → <c>GVL.Alarm2.gvl.st</c> to
+    /// <c>GVL.Alarm2.gvl.xml</c>); one the pair cannot place is paired by the part of its file name
+    /// after the first dot (a textual layer's suffix, a native one's, a two-part one's), which a
+    /// rename usually keeps.
     /// </summary>
     /// <remarks>
+    /// <para>
     /// The drawing then compares the object with itself, as GitHub's rename does, instead of drawing
     /// the old path as deleted and the new one as wholly added — which reads as every line changed.
     /// A layer with no counterpart keeps its old path and is shown as gone. Moved here from slice 1
     /// of pull request review (docs/web/PLAN.md), because review anchors need the same mapping.
+    /// </para>
+    /// <para>
+    /// The suffix rule was the whole mapping until review 2026-10-25 (P2): every layer, the one the
+    /// caller had just named included, was paired by everything after its file name's first dot, so
+    /// <c>old.txt</c> → <c>new.md</c> found no counterpart and <c>Old.Name.st</c> → <c>New.st</c>
+    /// found none either, and both drew additions without removals — the old side the caller named
+    /// was thrown away for want of a matching extension. The rename is a fact GitHub reported; the
+    /// suffix is a guess about which layer is which, and the guess may not overrule the fact. It is
+    /// kept for the sibling layers only because they are named by nobody: GitHub reports one file's
+    /// rename at a time, and the pair itself says what the siblings became only when the two names
+    /// share a dotted tail to take the stems from.
+    /// </para>
     /// </remarks>
-    private static IReadOnlyDictionary<string, Layer> Renamed(IReadOnlyDictionary<string, Layer> older, ProjectTreeNode node)
+    private static IReadOnlyDictionary<string, Layer> Renamed(IReadOnlyDictionary<string, Layer> older, string oldPath, ProjectTreeNode node, string newPath)
     {
         static string Suffix(string path)
         {
-            var file = path[(path.LastIndexOf('/') + 1)..];
+            var file = Name(path);
             var dot = file.IndexOf('.', StringComparison.Ordinal);
             return dot < 0 ? "" : file[dot..];
         }
 
+        var stems = Stems(Name(oldPath), Name(newPath));
         var result = new Dictionary<string, Layer>(StringComparer.Ordinal);
-        foreach (var layer in older.Values)
+        foreach (var layer in older.Values.OrderByDescending(l => l.Path == oldPath))
         {
-            var match = node.Files.FirstOrDefault(f => Suffix(f) == Suffix(layer.Path) && !result.ContainsKey(f));
+            string? match;
+            if (layer.Path == oldPath)
+            {
+                match = node.Files.Contains(newPath, StringComparer.Ordinal) ? newPath : null;
+            }
+            else
+            {
+                var name = Name(layer.Path);
+                var sibling = stems is { } s && name.StartsWith(s.Old + ".", StringComparison.Ordinal) ? s.New + name[s.Old.Length..] : null;
+                match = node.Files.FirstOrDefault(f => Name(f) == sibling && !result.ContainsKey(f))
+                    ?? node.Files.FirstOrDefault(f => Suffix(f) == Suffix(layer.Path) && !result.ContainsKey(f));
+            }
+
             var target = match ?? layer.Path;
             result[target] = layer with { Path = target };
         }
 
         return result;
+    }
+
+    /// <summary>
+    /// What two file names of a renamed object's layer have in front of the dotted tail they share:
+    /// <c>GVL_Alarm</c> and <c>GVL.Alarm2</c> for <c>GVL_Alarm.gvl.st</c> and <c>GVL.Alarm2.gvl.st</c>.
+    /// Null when they share no tail starting at a dot (<c>old.txt</c>, <c>new.md</c>), since then
+    /// nothing says where one name's stem ends.
+    /// </summary>
+    private static (string Old, string New)? Stems(string oldName, string newName)
+    {
+        var shared = 0;
+        while (shared < oldName.Length && shared < newName.Length && oldName[^(shared + 1)] == newName[^(shared + 1)])
+        {
+            shared++;
+        }
+
+        var dot = oldName[^shared..].IndexOf('.', StringComparison.Ordinal);
+        if (dot < 0)
+        {
+            return null;
+        }
+
+        var tail = shared - dot;
+        var stems = (oldName[..^tail], newName[..^tail]);
+        return stems.Item1.Length == 0 || stems.Item2.Length == 0 ? null : stems;
     }
 
     /// <summary>The paths that differ between two commits, with what happened to each.</summary>

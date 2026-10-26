@@ -391,6 +391,46 @@ public sealed class ViewServiceTests
         Assert.Contains(ViewService.TypeChangedNotice, view.Notices);
     }
 
+    /// <summary>
+    /// Review, 2026-10-25 (P2): a two-layer object renamed to a name with a dot in it. The old path
+    /// the caller names is the <c>.gvl.st</c>; the <c>.gvl.xml</c> beside it is not named by anyone
+    /// and must follow the pair, not the first-dot suffix (<c>.gvl.xml</c> against <c>.Alarm2.gvl.xml</c>),
+    /// which paired neither layer and drew the one edited member as added with the sidecar as a
+    /// coverage gap. The pair places both: the edited row reads modified, and the comparison is complete.
+    /// </summary>
+    [Fact]
+    public async Task A_renamed_objects_other_layers_follow_the_pair_the_caller_named()
+    {
+        const string Manifest = "fixtures/projects/RefrigeratorControl/_manifest.json";
+        const string Gvls = "fixtures/projects/RefrigeratorControl/Device/Plc Logic/Application/Library/Alarm/GVLs/";
+        var files = new Dictionary<string, byte[]>(_github.CommitFiles(_repo, "main"), StringComparer.Ordinal);
+        foreach (var layer in new[] { ".gvl.st", ".gvl.xml" })
+        {
+            files[Gvls + "GVL.Alarm2" + layer] = files[Gvls + "GVL_Alarm" + layer];
+            files.Remove(Gvls + "GVL_Alarm" + layer);
+        }
+
+        Edit(files, Gvls + "GVL.Alarm2.gvl.st", "AlarmConstant : DINT := 3;", "AlarmConstant : DINT := 4;");
+        var manifest = System.Text.Json.Nodes.JsonNode.Parse(files[Manifest])!;
+        foreach (var entry in manifest["objects"]!.AsArray().Where(o => (string?)o!["name"] == "GVL_Alarm"))
+        {
+            entry!["path"] = ((string)entry["path"]!).Replace("GVL_Alarm.", "GVL.Alarm2.", StringComparison.Ordinal);
+        }
+
+        files[Manifest] = Encoding.UTF8.GetBytes(manifest.ToJsonString());
+        _github.Commit(_repo, "renamed", files);
+        var (views, models) = Services();
+
+        var result = await views.CompareAsync(RepoAccess.Anonymous, await Model(models, "main"), await Model(models, "renamed"), Gvls + "GVL.Alarm2.gvl.st", PaneView.Rendered, false, CancellationToken.None, oldPath: Gvls + "GVL_Alarm.gvl.st");
+        Assert.True(result.Ok, result.Failure.ToString());
+        var view = result.Value!;
+
+        Assert.Equal("table", view.Kind);
+        Assert.Contains("data-change=\"modified\"", view.Html, StringComparison.Ordinal);
+        Assert.DoesNotContain("data-change=\"added\"", view.Html, StringComparison.Ordinal);
+        Assert.True(view.Coverage!.Complete, string.Join("; ", view.Coverage.Gaps.Select(g => $"{g.Path} {g.Side} {g.Start}-{g.End} {g.Reason}")));
+    }
+
     [Fact]
     public async Task The_tree_has_each_projects_libraries_tasks_and_devices_from_its_catalogs()
     {
