@@ -260,7 +260,10 @@ public interface IGitClient
     /// <remarks>
     /// Staged immediately afterwards, because <c>checkout --ours</c> writes the file and leaves
     /// it unmerged. A file that looks resolved on disk and is still conflicted in the index is
-    /// the state that makes somebody think the button did nothing.
+    /// the state that makes somebody think the button did nothing. When the chosen side
+    /// <i>deleted</i> the file there is no version to write: taking that side removes the file
+    /// from the working tree and stages the removal, so the resolution is a deletion rather
+    /// than a failure.
     /// </remarks>
     Task<GitResult> ResolveWithSideAsync(string path, bool ours, CancellationToken ct);
 

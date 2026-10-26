@@ -17,13 +17,44 @@ public sealed partial class GitCliClient
 
     /// <summary>Take one side of a conflicted file and stage it.</summary>
     /// <remarks>
+    /// <para>
     /// Two commands, because <c>checkout --ours</c> writes the working-tree file and leaves the
     /// index entry unmerged. A file that looks resolved on disk and is still conflicted to git
     /// is the state that makes somebody think the button did nothing.
+    /// </para>
+    /// <para>
+    /// <b>Unless the chosen side deleted the file</b> — then there is no version to check out.
+    /// In a modify/delete conflict git keeps the surviving side at stage 2 or 3 and the
+    /// deleting side at no stage at all, and <c>checkout --ours</c> for the side with no stage
+    /// exits 1 with "does not have our version". The first version ran exactly that and
+    /// reported the failure: the conflict stayed, the file stayed, and choosing the deletion
+    /// was impossible from the panel (the 2026-10-25 review, P2). The resolution that side
+    /// asks for is <c>git rm</c>, which takes the file out of the working tree and stages its
+    /// removal in one step. Not <c>rm --cached</c>: that would resolve the index and leave the
+    /// other side's content on disk as an untracked file, which is the deletion half-done.
+    /// Note that <c>rm</c> without <c>-f</c> is <i>not</i> a safeguard here: on an unmerged
+    /// path git has no clean version to compare against and removes the working file even if
+    /// it was edited by hand after the conflict (checked against git 2.55). That matches the
+    /// other side — <c>checkout --ours</c> overwrites a hand edit just the same — so either
+    /// button means "that side, wholesale", and the panel offers nothing in between.
+    /// </para>
     /// </remarks>
     public async Task<GitResult> ResolveWithSideAsync(string path, bool ours, CancellationToken ct)
     {
         var side = ours ? "--ours" : "--theirs";
+        var stages = await UnmergedStagesAsync(path, ct).ConfigureAwait(false);
+
+        // Stage 2 is ours, stage 3 is theirs. A path that is unmerged and has no entry for the
+        // side being taken was deleted on that side. A path with no unmerged entry at all falls
+        // through to the checkout, which then fails in git's words rather than being guessed at
+        // here.
+        if (stages.Count > 0 && !stages.Contains(ours ? 2 : 3))
+        {
+            _log.Info(LogCategory.Git, $"resolving {path} with {side}, which deleted it: git rm");
+            return await RunAsync([LiteralPathspecs, "rm", "--", path], null, ct,
+                                  TimeSpan.FromSeconds(30)).ConfigureAwait(false);
+        }
+
         _log.Info(LogCategory.Git, $"resolving {path} with {side}");
 
         var taken = await RunAsync([LiteralPathspecs, "checkout", side, "--", path], null, ct,
@@ -36,6 +67,48 @@ public sealed partial class GitCliClient
 
         return await RunAsync([LiteralPathspecs, "add", "--", path], null, ct, TimeSpan.FromSeconds(30))
             .ConfigureAwait(false);
+    }
+
+    /// <summary>Which index stages an unmerged path has: 1 base, 2 ours, 3 theirs.</summary>
+    /// <remarks>
+    /// Empty when the path is not unmerged, and also when git could not answer — a resolution
+    /// then proceeds the way it always did and fails, if it fails, with git's own message
+    /// rather than a guess about stages. <c>-z</c> as every other path listing here, so a
+    /// non-ASCII or space-bearing name is never quoted; the stage is read from the metadata
+    /// column and the path field is not matched at all, because the pathspec already did that.
+    /// </remarks>
+    private async Task<IReadOnlySet<int>> UnmergedStagesAsync(string path, CancellationToken ct)
+    {
+        var listing = await RunAsync([LiteralPathspecs, "ls-files", "-u", "-z", "--", path], null, ct,
+                                     TimeSpan.FromSeconds(30)).ConfigureAwait(false);
+
+        if (!listing.Success)
+        {
+            _log.Warn(LogCategory.Git,
+                      $"could not read the unmerged stages of {path}: {listing.FailureReason}");
+            return new HashSet<int>();
+        }
+
+        // Each record is "<mode> <object> <stage>\t<path>"; the stage is the last token before
+        // the tab, and the path field is not read at all. The runner's one appended newline is
+        // dropped by length as the other -z listings do it (IncomingPathsAsync says why never
+        // by trimming); here it only keeps the last record from carrying a stray newline.
+        var text = listing.StdOut.EndsWith('\n') ? listing.StdOut[..^1] : listing.StdOut;
+        var stages = new HashSet<int>();
+
+        foreach (var record in text.Split('\0', StringSplitOptions.RemoveEmptyEntries))
+        {
+            var tab = record.IndexOf('\t');
+            var meta = tab < 0 ? record : record[..tab];
+            var fields = meta.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+
+            if (fields.Length >= 3 && int.TryParse(fields[2], out var stage))
+            {
+                stages.Add(stage);
+            }
+        }
+
+        return stages;
     }
 
     /// <summary>Merge the upstream in, producing conflicts rather than refusing.</summary>

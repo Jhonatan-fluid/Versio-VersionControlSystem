@@ -787,6 +787,110 @@ public sealed class GitCliClientTests(ITestOutputHelper output) : IDisposable
             Assert.Single(status.Changes, c => c.Path == "--odd.st").Staged);
     }
 
+    /// <summary>
+    /// A merge where one branch edited the file and the other deleted it.
+    /// </summary>
+    /// <remarks>
+    /// The direction matters, which is why it is a parameter: git keeps the surviving version
+    /// at stage 2 when this branch kept the file and at stage 3 when the incoming branch did,
+    /// and the side that deleted has no stage at all. The path has a space in it because real
+    /// mirror paths do, and a space is the character a listing parser is likeliest to split on.
+    /// </remarks>
+    private async Task MakeAModifyDeleteConflictAsync(string path, bool oursDeletes)
+    {
+        await InitAsync();
+        Write(path, "shared\noriginal\n");
+        await RunRawAsync("add", "--", path);
+        await RunRawAsync("commit", "-m", "base");
+
+        await RunRawAsync("checkout", "-b", "incoming");
+        if (oursDeletes)
+        {
+            Write(path, "shared\ntheir edit\n");
+            await RunRawAsync("commit", "-am", "incoming edits");
+        }
+        else
+        {
+            await RunRawAsync("rm", "--", path);
+            await RunRawAsync("commit", "-m", "incoming deletes");
+        }
+
+        await RunRawAsync("checkout", "main");
+        if (oursDeletes)
+        {
+            await RunRawAsync("rm", "--", path);
+            await RunRawAsync("commit", "-m", "ours deletes");
+        }
+        else
+        {
+            Write(path, "shared\nour edit\n");
+            await RunRawAsync("commit", "-am", "ours edits");
+        }
+
+        // Expected to fail. That failure is the state under test.
+        await RunRawAsync("merge", "incoming");
+        var (_, unmerged) = await RunRawOutputAsync(_repo, "ls-files", "-u", "--", path);
+        Assert.False(string.IsNullOrWhiteSpace(unmerged), "the fixture did not produce a conflict");
+    }
+
+    [SkippableTheory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task Resolving_a_modify_delete_conflict_with_the_side_that_deleted_removes_the_file(bool oursDeletes)
+    {
+        // The deleting side has no version of the file, so `checkout --ours` (or --theirs) has
+        // nothing to write and git says so and exits 1. The first version ran exactly that and
+        // reported the failure — the conflict stayed, the file stayed, and the button looked
+        // broken (the 2026-10-25 review, P2). Taking the deleting side means the file leaves the
+        // working tree and its removal is what gets staged.
+        Skip.IfNot(GitAvailable, "git not on PATH");
+        const string path = "plc/Motor Control.st";
+        await MakeAModifyDeleteConflictAsync(path, oursDeletes);
+
+        var result = await Client.ResolveWithSideAsync(path, ours: oursDeletes, CancellationToken.None);
+
+        Assert.True(result.Success, result.FailureReason);
+        var (_, unmerged) = await RunRawOutputAsync(_repo, "ls-files", "-u", "--", path);
+        Assert.Equal(string.Empty, unmerged.Trim());
+        var (_, indexed) = await RunRawOutputAsync(_repo, "ls-files", "--", path);
+        Assert.Equal(string.Empty, indexed.Trim());
+        Assert.False(File.Exists(Path.Combine(_repo, path)), "the deleted side's file is still in the tree");
+        var status = await Client.StatusAsync(CancellationToken.None);
+        Assert.DoesNotContain(status.Changes, c => c.Path == path && c.IsConflicted);
+
+        if (!oursDeletes)
+        {
+            // Against HEAD, which still has the file, the resolution reads as a staged delete.
+            // When HEAD is the side that deleted there is nothing to show: the index already
+            // matches it.
+            Assert.Equal(ChangeKind.Deleted, Assert.Single(status.Changes, c => c.Path == path).Staged);
+        }
+    }
+
+    [SkippableTheory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task Resolving_a_modify_delete_conflict_with_the_side_that_kept_the_file_keeps_its_edit(bool oursDeletes)
+    {
+        // The other button in the same conflict. It worked before the fix, and the deleting-side
+        // path must not have changed that: the stage lookup picks checkout + add here.
+        Skip.IfNot(GitAvailable, "git not on PATH");
+        const string path = "plc/Motor Control.st";
+        await MakeAModifyDeleteConflictAsync(path, oursDeletes);
+
+        var result = await Client.ResolveWithSideAsync(path, ours: !oursDeletes, CancellationToken.None);
+
+        Assert.True(result.Success, result.FailureReason);
+        var (_, unmerged) = await RunRawOutputAsync(_repo, "ls-files", "-u", "--", path);
+        Assert.Equal(string.Empty, unmerged.Trim());
+        // Line endings normalised: checkout rewrites them under core.autocrlf, and that is
+        // git's business, not this test's.
+        Assert.Equal(oursDeletes ? "shared\ntheir edit\n" : "shared\nour edit\n",
+                     File.ReadAllText(Path.Combine(_repo, path)).Replace("\r\n", "\n"));
+        var status = await Client.StatusAsync(CancellationToken.None);
+        Assert.DoesNotContain(status.Changes, c => c.Path == path && c.IsConflicted);
+    }
+
     private static bool GitAvailable
     {
         get
