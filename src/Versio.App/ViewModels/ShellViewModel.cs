@@ -5336,12 +5336,20 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
             return;
         }
 
+        // NOT ADOPTED. A pop puts edits back that were never synced — that is what made them
+        // worth stashing — and adopting the tree afterwards recorded them as synced: a mirror
+        // edit that had been waiting for its import came back with the banner gone and the
+        // gate beside the direction lock blind to it, and the next project save exported over
+        // the one copy of it anywhere (the 2026-10-25 review's seventh round, item 1). The
+        // tree before the pop is HEAD, which the arrival already adopted; what the pop adds is
+        // work in flight, judged below by the hashes as it was before the stash.
         GitResult result = default!;
         await Sync.WhileGitRewritesTheTreeAsync(
             "restoring an auto-stash",
             async () => result = await _git
                 .StashApplyAsync(current, drop: true, busy.Token)
-                .ConfigureAwait(true))
+                .ConfigureAwait(true),
+            adoptResult: false)
             .ConfigureAwait(true);
 
         if (!result.Success)
@@ -5359,6 +5367,10 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         }
 
         var refused = await Sync.RestoreStashedLocksAsync(offer.Record.Locks).ConfigureAwait(true);
+
+        // The import a restored mirror edit still owes, offered again: the pop ran under the
+        // watcher hold, so no text event will come to raise it.
+        await Sync.RaisePendingImportsAsync().ConfigureAwait(true);
 
         var state = await _autoStash.ReadAsync(CancellationToken.None).ConfigureAwait(true);
         await _autoStash.WriteAsync(

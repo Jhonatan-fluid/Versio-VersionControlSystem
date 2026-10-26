@@ -1467,14 +1467,8 @@ public sealed class SyncOrchestrator
     private async Task<SyncOutcome?> MirrorEditStillPendingAsync(Attempt attempt, CancellationToken ct)
     {
         if (attempt.Job.Source != ChangeSource.Project
-            || attempt.State != SyncDirection.Clean
-            || _locks[attempt.Job.BindingId].LastSynced.MirrorHash is not { Length: > 0 } synced)
-        {
-            return null;
-        }
-
-        var mirrorHash = await ExportTreeHashAsync(attempt.Binding, ct).ConfigureAwait(false);
-        if (mirrorHash == synced)
+            || await UnimportedMirrorEditAsync(attempt.Binding, ct).ConfigureAwait(false)
+                is not var (mirrorHash, synced))
         {
             return null;
         }
@@ -1485,6 +1479,36 @@ public sealed class SyncOrchestrator
             "change was not exported, because the export would write over it. Confirm the " +
             "import or discard the text edit first",
             attempt.State);
+    }
+
+    /// <summary>
+    /// Whether the binding's exported text holds an edit nobody has imported: Clean, with a
+    /// mirror hash on record, and a mirror on disk that differs from it.
+    /// </summary>
+    /// <remarks>
+    /// The same question the gate above asks, offered to callers that put edits back into the
+    /// tree without a watcher seeing them. An auto-stash restored its mirror edit under the
+    /// watcher hold and then adopted the result as synced — so the edit was back in the tree
+    /// with the banner gone and the gate blind to it, and the next project save exported over
+    /// it (the 2026-10-25 review's seventh round, item 1). The caller asks this instead of
+    /// adopting, and raises the import the edit still owes.
+    /// </remarks>
+    public async Task<bool> HasUnimportedMirrorEditAsync(string bindingId, CancellationToken ct) =>
+        _bindings.TryGetValue(bindingId, out var binding)
+        && binding.Enabled
+        && await UnimportedMirrorEditAsync(binding, ct).ConfigureAwait(false) is not null;
+
+    private async Task<(string Mirror, string Synced)?> UnimportedMirrorEditAsync(
+        ProjectBinding binding, CancellationToken ct)
+    {
+        if (StateOf(binding.Id) != SyncDirection.Clean
+            || _locks[binding.Id].LastSynced.MirrorHash is not { Length: > 0 } synced)
+        {
+            return null;
+        }
+
+        var mirrorHash = await ExportTreeHashAsync(binding, ct).ConfigureAwait(false);
+        return mirrorHash == synced ? null : (mirrorHash, synced);
     }
 
     /// <summary>

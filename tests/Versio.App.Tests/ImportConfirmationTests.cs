@@ -1,6 +1,8 @@
 using System.IO;
 using Versio.App.Mvvm;
 using Versio.App.ViewModels;
+using Versio.Core.Git;
+using Versio.Core.Guarding;
 using Versio.Core.Logging;
 using Versio.Infrastructure.Platform;
 using Versio.Infrastructure.Watching;
@@ -249,6 +251,57 @@ public sealed class ImportConfirmationTests
         Assert.True(shell.Sync.HasPendingImport);
         Assert.EndsWith("// edited\n", await File.ReadAllTextAsync(
             Path.Combine(repo.Path, "plc", "Machine", "App", "FB_Motor.st")));
+    }
+
+    [Fact]
+    public async Task A_mirror_edit_restored_from_an_auto_stash_is_still_waiting_for_its_import()
+    {
+        // Review 2026-10-25, seventh round, item 1: switching branches stashed the unconfirmed
+        // mirror edit; restoring it on the way back popped the stash and then ADOPTED the tree,
+        // so the restored edit was recorded as synced — banner gone, the gate beside the
+        // direction lock blind to it — and the next project save exported over the one copy
+        // of it anywhere. The restore must leave the edit in the state that gate protects.
+        using var repo = new TempRepo();
+        GivenATrackedProject(repo);
+
+        using var shell = Shell(out var sink);
+        shell.Asked().Guard = _ => GuardChoice.StashAndProceed;
+        shell.Asked().StashedWork = _ => StashedWorkChoice.Restore;
+        await shell.OpenAsync(repo.Path);
+
+        // Opening writes the attribute and ignore rules; committed, and the other branch cut
+        // after them, so the only uncommitted work on either branch is the mirror edit — a
+        // dirty tree on arrival would make the pop stop short of it.
+        repo.Git("add -A");
+        repo.Git("commit -qm rules");
+        repo.Git("branch other");
+        await shell.RefreshAsync();
+
+        await EditTheMirrorAndSettle(repo, shell);
+        Assert.True(shell.Sync.HasPendingImport);
+
+        await shell.SwitchBranchAsync(new BranchEntry(new BranchInfo { Name = "other", IsCurrent = false }));
+        Assert.Contains("versio-autostash", TempRepo.GitOutput(repo.Path, "stash list"), StringComparison.Ordinal);
+
+        await shell.SwitchBranchAsync(new BranchEntry(new BranchInfo { Name = "main", IsCurrent = false }));
+
+        // The edit is back, and so is the question it owes.
+        var mirror = Path.Combine(repo.Path, "plc", "Machine", "App", "FB_Motor.st");
+        var content = await File.ReadAllTextAsync(mirror);
+        var stashes = TempRepo.GitOutput(repo.Path, "stash list").Trim();
+        Assert.True(content.EndsWith("// edited\n", StringComparison.Ordinal),
+            $"mirror: '{content}'; stashes: '{stashes}'; branch: {TempRepo.GitOutput(repo.Path, "branch --show-current").Trim()}; " +
+            "log: " + string.Join(" | ", sink.Snapshot().Where(e => e.Message.Contains("stash", StringComparison.OrdinalIgnoreCase)
+                                                                   || e.Message.Contains("switch", StringComparison.OrdinalIgnoreCase)).Select(e => e.Message)));
+        Assert.Equal(string.Empty, stashes);
+        Assert.True(shell.Sync.HasPendingImport, "the restored edit was adopted as synced");
+
+        // And a project save is refused, as it was before the stash.
+        await File.WriteAllBytesAsync(ProjectPath(repo), [0x09, 0x09, 0x09]);
+        await shell.Sync.SyncSettledChangeAsync(Settled(repo, "plc/Machine.project"));
+
+        Assert.Contains(sink.Snapshot(), e => e.Message.Contains("BlockedByPendingEdit"));
+        Assert.EndsWith("// edited\n", await File.ReadAllTextAsync(mirror));
     }
 
     [Fact]

@@ -1395,6 +1395,37 @@ public sealed class SyncViewModel : ObservableObject
     /// would offer a button whose whole job is already done.
     /// </para>
     /// </remarks>
+    /// <summary>
+    /// Raise the import question for every binding whose exported text holds an edit nobody
+    /// has imported.
+    /// </summary>
+    /// <remarks>
+    /// For a caller that put edits back into the tree without a watcher seeing them — an
+    /// auto-stash restored under the watcher hold. The orchestrator answers from the hashes
+    /// (<c>HasUnimportedMirrorEditAsync</c>), so the banner comes back from the facts on disk
+    /// rather than from an event that will not come again. Until 2026-10-25 the restore
+    /// adopted the tree instead, which recorded the restored edit as synced: no banner, and
+    /// the next project save exported over it (the review's seventh round, item 1).
+    /// </remarks>
+    public async Task RaisePendingImportsAsync()
+    {
+        if (_orchestrator is null)
+        {
+            return;
+        }
+
+        foreach (var binding in _config.Bindings.Where(b => b.Enabled))
+        {
+            if (await _orchestrator.HasUnimportedMirrorEditAsync(binding.Id, CancellationToken.None)
+                    .ConfigureAwait(true))
+            {
+                _logger.Info(LogCategory.Sync,
+                    $"{binding.Id}: the exported text holds an edit nobody has imported; the import is offered again");
+                NotePendingImport(binding.Id);
+            }
+        }
+    }
+
     public async Task ReleaseLocksWithNothingOutstandingAsync()
     {
         if (_orchestrator is null || _config is null)
@@ -1503,8 +1534,8 @@ public sealed class SyncViewModel : ObservableObject
         else
         {
             _logger.Info(LogCategory.Sync,
-                $"{what}: the result is NOT adopted — the caller is making the exported text " +
-                "authoritative instead");
+                $"{what}: the result is NOT adopted — the caller decides what the rewritten " +
+                "tree means (a merge puts the text in charge; a restored stash owes its import)");
         }
 
         await RescanAsync().ConfigureAwait(true);
