@@ -39,6 +39,17 @@ public sealed class UpdatePolicyTests
     }
 
     [Fact]
+    public void Notepads_markdown_save_reads_as_plain_text()
+    {
+        // The first real publish (2026-10-27): Windows 11 Notepad's Markdown mode saved the
+        // prefilled "- " items as "* " and escaped every underscore.
+        var notes = UpdatePolicy.NotesForPrompt(
+            "* Publish\\_Release.bat: build, note, upload\n* App: check for updates");
+
+        Assert.Equal("- Publish_Release.bat: build, note, upload\n- App: check for updates", notes);
+    }
+
+    [Fact]
     public void Blank_runs_fold_and_the_ends_are_trimmed()
     {
         var notes = UpdatePolicy.NotesForPrompt("\r\n\r\nOne\r\n\r\n\r\n\r\nTwo\r\n\r\n");

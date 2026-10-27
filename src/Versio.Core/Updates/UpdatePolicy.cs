@@ -1,3 +1,5 @@
+using System.Text.RegularExpressions;
+
 namespace Versio.Core.Updates;
 
 /// <summary>The update question as the user sees it.</summary>
@@ -24,6 +26,10 @@ public enum UpdateChoice
 /// </remarks>
 public static class UpdatePolicy
 {
+    /// <summary>A Markdown backslash escape: the backslash, then one punctuation character.</summary>
+    private static readonly Regex MarkdownEscape =
+        new(@"\\([\\`*_{}\[\]()#+\-.!|<>~])", RegexOptions.Compiled);
+
     /// <summary>Lines of release notes a prompt shows before saying how many it left out.</summary>
     /// <remarks>
     /// The prompt window sizes to its content and has no scroll bar, by design - it is a
@@ -76,10 +82,22 @@ public static class UpdatePolicy
             {
                 line = trimmed.TrimStart('#').Trim();
             }
+            else if (trimmed.StartsWith("* ", StringComparison.Ordinal)
+                     || trimmed.StartsWith("+ ", StringComparison.Ordinal))
+            {
+                // One bullet glyph, whichever the editor wrote. Windows 11 Notepad saves its
+                // own list items as "* " even when the line was typed as "- ".
+                line = line[..(line.Length - trimmed.Length)] + "- " + trimmed[2..];
+            }
 
             line = line.Replace("**", string.Empty, StringComparison.Ordinal)
                        .Replace("__", string.Empty, StringComparison.Ordinal)
                        .Replace("`", string.Empty, StringComparison.Ordinal);
+
+            // Backslash escapes off. Notepad's Markdown mode escapes on save, so the publish's
+            // first real notes arrived as "Publish\_Release.bat" (2026-10-27); a plain text
+            // block would show the backslash.
+            line = MarkdownEscape.Replace(line, "$1");
 
             if (line.Length == 0 && (lines.Count == 0 || lines[^1].Length == 0))
             {
