@@ -385,8 +385,13 @@ That is not tidiness for its own sake — it is what makes the risky parts (the 
    `v*` tag — what you save is what users see in the update prompt,
 5. fetches the previous published release so `vpk` can build a delta, then runs the normal pack,
 6. asks **Publish / Draft / Quit** — a draft is invisible to installed copies,
-7. uploads, checks GitHub actually serves the feed, then commits `Release x.y.z`, tags `vx.y.z`
-   and asks before pushing.
+7. uploads, checks GitHub actually serves the feed, copies what it shipped into
+   `artifacts\releases` (where `Build_Package.bat` puts local builds), then commits
+   `Release x.y.z`, tags `vx.y.z` and asks before pushing.
+
+The copy is one way on purpose. The publish packs in `artifacts\publish-releases`, holding only
+the previous *published* package, so a local build that never shipped can never become the base
+of a delta users download.
 
 Where releases go is `VersioUpdateRepo` in `Directory.Build.props` — one URL, read by the app
 and by the script. Users need **read access to that repository** (a GitHub team with Read on it) and

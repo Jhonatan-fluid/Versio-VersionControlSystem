@@ -545,6 +545,27 @@ try {
     }
     Complete-Phase ("{0} assets" -f $assetNames.Count)
 
+    # -- keep a local copy where packs land --------------------------------------------
+
+    # ONE WAY, and only after GitHub has confirmed the upload. artifacts\releases is where a
+    # local pack writes and where the owner looks for an installer, so what was shipped goes
+    # there too, overwriting a local Setup.exe of the same name. The reverse would be the
+    # defect: the publish packs into a folder of its own precisely so a local build that
+    # never shipped can never become the base of a delta users download (FINDINGS
+    # 2026-10-27). Copying shipped files in cannot do that; reading local files out could.
+    $localReleases = Join-Path $Repo 'artifacts\releases'
+    try {
+        New-Item -ItemType Directory -Force -Path $localReleases | Out-Null
+        Copy-Item -Path (Join-Path $outDir '*') -Destination $localReleases -Force
+        Log "copied $outDir into $localReleases"
+        Write-Line '37' "Copied into artifacts\releases as well."
+    }
+    catch {
+        # The release is already out; a local copy failing is worth saying, not failing over.
+        Log ("copy into $localReleases failed: " + $_.Exception.Message)
+        Write-Line '93' "Could not copy into artifacts\releases: $($_.Exception.Message)"
+    }
+
     # -- record it in the source -------------------------------------------------------
 
     Write-Host ""
