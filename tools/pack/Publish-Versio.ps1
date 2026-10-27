@@ -33,7 +33,9 @@ $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'PackCommon.ps1')
 
 $script:LogPath = Join-Path $Repo 'artifacts\publish.log'
-$script:PhaseTotal = 4
+# Dependencies, upload, verify - plus fetching the previous release when there is one, which
+# is added once the releases have been read.
+$script:PhaseTotal = 3
 
 # PowerShell 5.1 still offers TLS 1.0 first on some machines, and api.github.com refuses it
 # with an error that reads like a network outage rather than a protocol mismatch.
@@ -363,6 +365,7 @@ try {
     $latest = $null
     if ($published.Count -gt 0) {
         $latest = $published[0]
+        $script:PhaseTotal = 4
         Write-Line '37' ("latest published release: {0}" -f $latest.Tag)
     } else {
         Write-Line '37' "no published release yet - this will be the first"
@@ -423,12 +426,20 @@ try {
 
     # Fetch-Deps first: the download below needs vpk, and on a fresh clone the pack would be
     # the first thing to fetch it.
+    #
+    # Inside a phase, because Invoke-LoggedProcess animates the CURRENT phase while it waits.
+    # Called outside one, its spinner read the timer of a phase that had not started, and
+    # strict mode stopped the whole publish on "The property 'Elapsed' cannot be found" -
+    # the first real run, 2026-10-27, after the notes were written and before anything was
+    # built or uploaded.
+    Start-Phase 'Pack dependencies'
     $fetch = Join-Path $Repo 'tools\pack\Fetch-Deps.ps1'
     $code = Invoke-LoggedProcess 'powershell.exe' ('-NoProfile -ExecutionPolicy Bypass -File {0} -Repo {1} -Dotnet {2}' -f `
         (Quote $fetch), (Quote $Repo), (Quote $Dotnet))
     if ($code -ne 0) {
         throw "Fetch-Deps failed (exit $code) - see artifacts\publish.log"
     }
+    Complete-Phase 'PortableGit + vpk pinned'
     $vpk = Join-Path $Repo 'third_party\cache\vpk\vpk.exe'
     $rsp = New-TokenResponseFile
 

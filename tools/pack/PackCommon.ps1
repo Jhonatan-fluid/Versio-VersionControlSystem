@@ -72,7 +72,9 @@ function Start-Phase([string] $Label) {
 # One frame of the working animation: spinner plus live elapsed seconds, redrawn in
 # place. -Plain skips it entirely - a redrawn line is escape soup in a captured log.
 function Write-Tick {
-    if ($Plain) { return }
+    # No phase started means nothing to animate. The publish called Invoke-LoggedProcess
+    # outside a phase once, and strict mode turned the missing timer into a failed release.
+    if ($Plain -or $null -eq $script:PhaseWatch) { return }
     $spin = '|/-\'
     $frame = $spin[$script:TickCount % 4]
     $script:TickCount++
