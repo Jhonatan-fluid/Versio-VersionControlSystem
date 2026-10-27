@@ -19,6 +19,54 @@ produce a diff touching everything else.
 
 ---
 
+### Auto-update: the stored git sign-in reads the private releases repository, so users set no token
+
+**2026-10-27, measured before building the update check (STATUS item 5, open question 4).**
+The plan was GitHub Releases in a private `fluidstackio/versio-releases`, read by Velopack's
+`GithubSource` — which needs a token, because GitHub answers a private repository it cannot see
+with 404. The fallback was a fine-grained token per user, pasted into Settings and stored with
+DPAPI. Before building that, the token Git Credential Manager already stores for github.com was
+tried against the API, with `GCM_INTERACTIVE=never` so nothing could prompt:
+
+```
+credential: username=Jhonatan-fluid, token length 40, prefix gho_
+GET /user                                     -> 200  X-OAuth-Scopes: gist, read:org, repo, workflow
+GET /repos/fluidstackio/versio-releases       -> 200  (private: true)
+GET /repos/fluidstackio/versio-releases/releases -> 200
+GET /repos/fluidstackio/Versio                -> 200
+```
+
+**So the token path was not built.** GCM's OAuth token carries `repo` and is already authorized
+for the organisation's SSO; the update check reads it (`StoredGitCredential`) and hands it to
+Velopack for one check at a time. It is the one place the application takes a secret back from
+git, and its remarks say so and why.
+
+**What this did not measure:** a user with only Read on the releases repository (this account
+is an admin of it), and downloading an asset (the repository had no release yet). Both are the
+first thing to check with a second account; if either fails, the token fallback is the plan's
+Phase 5 and nothing else changes — `VelopackUpdateSource` takes the token as a delegate.
+
+**Three things the publish script learned on the way, each now a comment where it bit:**
+
+- **Windows PowerShell 5.1 corrupts a string piped into git.** Piping the request string into
+  ``git credential fill`` answered *refusing to work with credential missing protocol field*. The
+  script writes stdin through a `Process` with a BOM-less UTF-8 writer instead.
+- **Windows PowerShell 5.1's `Invoke-RestMethod` emits a JSON array as one object.** `@(...)`
+  around the call counted the empty releases page as one release. `Get-Releases` enumerates it
+  and returns with the unary comma.
+- **vpk accepts a response file.** `--token` is its only way in, and a command line is written
+  to `publish.log` and visible to every process while vpk runs. `@file` was confirmed by passing
+  a bogus token that way: vpk answered 401 from GitHub rather than rejecting the argument, so the
+  file was read and the token used. The file is deleted in a `finally`.
+
+**And one design point, recorded because the obvious version is wrong:** the publish packs into
+`artifacts\publish-releases`, holding only the previous *published* package, not into
+`artifacts\releases`. vpk builds the delta against the newest package in its output folder, and
+`artifacts\releases` keeps every local pack — a delta against one that never shipped would not
+apply on any user's machine.
+
+---
+
 ### The review's seventh round: three more, one of them a restore that adopted what it put back
 
 **2026-10-25, the reviewer read `749e3a1` and sent three confirmed items — one P1, two P2.**

@@ -26,13 +26,15 @@ back), four commits; FINDINGS has all seven lists, newest first. Item 1 is done:
 39 m 33 s, zero skips**, on an idle machine with the IDE closed, over the Core seam
 changes (`ExportHeldViaCopy`, the held-wait, occupancy-then-hash, the locked-pointer
 skip). That run is also the counted gate `LOCK-1` owed. Item 5 (packaging) has unsigned
-`Setup.exe` / MSI from `Build_Package.bat`; signing and the feed remain. **Item 3 (the
+per-user `Setup.exe` / MSI from `Build_Package.bat` and, since 2026-10-27 on `AutoUpdate`,
+an update feed: `Publish_Release.bat` publishes, installed copies offer it; signing
+remains. **Item 3 (the
 UX remainder) is built and tested as of 2026-08-25** — UX-6 find boxes, UX-7 `Ctrl+F` /
 Escape, UX-8 copy-a-commit, UX-12 amend-while-unpushed — and its visual half joins the
 eyeball list in item 2. Do not start from `archive/` or a handoff.
 
-**Tests:** 4,430 across twelve projects (plus 211 vitest in `web/`), last counted 2026-10-25
-on `VersioWeb` after the review's seventh round (Core 2,080, App 846, Web 504) — re-derived by summing the table below; the toolchain-gated
+**Tests:** 4,456 across twelve projects (plus 211 vitest in `web/`), last counted 2026-10-27
+on `AutoUpdate` after the update check (Core 2,087, Integration 257, App 856, Arch 42, Web 504) — re-derived by summing the table below; the toolchain-gated
 counts (TIA 5, TwinCAT 6, CODESYS 55) are from their last gate runs, not re-run for the count. **The Rendered view of an ST object reads like the IDE (2026-09-20):** no
 `@@` line, one gutter, a Declaration / Implementation divider, and the implementation
 numbered from 1 so a compile error's line number can be found — FINDINGS 2026-09-20. **With TIA Portal open, a commit no longer records a stale mirror**: the
@@ -71,10 +73,10 @@ marking, duplicate-param keys, and the detail-pane lookup. All of them are in
 
 | Project | Tests | Time | Needs |
 |---|---|---|---|
-| `Versio.Core.Tests` | 2,080 (nothing skipped) | under a second | nothing |
-| `Versio.Integration.Tests` | 254 | ~1 m (2 m 18 s loaded) | real git |
-| `Versio.App.Tests` | 846 (re-counted 2026-10-25) | 10 m 57 s, 843/846, 2026-10-25 night (three catch-up waits red, all green alone and in their classes; FINDINGS 2026-10-25 seventh round); **12 m 15 s, 845/845, idle, 2026-10-25 night**; 9 m 3 s, 838/842, 2026-10-25 night (the CODESYS run beside it; the four red are the clipboard tests, `CLIPBRD_E_CANT_OPEN`, red alone and on the untouched base too — another program held the clipboard; FINDINGS 2026-10-25 fifth round); 12 m 49 s, 840/841, 2026-10-25 evening (nothing else of this session running; `SourceProjectTests.A_program_with_no_variables…` red after 13 s for the second full run today, green alone and in its class — a watch item, FINDINGS 2026-10-25 fourth round); 13 m 29 s, 835/836, loaded, 2026-10-25 (the third round's CODESYS run beside it; a 21 s catch-up wait in `SourceProjectTests` failed and passed alone in 4 s); 13 m 9 s, 835/836, loaded, 2026-10-25 (the CODESYS gate ran beside it; the one 30 s catch-up wait failed and passed alone in 4 s); **12 m 22 s, 833/833, idle, 2026-10-24**; 11 m 23 s the same day loaded (three gates beside it; one 30 s catch-up wait failed and passed alone in 4 s) and 16 m 30 s under three builds; 10 m 45 s (loaded: mutation checks ran beside it) and 10 m 36 s on 2026-10-23; 12 m 19 s, 10 m 42 s and 9 m 5 s on 2026-10-22; 10 m 46 s on 2026-10-19; 10 m 58 s on 2026-10-16; 6 m 35 s on 2026-10-10; 8 m 38 s on 2026-10-05; ~3.6 min on 2026-09-22 | nothing |
-| `Versio.Arch.Tests` | 36 | instant | nothing |
+| `Versio.Core.Tests` | 2,087 (nothing skipped) | under a second | nothing |
+| `Versio.Integration.Tests` | 257 | ~1 m (2 m 18 s loaded) | real git |
+| `Versio.App.Tests` | 856 (re-counted 2026-10-27) | 11 m 58 s, 854/856, 2026-10-27 on `AutoUpdate` (one 30 s catch-up wait, green alone; one clipboard test, `CLIPBRD_E_CANT_OPEN`, environmental as on 2026-10-25); 10 m 57 s, 843/846, 2026-10-25 night (three catch-up waits red, all green alone and in their classes; FINDINGS 2026-10-25 seventh round); **12 m 15 s, 845/845, idle, 2026-10-25 night**; 9 m 3 s, 838/842, 2026-10-25 night (the CODESYS run beside it; the four red are the clipboard tests, `CLIPBRD_E_CANT_OPEN`, red alone and on the untouched base too — another program held the clipboard; FINDINGS 2026-10-25 fifth round); 12 m 49 s, 840/841, 2026-10-25 evening (nothing else of this session running; `SourceProjectTests.A_program_with_no_variables…` red after 13 s for the second full run today, green alone and in its class — a watch item, FINDINGS 2026-10-25 fourth round); 13 m 29 s, 835/836, loaded, 2026-10-25 (the third round's CODESYS run beside it; a 21 s catch-up wait in `SourceProjectTests` failed and passed alone in 4 s); 13 m 9 s, 835/836, loaded, 2026-10-25 (the CODESYS gate ran beside it; the one 30 s catch-up wait failed and passed alone in 4 s); **12 m 22 s, 833/833, idle, 2026-10-24**; 11 m 23 s the same day loaded (three gates beside it; one 30 s catch-up wait failed and passed alone in 4 s) and 16 m 30 s under three builds; 10 m 45 s (loaded: mutation checks ran beside it) and 10 m 36 s on 2026-10-23; 12 m 19 s, 10 m 42 s and 9 m 5 s on 2026-10-22; 10 m 46 s on 2026-10-19; 10 m 58 s on 2026-10-16; 6 m 35 s on 2026-10-10; 8 m 38 s on 2026-10-05; ~3.6 min on 2026-09-22 | nothing |
+| `Versio.Arch.Tests` | 42 | instant | nothing |
 | `Versio.Plc.Codesys.Pure.Tests` | 405 | under a second | nothing |
 | `Versio.Plc.Codesys.Parity.Tests` | 104 | ~15 s | `python` on PATH — skips cleanly without it, so check the count |
 | `Versio.Plc.TiaPortal.Pure.Tests` | 108 | instant | nothing |
@@ -171,7 +173,8 @@ and word-level diff, and a UX pass over the running window. The owner saw the me
 `UxPlan` window on 2026-08-19 and said it looks right. What that look did not include is in the
 queue below.
 
-**Packaging ships Setup.exe and a per-machine MSI** (item 5, in progress).
+**Packaging ships Setup.exe and an MSI, both per-user, and an update feed** (item 5,
+signing still open).
 `Build_Package.bat` uses a cached PortableGit 7z and a pinned vpk when they are
 already on disk, publishes a self-contained win-x64 payload (git, both vendor hosts,
 .NET 9), and packs. Bundled git pins Git Credential Manager so PortableGit's
@@ -180,8 +183,14 @@ helper-selector does not ask on every fill. Settings and logs live in
 does not wipe the recent-repository list. `Build_Package.bat` asks how to bump
 `VersioVersion` (last / middle / first number, keep, or type one) before packing;
 System information shows that product version. Re-packing the same number still
-overwrites `artifacts/releases` (`vpk --legacyConsole --yes`). Signing and
-the update feed are still open. The CODESYS gate ran on `Siemens2` (item 1, done). Owner eyeballs
+overwrites `artifacts/releases` (`vpk --legacyConsole --yes`). **Auto-update, 2026-10-27:**
+`Publish_Release.bat` asks for the version and the notes (Notepad, prefilled from the
+commits), packs, and publishes to the private `fluidstackio/versio-releases`; an installed
+Versio offers it at launch and from the gear menu, reading the repository with the stored
+git sign-in (FINDINGS 2026-10-27), and restarts through the close guard (SAFEGUARDS 3.4).
+Per-user now, because a per-machine install needs an administrator for every update.
+Not yet seen end to end: a published release installed over an older one on a second
+machine, and a read-only user's access. Signing is still open. The CODESYS gate ran on `Siemens2` (item 1, done). Owner eyeballs
 and the UX remainder are still the product remainder beside this.
 
 ```
@@ -191,7 +200,7 @@ and the UX remainder are still the product remainder beside this.
   Domain core         ████████████████████  vendor-blind, tested without a toolchain
   Vendor seam         ████████████████████  enforced by the project graph + metadata
   Desktop shell       ███████████████████░  git surface, tree, explorer; UX remainder below
-  Packaging           ████████████░░░░░░░░  unsigned Setup.exe + MSI; signing and feed open
+  Packaging           ████████████████░░░░  per-user Setup.exe + MSI, update feed; signing open
 ```
 
 ---
@@ -271,11 +280,15 @@ One list. Reorder it; do not copy it into another file.
    needs a real CODESYS export. P-M1 already measured that a merge can commit a project its
    mirror disagrees with (41 mirror files, two carrying content the kept project did not have);
    `LOCK-1` pointed the lock at import so the export gate cannot win that race.
-5. **Packaging.** Unsigned `Setup.exe` and per-machine MSI from `Build_Package.bat`.
+5. **Packaging.** Unsigned `Setup.exe` and MSI, both per-user, from `Build_Package.bat`.
    The bat asks how to bump `VersioVersion` (last / middle / first number, keep, or type
    one). System information shows that product version. PortableGit is bundled (decision 3,
-   closed). **Code signing** and the update feed remain. Sequenced last on 2026-08-17, on
-   purpose; first artifacts 2026-08-23.
+   closed). ~~The update feed~~ **built 2026-10-27** on `AutoUpdate`: `Publish_Release.bat`,
+   GitHub Releases in `fluidstackio/versio-releases`, the launch and gear-menu check. Left:
+   publish the first release with the check in it, install it on a second machine, publish
+   one more and watch it offered, downloaded and restarted into; and a read-only account's
+   access (FINDINGS 2026-10-27 says what was and was not measured). **Code signing**
+   remains. Sequenced last on 2026-08-17, on purpose; first artifacts 2026-08-23.
 6. **Ladder (LAD) drawn in the Rendered tab — built 2026-10-05 on `LadderRendering`;
    what is left.** The plan, and why the code is shaped as it is, are in
    [`vendors/tia/DRIVING.md`](vendors/tia/DRIVING.md), "Graphical blocks". Core holds the
@@ -679,7 +692,7 @@ Close Versio **and** Portal before a host rebuild. Click **Yes to all** on Openn
 | 1 | Who else runs this, and on what kind of machine? | Whether signing and an MSI are needed at all |
 | 2 | Budget and legal entity for a code-signing certificate? | External distribution |
 | 3 | ~~Bundle PortableGit, or require Git for Windows?~~ **Bundled.** PortableGit 2.55.0.5 ships in the installer; F5 still uses PATH. GPL notices in `third_party/THIRD-PARTY-NOTICES.txt`. | Installer size and GPL — handled |
-| 4 | Where does the update feed live? | Packaging |
+| 4 | ~~Where does the update feed live?~~ **GitHub Releases in the private `fluidstackio/versio-releases`**, read with the stored git sign-in (2026-10-27). | Packaging — answered |
 | 5 | Is a **resident CODESYS session** worth building? | 17–31 s vs sub-second on every save |
 | 6 | Can CODESYS run on a shared server? *(a licensing call, not engineering)* | PLC CI |
 

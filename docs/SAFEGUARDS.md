@@ -379,6 +379,13 @@ is orphaned — hidden, holding the project, and mid-write if it was importing.
   the engineer opened during the run (FINDINGS 2026-10-24, item 28); no reported PID now
   means nothing is reaped by name, and the log says so.
 - On every path out, kill orphaned CODESYS children explicitly. `KillTree` already exists.
+- **An update restart is a close, and goes through this guard (2026-10-27).** *Update and
+  restart* downloads first, then `UpdatesViewModel.RestartRequested` posts `Close` exactly as
+  the X does — so an import in flight is asked about (Stop / Wait / Don't close), never cut
+  short for an update. The installer is handed the package only in `App.Exit`, after the
+  shell has released the repository, and it waits for the process to end before touching a
+  file. **Don't close keeps the download**: `RestartDeclined` turns the restart off, and the
+  update installs at the user's own next exit without reopening Versio behind them.
 
 ---
 
