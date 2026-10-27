@@ -115,6 +115,20 @@ Phase 5 and nothing else changes — `VelopackUpdateSource` takes the token as a
   a bogus token that way: vpk answered 401 from GitHub rather than rejecting the argument, so the
   file was read and the token used. The file is deleted in a `finally`.
 
+**The first real run failed, and published nothing (same day, later).** After the notes
+were written, the publish stopped on *The property 'Elapsed' cannot be found on this
+object*: `Invoke-LoggedProcess` animates the current phase while it waits, and the
+Fetch-Deps call was the one place it ran before any phase had started, so the spinner read
+a timer that did not exist and strict mode ended the script. Nothing had been built,
+bumped or uploaded. Fetch-Deps is now a phase of its own, and `Write-Tick` draws nothing
+when no phase is running - checked by running a logged process outside a phase and inside
+one. No test covers the scripts' runtime: the Arch tests read them as text.
+
+**The same run showed what Notepad does to the notes.** Windows 11 Notepad's Markdown mode
+saved the prefilled `- ` items as `* ` and escaped every underscore, so the prompt would
+have read `Publish\_Release.bat`. `UpdatePolicy.NotesForPrompt` now takes the backslash
+escapes off and draws every bullet as `- `, with that text as its test.
+
 **And one design point, recorded because the obvious version is wrong:** the publish packs into
 `artifacts\publish-releases`, holding only the previous *published* package, not into
 `artifacts\releases`. vpk builds the delta against the newest package in its output folder, and
