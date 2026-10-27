@@ -21,6 +21,18 @@ namespace Versio.Infrastructure.Bindings;
 /// but scanning megabytes of visualisation XML on every refresh is waste, and the whole scan
 /// runs on a background thread for the same reason.
 /// </para>
+/// <para>
+/// <b>It also stops at any nested checkout.</b> A directory that holds a <c>.git</c> entry of
+/// its own — a submodule, a clone somebody dropped inside the tree, or a linked worktree,
+/// whose <c>.git</c> is a one-line <i>file</i> — is another repository's business: its
+/// projects belong to that repository's <c>repo.json</c>, and tracking them from here gives
+/// each one a second binding id that disagrees with the manifest already on disk. On
+/// 2026-10-27 the walk reached three Claude Code worktrees under <c>.claude/worktrees/</c>,
+/// auto-tracked their twelve fixture copies, reported every one as a ManifestMismatch, and the
+/// next commit through the app carried the twelve bindings and 129 ignore rules into git
+/// (FINDINGS 2026-10-27). Skipping by the folder <i>name</i> <c>.git</c> never caught this,
+/// because the thing to skip is the folder <i>containing</i> it.
+/// </para>
 /// </remarks>
 public sealed class RepoScanner(
     string repositoryRoot,
@@ -147,6 +159,17 @@ public sealed class RepoScanner(
             if (SourceExtensions.Contains(Path.GetExtension(name), StringComparer.OrdinalIgnoreCase))
             {
                 sources.Add(Relative(child));
+                continue;
+            }
+
+            // Another repository starts here. Path.Exists, not Directory.Exists: a linked
+            // worktree's .git is a file ("gitdir: ..."), and that is the case that leaked.
+            // Said in the log, because "it did not offer to track my project" is otherwise
+            // unanswerable when the project sits in a clone inside the tree.
+            if (Path.Exists(Path.Combine(child, ".git")))
+            {
+                _log.Debug(LogCategory.Fs,
+                    $"not walking into {Relative(child)}: it is a checkout of its own");
                 continue;
             }
 
