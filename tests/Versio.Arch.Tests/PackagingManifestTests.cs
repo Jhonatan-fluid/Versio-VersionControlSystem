@@ -148,6 +148,41 @@ public sealed class PackagingManifestTests
     }
 
     [Fact]
+    public void Publish_entry_point_is_at_the_repo_root()
+    {
+        Assert.True(File.Exists(Path.Combine(TestPaths.Root, "Publish_Release.bat")));
+        Assert.True(File.Exists(Path.Combine(TestPaths.Root, "tools", "pack", "Publish-Versio.ps1")));
+    }
+
+    [Fact]
+    public void Publish_never_puts_the_token_on_a_command_line()
+    {
+        // Every child-process command line is written to publish.log by Invoke-LoggedProcess,
+        // and is readable by any process on the machine while vpk runs. The token reaches vpk
+        // through a response file instead; a format string that spelled out --token would put
+        // it straight back in the log.
+        var text = File.ReadAllText(Path.Combine(TestPaths.Root, "tools", "pack", "Publish-Versio.ps1"));
+        Assert.Contains("New-TokenResponseFile", text, StringComparison.Ordinal);
+        Assert.DoesNotContain("--token {", text, StringComparison.Ordinal);
+        Assert.DoesNotContain("--token $", text, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void The_update_repository_is_named_once()
+    {
+        // The app checks it and the publish uploads to it. Two copies of the URL would let a
+        // build look in one repository while releases went to another, and every installed
+        // copy would report itself up to date for ever.
+        var props = File.ReadAllText(Path.Combine(TestPaths.Root, "Directory.Build.props"));
+        var app = File.ReadAllText(Path.Combine(TestPaths.Root, "src", "Versio.App", "Versio.App.csproj"));
+        var publish = File.ReadAllText(Path.Combine(TestPaths.Root, "tools", "pack", "Publish-Versio.ps1"));
+        Assert.Contains("<VersioUpdateRepo>https://github.com/", props, StringComparison.Ordinal);
+        Assert.Contains("$(VersioUpdateRepo)", app, StringComparison.Ordinal);
+        Assert.Contains("<VersioUpdateRepo>", publish, StringComparison.Ordinal);
+        Assert.DoesNotContain("github.com/fluidstackio", publish, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void The_update_flow_is_wired_where_no_unit_test_reaches()
     {
         // The view model's half is driven by UpdatesViewModelTests. These four lines are the
@@ -168,7 +203,7 @@ public sealed class PackagingManifestTests
     {
         // Windows PowerShell 5.1 reads a BOM-less script as the ANSI codepage. One em-dash in
         // a string and the console shows mojibake - or a comparison quietly stops matching.
-        foreach (var name in new[] { "Pack-Versio.ps1", "PackCommon.ps1" })
+        foreach (var name in new[] { "Pack-Versio.ps1", "PackCommon.ps1", "Publish-Versio.ps1" })
         {
             var bytes = File.ReadAllBytes(Path.Combine(TestPaths.Root, "tools", "pack", name));
             var offender = Array.FindIndex(bytes, b => b > 0x7F);
