@@ -150,3 +150,132 @@ src/Versio.Web/wwwroot/
 # The per-user one carries a username and machine name in its filename.
 fixtures/projects/RefrigeratorControl_FBS/RefrigeratorControl.fbsproj/.sidecars/
 fixtures/projects/RefrigeratorControl_FBS/RefrigeratorControl.fbsproj/.auxiliaries/
+
+# Added by Versio: files the PLC toolchain writes beside a project.
+# The per-user one carries a username and machine name in its filename.
+.claude/worktrees/modest-bohr-35127e/fixtures/projects/CleaningStation_V20_V21/Logs/
+.claude/worktrees/modest-bohr-35127e/fixtures/projects/CleaningStation_V20_V21/tmp/
+.claude/worktrees/modest-bohr-35127e/fixtures/projects/CleaningStation_V20_V21/Vci/
+.claude/worktrees/modest-bohr-35127e/fixtures/projects/CleaningStation_V20_V21/CleaningStation_V20_V21.info
+.claude/worktrees/modest-bohr-35127e/fixtures/projects/CleaningStation_V20_V21/System/~*
+.claude/worktrees/modest-bohr-35127e/fixtures/projects/CleaningStation_V20_V21/CleaningStation_V20_V21.versio_staging/
+.claude/worktrees/modest-bohr-35127e/fixtures/projects/CleaningStation_V20_V21/CleaningStation_V20_V21.versio_trash/
+
+# Added by Versio: files the PLC toolchain writes beside a project.
+# The per-user one carries a username and machine name in its filename.
+.claude/worktrees/modest-bohr-35127e/fixtures/projects/MachineWithMembers.~u*
+.claude/worktrees/modest-bohr-35127e/fixtures/projects/MachineWithMembers-*.opt
+.claude/worktrees/modest-bohr-35127e/fixtures/projects/MachineWithMembers_project.precompilecache
+.claude/worktrees/modest-bohr-35127e/fixtures/projects/MachineWithMembers.versio_staging/
+.claude/worktrees/modest-bohr-35127e/fixtures/projects/MachineWithMembers.versio_trash/
+
+# Added by Versio: files the PLC toolchain writes beside a project.
+# The per-user one carries a username and machine name in its filename.
+.claude/worktrees/modest-bohr-35127e/fixtures/projects/RefrigeratorControl.~u*
+.claude/worktrees/modest-bohr-35127e/fixtures/projects/RefrigeratorControl-*.opt
+.claude/worktrees/modest-bohr-35127e/fixtures/projects/RefrigeratorControl_project.precompilecache
+.claude/worktrees/modest-bohr-35127e/fixtures/projects/RefrigeratorControl.versio_staging/
+.claude/worktrees/modest-bohr-35127e/fixtures/projects/RefrigeratorControl.versio_trash/
+
+# Added by Versio: files the PLC toolchain writes beside a project.
+# The per-user one carries a username and machine name in its filename.
+.claude/worktrees/modest-bohr-35127e/fixtures/projects/TC3_PlcSample_reStrText/_Boot/
+.claude/worktrees/modest-bohr-35127e/fixtures/projects/TC3_PlcSample_reStrText/_CompileInfo/
+.claude/worktrees/modest-bohr-35127e/fixtures/projects/TC3_PlcSample_reStrText/.vs/
+.claude/worktrees/modest-bohr-35127e/fixtures/projects/TC3_PlcSample_reStrText/TC3_PlcSample_reStrText.~u*
+.claude/worktrees/modest-bohr-35127e/fixtures/projects/TC3_PlcSample_reStrText/*.suo
+.claude/worktrees/modest-bohr-35127e/fixtures/projects/TC3_PlcSample_reStrText/*.user
+.claude/worktrees/modest-bohr-35127e/fixtures/projects/TC3_PlcSample_reStrText/**/LineIDs.dbg
+.claude/worktrees/modest-bohr-35127e/fixtures/projects/TC3_PlcSample_reStrText/TC3_PlcSample_reStrText.versio_staging/
+.claude/worktrees/modest-bohr-35127e/fixtures/projects/TC3_PlcSample_reStrText/TC3_PlcSample_reStrText.versio_trash/
+
+# Added by Versio: files the PLC toolchain writes beside a project.
+# The per-user one carries a username and machine name in its filename.
+.claude/worktrees/sleepy-hofstadter-fa6499/fixtures/projects/CleaningStation_V20_V21/Logs/
+.claude/worktrees/sleepy-hofstadter-fa6499/fixtures/projects/CleaningStation_V20_V21/tmp/
+.claude/worktrees/sleepy-hofstadter-fa6499/fixtures/projects/CleaningStation_V20_V21/Vci/
+.claude/worktrees/sleepy-hofstadter-fa6499/fixtures/projects/CleaningStation_V20_V21/CleaningStation_V20_V21.info
+.claude/worktrees/sleepy-hofstadter-fa6499/fixtures/projects/CleaningStation_V20_V21/System/~*
+.claude/worktrees/sleepy-hofstadter-fa6499/fixtures/projects/CleaningStation_V20_V21/CleaningStation_V20_V21.versio_staging/
+.claude/worktrees/sleepy-hofstadter-fa6499/fixtures/projects/CleaningStation_V20_V21/CleaningStation_V20_V21.versio_trash/
+
+# Added by Versio: files the PLC toolchain writes beside a project.
+# The per-user one carries a username and machine name in its filename.
+.claude/worktrees/sleepy-hofstadter-fa6499/fixtures/projects/MachineWithMembers.~u*
+.claude/worktrees/sleepy-hofstadter-fa6499/fixtures/projects/MachineWithMembers-*.opt
+.claude/worktrees/sleepy-hofstadter-fa6499/fixtures/projects/MachineWithMembers_project.precompilecache
+.claude/worktrees/sleepy-hofstadter-fa6499/fixtures/projects/MachineWithMembers.versio_staging/
+.claude/worktrees/sleepy-hofstadter-fa6499/fixtures/projects/MachineWithMembers.versio_trash/
+
+# Added by Versio: files the PLC toolchain writes beside a project.
+# The per-user one carries a username and machine name in its filename.
+.claude/worktrees/sleepy-hofstadter-fa6499/fixtures/projects/RefrigeratorControl.~u*
+.claude/worktrees/sleepy-hofstadter-fa6499/fixtures/projects/RefrigeratorControl-*.opt
+.claude/worktrees/sleepy-hofstadter-fa6499/fixtures/projects/RefrigeratorControl_project.precompilecache
+.claude/worktrees/sleepy-hofstadter-fa6499/fixtures/projects/RefrigeratorControl.versio_staging/
+.claude/worktrees/sleepy-hofstadter-fa6499/fixtures/projects/RefrigeratorControl.versio_trash/
+
+# Added by Versio: files the PLC toolchain writes beside a project.
+# The per-user one carries a username and machine name in its filename.
+.claude/worktrees/sleepy-hofstadter-fa6499/fixtures/projects/TC3_PlcSample_reStrText/_Boot/
+.claude/worktrees/sleepy-hofstadter-fa6499/fixtures/projects/TC3_PlcSample_reStrText/_CompileInfo/
+.claude/worktrees/sleepy-hofstadter-fa6499/fixtures/projects/TC3_PlcSample_reStrText/.vs/
+.claude/worktrees/sleepy-hofstadter-fa6499/fixtures/projects/TC3_PlcSample_reStrText/TC3_PlcSample_reStrText.~u*
+.claude/worktrees/sleepy-hofstadter-fa6499/fixtures/projects/TC3_PlcSample_reStrText/*.suo
+.claude/worktrees/sleepy-hofstadter-fa6499/fixtures/projects/TC3_PlcSample_reStrText/*.user
+.claude/worktrees/sleepy-hofstadter-fa6499/fixtures/projects/TC3_PlcSample_reStrText/**/LineIDs.dbg
+.claude/worktrees/sleepy-hofstadter-fa6499/fixtures/projects/TC3_PlcSample_reStrText/TC3_PlcSample_reStrText.versio_staging/
+.claude/worktrees/sleepy-hofstadter-fa6499/fixtures/projects/TC3_PlcSample_reStrText/TC3_PlcSample_reStrText.versio_trash/
+
+# Added by Versio: files the PLC toolchain writes beside a project.
+# The per-user one carries a username and machine name in its filename.
+.claude/worktrees/xenodochial-thompson-520237/fixtures/projects/CleaningStation_V20_V21/Logs/
+.claude/worktrees/xenodochial-thompson-520237/fixtures/projects/CleaningStation_V20_V21/tmp/
+.claude/worktrees/xenodochial-thompson-520237/fixtures/projects/CleaningStation_V20_V21/Vci/
+.claude/worktrees/xenodochial-thompson-520237/fixtures/projects/CleaningStation_V20_V21/CleaningStation_V20_V21.info
+.claude/worktrees/xenodochial-thompson-520237/fixtures/projects/CleaningStation_V20_V21/System/~*
+.claude/worktrees/xenodochial-thompson-520237/fixtures/projects/CleaningStation_V20_V21/CleaningStation_V20_V21.versio_staging/
+.claude/worktrees/xenodochial-thompson-520237/fixtures/projects/CleaningStation_V20_V21/CleaningStation_V20_V21.versio_trash/
+
+# Added by Versio: files the PLC toolchain writes beside a project.
+# The per-user one carries a username and machine name in its filename.
+.claude/worktrees/xenodochial-thompson-520237/fixtures/projects/MachineWithMembers.~u*
+.claude/worktrees/xenodochial-thompson-520237/fixtures/projects/MachineWithMembers-*.opt
+.claude/worktrees/xenodochial-thompson-520237/fixtures/projects/MachineWithMembers_project.precompilecache
+.claude/worktrees/xenodochial-thompson-520237/fixtures/projects/MachineWithMembers.versio_staging/
+.claude/worktrees/xenodochial-thompson-520237/fixtures/projects/MachineWithMembers.versio_trash/
+
+# Added by Versio: files the PLC toolchain writes beside a project.
+# The per-user one carries a username and machine name in its filename.
+.claude/worktrees/xenodochial-thompson-520237/fixtures/projects/RefrigeratorControl.~u*
+.claude/worktrees/xenodochial-thompson-520237/fixtures/projects/RefrigeratorControl-*.opt
+.claude/worktrees/xenodochial-thompson-520237/fixtures/projects/RefrigeratorControl_project.precompilecache
+.claude/worktrees/xenodochial-thompson-520237/fixtures/projects/RefrigeratorControl.versio_staging/
+.claude/worktrees/xenodochial-thompson-520237/fixtures/projects/RefrigeratorControl.versio_trash/
+
+# Added by Versio: files the PLC toolchain writes beside a project.
+# The per-user one carries a username and machine name in its filename.
+.claude/worktrees/xenodochial-thompson-520237/fixtures/projects/TC3_PlcSample_reStrText/_Boot/
+.claude/worktrees/xenodochial-thompson-520237/fixtures/projects/TC3_PlcSample_reStrText/_CompileInfo/
+.claude/worktrees/xenodochial-thompson-520237/fixtures/projects/TC3_PlcSample_reStrText/.vs/
+.claude/worktrees/xenodochial-thompson-520237/fixtures/projects/TC3_PlcSample_reStrText/TC3_PlcSample_reStrText.~u*
+.claude/worktrees/xenodochial-thompson-520237/fixtures/projects/TC3_PlcSample_reStrText/*.suo
+.claude/worktrees/xenodochial-thompson-520237/fixtures/projects/TC3_PlcSample_reStrText/*.user
+.claude/worktrees/xenodochial-thompson-520237/fixtures/projects/TC3_PlcSample_reStrText/**/LineIDs.dbg
+.claude/worktrees/xenodochial-thompson-520237/fixtures/projects/TC3_PlcSample_reStrText/TC3_PlcSample_reStrText.versio_staging/
+.claude/worktrees/xenodochial-thompson-520237/fixtures/projects/TC3_PlcSample_reStrText/TC3_PlcSample_reStrText.versio_trash/
+
+# Added by Versio: files the PLC toolchain writes beside a project.
+# The per-user one carries a username and machine name in its filename.
+.claude/worktrees/modest-bohr-35127e/fixtures/projects/RefrigeratorControl_FBS/RefrigeratorControl.fbsproj/.sidecars/
+.claude/worktrees/modest-bohr-35127e/fixtures/projects/RefrigeratorControl_FBS/RefrigeratorControl.fbsproj/.auxiliaries/
+
+# Added by Versio: files the PLC toolchain writes beside a project.
+# The per-user one carries a username and machine name in its filename.
+.claude/worktrees/sleepy-hofstadter-fa6499/fixtures/projects/RefrigeratorControl_FBS/RefrigeratorControl.fbsproj/.sidecars/
+.claude/worktrees/sleepy-hofstadter-fa6499/fixtures/projects/RefrigeratorControl_FBS/RefrigeratorControl.fbsproj/.auxiliaries/
+
+# Added by Versio: files the PLC toolchain writes beside a project.
+# The per-user one carries a username and machine name in its filename.
+.claude/worktrees/xenodochial-thompson-520237/fixtures/projects/RefrigeratorControl_FBS/RefrigeratorControl.fbsproj/.sidecars/
+.claude/worktrees/xenodochial-thompson-520237/fixtures/projects/RefrigeratorControl_FBS/RefrigeratorControl.fbsproj/.auxiliaries/
