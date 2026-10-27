@@ -119,15 +119,45 @@ public sealed class PackagingManifestTests
     [Fact]
     public void Pack_asks_how_to_bump_VersioVersion()
     {
+        // The menu and the writer moved into PackCommon.ps1 so the publish script asks the
+        // same question the same way. The pack still takes -Version and dot-sources them; a
+        // pack that stopped loading the common file would fail on its first Log call, but
+        // only when somebody ran it, so the line is pinned here.
+        var pack = File.ReadAllText(Path.Combine(TestPaths.Root, "tools", "pack", "Pack-Versio.ps1"));
+        var common = File.ReadAllText(Path.Combine(TestPaths.Root, "tools", "pack", "PackCommon.ps1"));
+        Assert.Contains(". (Join-Path $PSScriptRoot 'PackCommon.ps1')", pack, StringComparison.Ordinal);
+        Assert.Contains("[string] $Version", pack, StringComparison.Ordinal);
+        Assert.Contains("Last number (patch)", common, StringComparison.Ordinal);
+        Assert.Contains("Middle (minor)", common, StringComparison.Ordinal);
+        Assert.Contains("First (major)", common, StringComparison.Ordinal);
+        Assert.Contains("Keep", common, StringComparison.Ordinal);
+        Assert.Contains("Type one", common, StringComparison.Ordinal);
+        Assert.Contains("function Set-VersioVersion", common, StringComparison.Ordinal);
+        Assert.Contains("[System.IO.File]::WriteAllText", common, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Pack_installs_per_user_so_an_update_needs_no_administrator()
+    {
+        // PerMachine puts Versio under Program Files, and every update then needs elevation:
+        // a UAC prompt per release, and a failure outright for a user who is not an
+        // administrator - which, on a managed laptop, is most of them.
         var text = File.ReadAllText(Path.Combine(TestPaths.Root, "tools", "pack", "Pack-Versio.ps1"));
-        Assert.Contains("Last number (patch)", text, StringComparison.Ordinal);
-        Assert.Contains("Middle (minor)", text, StringComparison.Ordinal);
-        Assert.Contains("First (major)", text, StringComparison.Ordinal);
-        Assert.Contains("Keep", text, StringComparison.Ordinal);
-        Assert.Contains("Type one", text, StringComparison.Ordinal);
-        Assert.Contains("function Set-VersioVersion", text, StringComparison.Ordinal);
-        Assert.Contains("[string] $Version", text, StringComparison.Ordinal);
-        Assert.Contains("[System.IO.File]::WriteAllText", text, StringComparison.Ordinal);
+        Assert.Contains("--instLocation PerUser", text, StringComparison.Ordinal);
+        Assert.DoesNotContain("PerMachine --", text, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Pack_and_publish_scripts_stay_pure_ascii()
+    {
+        // Windows PowerShell 5.1 reads a BOM-less script as the ANSI codepage. One em-dash in
+        // a string and the console shows mojibake - or a comparison quietly stops matching.
+        foreach (var name in new[] { "Pack-Versio.ps1", "PackCommon.ps1" })
+        {
+            var bytes = File.ReadAllBytes(Path.Combine(TestPaths.Root, "tools", "pack", name));
+            var offender = Array.FindIndex(bytes, b => b > 0x7F);
+            Assert.True(offender < 0, $"{name} has a non-ASCII byte at offset {offender}");
+        }
     }
 
     [Fact]
