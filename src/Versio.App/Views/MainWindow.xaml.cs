@@ -66,6 +66,13 @@ public partial class MainWindow : Window
         shell.HandedOverToOtherWindow += () =>
             Dispatcher.BeginInvoke(Close, System.Windows.Threading.DispatcherPriority.Background);
 
+        // An update is downloaded and the user said Update and restart. The window closes the
+        // way the X closes it, through OnClosing and the shell's close guard, so an import in
+        // flight is asked about rather than cut short. Posted for the same reason as the line
+        // above: the request arrives from inside the update command's own await.
+        shell.Updates.RestartRequested += () =>
+            Dispatcher.BeginInvoke(Close, System.Windows.Threading.DispatcherPriority.Background);
+
         // Every dialog the application can open, in one class rather than as a run of
         // closures here. Handed to the shell, which passes them down to Sync - so the two
         // view models share one set of questions and this is the only line that wires them.
@@ -245,6 +252,10 @@ public partial class MainWindow : Window
         if (!await _shell.RequestCloseAsync())
         {
             _closeInFlight = false;
+
+            // If the close was for an update, the user has just chosen to keep working. The
+            // download is kept and installs when Versio next exits, without restarting it.
+            _shell.Updates.RestartDeclined();
             return;
         }
 
@@ -485,6 +496,17 @@ public partial class MainWindow : Window
         var rows = await _shell.BuildSystemInfoAsync(CancellationToken.None);
         new SystemInfoWindow(rows) { Owner = this }.ShowDialog();
     }
+
+    /// <summary>
+    /// Close the popup before the check runs; the button's command does the checking.
+    /// </summary>
+    /// <remarks>
+    /// The same reason as <see cref="OnOpenSystemInfo"/>: the check may end in a modal - the
+    /// update offer - and one opening behind an open popup leaves the popup hanging over it.
+    /// Click is raised before the command executes, so the popup is gone first.
+    /// </remarks>
+    private void OnCheckForUpdates(object sender, RoutedEventArgs e) =>
+        SettingsPopup.IsOpen = false;
 
     private void OnOpenSettings(object sender, RoutedEventArgs e)
     {

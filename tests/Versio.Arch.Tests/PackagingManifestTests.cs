@@ -148,6 +148,22 @@ public sealed class PackagingManifestTests
     }
 
     [Fact]
+    public void The_update_flow_is_wired_where_no_unit_test_reaches()
+    {
+        // The view model's half is driven by UpdatesViewModelTests. These four lines are the
+        // composition root's and the window's, and deleting any one leaves every test green:
+        // no launch check, an update downloaded and never installed, a restart that never
+        // closes the window, or a refused close that goes on restarting at the next exit.
+        var startup = File.ReadAllText(Path.Combine(TestPaths.Root, "src", "Versio.App", "App.xaml.cs"));
+        var window = File.ReadAllText(
+            Path.Combine(TestPaths.Root, "src", "Versio.App", "Views", "MainWindow.xaml.cs"));
+        Assert.Contains("shell.Updates.CheckOnLaunchAsync(", startup, StringComparison.Ordinal);
+        Assert.Contains("shell.Updates.ApplyOnExit()", startup, StringComparison.Ordinal);
+        Assert.Contains("shell.Updates.RestartRequested +=", window, StringComparison.Ordinal);
+        Assert.Contains("_shell.Updates.RestartDeclined()", window, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void Pack_and_publish_scripts_stay_pure_ascii()
     {
         // Windows PowerShell 5.1 reads a BOM-less script as the ANSI codepage. One em-dash in

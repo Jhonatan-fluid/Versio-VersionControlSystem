@@ -15,6 +15,12 @@
     <!-- Without this the SDK appends +githash, and System information would not match
          the number vpk packed. -->
     <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
+
+    <!-- Where installed copies look for updates, and where Publish_Release.bat uploads them.
+         One place for both, so a build cannot check one repository while releases go to
+         another. Private: the app reads it with the GitHub sign-in Git Credential Manager
+         already holds. Baked into Versio.App as AssemblyMetadata("VersioUpdateRepo"). -->
+    <VersioUpdateRepo>https://github.com/fluidstackio/versio-releases</VersioUpdateRepo>
     <Company>Versio</Company>
     <Product>Versio</Product>
 

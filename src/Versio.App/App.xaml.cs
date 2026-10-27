@@ -3,11 +3,13 @@ using System.IO;
 using System.Windows;
 using Versio.App.Spikes;
 using Versio.App.Theme;
+using Versio.App.Updates;
 using Versio.App.ViewModels;
 using Versio.App.Views;
 using Versio.Core.Logging;
 using Versio.Core.Plc;
 using Versio.Infrastructure.FileSystem;
+using Versio.Infrastructure.Git;
 using Versio.Infrastructure.Logging;
 using Versio.Infrastructure.Platform;
 using Versio.Plc.Codesys.Infrastructure;
@@ -140,7 +142,16 @@ public partial class App : Application
         var stored = settings.ReadAsync(CancellationToken.None).GetAwaiter().GetResult();
         ThemeManager.Apply(ThemeManager.Parse(stored.Theme));
 
-        var shell = new ShellViewModel(logger, log, settings: settings)
+        // Updates from the GitHub repository Directory.Build.props names, read with the
+        // github.com sign-in Git Credential Manager already holds - the releases repository is
+        // private, and the alternative was a second token per user for the same account.
+        // Asked for afresh on each check, so a sign-in made after launch counts.
+        var updates = new VelopackUpdateSource(
+            AppVersion.UpdateRepository,
+            AppVersion.Display,
+            ct => StoredGitCredential.ReadAsync("https", "github.com", logger, ct));
+
+        var shell = new ShellViewModel(logger, log, settings: settings, updates: updates)
         {
             // So "Open logs folder" opens where the logs actually are, not where they would
             // have gone had the sink attached successfully.
@@ -155,6 +166,12 @@ public partial class App : Application
         // FileSystemWatcher keeps an OS handle on the directory. Releasing it on exit keeps
         // the folder free to be renamed or deleted the moment Versio closes.
         Exit += (_, _) => shell.Dispose();
+
+        // A downloaded update goes to the installer on the way out, after the shell has let
+        // go of the repository and before the log file closes, so the line saying it was
+        // handed over is on disk. The installer waits for this process to end before it
+        // touches a file. Nothing downloaded: nothing happens.
+        Exit += (_, _) => shell.Updates.ApplyOnExit();
 
         // The file sink goes LAST, after everything above it has logged its way out —
         // see the remark where it is attached.
@@ -195,12 +212,31 @@ public partial class App : Application
         // The recent list first, and before anything opens: OpenAsync promotes a repository
         // to the top of it, so loading afterwards would overwrite the entry just opened - and
         // the startup fallback has nothing to fall back to until it has been read.
+        //
+        // The update check goes last, once the startup open has settled either way. Opening a
+        // repository clears the notification list, and an offer drawn over a tree that is still
+        // loading is a question asked over something still moving. Not awaited, and never
+        // allowed to fail silently: a fault is logged like the open's.
+        var ui = TaskScheduler.FromCurrentSynchronizationContext();
         _ = shell.LoadRecentAsync()
             .ContinueWith(
                 _ => StartupOpen(shell, e.Args, logger),
                 CancellationToken.None,
                 TaskContinuationOptions.None,
-                TaskScheduler.FromCurrentSynchronizationContext());
+                ui)
+            .Unwrap()
+            .ContinueWith(
+                _ => shell.Updates.CheckOnLaunchAsync(CancellationToken.None),
+                CancellationToken.None,
+                TaskContinuationOptions.None,
+                ui)
+            .Unwrap()
+            .ContinueWith(
+                t => logger.Error(LogCategory.App, "the launch update check failed",
+                    t.Exception?.GetBaseException()),
+                CancellationToken.None,
+                TaskContinuationOptions.OnlyOnFaulted,
+                TaskScheduler.Default);
     }
 
     /// <summary>
@@ -213,7 +249,11 @@ public partial class App : Application
     /// which is not a repository, and the app used to open on an empty window with a dropdown
     /// that had forgotten every repository the user had ever opened.
     /// </remarks>
-    private static void StartupOpen(ShellViewModel shell, string[] args, VersioLogger logger)
+    /// <returns>
+    /// The open, or a completed task when nothing was opened - so the launch update check can
+    /// wait for it. A failed open has already been logged by the time this task completes.
+    /// </returns>
+    private static Task StartupOpen(ShellViewModel shell, string[] args, VersioLogger logger)
     {
         var candidate = RepositoryArgument(args)
                         ?? shell.WorkingTreeRootOf(Directory.GetCurrentDirectory())
@@ -224,11 +264,21 @@ public partial class App : Application
             // Fire-and-forget, but never silently: an exception inside an un-awaited Task is
             // swallowed by default, so the app would open on an empty window with no
             // explanation anywhere for the repository that failed to load.
-            _ = shell.OpenAtStartupAsync(candidate).ContinueWith(
+            var open = shell.OpenAtStartupAsync(candidate);
+            _ = open.ContinueWith(
                 t => logger.Error(LogCategory.App,
                     $"failed to open {candidate} at startup", t.Exception?.GetBaseException()),
                 CancellationToken.None,
                 TaskContinuationOptions.OnlyOnFaulted,
+                TaskScheduler.Default);
+
+            // Returned with its fault already observed above, so the update check that waits
+            // on it runs after a failed open too - a broken repository is no reason to stop
+            // telling somebody that a fix for it has been published.
+            return open.ContinueWith(
+                _ => { },
+                CancellationToken.None,
+                TaskContinuationOptions.None,
                 TaskScheduler.Default);
         }
         else
@@ -239,6 +289,8 @@ public partial class App : Application
                       "remembered repository is still on disk"
                     : $"no repository opened at startup: {candidate} does not exist");
         }
+
+        return Task.CompletedTask;
     }
 
     /// <summary>

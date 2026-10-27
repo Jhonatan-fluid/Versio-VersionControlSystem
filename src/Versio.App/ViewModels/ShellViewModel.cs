@@ -15,6 +15,7 @@ using Versio.Core.Plc;
 using Versio.Core.Projects;
 using Versio.Core.Settings;
 using Versio.Core.Sync;
+using Versio.Core.Updates;
 using Versio.Core.Watching;
 using Versio.Infrastructure.FileSystem;
 using Versio.Infrastructure.Git;
@@ -506,7 +507,8 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
                           IClock? clock = null,
                           Func<PlcVendor, IVersioLogger, IPlcToolchain?>? toolchains = null,
                           IAppSettingsStore? settings = null,
-                          IProcessProbe? processes = null)
+                          IProcessProbe? processes = null,
+                          IUpdateSource? updates = null)
     {
         // Injected for the same reason IClock and IRepositoryProbe are. The real probe
         // requires the process NAME to start with "Versio", so no pid a test can reach ever
@@ -567,6 +569,19 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
             RaiseHealth();
             RaiseGitCommandStates();
         };
+
+        // Updates, given the shell's notifications, prompts and settings file as delegates.
+        // The source defaults to one that cannot update - for the same reason the settings
+        // store defaults to one that remembers nothing: a shell built in a test must never
+        // reach out to GitHub. App.xaml.cs is the one place the real one is passed in.
+        Updates = new UpdatesViewModel(
+            logger,
+            updates ?? NullUpdateSource.Instance,
+            Notifications,
+            () => Prompts,
+            () => _stored.DismissedUpdateVersion,
+            RememberDismissedUpdateAsync,
+            () => AskingSomething());
 
 
         // The SHELL's tracker, not one of its own.
@@ -691,6 +706,14 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
     /// the shell keeping a second copy.
     /// </remarks>
     public GitAuthViewModel Auth { get; }
+
+    /// <summary>Whether a newer Versio is published, and the way onto it.</summary>
+    /// <remarks>
+    /// Bound as <c>Updates.X</c> from the gear menu. It raises
+    /// <see cref="UpdatesViewModel.RestartRequested"/> rather than closing anything, so the
+    /// close still goes through <see cref="RequestCloseAsync"/>.
+    /// </remarks>
+    public UpdatesViewModel Updates { get; }
 
     /// <summary>
     /// Where this branch stands against the remote, and the watch that keeps it honest.
@@ -1309,6 +1332,22 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         }
 
         _stored = _stored with { Theme = theme };
+        await SaveSettingsAsync().ConfigureAwait(true);
+    }
+
+    /// <summary>Remember the update the user answered Later to.</summary>
+    /// <remarks>
+    /// Read back before the launch check runs, because the check waits for the startup open,
+    /// which waits for the settings to be loaded.
+    /// </remarks>
+    private async Task RememberDismissedUpdateAsync(string version)
+    {
+        if (string.Equals(_stored.DismissedUpdateVersion, version, StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        _stored = _stored with { DismissedUpdateVersion = version };
         await SaveSettingsAsync().ConfigureAwait(true);
     }
 

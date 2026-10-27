@@ -38,6 +38,11 @@
          it derives from a URL - so they can be driven by a test rather than made public for
          the benefit of one. Same arrangement Versio.Infrastructure has with its own suite. -->
     <InternalsVisibleTo Include="Versio.App.Tests" />
+
+    <!-- Where this build looks for updates, from Directory.Build.props, which the publish
+         script reads too - one URL for the place releases go and the place they are looked
+         for. Read back by AppVersion.UpdateRepository. -->
+    <AssemblyMetadata Include="VersioUpdateRepo" Value="$(VersioUpdateRepo)" />
   </ItemGroup>
 
   <ItemGroup>

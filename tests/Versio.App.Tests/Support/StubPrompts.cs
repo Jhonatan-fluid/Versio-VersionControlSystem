@@ -4,6 +4,7 @@ using Versio.Core.Git;
 using Versio.Core.Guarding;
 using Versio.Core.Settings;
 using Versio.Core.Sync;
+using Versio.Core.Updates;
 
 namespace Versio.App.Tests;
 
@@ -67,6 +68,8 @@ internal sealed class StubPrompts : IUserPrompts
 
     public Func<string, IReadOnlyList<ProjectBackup>, ProjectBackup?>? WhichBackup { get; set; }
 
+    public Func<UpdatePrompt, UpdateChoice?>? Update { get; set; }
+
     bool IUserPrompts.ConfirmDestructive(DestructivePrompt prompt) =>
         Destructive?.Invoke(prompt) ?? false;
 
@@ -95,4 +98,6 @@ internal sealed class StubPrompts : IUserPrompts
     ProjectBackup? IUserPrompts.AskWhichBackup(string project,
                                                IReadOnlyList<ProjectBackup> backups) =>
         WhichBackup?.Invoke(project, backups);
+
+    UpdateChoice? IUserPrompts.OfferUpdate(UpdatePrompt prompt) => Update?.Invoke(prompt);
 }

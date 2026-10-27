@@ -551,11 +551,29 @@
                          needed and looked like it was about the repository. -->
                     <TextBlock Text="HELP" Style="{StaticResource SectionLabel}"
                                Margin="10,6,0,6" />
-                    <Button Content="System information…" Margin="10,0,10,10"
+                    <Button Content="System information…" Margin="10,0,10,4"
                             HorizontalAlignment="Left"
                             Style="{StaticResource GhostButton}"
                             Click="OnOpenSystemInfo"
                             ToolTip="Toolchains, versions and paths on this machine" />
+
+                    <!-- The same check the launch makes, asked for: it answers even when
+                         there is nothing new, and offers a version the launch check was told
+                         Later about. Disabled while a check is already running. The line
+                         under it is what the last check found, or the download's progress -
+                         the popup is where somebody looks after pressing it. -->
+                    <Button Content="Check for updates…" Margin="10,0,10,4"
+                            HorizontalAlignment="Left"
+                            Style="{StaticResource GhostButton}"
+                            Click="OnCheckForUpdates"
+                            Command="{Binding Updates.CheckNowCommand}"
+                            ToolTip="Look for a newer published version of Versio" />
+                    <TextBlock Text="{Binding Updates.Status}" Margin="14,0,10,10"
+                               Visibility="{Binding Updates.HasStatus, Converter={StaticResource BoolToVisibility}}"
+                               TextWrapping="Wrap" MaxWidth="240"
+                               FontFamily="{DynamicResource Font.UI}"
+                               FontSize="{DynamicResource Font.Size.Caption}"
+                               Foreground="{DynamicResource Brush.Text.Secondary}" />
                 </StackPanel>
             </Border>
         </Popup>
