@@ -19,6 +19,62 @@ produce a diff touching everything else.
 
 ---
 
+### The repository scanner walked into nested checkouts and tracked another repository's projects
+
+**2026-10-27, from the app showing twelve projects that do not exist in this repository.**
+The owner opened `C:\GIT\Versio` and the project panel listed every fixture three times over,
+each extra copy "not exported", six things needing attention and a ManifestMismatch naming
+`.claude/worktrees/modest-bohr-35127e/fixtures/projects/MachineWithMembers`. Today's log says
+what happened, in order:
+
+```
+15:56:51.283 DBG [Fs]   found project .claude/worktrees/modest-bohr-35127e/fixtures/projects/MachineWithMembers.project
+                        ... (twelve such lines, four fixtures × three worktrees)
+15:56:51.896 INF [Sync] tracking .claude/worktrees/modest-bohr-35127e/fixtures/projects/MachineWithMembers.project automatically as fcde73c41007
+15:56:51.986 INF [Git]  added 2 rule(s) for the toolchain's scratch files: .claude/worktrees/modest-bohr-35127e/...
+```
+
+`.claude/worktrees/` holds three Claude Code worktrees — `git worktree add` checkouts of
+this repository, each a full tree with the fixtures and a `.versio/repo.json` of its own.
+`RepoScanner` walked into them because its skip list names folders *called* `.git`, and a
+linked worktree's `.git` is not a folder at all but a one-line file (`gitdir: C:/GIT/Versio/
+.git/worktrees/modest-bohr-35127e`). So the walk found twelve project files, the orphan
+scanner adopted every one under a fresh binding id, and every export tree among them —
+carrying the id the *real* repository had given that fixture — read as a ManifestMismatch
+against the id it had just been handed. The commit made through the app one minute later
+("lets go", `b1d5891`) then wrote all of it into git: 12 bindings into `repo.json`, 129 lines
+into `.gitignore`, 84 into `.gitattributes`.
+
+**Why the worktrees had not been noticed.** `.git/info/exclude` lists `.claude/worktrees/`, so
+git status never showed them and the status bar said "No changes". The exclude is the right
+tool for git; the scanner reads the disk, not git, and had no equivalent rule.
+
+**The fix is a rule about children, not a name.** The walk now stops at any child directory
+that holds a `.git` entry — `Path.Exists`, not `Directory.Exists`, so a worktree's file counts
+— and says so in the log at Debug, because a project that is not offered for tracking must be
+findable there. The root is exempt: it always has a `.git` of its own, and applying the rule
+there would find nothing anywhere. Three integration tests in `RepoScannerNestedCheckoutTests`:
+a worktree (`.git` file) is not walked into, a clone (`.git` folder) is not walked into, and
+the root's own `.git`, as a file or a folder, does not stop the scan. The first two go red
+with the one `if` removed; the third passes either way, which is the point of it.
+
+**What was rejected.** Honouring git's own exclude and ignore files from the scanner — the
+scanner has no git client by design (it runs on a background thread without one in every
+unit test), and ignoring a path is a weaker statement than "this is another repository".
+Adding `.claude` to the skip list — a name, which is exactly the shape of rule that failed.
+
+**The cleanup.** `.gitignore`, `.gitattributes` and `.versio/repo.json` were restored to the
+parent of `b1d5891` (`git checkout b1d5891~1 -- …`, 312 deletions, nothing else in those
+files had changed in that commit) and committed on their own. The three worktrees are left in
+place; with the scanner fixed they are invisible to the app, as they already were to git.
+
+**Not this.** The "2 projects failed to sync" in the same screenshot are the TIA and TwinCAT
+fixtures, whose Failed locks were re-adopted after a reboot; on this machine TwinCAT XAE is not
+installed and the account is not in the Openness group, so neither can export. Acknowledging
+them clears the commit gate. Separate state, correctly reported.
+
+---
+
 ### Auto-update: the stored git sign-in reads the private releases repository, so users set no token
 
 **2026-10-27, measured before building the update check (STATUS item 5, open question 4).**

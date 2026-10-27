@@ -33,8 +33,8 @@ UX remainder) is built and tested as of 2026-08-25** — UX-6 find boxes, UX-7 `
 Escape, UX-8 copy-a-commit, UX-12 amend-while-unpushed — and its visual half joins the
 eyeball list in item 2. Do not start from `archive/` or a handoff.
 
-**Tests:** 4,456 across twelve projects (plus 211 vitest in `web/`), last counted 2026-10-27
-on `AutoUpdate` after the update check (Core 2,087, Integration 257, App 856, Arch 42, Web 504) — re-derived by summing the table below; the toolchain-gated
+**Tests:** 4,459 across twelve projects (plus 211 vitest in `web/`), last counted 2026-10-27
+on `AutoUpdate` after the nested-checkout scanner fix (Core 2,087, Integration 260, App 856, Arch 42, Web 504) — re-derived by summing the table below; the toolchain-gated
 counts (TIA 5, TwinCAT 6, CODESYS 55) are from their last gate runs, not re-run for the count. **The Rendered view of an ST object reads like the IDE (2026-09-20):** no
 `@@` line, one gutter, a Declaration / Implementation divider, and the implementation
 numbered from 1 so a compile error's line number can be found — FINDINGS 2026-09-20. **With TIA Portal open, a commit no longer records a stale mirror**: the
@@ -74,7 +74,7 @@ marking, duplicate-param keys, and the detail-pane lookup. All of them are in
 | Project | Tests | Time | Needs |
 |---|---|---|---|
 | `Versio.Core.Tests` | 2,087 (nothing skipped) | under a second | nothing |
-| `Versio.Integration.Tests` | 257 | ~1 m (2 m 18 s loaded) | real git |
+| `Versio.Integration.Tests` | 260 | ~1 m (2 m 18 s loaded) | real git |
 | `Versio.App.Tests` | 856 (re-counted 2026-10-27) | 11 m 58 s, 854/856, 2026-10-27 on `AutoUpdate` (one 30 s catch-up wait, green alone; one clipboard test, `CLIPBRD_E_CANT_OPEN`, environmental as on 2026-10-25); 10 m 57 s, 843/846, 2026-10-25 night (three catch-up waits red, all green alone and in their classes; FINDINGS 2026-10-25 seventh round); **12 m 15 s, 845/845, idle, 2026-10-25 night**; 9 m 3 s, 838/842, 2026-10-25 night (the CODESYS run beside it; the four red are the clipboard tests, `CLIPBRD_E_CANT_OPEN`, red alone and on the untouched base too — another program held the clipboard; FINDINGS 2026-10-25 fifth round); 12 m 49 s, 840/841, 2026-10-25 evening (nothing else of this session running; `SourceProjectTests.A_program_with_no_variables…` red after 13 s for the second full run today, green alone and in its class — a watch item, FINDINGS 2026-10-25 fourth round); 13 m 29 s, 835/836, loaded, 2026-10-25 (the third round's CODESYS run beside it; a 21 s catch-up wait in `SourceProjectTests` failed and passed alone in 4 s); 13 m 9 s, 835/836, loaded, 2026-10-25 (the CODESYS gate ran beside it; the one 30 s catch-up wait failed and passed alone in 4 s); **12 m 22 s, 833/833, idle, 2026-10-24**; 11 m 23 s the same day loaded (three gates beside it; one 30 s catch-up wait failed and passed alone in 4 s) and 16 m 30 s under three builds; 10 m 45 s (loaded: mutation checks ran beside it) and 10 m 36 s on 2026-10-23; 12 m 19 s, 10 m 42 s and 9 m 5 s on 2026-10-22; 10 m 46 s on 2026-10-19; 10 m 58 s on 2026-10-16; 6 m 35 s on 2026-10-10; 8 m 38 s on 2026-10-05; ~3.6 min on 2026-09-22 | nothing |
 | `Versio.Arch.Tests` | 42 | instant | nothing |
 | `Versio.Plc.Codesys.Pure.Tests` | 405 | under a second | nothing |
