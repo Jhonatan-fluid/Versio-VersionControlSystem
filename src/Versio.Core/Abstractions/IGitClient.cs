@@ -252,8 +252,62 @@ public interface IGitClient
     /// caller falls back to whatever it does without old content, which for a rename is a
     /// delete and a create.
     /// </para>
+    /// <para>
+    /// <see cref="ShowAtCommitAsync"/> at <c>HEAD</c>, kept as its own member because every
+    /// working-tree caller means HEAD and should say so.
+    /// </para>
     /// </remarks>
     Task<string> ShowAtHeadAsync(string path, CancellationToken ct);
+
+    /// <summary>
+    /// The content of a file as one commit has it, or empty when that commit has no such file.
+    /// </summary>
+    /// <param name="commit">A revision git resolves: a commit id, <c>HEAD</c>, or <c>&lt;id&gt;^</c> for a first parent.</param>
+    /// <param name="path">Repository-relative, forward slashes — git's own path shape.</param>
+    /// <remarks>
+    /// <para>
+    /// <b>How the History panel reads a project as it was.</b> A commit's own manifest names
+    /// yesterday's objects by yesterday's names; its first parent's copy of a file is the old
+    /// side of every mark the Rendered pane draws for that commit. Both are this call, which is
+    /// why it takes the revision rather than assuming HEAD.
+    /// </para>
+    /// <para>
+    /// <b>Not trimmed, and not byte-exact either.</b> The CLI reassembles stdout from line
+    /// events, appending <c>'\n'</c> per line, so CRLF content comes back LF and a file without
+    /// a final newline is indistinguishable from one with it. Every caller is line-based (the
+    /// catalog baselines, the merged-diff builder, the layouts and parsers the panes draw from)
+    /// and the mirror is committed <c>eol=lf</c> with a final newline, so nothing observes the
+    /// difference — but a future <i>byte</i> comparison against a recorded hash must not be
+    /// built on this method: it would mismatch on exactly those two shapes for a reason that
+    /// has nothing to do with the file.
+    /// </para>
+    /// <para>
+    /// A missing path, a revision that does not resolve (<c>&lt;root&gt;^</c>, a repository with no
+    /// commits) and a mirror that was never committed all mean the same thing to the caller:
+    /// there is no copy at that version. Reported as empty rather than thrown, because for the
+    /// caller it is an ordinary answer — a new object's old side is nothing.
+    /// </para>
+    /// </remarks>
+    Task<string> ShowAtCommitAsync(string commit, string path, CancellationToken ct);
+
+    /// <summary>
+    /// Every path one commit's tree holds, recursively, gitignore and the working tree aside.
+    /// </summary>
+    /// <param name="commit">A revision git resolves, as for <see cref="ShowAtCommitAsync"/>.</param>
+    /// <remarks>
+    /// <para>
+    /// <c>git ls-tree -r -z --name-only &lt;commit&gt;</c>: the committed listing, which is what
+    /// <see cref="Projects.ProjectSnapshotLoader"/> needs to find a commit's <c>repo.json</c>,
+    /// manifests and catalogs before reading any of them. <see cref="ListWorkingTreeAsync"/> is
+    /// the same question of the working tree, and it cannot answer for a commit: a file deleted
+    /// since is gone from it, and an untracked one was never in the commit at all.
+    /// </para>
+    /// <para>
+    /// NUL-separated for the reason the working-tree listing is: object names carry spaces and
+    /// non-ASCII, which git quotes without <c>-z</c>. Empty when the revision does not resolve.
+    /// </para>
+    /// </remarks>
+    Task<IReadOnlyList<string>> ListTreeAsync(string commit, CancellationToken ct);
 
     /// <summary>
     /// Take one side of a conflicted file and stage it.

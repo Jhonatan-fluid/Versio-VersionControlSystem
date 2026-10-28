@@ -195,6 +195,31 @@ internal sealed class CountingGitClient : IGitClient
     public Task<string> ShowAtHeadAsync(string path, CancellationToken ct) =>
         Task.FromResult(string.Empty);
 
+    /// <summary>What every commit's tree lists. One tree for all commits: the tests here are
+    /// about how often git is asked, not about what differs between commits.</summary>
+    public IReadOnlyList<string> Tree { get; set; } = ["a.st", "b.st"];
+
+    /// <summary>A file's text at a commit, keyed <c>"&lt;commit&gt;:&lt;path&gt;"</c>; anything else reads as empty.</summary>
+    public Dictionary<string, string> Blobs { get; } = new(StringComparer.Ordinal);
+
+    /// <summary>Every commit whose tree was listed, in order. Counted for the reason FileCalls is.</summary>
+    public List<string> TreeCalls { get; } = [];
+
+    /// <summary>Every <c>(commit, path)</c> read, in order: the count the snapshot's budget holds still.</summary>
+    public List<(string Commit, string Path)> BlobCalls { get; } = [];
+
+    public Task<IReadOnlyList<string>> ListTreeAsync(string commit, CancellationToken ct)
+    {
+        TreeCalls.Add(commit);
+        return Task.FromResult(Tree);
+    }
+
+    public Task<string> ShowAtCommitAsync(string commit, string path, CancellationToken ct)
+    {
+        BlobCalls.Add((commit, path));
+        return Task.FromResult(Blobs.TryGetValue($"{commit}:{path}", out var text) ? text : string.Empty);
+    }
+
 
     public Task<GitResult> SignInAsync(string protocol, string host, CancellationToken ct)
     {
