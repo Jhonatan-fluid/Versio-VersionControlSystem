@@ -167,6 +167,110 @@ public static class ProjectSnapshotLoader
     }
 
     /// <summary>
+    /// Name the objects a version deleted from the manifest that still named them: the first
+    /// parent's.
+    /// </summary>
+    /// <param name="snapshot">The version as loaded; returned as is when nothing was deleted under an export.</param>
+    /// <param name="gonePaths">Paths this version no longer holds: deletions, and a rename's old path.</param>
+    /// <param name="readParent">The text of a path at the first parent — only ever asked for a manifest.</param>
+    /// <remarks>
+    /// <para>
+    /// A commit that deletes an object also drops it from the manifest, so the tree built from
+    /// this version's manifest has no name, type or vendor for it and lists it struck by its
+    /// file name — <c>App/FB_Motor.st</c> where every other row says <c>FB_Motor · POU</c>. The
+    /// parent's manifest is the last one that described it, and is read for exactly those
+    /// paths: one extra read per binding with a deletion, none otherwise. The object joins this
+    /// version's manifest so <c>ProjectTreeBuilder</c> draws it like any other, and the changes
+    /// the tree is marked with say it is gone.
+    /// </para>
+    /// <para>
+    /// A parent that cannot be read, or that did not name the path either, leaves the row as
+    /// the path: said as a problem in the first case, and silently right in the second (a file
+    /// under the export root that no manifest ever described is a loose file, deleted).
+    /// </para>
+    /// </remarks>
+    public static async Task<ProjectSnapshot> WithDeletedObjectsAsync(
+        ProjectSnapshot snapshot,
+        IReadOnlyList<string> gonePaths,
+        Func<string, Task<SnapshotRead>> readParent,
+        IVersioLogger log,
+        string category,
+        string subject,
+        CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(snapshot);
+        ArgumentNullException.ThrowIfNull(gonePaths);
+        ArgumentNullException.ThrowIfNull(readParent);
+        ArgumentNullException.ThrowIfNull(log);
+
+        if (gonePaths.Count == 0)
+        {
+            return snapshot;
+        }
+
+        var gone = gonePaths.Select(p => p.Replace('\\', '/').TrimStart('/')).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var projects = new List<WorkspaceProject>(snapshot.Projects.Count);
+        var problems = new List<string>(snapshot.Problems);
+        var changed = false;
+
+        foreach (var project in snapshot.Projects)
+        {
+            ct.ThrowIfCancellationRequested();
+            var root = project.ExportPath.Replace('\\', '/').Trim('/');
+            var described = (project.Manifest?.Objects ?? [])
+                .Where(o => o.Path.Length > 0)
+                .Select(o => ProjectTreeBuilder.Combine(root, o.Path.Replace('\\', '/')))
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+            var missing = gone
+                .Where(p => p.StartsWith(root + "/", StringComparison.OrdinalIgnoreCase) && !described.Contains(p))
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+            if (missing.Count == 0)
+            {
+                projects.Add(project);
+                continue;
+            }
+
+            var manifestPath = $"{root}/{BindingConventions.ManifestFileName}";
+            var read = await readParent(manifestPath).ConfigureAwait(false);
+            if (read.Text is not { } json)
+            {
+                if (!read.IsAbsent)
+                {
+                    problems.Add($"{manifestPath} at the parent could not be read ({read.Failure}); {missing.Count} deleted file(s) are listed by path.");
+                }
+
+                projects.Add(project);
+                continue;
+            }
+
+            var parent = ProjectManifest.Parse(json, out var parentProblems);
+            problems.AddRange(parentProblems.Select(p => $"{manifestPath} at the parent: {p}"));
+            var named = parent.Objects
+                .Where(o => o.Path.Length > 0 && missing.Contains(ProjectTreeBuilder.Combine(root, o.Path.Replace('\\', '/'))))
+                .ToList();
+            if (named.Count == 0)
+            {
+                projects.Add(project);
+                continue;
+            }
+
+            // The whole mirror gone in this version (no manifest at all) takes the parent's
+            // vendor and schema with the objects; otherwise this version's manifest keeps its
+            // own and only grows the rows.
+            var manifest = project.Manifest is { } own
+                ? own with { Objects = [.. own.Objects, .. named] }
+                : parent with { Objects = named };
+            projects.Add(project with { Manifest = manifest });
+            changed = true;
+            log.Info(category, $"{subject}: {named.Count} deleted object(s) of {project.ProjectPath} named from the parent's manifest");
+        }
+
+        return changed || problems.Count != snapshot.Problems.Count
+            ? snapshot with { Projects = projects, Problems = problems }
+            : snapshot;
+    }
+
+    /// <summary>
     /// A project's library, task and device catalogs, read as the desktop's <c>ReadCatalogs</c>
     /// reads them: the manifest names them by form, Core parses them, the tree grafts them.
     /// </summary>

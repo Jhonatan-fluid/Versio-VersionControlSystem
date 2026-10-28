@@ -555,6 +555,46 @@ public class HistoryViewModelTests
         Assert.Equal([(commit.Id, ".versio/repo.json"), (commit.Id, "plc/Machine/_manifest.json")], git.BlobCalls);
     }
 
+    /// <summary>
+    /// A commit that deletes an object reads the parent's manifest once, and names the row from it.
+    /// </summary>
+    /// <remarks>
+    /// Without the parent the row is the bare path, struck - the one row in the tree with no
+    /// name, in the commit most worth reading. The read is bounded: one manifest, at the parent,
+    /// for the binding with the deletion, and nothing of the parent otherwise (the test above
+    /// holds the no-deletion budget).
+    /// </remarks>
+    [Fact]
+    public void A_commit_that_deletes_an_object_names_it_from_the_parents_manifest()
+    {
+        var git = new CountingGitClient
+        {
+            Tree = [".versio/repo.json", "plc/Machine.project", "plc/Machine/_manifest.json"],
+            Files = [new CommitFile { Path = "plc/Machine/App/FB_Motor.st", Kind = ChangeKind.Deleted }],
+        };
+        var history = Attached(git);
+        history.IsVisible = true;
+        var commit = history.Commits[0];
+        git.Blobs[$"{commit.Id}:.versio/repo.json"] =
+            """{ "schema": 1, "bindings": [ { "id": "abc123", "projectPath": "plc/Machine.project", "exportPath": "plc/Machine" } ] }""";
+        git.Blobs[$"{commit.Id}:plc/Machine/_manifest.json"] =
+            """{ "schema": 3, "bindingId": "abc123", "project": "Machine.project", "objectCount": 0, "objects": [], "skipped": [], "warnings": [] }""";
+        git.Blobs[$"{commit.Id}^:plc/Machine/_manifest.json"] =
+            """
+            { "schema": 3, "bindingId": "abc123", "project": "Machine.project", "objectCount": 1,
+              "objects": [ { "guid": "g1", "name": "FB_Motor", "type": "POU", "form": "ST_DECL", "path": "App/FB_Motor.st" } ],
+              "skipped": [], "warnings": [] }
+            """;
+
+        commit.IsExpanded = true;
+
+        var motor = Assert.Single(Flatten(commit.Children.OfType<TreeRow>()), r => r.Name == "FB_Motor");
+        Assert.Equal(("POU", "D", true), (motor.TypeLabel, motor.Glyph, motor.IsDeleted));
+        Assert.Equal(
+            [(commit.Id, ".versio/repo.json"), (commit.Id, "plc/Machine/_manifest.json"), ($"{commit.Id}^", "plc/Machine/_manifest.json")],
+            git.BlobCalls);
+    }
+
     private static IEnumerable<TreeRow> Flatten(IEnumerable<TreeRow> rows) =>
         rows.SelectMany(r => Flatten(r.Children).Prepend(r));
 

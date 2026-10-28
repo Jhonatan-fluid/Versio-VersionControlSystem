@@ -638,8 +638,9 @@ public sealed class HistoryViewModel : ObservableObject
     /// The call budget is the point, and the log line at the end reports it: one
     /// <c>ls-tree</c>, one <c>--name-status</c>, then one <c>show</c> per file
     /// <see cref="ProjectSnapshotLoader"/> asks for — <c>repo.json</c>, each binding's manifest,
-    /// each project's catalogs. Nothing per changed file, nothing per object: a commit touching
-    /// four hundred exported files costs the same handful of spawns as one touching one. A
+    /// each project's catalogs — plus the parent's manifest for each binding the commit deleted
+    /// an object from. Nothing per changed file, nothing per object: a commit touching four
+    /// hundred exported files costs the same handful of spawns as one touching one. A
     /// <c>cat-file --batch</c> would be fewer still, and was rejected: its size-framed output
     /// cannot survive the CLI runner's line reassembly (see <c>ShowAtCommitAsync</c>'s remark).
     /// </para>
@@ -672,6 +673,23 @@ public sealed class HistoryViewModel : ObservableObject
 
         var repo = await ProjectSnapshotLoader.LoadAsync(
             files, Read, $"as of {shortId}", _logger, LogCategory.Git, shortId, CancellationToken.None).ConfigureAwait(true);
+
+        // What this commit deleted - and the old place of what it renamed - is no longer in its
+        // manifest, so the parent's manifest names those rows (the loader has the reasoning).
+        // One read per binding with a deletion, none otherwise; the parent of a root commit
+        // has nothing, which reads as absent.
+        async Task<SnapshotRead> ReadParent(string path)
+        {
+            reads++;
+            var text = await git.ShowAtCommitAsync(commitId + "^", path, CancellationToken.None).ConfigureAwait(true);
+            return text.Length == 0 ? SnapshotRead.Absent : SnapshotRead.Of(text);
+        }
+
+        var gone = changes.Where(c => c.Kind == ChangeKind.Deleted).Select(c => c.Path)
+            .Concat(changes.Where(c => c.OriginalPath is { Length: > 0 }).Select(c => c.OriginalPath!))
+            .ToList();
+        repo = await ProjectSnapshotLoader.WithDeletedObjectsAsync(
+            repo, gone, ReadParent, _logger, LogCategory.Git, shortId, CancellationToken.None).ConfigureAwait(true);
 
         // A commit has one side: what it did to each path is its "staged" state, and nothing
         // is unstaged. The same mapping the web viewer's marked tree uses.

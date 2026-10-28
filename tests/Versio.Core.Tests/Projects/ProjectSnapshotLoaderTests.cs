@@ -159,6 +159,109 @@ public sealed class ProjectSnapshotLoaderTests
         Assert.True(snapshot.IsVersio);
     }
 
+    private const string ManifestWithoutMotor = """
+        {
+          "schema": 3, "bindingId": "abc123", "project": "Machine.project", "objectCount": 1,
+          "objects": [
+            { "guid": "g2", "name": "Library Manager", "type": "LIBRARY_MANAGER", "form": "LIBRARIES", "path": "App/Library Manager.libraries.yaml" }
+          ],
+          "skipped": [], "warnings": []
+        }
+        """;
+
+    /// <summary>The version after the deletion: the file and its manifest entry are gone.</summary>
+    private static async Task<ProjectSnapshot> AfterDeletingMotor()
+    {
+        var texts = Tracked();
+        texts[ManifestPath] = SnapshotRead.Of(ManifestWithoutMotor);
+        var (snapshot, _) = await Load(TrackedFiles.Where(f => f != MotorPath).ToList(), texts);
+        return snapshot;
+    }
+
+    private static (Func<string, Task<SnapshotRead>> Read, List<string> Asked) ParentWith(string manifest)
+    {
+        var asked = new List<string>();
+        return (path =>
+        {
+            asked.Add(path);
+            return Task.FromResult(path == ManifestPath ? SnapshotRead.Of(manifest) : SnapshotRead.Absent);
+        }, asked);
+    }
+
+    private static Task<ProjectSnapshot> Named(ProjectSnapshot snapshot, IReadOnlyList<string> gone, Func<string, Task<SnapshotRead>> parent) =>
+        ProjectSnapshotLoader.WithDeletedObjectsAsync(snapshot, gone, parent, NullLogger.Instance, LogCategory.App, "test", CancellationToken.None);
+
+    /// <summary>
+    /// The row a deleting commit could not name: this version's manifest no longer lists the
+    /// object, so its name, type and vendor come from the parent's, which did.
+    /// </summary>
+    [Fact]
+    public async Task A_deleted_object_keeps_its_name_and_type_from_the_parents_manifest()
+    {
+        var snapshot = await AfterDeletingMotor();
+        var (parent, asked) = ParentWith(Manifest);
+
+        var named = await Named(snapshot, [MotorPath], parent);
+
+        var project = Assert.Single(named.Projects);
+        Assert.Contains(project.Manifest!.Objects, o => o.Name == "FB_Motor" && o.Type == "POU");
+        Assert.Contains(project.Manifest.Objects, o => o.Name == "Library Manager");
+        // Exactly one read: the parent's manifest, nothing else of the parent.
+        Assert.Equal([ManifestPath], asked);
+
+        // And the tree draws it as the object it was, struck.
+        var nodes = RepoExplorerBuilder.Build(
+            snapshot.Files, named.Projects,
+            new ProjectTreeOptions { ChangedOnly = true, HideUnchangedProjects = true },
+            changes: [new Versio.Core.Git.FileChange { Path = MotorPath, Staged = Versio.Core.Git.ChangeKind.Deleted, Unstaged = Versio.Core.Git.ChangeKind.Unmodified }]);
+        var motor = Assert.Single(Flatten(nodes), n => n.Name == "FB_Motor");
+        Assert.Equal((ProjectNodeKind.Object, Versio.Core.Git.ChangeKind.Deleted, "POU"), (motor.Kind, motor.Status, motor.Type));
+    }
+
+    [Fact]
+    public async Task Nothing_deleted_under_an_export_reads_nothing_of_the_parent()
+    {
+        var snapshot = await AfterDeletingMotor();
+        var (parent, asked) = ParentWith(Manifest);
+
+        Assert.Same(snapshot, await Named(snapshot, [], parent));
+        Assert.Same(snapshot, await Named(snapshot, ["README.md"], parent));
+        Assert.Empty(asked);
+    }
+
+    [Fact]
+    public async Task A_deleted_file_the_parent_never_named_stays_a_path()
+    {
+        var snapshot = await AfterDeletingMotor();
+        var (parent, asked) = ParentWith(ManifestWithoutMotor);
+
+        var named = await Named(snapshot, [MotorPath], parent);
+
+        Assert.DoesNotContain(Assert.Single(named.Projects).Manifest!.Objects, o => o.Name == "FB_Motor");
+        Assert.Equal([ManifestPath], asked);
+        Assert.Empty(named.Problems);
+    }
+
+    [Fact]
+    public async Task A_parent_manifest_that_cannot_be_read_is_a_problem_and_the_path_stays()
+    {
+        var snapshot = await AfterDeletingMotor();
+        var asked = new List<string>();
+        Task<SnapshotRead> Parent(string path)
+        {
+            asked.Add(path);
+            return Task.FromResult(SnapshotRead.Failed("RateLimited"));
+        }
+
+        var named = await Named(snapshot, [MotorPath], Parent);
+
+        Assert.Contains(named.Problems, p => p.Contains($"{ManifestPath} at the parent could not be read (RateLimited)", StringComparison.Ordinal));
+        Assert.DoesNotContain(Assert.Single(named.Projects).Manifest!.Objects, o => o.Name == "FB_Motor");
+    }
+
+    private static IEnumerable<ProjectTreeNode> Flatten(IEnumerable<ProjectTreeNode> nodes) =>
+        nodes.SelectMany(n => Flatten(n.Children).Prepend(n));
+
     [Fact]
     public async Task A_source_project_with_no_config_is_described_from_its_files_without_a_read()
     {
