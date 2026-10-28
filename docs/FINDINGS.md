@@ -100,8 +100,17 @@ System32 and `GCM_INTERACTIVE=never`: public clone; commit with LFS hooks; push 
 repository through the LFS pre-push hook; fetch; ls-remote; a fresh clone that smudged the LFS
 object back byte-identical; `credential fill` for github.com answered by GCM from the stored
 credential with no window; and ls-remote plus a shallow clone of the private
-`fluidstackio/versio-releases`. **Not done here:** installing over the owner's running 0.4.11,
-a push to a real remote, and an interactive GCM sign-in — those need the owner.
+`fluidstackio/versio-releases`.
+
+**Installed, with the owner's leave** (they closed Versio first): `Setup.exe --silent` over
+the 0.4.11 install, `current` 686 → 528 MB. The installed git, PATH = System32,
+`GCM_INTERACTIVE=never`: shallow clone and fetch of the private releases repository, and a
+push of a throwaway one-commit branch to `fluidstackio/Versio`, read back with ls-remote and
+deleted at once. The installed app on `C:\GIT\Versio` logged `git found … current\git\cmd\git.exe`,
+`git credential fill ok`, `credential for https://github.com: stored`, and no `ERR` line.
+**Not done:** a sign-in from nothing. That means erasing the owner's stored GitHub credential
+and completing GCM's browser flow, which is theirs to do; what was proved is that the trimmed
+GCM reads, and pushes with, the credential it stored before.
 
 ---
 
