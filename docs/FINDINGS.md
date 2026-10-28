@@ -114,6 +114,54 @@ GCM reads, and pushes with, the credential it stored before.
 
 ---
 
+### The update card sat on 70% for a minute and a half: Velopack applying a delta in silence
+
+**2026-10-28, the owner's installed 0.4.10 updating to 0.4.11.** The overlay of the entry
+below appeared, climbed to 70% and stayed there "a long time or frozen". It wasn't frozen.
+The log has the shape:
+
+- `12:36:55` downloading (3,905,057 bytes): the delta;
+- `12:36:56` 25% and 50%, 49 ms apart;
+- `12:38:27` downloaded in 92.3 s, and the restart.
+
+The bytes took a second. The other 91 s were Velopack rebuilding `Versio-0.4.11-full.nupkg`
+(288 MB, the `.partial` growing in `packages/`) from the installed 0.4.10 package plus the
+delta, with no progress reported while it does. 0.4.9 → 0.4.10 had the same silent minute
+(50% at 10:36:21, done at 10:37:21).
+
+**The fix is the card, not Velopack.** `UpdatesViewModel` now runs a one-second ticker for the
+whole download:
+
+- **The card always moves.** An elapsed clock sits beside the percentage.
+- **After 3 s with no progress, it says it is applying** (`IsApplying`). The bar empties and
+  runs indeterminate, the line reads *Applying the update · 1:12*, and the sentence says this
+  can take a minute or two and Versio is still working. With the fill left at 70%, the sweep
+  only moved through the empty 30% and still read as stuck.
+- **The log says so.** One line when the quiet starts, naming the percentage and the cause,
+  then a heartbeat every 15 s, because the log had nothing between *50%* and *downloaded* for
+  91 s.
+
+The quiet is inferred rather than tied to a percentage. Where Velopack's download share ends
+is its own business; silence is what the user sees.
+
+**Why it is 288 MB, and what is not done here.** Bundled git is 410 MB of the 686 MB install
+(PortableGit, kept over MinGit for Git Credential Manager; the 2026-08-24 entry). Every delta
+update recompresses that unchanged git into the new full package, which is most of those 91
+seconds. ~~Trimming the bundled git is the real cure and is left as its own task.~~ Done the
+same day: *PortableGit was two-fifths of every update*, the entry above (384.9 → 244.1 MB;
+full package 287.8 → 231.6 MB).
+
+**Evidence.**
+
+- One new App test: a fake reports 50% and then goes quiet. It must turn into *Applying* with
+  an empty, indeterminate bar, then reach the restart.
+- Removing `SetApplying(true)` from the ticker turns that test red, after its 30 s wait.
+- The Try-again test now waits for its restart, because stopping the clock adds an await.
+- **Not checked:** whether Velopack honours Cancel while it rebuilds. If it does not, Cancel
+  in that phase waits for the rebuild to end.
+
+---
+
 ### The history panel named nothing, and its reason was half right
 
 **2026-10-27 → 28, on `HistoryRendering`.** The user: "the commit history just shows raw files
