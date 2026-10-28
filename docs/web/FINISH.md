@@ -127,10 +127,11 @@ File refs: `P` = `web/src/pages/PullPage.tsx`, `RB` = `components/ReviewBar.tsx`
   *above* the comment box at the end of the timeline~~ (Step 2, with a merge summary — reviews, checks, conflicts — for every reader). Still: "Close pull request" / "Close with comment" beside "Comment".
 
 ### B4. Commits
-- **missing** Links: to the commit page (`/commit/<sha>` does not exist), to "review this commit
+- ~~**missing** Links: to the commit page (`/commit/<sha>` does not exist)~~ (2026-10-27: the sha opens
+  `/commit/<sha>`, which draws the commit as objects; GitHub is the small external link beside it), to "review this commit
   only" (`/pull/N/commits/<sha>`), to a range (`/pull/N/files/<a>..<b>`).
 - **partial** ~~Avatar, author/committer distinction, verified-signature badge, message body on
-  expand~~ (Step 2), co-authors, copy SHA, per-commit check status, grouping by day. The sha links to the commit on GitHub until `/commit/<sha>` exists (Step 8).
+  expand~~ (Step 2), co-authors, copy SHA, per-commit check status, grouping by day. ~~The sha links to the commit on GitHub until `/commit/<sha>` exists (Step 8).~~
 
 ### B5. Checks
 - **partial** Rows carry name, status/conclusion word, glyph and an external "Details" link

@@ -16,7 +16,7 @@ import { ReviewBar, ReviewersEditor } from '../components/ReviewBar';
 import { ActionButton, CommentBox, ReasonAction, carryDraft, describe, newOpKey } from '../components/ReviewWrite';
 import { RepoLayout } from '../components/RepoLayout';
 import { Avatar, Blankslate, Flash, Icon, IssueLabel, Layout as TwoColumn, Loading, RelativeTime, SidebarSection, StateBadge, UnderlineNav, pullState, type NavItem } from '../components/ui';
-import { blobUrl, compareUrl, parsePullTab, pullUrl, type PullTab } from '../routes';
+import { blobUrl, commitUrl, compareUrl, parsePullTab, pullUrl, type PullTab } from '../routes';
 import { usePageTitle } from '../title';
 import type { Async } from '../useAsync';
 import { useAsync } from '../useAsync';
@@ -605,7 +605,7 @@ function PullReview({ me }: { me: Me | null }) {
                         </>
                       } />
                   )}
-                  {tab === 'commits' && <Commits commits={commits} />}
+                  {tab === 'commits' && <Commits owner={owner} repo={repo} commits={commits} />}
                   {tab === 'checks' && <Checks status={status} onOpenPath={open} notes={notes} fileLink={(p) => pullUrl(owner, repo, n, 'files', p, search)} />}
                 </>
               }
@@ -1012,7 +1012,7 @@ function duration(startedAt?: string | null, completedAt?: string | null): strin
   return m > 0 ? `${m}m ${seconds % 60}s` : `${seconds}s`;
 }
 
-function Commits({ commits }: { commits: Async<ReviewCommits> }) {
+function Commits({ owner, repo, commits }: { owner: string; repo: string; commits: Async<ReviewCommits> }) {
   const [open, setOpen] = useState<Set<string>>(new Set());
   if (commits.state !== 'ok') {
     return commits.state === 'loading' ? <Loading what="Reading the commits…" /> : <p className="text-muted">{commits.error.message}</p>;
@@ -1057,7 +1057,10 @@ function Commits({ commits }: { commits: Async<ReviewCommits> }) {
                 </div>
               </div>
               <div className="commit-side">
-                {safeHref(x.url) ? <a href={safeHref(x.url)!} target="_blank" rel="noopener noreferrer" className="commit-sha" title="This commit on GitHub">{x.sha.slice(0, 7)}</a> : <code className="commit-sha" title={x.sha}>{x.sha.slice(0, 7)}</code>}
+                {/* The sha opens the commit's own page (FINISH.md B4; /commit/<sha> exists since Step 8), which draws
+                    what it changed as objects; GitHub stays as the small external link the commit card uses. */}
+                <Link className="commit-sha" to={commitUrl(owner, repo, x.sha)} title="This commit's page"><code>{x.sha.slice(0, 7)}</code></Link>
+                {safeHref(x.url) && <a href={safeHref(x.url)!} target="_blank" rel="noopener noreferrer" className="btn btn-small" title="This commit on GitHub"><Icon name="link" className="btn-icon" /></a>}
               </div>
             </li>
           ))}
