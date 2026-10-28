@@ -223,6 +223,24 @@ export interface Commit {
   message: string;
   author: string;
   when: string;
+  /** Which of the object's files this commit touched, when the history is an object's; empty on a branch's history. */
+  touched: string[];
+}
+
+/**
+ * A branch's history, or an object's (2026-10-27): with a path, the server looks the path's object
+ * up at the ref and lists every one of its files, so a commit that touched only the native XML is
+ * in the history of the object whose readable file was asked about.
+ */
+export interface History {
+  /** The object's name when the path is an object's; null for a plain file or no path. */
+  object: string | null;
+  objectLabel: string | null;
+  /** The files listed; one entry for a plain file, none for a branch. */
+  layers: { path: string; label: string }[];
+  /** The object has more files than the server lists (its bound); the page says so. */
+  layersCut: boolean;
+  commits: Commit[];
 }
 
 /** A pull request as the list shows it (docs/web/FINISH.md, B10); names spelled by the server (rule 9). */
@@ -807,7 +825,7 @@ export const api = {
   compareView: (owner: string, repo: string, base: string, head: string, path: string, view: PaneView, layout: Layout, from?: string, signal?: AbortSignal, full?: boolean) =>
     get<View>(`${repoBase(owner, repo)}/compare/view${query({ base, head, path, from, view, layout, full: full ? '1' : undefined })}`, signal),
   history: (owner: string, repo: string, ref: string, path?: string, signal?: AbortSignal) =>
-    get<Commit[]>(`${repoBase(owner, repo)}/history${query({ ref, path })}`, signal),
+    get<History>(`${repoBase(owner, repo)}/history${query({ ref, path })}`, signal),
   pulls: (owner: string, repo: string, signal?: AbortSignal, q?: string, after?: string) =>
     get<PullList>(`${repoBase(owner, repo)}/pulls${query({ q, after: after && !/^\d+$/.test(after) ? after : undefined, page: after && /^\d+$/.test(after) ? after : undefined })}`, signal),
   /** The new pull request's description previewed through the server's Markdown (a write-shaped call, as the review page's preview is). */

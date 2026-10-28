@@ -12,10 +12,15 @@ import { CommitsPage } from './CommitsPage';
 
 let commitCount = 51;
 let truncatedBranches = false;
+/** When set, the history asked for is an object's with two files (2026-10-27): the server names it and says which file each commit touched. */
+let objectHistory = false;
 
 function answer(url: string): unknown {
   if (url.includes('/history')) {
-    return Array.from({ length: commitCount }, (_, i) => ({ sha: `${i}`.padStart(40, '0'), message: `c${i}`, author: 'a', when: '2026-10-01T00:00:00Z' }));
+    const commits = Array.from({ length: commitCount }, (_, i) => ({ sha: `${i}`.padStart(40, '0'), message: `c${i}`, author: 'a', when: '2026-10-01T00:00:00Z', touched: objectHistory ? (i === 0 ? ['src/Glob_Var.gvl.xml'] : ['src/Glob_Var.gvl.st', 'src/Glob_Var.gvl.xml']) : [] }));
+    return objectHistory
+      ? { object: 'Glob_Var', objectLabel: 'src/Glob_Var.gvl.st', layers: [{ path: 'src/Glob_Var.gvl.st', label: 'src/Glob_Var.gvl.st' }, { path: 'src/Glob_Var.gvl.xml', label: 'src/Glob_Var.gvl.xml' }], layersCut: false, commits }
+      : { object: null, objectLabel: null, layers: [], layersCut: false, commits };
   }
   if (url.endsWith('/branches')) {
     return { branches: [{ name: 'develop', label: 'develop', commit: 'x' }, { name: 'feature', label: 'feature', commit: 'y' }], truncated: truncatedBranches };
@@ -51,6 +56,36 @@ describe('History', () => {
     document.body.innerHTML = '';
     commitCount = 51;
     truncatedBranches = false;
+    objectHistory = false;
+  });
+
+  // An object's history covered one layer until 2026-10-27 (the path GitHub was asked about). The
+  // server now lists every file of the object and says which each commit touched; the page names
+  // the object, offers a chip per file, and marks the touched one on each row.
+  it("names the object whose history this is, offers a chip per file, and marks each row's touched files", async () => {
+    objectHistory = true;
+    commitCount = 2;
+    const { host, root } = await render('/acme/plant/commits/feature/src/Glob_Var.gvl.st');
+
+    expect(host.querySelector('.history-object')?.textContent).toBe('History for Glob_Var · 2 files');
+    const chips = Array.from(host.querySelectorAll('.layers a.chip'));
+    expect(chips.map((c) => c.textContent)).toEqual(['Glob_Var.gvl.st', 'Glob_Var.gvl.xml']);
+    expect(chips[0]?.classList.contains('is-on')).toBe(true);
+    expect(chips[1]?.getAttribute('href')).toBe('/acme/plant/commits/feature/src/Glob_Var.gvl.xml');
+    const rows = host.querySelectorAll('.commit-row');
+    expect(Array.from(rows[0]!.querySelectorAll('.commit-touched')).map((c) => c.textContent)).toEqual(['Glob_Var.gvl.xml']);
+    expect(Array.from(rows[1]!.querySelectorAll('.commit-touched')).map((c) => c.textContent)).toEqual(['Glob_Var.gvl.st', 'Glob_Var.gvl.xml']);
+    act(() => root.unmount());
+  });
+
+  it('says nothing of objects or touched files on a branch’s history', async () => {
+    commitCount = 2;
+    const { host, root } = await render('/acme/plant/commits/feature');
+
+    expect(host.querySelector('.history-object')).toBeNull();
+    expect(host.querySelector('.layers')).toBeNull();
+    expect(host.querySelector('.commit-touched')).toBeNull();
+    act(() => root.unmount());
   });
 
   it('links Compare to the default branch against the ref shown, never the ref against itself', async () => {

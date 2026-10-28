@@ -50,7 +50,7 @@ public sealed class SecurityTests
         var tree = Json(await (await host.GetAsync($"{api}/tree?ref={Uri.EscapeDataString(head)}")).Body());
         var node = tree.GetProperty("nodes").EnumerateArray().SelectMany(n => n.GetProperty("children").EnumerateArray().Prepend(n)).Single(n => n.GetProperty("path").GetString() == file);
         var branches = Json(await (await host.GetAsync($"{api}/branches")).Body()).GetProperty("branches").EnumerateArray().ToList();
-        var history = Json(await (await host.GetAsync($"{api}/history?ref={Uri.EscapeDataString(head)}")).Body()).EnumerateArray().ToList();
+        var history = Json(await (await host.GetAsync($"{api}/history?ref={Uri.EscapeDataString(head)}")).Body()).GetProperty("commits").EnumerateArray().ToList();
         var compared = Json(await (await host.GetAsync($"{api}/compare?base={main}&head={head}")).Body()).GetProperty("files").EnumerateArray().Single();
         var view = await host.GetAsync($"{api}/view?ref={Uri.EscapeDataString(head)}&path={Uri.EscapeDataString(file)}");
         view.AssertStatus(HttpStatusCode.OK);

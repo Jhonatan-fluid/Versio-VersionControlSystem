@@ -98,7 +98,7 @@ public sealed class RefNameTests
 
         var history = await host.GetAsync($"/api/repos/acme/plant/history?ref={encoded}");
         history.AssertStatus(HttpStatusCode.OK);
-        Assert.Contains(Json(await history.Body()).EnumerateArray(), c => c.GetProperty("message").GetString() == "commit " + branch);
+        Assert.Contains(Json(await history.Body()).GetProperty("commits").EnumerateArray(), c => c.GetProperty("message").GetString() == "commit " + branch);
     }
 
     [Theory]

@@ -244,6 +244,9 @@ code, kbd, pre { font-family: var(--font-mono); }
 .layers { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 8px; }
 .chip { border: 1px solid var(--color-border-default); background: var(--color-canvas-default); border-radius: 999px; padding: 1px 10px; font-size: 12px; cursor: pointer; }
 .chip.is-on { border-color: var(--color-accent-emphasis); color: var(--color-accent-fg); background: var(--color-accent-subtle); }
+a.chip { text-decoration: none; color: inherit; }
+/* A row's touched-file chip on an object's history: said, not clickable. */
+.chip.commit-touched { cursor: default; padding: 0 8px; font-size: 11px; }
 
 /* The fragments: scroll inside their box rather than clip at the pane's edge (seen on the real
    pull request: every long ST line cut off). */

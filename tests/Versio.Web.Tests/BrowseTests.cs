@@ -134,10 +134,10 @@ public sealed class BrowseTests
     /// A Versio repository with one CODESYS export, then a commit that edits only the native XML
     /// layer of a two-layer GVL, removes a POU whole, and adds a document outside any export.
     /// </summary>
-    private static FakeGitHub BuildVersio(out string head)
+    private static FakeGitHub BuildVersio(out FakeGitHub.FakeRepo repo, out string head)
     {
         var github = new FakeGitHub();
-        var repo = github.Add("acme", "plant");
+        repo = github.Add("acme", "plant");
         var files = FakeGitHub.FromDisk(".versio/repo.json", "fixtures/projects/MachineWithMembers");
         var start = github.Commit(repo, "main", files);
         var next = new Dictionary<string, byte[]>(files, StringComparer.Ordinal)
@@ -163,6 +163,7 @@ public sealed class BrowseTests
 
     private const string Application = "fixtures/projects/MachineWithMembers/Device/Plc Logic/Application";
     private const string GlobVarXml = Application + "/Glob_Var.gvl.xml";
+    private const string GlobVarSt = Application + "/Glob_Var.gvl.st";
     private const string Simulation = Application + "/Simulation.st";
     private const string Manifest = "fixtures/projects/MachineWithMembers/_manifest.json";
 
@@ -178,7 +179,7 @@ public sealed class BrowseTests
     [Fact]
     public async Task A_commits_files_are_grouped_by_object_with_every_layer_the_touched_one_drawn_and_the_tree_rows_status_and_pill()
     {
-        await using var host = await TestHost.StartAsync(BuildVersio(out var head));
+        await using var host = await TestHost.StartAsync(BuildVersio(out _, out var head));
 
         var commit = Json(await (await host.GetAsync($"/api/repos/acme/plant/commit?sha={head}")).Body());
 
@@ -222,7 +223,7 @@ public sealed class BrowseTests
     [Fact]
     public async Task A_commit_whose_project_trees_cannot_be_read_keeps_its_card_and_files_and_says_why_the_objects_are_missing()
     {
-        var github = BuildVersio(out var head);
+        var github = BuildVersio(out _, out var head);
         github.BeforeTree = _ => Task.FromResult(RepoFailure.RateLimited);
         string log;
         await using (var host = await TestHost.StartAsync(github))
@@ -242,6 +243,63 @@ public sealed class BrowseTests
         }
 
         Assert.Contains("could not be read (RateLimited); 4 files answered ungrouped", log, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// An object's history covered one layer until 2026-10-27: GitHub's list-commits takes one
+    /// path, and the page sent the readable file's, so a commit that edited the native XML alone
+    /// was not in the GVL's history. Now every layer is listed and merged: the XML-only commit is
+    /// there, naming the layer it touched, and the commit that edited both names both.
+    /// </summary>
+    [Fact]
+    public async Task An_objects_history_covers_every_layer_and_says_which_each_commit_touched()
+    {
+        var github = BuildVersio(out var repo, out var xmlOnly);
+        // A third commit on top, editing both layers of the GVL.
+        var files = new Dictionary<string, byte[]>(repo.Commits[xmlOnly], StringComparer.Ordinal);
+        files[GlobVarSt] = Encoding.UTF8.GetBytes(Encoding.UTF8.GetString(files[GlobVarSt]).Replace("TempActual", "TempMeasured", StringComparison.Ordinal));
+        files[GlobVarXml] = Encoding.UTF8.GetBytes(Encoding.UTF8.GetString(files[GlobVarXml]) + "\n");
+        var both = github.Commit(repo, "both", files);
+        repo.Parents[both] = [xmlOnly];
+        await using var host = await TestHost.StartAsync(github);
+
+        var history = Json(await (await host.GetAsync($"/api/repos/acme/plant/history?ref=both&path={Uri.EscapeDataString(GlobVarSt)}")).Body());
+
+        Assert.Equal("Glob_Var", history.GetProperty("object").GetString());
+        Assert.Equal([GlobVarSt, GlobVarXml], history.GetProperty("layers").EnumerateArray().Select(l => l.GetProperty("path").GetString()));
+        Assert.False(history.GetProperty("layersCut").GetBoolean());
+        var rows = history.GetProperty("commits").EnumerateArray().ToDictionary(c => c.GetProperty("sha").GetString()!, c => c.GetProperty("touched").EnumerateArray().Select(t => t.GetString()).ToList());
+        Assert.Equal([GlobVarSt, GlobVarXml], rows[both]);
+        Assert.Equal([GlobVarXml], rows[xmlOnly]);
+        // The root commit added both layers, as GitHub lists it for either path.
+        Assert.Equal([GlobVarSt, GlobVarXml], rows[repo.Refs["main"]]);
+        Assert.Equal(3, rows.Count);
+
+        // A plain file is its own history, with no object; a branch's has no layers and says nothing of what each commit touched.
+        var readme = Json(await (await host.GetAsync("/api/repos/acme/plant/history?ref=both&path=.versio%2Frepo.json")).Body());
+        Assert.Equal(JsonValueKind.Null, readme.GetProperty("object").ValueKind);
+        Assert.Equal([".versio/repo.json"], readme.GetProperty("layers").EnumerateArray().Select(l => l.GetProperty("path").GetString()));
+        var branch = Json(await (await host.GetAsync("/api/repos/acme/plant/history?ref=both")).Body());
+        Assert.Equal(0, branch.GetProperty("layers").GetArrayLength());
+        Assert.All(branch.GetProperty("commits").EnumerateArray(), c => Assert.Equal(0, c.GetProperty("touched").GetArrayLength()));
+    }
+
+    /// <summary>A rate limit on the project tree costs the other layers, never the history: the one path is listed, and the log says why.</summary>
+    [Fact]
+    public async Task An_objects_history_still_answers_for_the_one_path_when_the_project_tree_cannot_be_read()
+    {
+        var github = BuildVersio(out _, out _);
+        github.BeforeTree = _ => Task.FromResult(RepoFailure.RateLimited);
+        await using var host = await TestHost.StartAsync(github);
+
+        var response = await host.GetAsync($"/api/repos/acme/plant/history?ref=edit&path={Uri.EscapeDataString(GlobVarXml)}");
+        response.AssertStatus(HttpStatusCode.OK);
+        var history = Json(await response.Body());
+
+        Assert.Equal(JsonValueKind.Null, history.GetProperty("object").ValueKind);
+        Assert.Equal([GlobVarXml], history.GetProperty("layers").EnumerateArray().Select(l => l.GetProperty("path").GetString()));
+        // The root commit that added the file and the one that edited it: GitHub's list for the one path, as before.
+        Assert.Equal(2, history.GetProperty("commits").GetArrayLength());
     }
 
     [Fact]
