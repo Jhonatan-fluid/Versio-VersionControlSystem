@@ -348,12 +348,37 @@ internal sealed class FakeGitHub : IRepoSource
         return Task.FromResult(bytes.Length > maxBytes ? RepoResult<byte[]>.Fail(RepoFailure.TooLarge) : RepoResult<byte[]>.Of(bytes));
     }
 
+    /// <summary>
+    /// Every ref's commit, as GitHub lists a branch; with <paramref name="path"/>, as GitHub
+    /// filters by one path: only the commits where that file differs from the first parent
+    /// (the same diff <see cref="GetCommitAsync"/> lists), or that have it with no parent known.
+    /// Ignored the path until 2026-10-27, when /history began asking once per layer.
+    /// </summary>
     public Task<RepoResult<IReadOnlyList<CommitInfo>>> GetCommitsAsync(RepoAccess access, string owner, string repo, string reference, string? path, int limit, CancellationToken ct)
     {
-        var r = See(access, owner, repo, "commits");
-        return Task.FromResult(r.Ok
-            ? RepoResult<IReadOnlyList<CommitInfo>>.Of(r.Value!.Refs.Select(kv => new CommitInfo(kv.Value, "commit " + kv.Key, "Tester", DateTimeOffset.UnixEpoch)).ToList())
-            : r.As<IReadOnlyList<CommitInfo>>());
+        var r = See(access, owner, repo, path is null ? "commits" : "commits " + path);
+        if (!r.Ok)
+        {
+            return Task.FromResult(r.As<IReadOnlyList<CommitInfo>>());
+        }
+
+        bool Touches(string sha)
+        {
+            var files = r.Value!.Commits[sha];
+            if (!r.Value.Parents.TryGetValue(sha, out var parents) || parents.Count == 0 || !r.Value.Commits.TryGetValue(parents[0], out var before))
+            {
+                return files.ContainsKey(path!);
+            }
+
+            var has = files.TryGetValue(path!, out var now);
+            var had = before.TryGetValue(path!, out var was);
+            return has != had || (has && !was.AsSpan().SequenceEqual(now));
+        }
+
+        return Task.FromResult(RepoResult<IReadOnlyList<CommitInfo>>.Of(r.Value!.Refs
+            .Where(kv => path is null || Touches(kv.Value))
+            .Select(kv => new CommitInfo(kv.Value, "commit " + kv.Key, "Tester", DateTimeOffset.UnixEpoch))
+            .ToList()));
     }
 
     /// <summary>A commit's page, from what the fake knows: its message, its parents, and the files that differ from its first parent.</summary>

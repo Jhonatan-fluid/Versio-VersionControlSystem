@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router';
 import type { CheckAnnotation, CoverageGap, Layout, Me, PaneView, PendingReviewView, ReviewCheck, ReviewCommits, ReviewFile, ReviewFileView, ReviewSnapshot, ReviewStatus, ReviewThread, ReviewThreads, ReviewTimeline, ThreadPlacement } from '../api';
 import { ApiError, api } from '../api';
+import { ChangeSectionHead } from '../components/ChangeSectionHead';
 import type { Annotation } from '../components/FragmentHost';
 import { FragmentHost } from '../components/FragmentHost';
 import { safeHref } from '../fragment';
@@ -15,7 +16,7 @@ import { ReviewBar, ReviewersEditor } from '../components/ReviewBar';
 import { ActionButton, CommentBox, ReasonAction, carryDraft, describe, newOpKey } from '../components/ReviewWrite';
 import { RepoLayout } from '../components/RepoLayout';
 import { Avatar, Blankslate, Flash, Icon, IssueLabel, Layout as TwoColumn, Loading, RelativeTime, SidebarSection, StateBadge, UnderlineNav, pullState, type NavItem } from '../components/ui';
-import { blobUrl, compareUrl, parsePullTab, pullUrl, type PullTab } from '../routes';
+import { blobUrl, commitUrl, compareUrl, parsePullTab, pullUrl, type PullTab } from '../routes';
 import { usePageTitle } from '../title';
 import type { Async } from '../useAsync';
 import { useAsync } from '../useAsync';
@@ -28,8 +29,6 @@ const tabs: { id: Tab; label: string }[] = [
   { id: 'checks', label: 'Checks' },
   { id: 'files', label: 'Files changed' },
 ];
-
-const mark: Record<ReviewFile['change'], string> = { added: 'A', modified: 'M', deleted: 'D', renamed: 'R' };
 
 const unavailable: Record<string, string> = {
   'no-patch': 'GitHub shows no line diff for this file (binary, or too large), so comments go on the file, not a line.',
@@ -606,7 +605,7 @@ function PullReview({ me }: { me: Me | null }) {
                         </>
                       } />
                   )}
-                  {tab === 'commits' && <Commits commits={commits} />}
+                  {tab === 'commits' && <Commits owner={owner} repo={repo} commits={commits} />}
                   {tab === 'checks' && <Checks status={status} onOpenPath={open} notes={notes} fileLink={(p) => pullUrl(owner, repo, n, 'files', p, search)} />}
                 </>
               }
@@ -1013,7 +1012,7 @@ function duration(startedAt?: string | null, completedAt?: string | null): strin
   return m > 0 ? `${m}m ${seconds % 60}s` : `${seconds}s`;
 }
 
-function Commits({ commits }: { commits: Async<ReviewCommits> }) {
+function Commits({ owner, repo, commits }: { owner: string; repo: string; commits: Async<ReviewCommits> }) {
   const [open, setOpen] = useState<Set<string>>(new Set());
   if (commits.state !== 'ok') {
     return commits.state === 'loading' ? <Loading what="Reading the commits…" /> : <p className="text-muted">{commits.error.message}</p>;
@@ -1058,7 +1057,10 @@ function Commits({ commits }: { commits: Async<ReviewCommits> }) {
                 </div>
               </div>
               <div className="commit-side">
-                {safeHref(x.url) ? <a href={safeHref(x.url)!} target="_blank" rel="noopener noreferrer" className="commit-sha" title="This commit on GitHub">{x.sha.slice(0, 7)}</a> : <code className="commit-sha" title={x.sha}>{x.sha.slice(0, 7)}</code>}
+                {/* The sha opens the commit's own page (FINISH.md B4; /commit/<sha> exists since Step 8), which draws
+                    what it changed as objects; GitHub stays as the small external link the commit card uses. */}
+                <Link className="commit-sha" to={commitUrl(owner, repo, x.sha)} title="This commit's page"><code>{x.sha.slice(0, 7)}</code></Link>
+                {safeHref(x.url) && <a href={safeHref(x.url)!} target="_blank" rel="noopener noreferrer" className="btn btn-small" title="This commit on GitHub"><Icon name="link" className="btn-icon" /></a>}
               </div>
             </li>
           ))}
@@ -1311,41 +1313,16 @@ function FileSection({ writer, snap, owner, repo, file, active, threads, threads
 
   const segments = file.label.split('/');
   const name = file.object ?? segments[segments.length - 1] ?? file.label;
-  const folder = segments.slice(0, -1).join(' › ').replace(/\^/g, '');
   return (
     <section ref={host} className={`file-review${open ? '' : ' is-folded'}${viewed ? ' is-viewed' : ''}`} data-file={path} id={`diff-${encodeURIComponent(path)}`}>
-      <div className="pane-head">
-        <div className="pane-title" title={file.label}>
-          <button type="button" className="btn btn-invisible btn-small file-chevron" aria-expanded={open} aria-label={open ? 'Collapse this file' : 'Expand this file'} onClick={() => setOpen(!open)}>
-            <Icon name={open ? 'chevron-down' : 'chevron-right'} />
-          </button>
-          <span className={`change change-${file.change}`} title={file.change}>{mark[file.change]}</span>
-          <h2 className="review-file">{name}</h2>
-          {folder && <span className="pane-folder" title={file.label}>{folder}</span>}
-          {file.change === 'renamed' && file.previousLabel && <span className="text-muted text-small">renamed from {file.previousLabel}</span>}
-          {file.additions !== undefined && file.additions !== null && file.deletions !== undefined && file.deletions !== null && (
-            <span className="diffstat"><span className="diffstat-add">+{file.additions}</span> <span className="diffstat-del">−{file.deletions}</span></span>
-          )}
-        </div>
-        <div className="pane-tools">
-          {writer && (
-            <label className="review-viewed-label">
-              <input type="checkbox" checked={viewed} onChange={(e) => onViewed(e.target.checked)} /> Viewed
-            </label>
-          )}
-          <div className="segmented" role="tablist" aria-label="View">
-            <button type="button" role="tab" aria-selected={view === 'rendered'} onClick={() => setView('rendered')}>Rendered</button>
-            <button type="button" role="tab" aria-selected={view === 'raw'} onClick={() => setView('raw')}>Raw</button>
-          </div>
-          <label className="full-file-label" title="Every line, on both tabs; clear, the drawing is folded to the lines around each change">
-            <input type="checkbox" checked={full} onChange={(e) => setFull(e.target.checked)} /> Show full file
+      <ChangeSectionHead open={open} onToggle={() => setOpen(!open)} status={file.change} name={name} label={file.label}
+        renamedFrom={file.change === 'renamed' ? file.previousLabel : null} additions={file.additions} deletions={file.deletions}
+        view={view} onView={setView} layout={layout} onLayout={setLayout} full={full} onFull={setFull}
+        extraTools={writer && (
+          <label className="review-viewed-label">
+            <input type="checkbox" checked={viewed} onChange={(e) => onViewed(e.target.checked)} /> Viewed
           </label>
-          <div className="segmented" role="group" aria-label="Layout">
-            <button type="button" aria-pressed={layout === 'unified'} onClick={() => setLayout('unified')}>Unified</button>
-            <button type="button" aria-pressed={layout === 'split'} onClick={() => setLayout('split')}>Side by side</button>
-          </div>
-        </div>
-      </div>
+        )} />
       {open && (
         <div className="file-review-body">
           <FileReview writer={writer} path={path} file={file} result={result} threads={threads} threadsState={threadsState} view={view} onView={setView}

@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router';
-import type { CommitDetail, Layout, Me, PaneView, TreeNode } from '../api';
+import type { CommitDetail, CommitFileEntry, CommitObject, Layout, Me, PaneView, TreeNode } from '../api';
 import { api } from '../api';
+import { ChangeSectionHead, changeMark, changeTone } from '../components/ChangeSectionHead';
 import { CommentCard, anchorOf } from '../components/Conversation';
 import { FragmentHost } from '../components/FragmentHost';
 import { safeHref } from '../fragment';
@@ -14,13 +15,12 @@ import { blobUrl, commitUrl, compareUrl, treeUrl } from '../routes';
 import { usePageTitle } from '../title';
 import { useAsync } from '../useAsync';
 
-const marks: Record<string, string> = { added: 'A', modified: 'M', removed: 'D', renamed: 'R', copied: 'C', changed: 'M' };
-
 /**
  * /owner/repo/commit/sha: GitHub's commit page with the desktop's commit card (FINISH.md Step 8)
  * — the message and its body, who wrote and who committed it, the parents, the stats, "Browse
- * files"; the changed objects as the marked project tree beside every file's drawing, each
- * compared from the first parent as the desktop compares a commit, loaded as it comes into view.
+ * files"; the changed objects as the marked project tree beside one section per OBJECT the
+ * commit touched (2026-10-27: it was one per layer file, headed by a raw path), each compared
+ * from the first parent as the desktop compares a commit, loaded as it comes into view.
  */
 export function CommitPage({ me }: { me: Me | null }) {
   const { owner = '', repo = '', sha = '' } = useParams();
@@ -49,12 +49,14 @@ export function CommitPage({ me }: { me: Me | null }) {
     setSearch(next);
   }
 
+  // A tree pick scrolls to the section keyed by the ROW's path, which is the object's key on the
+  // server (the same tree builder names both). Until 2026-10-27 the target was the primary file,
+  // and an object whose native XML alone had changed had no section by that id.
   const select = (node: TreeNode) => {
-    const target = node.primary ?? node.files[0] ?? node.path;
     const next = new URLSearchParams(search);
-    next.set('path', target);
+    next.set('path', node.path);
     setSearch(next);
-    document.getElementById(`file-${target}`)?.scrollIntoView?.({ block: 'start' });
+    document.getElementById(`file-${node.path}`)?.scrollIntoView?.({ block: 'start' });
   };
 
   if (commit.state === 'error') {
@@ -72,6 +74,9 @@ export function CommitPage({ me }: { me: Me | null }) {
     );
   }
   const c = commit.value;
+  // Without the grouping (the project trees could not be read), the raw files are drawn as
+  // plain sections under a notice saying why — the commit is still there to read.
+  const sections: CommitObject[] = c.objectsUnavailable ? c.files.map(asPlain) : c.objects;
   return (
     <RepoLayout me={me} owner={owner} repo={repo} nav="commits" refName={defaultBranch} crumb={`Commit ${c.sha.slice(0, 7)}`} wide>
       <CommitCard owner={owner} repo={repo} commit={c} />
@@ -85,10 +90,12 @@ export function CommitPage({ me }: { me: Me | null }) {
           </aside>
           <div className="files-main">
             {c.files.length === 0 && <Blankslate icon="diff" heading="No files changed">This commit changes nothing GitHub lists.</Blankslate>}
-            {c.files.map((f) => (
-              <CommitFile key={f.path} owner={owner} repo={repo} base={parent} head={c.sha} file={f} view={view} layout={layout}
+            {c.objectsUnavailable && <p className="notice" role="note">{c.objectsUnavailable} The files are listed as GitHub lists them.</p>}
+            {sections.map((o) => (
+              <CommitObjectSection key={o.key} owner={owner} repo={repo} base={parent} head={c.sha} object={o} view={view} layout={layout}
                 onView={(v) => setParam('view', v, 'rendered')} onLayout={(l) => setParam('layout', l, 'unified')}
-                onOpenPath={(p) => navigate(blobUrl(owner, repo, c.sha, p))} signInUrl={signIn} active={f.path === path} />
+                onOpenPath={(p) => navigate(blobUrl(owner, repo, c.sha, p))} signInUrl={signIn}
+                active={path !== null && (o.key === path || o.layers.some((l) => l.path === path))} />
             ))}
             {c.filesTruncated && <p className="text-muted">GitHub lists at most 300 files for a commit; the rest are in <Link to={compareUrl(owner, repo, parent, c.sha)}>the comparison</Link>.</p>}
           </div>
@@ -222,12 +229,17 @@ function CommitCard({ owner, repo, commit: c }: { owner: string; repo: string; c
   );
 }
 
-interface CommitFileProps {
+/** A raw file as a section of its own: what the page draws when the server could not group. */
+function asPlain(f: CommitFileEntry): CommitObject {
+  return { key: f.path, kind: 'file', name: f.label.slice(f.label.lastIndexOf('/') + 1), label: f.label, path: f.path, from: f.previousPath, type: null, typeName: null, toolchain: '', status: changeTone(f.status), additions: f.additions, deletions: f.deletions, layers: [{ ...f, changed: true }] };
+}
+
+interface CommitObjectSectionProps {
   owner: string;
   repo: string;
   base: string;
   head: string;
-  file: CommitDetail['files'][number];
+  object: CommitObject;
   view: PaneView;
   layout: Layout;
   onView: (v: PaneView) => void;
@@ -237,12 +249,27 @@ interface CommitFileProps {
   active: boolean;
 }
 
-/** One changed file, drawn as the compare view draws it from the first parent, once it nears the viewport. */
-function CommitFile({ owner, repo, base, head, file, view, layout, onView, onLayout, onOpenPath, signInUrl, active }: CommitFileProps) {
+/**
+ * One object the commit touched — or one file outside any object — under the shared header, with
+ * a chip per layer when it has several (the pane's chips, FINISH.md Step 8): the drawn layer is the
+ * one the server picked (the readable file when the commit touched it), and a chip switches it.
+ * Drawn as the compare view draws it from the first parent, once the section nears the viewport.
+ */
+function CommitObjectSection({ owner, repo, base, head, object: o, view, layout, onView, onLayout, onOpenPath, signInUrl, active }: CommitObjectSectionProps) {
   const section = useRef<HTMLElement>(null);
   const [near, setNear] = useState(active);
   const [folded, setFolded] = useState(false);
   const [full, setFull] = useState(false);
+  const [shown, setShown] = useState(o.path);
+  const layer = o.layers.find((l) => l.path === shown) ?? o.layers[0];
+  // A tree pick after the page loaded means "show me this": the section is asked for at once
+  // rather than when the observer notices the scroll (seen on the fixture preview, 2026-10-27:
+  // the picked section lit up and stayed on "Drawing the file…" in a pane that never scrolls).
+  useEffect(() => {
+    if (active) {
+      setNear(true);
+    }
+  }, [active]);
   useEffect(() => {
     if (near || !section.current || typeof IntersectionObserver === 'undefined') {
       setNear(true);
@@ -257,39 +284,27 @@ function CommitFile({ owner, repo, base, head, file, view, layout, onView, onLay
     observer.observe(section.current);
     return () => observer.disconnect();
   }, [near]);
-  // A renamed file is compared from its old path (review, 2026-10-25): without it the server has
+  // A renamed layer is compared from its old path (review, 2026-10-25): without it the server has
   // nothing on the older side and draws the whole file as added, hiding what the edit removed.
-  const from = file.previousPath ?? undefined;
-  const result = useAsync((s) => (near && !folded ? api.compareView(owner, repo, base, head, file.path, view, layout, from, s, full) : new Promise<never>(() => {})), [near, folded, owner, repo, base, head, file.path, from, view, layout, full]);
-  const name = file.label.slice(file.label.lastIndexOf('/') + 1);
-  const folder = file.label.slice(0, Math.max(0, file.label.lastIndexOf('/')));
+  const from = layer?.previousPath ?? undefined;
+  const result = useAsync((s) => (near && !folded && layer ? api.compareView(owner, repo, base, head, layer.path, view, layout, from, s, full) : new Promise<never>(() => {})), [near, folded, owner, repo, base, head, layer?.path, from, view, layout, full]);
   return (
-    <section ref={section} id={`file-${file.path}`} className={`file-review${folded ? ' is-folded' : ''}${active ? ' is-active' : ''}`} data-file={file.path}>
-      <header className="pane-head">
-        <button type="button" className="link-button file-chevron" onClick={() => setFolded(!folded)} aria-expanded={!folded} aria-label={folded ? 'Open this file' : 'Fold this file'}>
-          <Icon name={folded ? 'chevron-right' : 'chevron-down'} size={12} />
-        </button>
-        <span className={`change change-${file.status === 'removed' ? 'deleted' : file.status}`}>{marks[file.status] ?? ''}</span>
-        <div className="pane-title" title={file.label}>
-          <h2 className="review-file">{name}</h2>
-          {folder && <span className="pane-folder">{folder}</span>}
-          {file.previousLabel && <span className="text-muted text-small">renamed from {file.previousLabel}</span>}
-        </div>
-        <span className="diffstat"><span className="diffstat-add">+{file.additions}</span> <span className="diffstat-del">−{file.deletions}</span></span>
-        <div className="pane-tools">
-          <div className="segmented" role="tablist" aria-label="View">
-            <button type="button" role="tab" aria-selected={view === 'rendered'} onClick={() => onView('rendered')}>Rendered</button>
-            <button type="button" role="tab" aria-selected={view === 'raw'} onClick={() => onView('raw')}>Raw</button>
-          </div>
-          <label className="full-file-label"><input type="checkbox" checked={full} onChange={(e) => setFull(e.target.checked)} /> Show full file</label>
-          <div className="segmented" role="group" aria-label="Layout">
-            <button type="button" aria-pressed={layout === 'unified'} onClick={() => onLayout('unified')}>Unified</button>
-            <button type="button" aria-pressed={layout === 'split'} onClick={() => onLayout('split')}>Side by side</button>
-          </div>
-        </div>
-      </header>
+    <section ref={section} id={`file-${o.key}`} className={`file-review${folded ? ' is-folded' : ''}${active ? ' is-active' : ''}`} data-file={o.key} data-kind={o.kind}>
+      <ChangeSectionHead open={!folded} onToggle={() => setFolded(!folded)} status={o.status} name={o.name} label={o.label}
+        typeName={o.typeName} toolchain={o.toolchain} renamedFrom={layer?.previousLabel} additions={o.additions} deletions={o.deletions}
+        view={view} onView={onView} layout={layout} onLayout={onLayout} full={full} onFull={setFull} />
       {!folded && (
         <div className="file-review-body">
+          {o.layers.length > 1 && (
+            <div className="layers" aria-label="Files of this object">
+              {o.layers.map((l) => (
+                <button key={l.path} type="button" className={`chip${l.path === shown ? ' is-on' : ''}`} onClick={() => setShown(l.path)} title={l.label}>
+                  {l.label.slice(l.label.lastIndexOf('/') + 1)}
+                  {l.changed && <span className={`change change-${changeTone(l.status)}`} aria-label={changeTone(l.status)}> {changeMark[l.status] ?? ''}</span>}
+                </button>
+              ))}
+            </div>
+          )}
           {result.state === 'loading' && <Loading what="Drawing the file…" />}
           {result.state === 'error' && <ErrorPanel error={result.error} signInUrl={signInUrl} />}
           {result.state === 'ok' && (

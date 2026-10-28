@@ -160,16 +160,7 @@ public static partial class ApiEndpoints
                 }
 
                 baseSha = older.Value!.Model.CommitSha;
-                var changes = ViewService.ChangedPaths(older.Value!.Model, m)
-                    .Select(c => new Versio.Core.Git.FileChange
-                    {
-                        Path = c.Path,
-                        Staged = c.Change switch { "added" => Versio.Core.Git.ChangeKind.Added, "deleted" => Versio.Core.Git.ChangeKind.Deleted, _ => Versio.Core.Git.ChangeKind.Modified },
-                        Unstaged = Versio.Core.Git.ChangeKind.Unmodified,
-                    })
-                    .ToList();
-                nodes = RepoExplorerBuilder.Build(m.Files.Keys.OrderBy(p => p, StringComparer.Ordinal).ToList(), m.Projects,
-                    new ProjectTreeOptions { ChangedOnly = changed == "1", HideUnchangedProjects = changed == "1" }, changes: changes);
+                nodes = TouchedObjects.Marked(older.Value!.Model, m, changedOnly: changed == "1");
             }
 
             return Results.Ok(new
@@ -185,8 +176,13 @@ public static partial class ApiEndpoints
 
         // One commit, as GitHub's /commit/sha shows it (Step 8): the message, both people, the
         // parents, the stats and the files; the drawing of each file is the compare view's, from
-        // the first parent.
-        api.MapGet("/commit", async (string owner, string repo, string? sha, HttpContext http, AccessResolver access, IRepoSource source, CancellationToken ct) =>
+        // the first parent. Since 2026-10-27 the files are also grouped by object (`objects`):
+        // the commit and its first parent are loaded as /compare loads them (cached by commit,
+        // and the page's marked tree loads the same two), and TouchedObjects reads each object's
+        // row off the marked tree. A load that fails keeps the card and the raw files, and says
+        // in `objectsUnavailable` why the grouping is missing, so a rate limit on the manifests
+        // costs the project format and not the commit.
+        api.MapGet("/commit", async (string owner, string repo, string? sha, HttpContext http, AccessResolver access, IRepoSource source, Loader load, IVersioLogger log, CancellationToken ct) =>
         {
             if (!Valid(owner, repo) || sha is not { Length: >= 7 and <= 40 } || !sha.All(Uri.IsHexDigit))
             {
@@ -206,6 +202,7 @@ public static partial class ApiEndpoints
             }
 
             var c = commit.Value!;
+            var (objects, objectsUnavailable) = await GroupedAsync(http, load, log, who.Value!, owner, repo, c, ct).ConfigureAwait(false);
             var newline = c.Message.IndexOf('\n', StringComparison.Ordinal);
             return Results.Ok(new
             {
@@ -225,6 +222,33 @@ public static partial class ApiEndpoints
                 url = c.Url,
                 filesTruncated = c.FilesTruncated,
                 files = c.Files.Select(f => new { path = f.Path, label = CodeHtml.Spelled(f.Path), status = f.Status, additions = f.Additions, deletions = f.Deletions, previousPath = f.PreviousPath, previousLabel = f.PreviousPath is { } prev ? CodeHtml.Spelled(prev) : null }),
+                objects = objects.Select(o => new
+                {
+                    key = o.Key,
+                    kind = o.Kind,
+                    name = CodeHtml.Spelled(o.Name),
+                    label = CodeHtml.Spelled(o.Key),
+                    path = o.Path,
+                    from = o.From,
+                    type = o.Type,
+                    typeName = o.TypeName is null ? null : CodeHtml.Spelled(o.TypeName),
+                    toolchain = CodeHtml.Spelled(o.Toolchain),
+                    status = o.Status,
+                    additions = o.Additions,
+                    deletions = o.Deletions,
+                    layers = o.Layers.Select(l => new
+                    {
+                        path = l.Path,
+                        label = CodeHtml.Spelled(l.Path),
+                        status = l.Status,
+                        additions = l.Additions,
+                        deletions = l.Deletions,
+                        previousPath = l.PreviousPath,
+                        previousLabel = l.PreviousPath is { } prev ? CodeHtml.Spelled(prev) : null,
+                        changed = l.Changed,
+                    }),
+                }),
+                objectsUnavailable,
             });
         });
 
@@ -364,7 +388,7 @@ public static partial class ApiEndpoints
                     path = c.Path,
                     label = CodeHtml.Spelled(c.Path),
                     change = c.Change,
-                    @object = (newer.Value.Model.NodeFor(c.Path) ?? older.Value.Model.NodeFor(c.Path)) is { Kind: ProjectNodeKind.Object } n ? CodeHtml.Spelled(n.Name) : null,
+                    @object = TouchedObjects.ObjectFor(newer.Value.Model, older.Value.Model, c.Path) is { } n ? CodeHtml.Spelled(n.Name) : null,
                 }),
             });
         });
@@ -399,7 +423,15 @@ public static partial class ApiEndpoints
             return result.Ok ? Results.Ok(result.Value) : Refused(result.Failure, http);
         });
 
-        api.MapGet("/history", async (string owner, string repo, string? @ref, string? path, HttpContext http, AccessResolver access, IRepoSource source, CancellationToken ct) =>
+        // A branch's history, or with `path` an OBJECT's (PLAN.md: "History: the commits that
+        // touched this object"). GitHub's list-commits takes one path, and an object is several
+        // files — a GVL is its .gvl.st and its .gvl.xml — so until 2026-10-27 an object's history
+        // was one layer's: an edit to the native XML alone was missing from the history of the
+        // object whose readable file the page had asked about. Now the path's node is looked up at
+        // the ref and every layer is listed, one GitHub call each, merged by sha with which layers
+        // each commit touched. Bounded at HistoryLayers calls (and said), because a catalog row's
+        // files or a wide object would otherwise be an unbounded fan-out per page load.
+        api.MapGet("/history", async (string owner, string repo, string? @ref, string? path, HttpContext http, AccessResolver access, IRepoSource source, Loader load, IVersioLogger log, CancellationToken ct) =>
         {
             if (!Valid(owner, repo) || !ValidRef(@ref) || (path is not null && !ValidPath(path)))
             {
@@ -418,15 +450,76 @@ public static partial class ApiEndpoints
                 return Refused(info.Failure, http);
             }
 
+            var reference = @ref ?? info.Value!.DefaultBranch;
+            var at = $"{owner}/{repo}@{reference}";
+
+            // The object the path belongs to, at the ref: its name for the heading and its files
+            // for the listing. A model that cannot be read costs the other layers, not the
+            // history: the one path is listed, as before, and the log says why.
+            ProjectTreeNode? node = null;
+            var layers = new List<string>();
+            var layersCut = false;
+            if (path is not null)
+            {
+                var model = await load.ModelAsync(http, owner, repo, reference, ct).ConfigureAwait(false);
+                if (model.Ok)
+                {
+                    node = model.Value!.Model.NodeFor(path);
+                }
+                else
+                {
+                    log.Warn(LogCategory.Web, $"history {who.Value} {at} {path}: the project tree could not be read ({model.Failure}); the one path is listed");
+                }
+
+                var files = node is { Kind: not ProjectNodeKind.Folder, Files.Count: > 0 } ? node.Files : [path];
+                layersCut = files.Count > HistoryLayers;
+                layers.AddRange(files.Take(HistoryLayers));
+            }
+
             // The latest 50 shown, one GitHub page, on purpose: history here is for finding a recent
             // change, and older ones are on GitHub. One more is fetched: the page shows 50, says
             // "the latest 50" only when a 51st exists (a full page was the only signal, so exactly
             // 50 commits said it too; found in review), and the 51st gives the 50th its "what
-            // changed" link. The page's HistoryLimit is the 50; change both together.
-            var commits = await source.GetCommitsAsync(who.Value!, owner, repo, @ref ?? info.Value!.DefaultBranch, path, 51, ct).ConfigureAwait(false);
-            return commits.Ok
-                ? Results.Ok(commits.Value!.Select(c => new { sha = c.Sha, message = CodeHtml.Spelled(c.Message), author = CodeHtml.Spelled(c.Author), when = c.When }))
-                : Refused(commits.Failure, http);
+            // changed" link. The page's HistoryLimit is the 50; change both together. With several
+            // layers each list is the latest 51 of that layer, so their union's latest 51 is exact.
+            var asked = layers.Count == 0 ? [null] : layers.Cast<string?>().ToList();
+            var lists = await Task.WhenAll(asked.Select(layer => source.GetCommitsAsync(who.Value!, owner, repo, reference, layer, 51, ct))).ConfigureAwait(false);
+            if (lists.FirstOrDefault(l => !l.Ok) is { } failed)
+            {
+                return Refused(failed.Failure, http);
+            }
+
+            // Merged by sha, in the order the layers were asked, so a commit that touched two
+            // layers is one row naming both. Without a path `touched` is empty on purpose: saying
+            // which files a branch's commit touched would be one GetCommitAsync per row, fifty
+            // GitHub calls per page load, for a column the commit's own page already answers.
+            var merged = new Dictionary<string, (CommitInfo Commit, List<string> Touched)>(StringComparer.Ordinal);
+            for (var i = 0; i < asked.Count; i++)
+            {
+                foreach (var c in lists[i].Value!)
+                {
+                    if (!merged.TryGetValue(c.Sha, out var row))
+                    {
+                        merged[c.Sha] = row = (c, []);
+                    }
+
+                    if (asked[i] is { } layer)
+                    {
+                        row.Touched.Add(layer);
+                    }
+                }
+            }
+
+            var commits = merged.Values.OrderByDescending(r => r.Commit.When).Take(51).ToList();
+            log.Info(LogCategory.Web, $"history {who.Value} {at}{(path is null ? "" : $" {path}")}: {commits.Count} commits over {asked.Count} list(s){(node is { Kind: ProjectNodeKind.Object } ? $" of {node.Name}" : "")}{(layersCut ? ", layers cut" : "")}");
+            return Results.Ok(new
+            {
+                @object = node is { Kind: ProjectNodeKind.Object } ? CodeHtml.Spelled(node.Name) : null,
+                objectLabel = node is { Kind: ProjectNodeKind.Object } ? CodeHtml.Spelled(node.Path) : null,
+                layers = layers.Select(l => new { path = l, label = CodeHtml.Spelled(l) }),
+                layersCut,
+                commits = commits.Select(r => new { sha = r.Commit.Sha, message = CodeHtml.Spelled(r.Commit.Message), author = CodeHtml.Spelled(r.Commit.Author), when = r.Commit.When, touched = r.Touched }),
+            });
         });
 
         // A document's bytes, for the Documentation tab (PLAN.md, "The product shape" item 4):
@@ -815,13 +908,56 @@ public static partial class ApiEndpoints
     /// <summary>A failure as the status and words the page can act on; nothing in it depends on the request.</summary>
     internal static IResult Refused(RepoFailure failure) => failure switch
     {
-        RepoFailure.Unauthorized => Results.Json(new { error = "sign-in", message = "Sign in to see this repository." }, statusCode: 401),
-        RepoFailure.SsoRequired => Results.Json(new { error = "sso", message = "This organisation requires single sign-on. Authorise your GitHub session for it, then reload." }, statusCode: 403),
-        RepoFailure.RateLimited => Results.Json(new { error = "rate-limit", message = "GitHub's rate limit is spent for now. Try again in a few minutes." }, statusCode: 429),
-        RepoFailure.TooLarge => Results.Json(new { error = "too-large", message = "This is too large to show here." }, statusCode: 413),
-        RepoFailure.Upstream => Results.Json(new { error = "upstream", message = "GitHub could not be reached. Try again shortly." }, statusCode: 502),
-        _ => Results.Json(new { error = "not-found", message = "Not found, or not visible to you." }, statusCode: 404),
+        RepoFailure.Unauthorized => Results.Json(new { error = "sign-in", message = Message(failure) }, statusCode: 401),
+        RepoFailure.SsoRequired => Results.Json(new { error = "sso", message = Message(failure) }, statusCode: 403),
+        RepoFailure.RateLimited => Results.Json(new { error = "rate-limit", message = Message(failure) }, statusCode: 429),
+        RepoFailure.TooLarge => Results.Json(new { error = "too-large", message = Message(failure) }, statusCode: 413),
+        RepoFailure.Upstream => Results.Json(new { error = "upstream", message = Message(failure) }, statusCode: 502),
+        _ => Results.Json(new { error = "not-found", message = Message(failure) }, statusCode: 404),
     };
+
+    /// <summary>The words for a failure, the same whether it refuses a whole answer or explains a missing part of one.</summary>
+    internal static string Message(RepoFailure failure) => failure switch
+    {
+        RepoFailure.Unauthorized => "Sign in to see this repository.",
+        RepoFailure.SsoRequired => "This organisation requires single sign-on. Authorise your GitHub session for it, then reload.",
+        RepoFailure.RateLimited => "GitHub's rate limit is spent for now. Try again in a few minutes.",
+        RepoFailure.TooLarge => "This is too large to show here.",
+        RepoFailure.Upstream => "GitHub could not be reached. Try again shortly.",
+        _ => "Not found, or not visible to you.",
+    };
+
+    /// <summary>
+    /// A commit's files grouped by object, or why they could not be: the commit and its first
+    /// parent loaded, the marked tree between them built, <see cref="TouchedObjects.Group"/> read.
+    /// A root commit has nothing to compare from and groups nothing, which is not a failure and
+    /// is not said as one; the page draws "the first commit" for it.
+    /// </summary>
+    private static async Task<(IReadOnlyList<TouchedEntry> Objects, string? Unavailable)> GroupedAsync(
+        HttpContext http, Loader load, IVersioLogger log, RepoAccess who, string owner, string repo, CommitDetail c, CancellationToken ct)
+    {
+        var at = $"{owner}/{repo}@{c.Sha[..Math.Min(8, c.Sha.Length)]}";
+        if (c.Parents.Count == 0)
+        {
+            log.Info(LogCategory.Web, $"commit {who} {at}: {c.Files.Count} files, a root commit, nothing grouped");
+            return ([], null);
+        }
+
+        var head = await load.ModelAsync(http, owner, repo, c.Sha, ct).ConfigureAwait(false);
+        var parent = head.Ok ? await load.ModelAsync(http, owner, repo, c.Parents[0], ct).ConfigureAwait(false) : head;
+        if (!head.Ok || !parent.Ok)
+        {
+            var failure = head.Ok ? parent.Failure : head.Failure;
+            log.Warn(LogCategory.Web, $"commit {who} {at}: the {(head.Ok ? "parent's" : "commit's")} project tree could not be read ({failure}); {c.Files.Count} files answered ungrouped");
+            return ([], $"The objects could not be listed: {Message(failure)}");
+        }
+
+        var marked = TouchedObjects.Marked(parent.Value!.Model, head.Value!.Model, changedOnly: true);
+        var objects = TouchedObjects.Group(c.Files, head.Value.Model, parent.Value.Model, marked);
+        var grouped = objects.Count(o => o.Kind == "object");
+        log.Info(LogCategory.Web, $"commit {who} {at}: {c.Files.Count} files as {grouped} objects and {objects.Count - grouped} plain files");
+        return (objects, null);
+    }
 
     /// <summary>
     /// What a pull request's changes are measured from: the merge-base of its base branch's tip
@@ -859,6 +995,13 @@ public static partial class ApiEndpoints
 
     /// <summary>Rows per pulls or releases list: enough for a working set, bounded for the answer.</summary>
     internal const int ListLimit = 50;
+
+    /// <summary>
+    /// How many of an object's files <c>/history</c> lists: one GitHub call each. Every object
+    /// of every vendor today has one or two layers; four leaves room and keeps a row whose files
+    /// are a whole catalog from fanning out per page load.
+    /// </summary>
+    internal const int HistoryLayers = 4;
 
     /// <summary>A pull request's description or a release's notes, rendered exactly as a README is.</summary>
     internal static string MarkdownFragment(string markdown) =>

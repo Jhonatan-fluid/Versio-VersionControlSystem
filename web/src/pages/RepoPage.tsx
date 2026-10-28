@@ -122,7 +122,7 @@ export function RepoPage({ me }: { me: Me | null }) {
 
   const defaultBranch = info.state === 'ok' ? info.value.defaultBranch : 'main';
   const refName = ref ?? defaultBranch;
-  const head = latest.state === 'ok' ? latest.value[0] ?? null : null;
+  const head = latest.state === 'ok' ? latest.value.commits[0] ?? null : null;
 
   if (info.state === 'error') {
     return (
