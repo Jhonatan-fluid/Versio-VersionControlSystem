@@ -437,7 +437,7 @@ dotnet test tests/Versio.Core.Tests
 |---|---|---|---|
 | `Versio.Core.Tests` | 2,103 | nothing — pure, no IO, no clock, no UI | ~0.3 s |
 | `Versio.Integration.Tests` | 261 | a real `git.exe` and the real filesystem | ~55 s |
-| `Versio.Arch.Tests` | 42 | nothing — it reads assembly metadata, IL, and the project files | instant |
+| `Versio.Arch.Tests` | 45 | nothing — it reads assembly metadata, IL, and the project files | instant |
 | `Versio.App.Tests` | 874 | Windows (WPF). Builds the real dialogs against the real stylesheet on an STA thread; **no window is ever shown**. One test runs the web viewer too, over every fixture row, and references `Versio.Web.Tests` for its fake GitHub | ~3.6–11 min |
 | `Versio.Plc.Codesys.Pure.Tests` | 405 | nothing — the vendor's planner, codecs, protocol, LD/FBD parser and File-Based Storage layout, pure | under a second |
 | `Versio.Plc.Codesys.Parity.Tests` | 104 | `python` on PATH, no CODESYS — **skips cleanly without python, so check the count** | ~15 s |
@@ -516,7 +516,7 @@ Deliberately few. Every one is a thing that can break a build or a publish.
 **`Versio.Core` and `Versio.Infrastructure` have no third-party dependencies at all.** That is
 why Markdown is parsed by `Versio.Core.Text.Markdown` rather than Markdig.
 
-**The installer payload bundles PortableGit** (git.exe, git-lfs, Git Credential Manager). A development F5 build still uses git on PATH.
+**The installer payload bundles PortableGit** (git.exe, git-lfs, Git Credential Manager). A development F5 build still uses git on PATH. The pack trims what Versio never runs (editors, perl, Tcl/Tk, the HTML manual) through the denylist in `tools/pack/Trim-PortableGit.ps1`; read its *KEPT* list before adding to it.
 
 **One tool is a prerequisite for cloning this repository rather than a package: `git-lfs`.** The `.project` fixtures and
 the TIA Portal `System/*.plf` payload are stored in LFS, so a clone on a machine without it
