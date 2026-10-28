@@ -239,6 +239,12 @@ try {
     # tree the extractor is still writing would race it. Before every check below, so the
     # LFS, GCM, sh and helper-pin gates all run against the git that actually ships.
     $trim = Remove-UnusedPortableGit $gitOut { param($line) Log $line }
+    # Every entry missing is not a smaller git, it is a trim that silently stopped working -
+    # a path it could not match, or a PortableGit laid out differently - and the pack would
+    # go green shipping all of it.
+    if ($trim.After -ge $trim.Before) {
+        throw "PortableGit trim removed nothing - see the trim: lines in artifacts\pack.log"
+    }
 
     $lfs = (& $gitExe 'lfs' 'version' | Out-String).Trim()
     if ($LASTEXITCODE -ne 0) {

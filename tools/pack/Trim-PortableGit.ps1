@@ -95,8 +95,11 @@ function Remove-UnusedPortableGit([string] $Root, [scriptblock] $Write = { param
     $before = Get-TreeBytes $Root
     foreach ($entry in $script:PortableGitDenylist) {
         # Get-Item, not Get-ChildItem: on a folder Get-ChildItem would answer its contents
-        # and leave the folder. -Path, not -LiteralPath, so perl5.*.exe can match a version.
-        $found = @(Get-Item -Path (Join-Path $Root $entry) -Force -ErrorAction SilentlyContinue)
+        # and leave the folder. -Path, not -LiteralPath, so perl5.*.exe can match a version -
+        # with the root escaped, or a checkout under a folder named [x] would match nothing,
+        # log "not present" for every entry, and ship the whole git under a green pack.
+        $pattern = Join-Path ([System.Management.Automation.WildcardPattern]::Escape($Root)) $entry
+        $found = @(Get-Item -Path $pattern -Force -ErrorAction SilentlyContinue)
         if ($found.Count -eq 0) {
             & $Write ("trim: not present {0}" -f $entry)
             continue

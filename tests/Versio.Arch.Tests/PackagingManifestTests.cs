@@ -107,6 +107,7 @@ public sealed class PackagingManifestTests
         // 140 MB more in every install and every update.
         var pack = File.ReadAllText(Path.Combine(TestPaths.Root, "tools", "pack", "Pack-Versio.ps1"));
         Assert.Contains(". (Join-Path $PSScriptRoot 'Trim-PortableGit.ps1')", pack, StringComparison.Ordinal);
+        Assert.Contains("if ($trim.After -ge $trim.Before)", pack, StringComparison.Ordinal);
 
         var poll = pack.IndexOf("Log (\"GCM at \"", StringComparison.Ordinal);
         var trim = pack.IndexOf("Remove-UnusedPortableGit $gitOut", StringComparison.Ordinal);
