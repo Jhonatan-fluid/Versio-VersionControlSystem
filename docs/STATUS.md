@@ -33,8 +33,8 @@ UX remainder) is built and tested as of 2026-08-25** — UX-6 find boxes, UX-7 `
 Escape, UX-8 copy-a-commit, UX-12 amend-while-unpushed — and its visual half joins the
 eyeball list in item 2. Do not start from `archive/` or a handoff.
 
-**Tests:** 4,475 across twelve projects (plus 211 vitest in `web/`), last counted 2026-10-27
-on `AutoUpdate` after the update overlay (Core 2,092, Integration 260, App 867, Arch 42, Web 504) — re-derived by summing the table below; the toolchain-gated
+**Tests:** 4,479 across twelve projects (plus 216 vitest in `web/`), last counted 2026-10-27
+on the web history-rendering branch (Core 2,092, Integration 260, App 867, Arch 42, Web 508) — re-derived by summing the table below; the toolchain-gated
 counts (TIA 5, TwinCAT 6, CODESYS 55) are from their last gate runs, not re-run for the count. **The Rendered view of an ST object reads like the IDE (2026-09-20):** no
 `@@` line, one gutter, a Declaration / Implementation divider, and the implementation
 numbered from 1 so a compile error's line number can be found — FINDINGS 2026-09-20. **With TIA Portal open, a commit no longer records a stale mirror**: the
@@ -83,8 +83,8 @@ marking, duplicate-param keys, and the detail-pane lookup. All of them are in
 | `Versio.Plc.TiaPortal.Tests` | 5 | seconds when skipped; 3 m 1 s on 2026-10-25 when Portal is there but refuses the host (1 passed, 4 skipped, not an Openness member); minutes when Portal runs the import gate | **real TIA Portal** — skips without Openness membership or LFS content |
 | `Versio.Plc.TwinCat.Pure.Tests` | 27 | instant | nothing — the host's text rules are compiled in as source |
 | `Versio.Plc.TwinCat.Tests` | 6 | seconds when skipped (4 s, 6 skipped, 2026-10-25); ~5 min when XAE runs the import gate | **real TwinCAT XAE** — skips without `TcXaeShell.DTE.17.0` or the fixture |
-| `Versio.Web.Tests` | 504 | ~25 s | nothing — GitHub is faked |
-| `web/` (vitest) | 211 | ~21 s on 2026-10-24 (the review page waits for its reads, not ticks; it was ~3 min) | the pinned Node in `web/.node` |
+| `Versio.Web.Tests` | 508 | ~38 s on 2026-10-27 (~25 s before the object-history tests) | nothing — GitHub is faked |
+| `web/` (vitest) | 216 | ~22 s on 2026-10-27 (the review page waits for its reads, not ticks; it was ~3 min) | the pinned Node in `web/.node` |
 | `Versio.Plc.Codesys.Tests` | 55 | **~30 min**; 41 m 14 s, 55/55, on 2026-10-11 on `WebViewer`; 1 h 22 m, 53/55, on 2026-10-25 on `VersioWeb` loaded (the two red are item 11's `<masked-guid>` regression) | **real CODESYS** |
 
 The first ten are the loop to work in — about thirty seconds plus the UI suite. The last is
@@ -370,7 +370,13 @@ One list. Reorder it; do not copy it into another file.
    write path, the live head's checks, both flakes retired, the App permission list). **What is
    left there is the owner's: the real-GitHub gates on a throwaway repository, writes on, merge
    last** — and the named future renderers and anchors (ladder elements, catalog rows, the
-   desktop's own ST links). The history below is how it got here. The design, the security rules and what each step measured are
+   desktop's own ST links). **2026-10-27: commit history renders in project format** — the
+   commit page draws one section per object (name, type chip, vendor pill, A/M/D, a chip per
+   layer) over the project-format comparison instead of one raw-path section per layer file,
+   an object's history covers every one of its files and says which each commit touched, and
+   the review's Commits tab links to the commit page (`TouchedObjects.cs`,
+   `ChangeSectionHead.tsx`; FINDINGS 2026-10-27). The desktop half is on `HistoryRendering`.
+   The history below is how it got here. The design, the security rules and what each step measured are
    in [`web/PLAN.md`](web/PLAN.md). An ASP.NET Core server (`src/Versio.Web`) renders with
    Versio.Core and the three pure packs; a React page (`web/`) places that HTML and draws no
    code. Built: the HTML renderers for source, text diffs and member tables (Outpost's Step 2b,

@@ -146,7 +146,7 @@ File refs: `P` = `web/src/pages/PullPage.tsx`, `RB` = `components/ReviewBar.tsx`
 - ~~**missing** All files on one page, each under a sticky header with: chevron (collapse), `+N −M`,
   path with copy button, Viewed checkbox~~ (Step 3, 2026-10-23: `FileSection`, every file stacked and loaded as it comes into view; a viewed file folds). Still missing: a copy-path button and the "…" menu (View file, Edit file, Delete file, Open on GitHub).
 - ~~**missing** A **file tree** sidebar grouped folder → object with per-node A/M/D/R marks, a filter box, "jump to file", viewed progress
-  ("12 / 85 files viewed")~~ (Step 3: `FilesTree`, an object's own files nested under it; `+N −M` and thread counts per file). Still missing: grouping by *project* with the vendor's pill (Step 8/9, from the grown tree node), filtering by extension / owner / viewed.
+  ("12 / 85 files viewed")~~ (Step 3: `FilesTree`, an object's own files nested under it; `+N −M` and thread counts per file). Still missing: grouping by *project* with the vendor's pill (Step 8/9, from the grown tree node) — **2026-10-27: that grouping lives on the commit page** (`/commit`'s `objects`, `CommitObjectSection`: one section per object with chip, pill and layer chips); the pull request's `FilesTree` stays path-based and is left open here — and filtering by extension / owner / viewed.
 - ~~**missing** Per-file additions / deletions (not in the inventory, `PE:131-148`).~~ Step 3: counted from GitHub's patch; null without one.
 - **partial** Expand-hunk arrows (↑ ↓ per hunk, "expand all"): a click on a folded stretch asks for the whole file (Step 3); per-hunk expansion needs Core's fold rows to carry a range.
 - ~~**missing** Multi-line comments (click-drag or shift-click a range); drafts are one line
@@ -324,7 +324,8 @@ external_id; status description, creator, times; deployments; required checks; C
 - **partial** The desktop's **Devices pane** for FBS projects (Step 9) and ~~the commit card in History
   (byline, stats, body, objects touched, per-file diffs — PLAN restructure phase 2, never built;
   `/history` returns sha, message, author, when only)~~ (Step 8: `/commit/<sha>` with the card, the
-  marked tree of what it touched, every file drawn from the first parent).
+  marked tree of what it touched, every file drawn from the first parent; 2026-10-27: one section per
+  object, and `/history?path=` is the object's over every layer, with `touched` per row).
 - **missing** Explorer (files-as-on-disk) view (PLAN phase 5, deferred).
 - **missing** Shared theme tokens generated from the desktop palette (PLAN phase 4, never built);
   success green, merged purple, modified amber are hard-coded in `app.css:107,254,255,264`.
@@ -707,6 +708,15 @@ under the tree; "Go to file".~~ **Done 2026-10-24** (`RepoExplorerBuilder.Build(
 Core; `/tree?base=&changed=1`, `/commit`, `/tags`; `TreePanel.tsx`, `CommitPage.tsx`,
 `RefsPage.tsx`; the compare page's sidebar is the marked tree). Left: the branch picker's search,
 the tree's kind icons, "load older" on the commits page.
+**2026-10-27: the commit page and history in project format.** `/commit` groups GitHub's files by
+object (`Repo/TouchedObjects.cs`, the status read off the marked tree's row, the pill from the
+nearest project) and `CommitPage.tsx` draws one section per object — name, type chip, vendor
+pill, A/M/D, a chip per layer, the touched layer drawn — under `ChangeSectionHead.tsx`, the
+header the review's `FileSection` now shares; `/history?path=` lists every layer of the path's
+object (one GitHub call each, bounded at four) and says which each commit touched, and
+`CommitsPage.tsx` names the object with a chip per file; the review's Commits tab links to
+`/commit/<sha>` (B4). Without a path, `/history` says nothing of what each commit touched, on
+purpose: that would be one commit read per row. FINDINGS 2026-10-27.
 
 **Step 9 — Every object kind, every vendor, one renderer choice (D, D2).** Move the renderer switch
 into Core (`RenderChoice`: project card → catalog row → catalogs → table (+ladder / code, incl. the

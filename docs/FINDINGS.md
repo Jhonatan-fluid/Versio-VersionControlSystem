@@ -19,6 +19,65 @@ produce a diff touching everything else.
 
 ---
 
+### The commit page drew one section per layer file, and an object's history covered one layer
+
+**2026-10-27, the web viewer, found while bringing commit history to the project format the
+Code and Compare views already draw in.** Two gaps with one cause: the commit and history
+routes never looked at the project model.
+
+**The commit page.** `GET /commit` called `source.GetCommitAsync` and nothing else, so it had
+no `RepoModel.NodeFor` and answered GitHub's raw file list; `CommitPage.tsx` mapped that list to
+one section per file. A GVL edited in its native XML was a section headed by `…/Glob_Var.gvl.xml`
+with no object name, no type chip, no vendor pill, and the manifest sat between it and the next
+object as a third section — while the marked tree in the sidebar, built from the same two
+commits, drew the object once with its marks. The tree's pick scrolled to `file-<primary file>`,
+and when only the XML had changed no section had that id, so the click did nothing.
+
+**History.** GitHub's list-commits takes one `path`, and `/history` passed the page's path
+through, so an object's history was one layer's: the XML-only commit above was absent from the
+history of the GVL whose readable file the page had asked about. The fake GitHub ignored `path`
+altogether, so no server test could have seen it.
+
+**What was built.** `Repo/TouchedObjects.cs`: `ObjectFor` (the newer-then-older `NodeFor`
+expression that `/compare` and `/pulls/{n}/files` each carried a copy of), `Marked` (the `/tree`
+base block, extracted), and `Group`, which regroups GitHub's list as one entry per object with
+every layer, the touched ones flagged, drawn from the primary file when the commit touched it
+and from the first touched layer otherwise, the status read off the marked tree's row. `/commit`
+loads the commit and its first parent (the page's own `/tree?base=` loads the same two, cached
+by commit) and answers `objects`; a failed load keeps the card and says why in
+`objectsUnavailable`. `/history?path=` looks the node up at the ref and lists each of its files,
+bounded at four, merged by sha with `touched`. The page: one section per object under
+`ChangeSectionHead.tsx`, the header the review's `FileSection` now shares, with a chip per layer;
+the commits page names the object and marks each row's touched files; the review's Commits tab
+links to the commit page.
+
+**The double pass, twice.** The mutation check for the parent-side fallback in `ObjectFor` was
+toothless at first: the test's deleting commit removed the POU's file but left its manifest
+entry, so the commit's own index still found the object and the fallback could be deleted green.
+An export removes both, and once the test did too, the mutant turned the removed POU into a
+nameless file. The same pass found that a removed object is a struck *file* row in the marked
+tree (its manifest entry is gone), at the object's own path — so the row index covers every
+non-folder row, and a test pins that every object entry's key is a tree row with the same status.
+
+**The look (the fixture preview, `VERSIO_WEB_PREVIEW=1`).** One section per object with chip,
+pill and folder; the tree pick scrolled to the section's id and lit it — and the section stayed
+on "Drawing the file…", because `near` was seeded from `active` at mount only and the observer
+never fires in a pane that does not scroll. An active section is now asked for at once. The
+preview's three changed objects were all one-layer, so it gained branch `history`, one commit
+that edits only Glob_Var's native XML: one section, the `.xml` chip lit and marked M, the `.st`
+chip switching the drawing (both requests in the log), and the object's history page naming
+both layers with the XML-only commit touching one. The server log carries one line per request:
+`commit … 1 files as 1 objects and 0 plain files`, `history … 2 commits over 2 list(s) of Glob_Var`.
+
+**Rejected.** A `GetCommitAsync` per history row for `touched` without a path (fifty GitHub
+calls per page load for a column the commit's page answers; `touched` is empty there, and says
+so). A folder path to GitHub's list-commits (pulls every sibling object's commits in). Building
+the tree inside `/commit`'s answer (the page already loads it, and the sidebar must agree with the
+sections, not duplicate them). Moving `ProjectTreeBuilder.Stronger` out of Core or restating it in
+the web (the status is read off the row the tree built, so the two cannot disagree).
+
+---
+
 ### The first real update downloaded with nothing on screen; the update overlay
 
 **2026-10-27, night, the owner's own installed 0.4.9.** The first end-to-end update worked, and
