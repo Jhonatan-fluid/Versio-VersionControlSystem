@@ -8257,7 +8257,8 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         var marked = MemberTableDiff.Compare(baseline, current);
 
         var attributes = marked.Attributes.Concat(marked.Members.SelectMany(m => m.Attributes)).Count(a => a.Change != MemberChange.None);
-        _logger.Debug(LogCategory.Ui, $"member table {current.Name}: {marked.ChangeSummary} {attributes} attribute(s) changed");
+        var modifiers = marked.Modifiers.Count(a => a.Change != MemberChange.None);
+        _logger.Debug(LogCategory.Ui, $"member table {current.Name}: {marked.ChangeSummary} {attributes} attribute(s) and {modifiers} header modifier(s) changed");
         if (marked.HasUnshownChange)
         {
             // Said at Info: the pane is warning the reader that it hides something, and the log

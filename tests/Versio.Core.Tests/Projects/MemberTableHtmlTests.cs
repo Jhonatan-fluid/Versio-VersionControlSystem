@@ -123,6 +123,24 @@ public sealed class MemberTableHtmlTests
     }
 
     [Fact]
+    public void The_headers_modifiers_are_chips_beside_the_title()
+    {
+        var before = Table() with { Name = "Reset", IsInterface = true, IsDataType = false, Modifiers = [new() { Name = "PRIVATE", IsModifier = true }] };
+        var after = before with { Modifiers = [new() { Name = "PUBLIC", IsModifier = true }] };
+
+        var html = MemberTableHtml.Fragment(MemberTableDiff.Compare(before, after));
+
+        // In the head, right after the name, and not in the attribute strip: a PUBLIC is part of
+        // what the object is. The struck one keeps the header's own words legible.
+        Assert.Contains("<span class=\"mt-title\">Reset</span><span class=\"mt-mods\">"
+            + "<span class=\"mt-chip mt-chip-removed\" title=\"Deleted since the last commit\">PRIVATE</span>"
+            + "<span class=\"mt-chip mt-chip-added\" title=\"Added since the last commit\">PUBLIC</span></span>", html, StringComparison.Ordinal);
+        Assert.DoesNotContain("mt-attrs", html, StringComparison.Ordinal);
+        Assert.Contains("title=\"Modifier on the header\">PUBLIC</span>", MemberTableHtml.Fragment(after), StringComparison.Ordinal);
+        Assert.DoesNotContain("mt-mods", MemberTableHtml.Fragment(Table()), StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void Attributes_are_chips_over_the_table_and_under_a_name_and_an_unshown_change_is_said()
     {
         var before = Table(Row("Scada", "ST_AlarmScada") with { Attributes = [new() { Name = "symbol", Value = "read" }] });

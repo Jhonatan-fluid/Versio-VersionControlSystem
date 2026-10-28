@@ -425,6 +425,40 @@ public class StDeclarationTableTests
     }
 
     [Fact]
+    public void The_headers_modifiers_are_chips_on_the_header_line_and_the_header_stays_framing()
+    {
+        // The owner's FB_Template.Reset (2026-10-28): METHOD Reset became METHOD PUBLIC Reset, the
+        // tree said M, Raw showed it, and the Rendered tab drew an empty interface over unchanged
+        // code. The modifier is drawn now, beside the title. The header line is still the
+        // declaration's framing — the chip is drawn from it, not instead of it — so a review
+        // vouches for the line as before.
+        var method = StDeclarationTable.Parse("METHOD PUBLIC Reset\nVAR_INPUT\n\tx : INT;\nEND_VAR", "x")!;
+        var chip = Assert.Single(method.Modifiers);
+        Assert.Equal("PUBLIC", chip.Name);
+        Assert.True(chip.IsModifier);
+        Assert.Equal(new LineSpan(1, 1), chip.Lines);
+        Assert.Equal(new LineSpan(1, 1), method.Header);
+        Assert.Empty(method.Unshown);
+        Assert.Contains(method.Structural, s => s.Contains(1));
+
+        // In the order written, upper-cased, and only the keywords before the name: an EXTENDS
+        // after it is residue as before, and the kind is the table's kind, not a chip.
+        var block = StDeclarationTable.Parse("FUNCTION_BLOCK abstract Final FB EXTENDS A\nVAR\n\ty : INT;\nEND_VAR", "x")!;
+        Assert.Equal(["ABSTRACT", "FINAL"], block.Modifiers.Select(m => m.Name).ToList());
+        Assert.Equal("FB", block.Name);
+        Assert.Equal(["EXTENDS A"], block.Unshown.Select(u => u.Text).ToList());
+
+        // A function's return type shares the header with the chip; both carry its line.
+        var function = StDeclarationTable.Parse("METHOD PROTECTED M_Check : BOOL\nVAR_INPUT\n\tLimit : INT;\nEND_VAR", "x", firstLine: 5)!;
+        Assert.Equal(new LineSpan(5, 5), Assert.Single(function.Modifiers).Lines);
+        Assert.Equal(new LineSpan(5, 5), Row(function, "M_Check").Lines);
+        Assert.Equal(new LineSpan(5, 5), function.Header);
+
+        Assert.Empty(StDeclarationTable.Parse("METHOD Reset\nVAR_INPUT\n\tx : INT;\nEND_VAR", "x")!.Modifiers);
+        Assert.Empty(StDeclarationTable.Parse("TYPE S :\nSTRUCT\n\ta : INT;\nEND_STRUCT\nEND_TYPE", "x")!.Modifiers);
+    }
+
+    [Fact]
     public void Several_declarations_on_one_line_are_each_their_own_row()
     {
         // Review 2026-10-25, item 9: "a : INT; b : BOOL;" tabled one variable a of type

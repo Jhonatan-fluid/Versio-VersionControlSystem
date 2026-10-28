@@ -1429,11 +1429,26 @@
                                 <ScrollViewer VerticalScrollBarVisibility="Auto"
                                               HorizontalScrollBarVisibility="Auto">
                                     <StackPanel Margin="8,4">
-                                        <TextBlock Text="{Binding Name}"
-                                                   FontFamily="{DynamicResource Font.UI}"
-                                                   FontSize="{DynamicResource Font.Size.Body}"
-                                                   FontWeight="{DynamicResource Font.Weight.Semibold}"
-                                                   Foreground="{DynamicResource Brush.Text.Primary}" />
+                                        <!-- The name, and beside it the header's modifiers as
+                                             chips (METHOD PUBLIC Reset: a PUBLIC chip), marked
+                                             when they changed. The one header change the pane
+                                             used to hide; FINDINGS 2026-10-28. -->
+                                        <DockPanel LastChildFill="False">
+                                            <TextBlock DockPanel.Dock="Left" Text="{Binding Name}"
+                                                       VerticalAlignment="Center"
+                                                       FontFamily="{DynamicResource Font.UI}"
+                                                       FontSize="{DynamicResource Font.Size.Body}"
+                                                       FontWeight="{DynamicResource Font.Weight.Semibold}"
+                                                       Foreground="{DynamicResource Brush.Text.Primary}" />
+                                            <ItemsControl DockPanel.Dock="Left" Margin="8,-2,0,0"
+                                                          VerticalAlignment="Center"
+                                                          ItemsSource="{Binding Modifiers}"
+                                                          AutomationProperties.Name="Modifiers on this object's header"
+                                                          ItemTemplate="{StaticResource AttributeChip}"
+                                                          ItemsPanel="{StaticResource AttributeChipPanel}"
+                                                          Visibility="{Binding HasModifiers,
+                                                              Converter={StaticResource BoolToVisibility}}" />
+                                        </DockPanel>
                                         <TextBlock Text="{Binding InstanceCaption}"
                                                    Margin="0,2,0,0"
                                                    FontFamily="{DynamicResource Font.UI}"

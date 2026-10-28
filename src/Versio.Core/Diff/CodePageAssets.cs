@@ -105,6 +105,7 @@ public static class CodePageAssets
         .mt-note { color: var(--cd-muted); margin: 2px 0 8px; font-size: 12px; }
         .mt-summary { margin: 0 0 8px; }
         .mt-unshown { margin: 0 0 8px; padding: 4px 8px; background: var(--cd-hidden-bg); }
+        .mt-mods { display: inline-flex; flex-wrap: wrap; gap: 4px; align-items: center; }
         .mt-attrs { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; margin: 0 0 8px; }
         .mt-attrs-label { color: var(--cd-muted); font: 600 11px var(--cd-ui); margin-right: 4px; }
         .mt-chips { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 2px; }

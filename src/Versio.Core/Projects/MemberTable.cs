@@ -199,6 +199,13 @@ public sealed record MemberAttribute
     /// <summary>The committed value of a modified attribute ("(empty)" for none); null otherwise.</summary>
     public string? ValueBefore { get; init; }
 
+    /// <summary>
+    /// A keyword on the object's header (<c>PUBLIC</c>, <c>ABSTRACT</c>) rather than a pragma
+    /// written above it. The same chip, drawn beside the title instead of in the attribute strip;
+    /// see <see cref="MemberTable.Modifiers"/>.
+    /// </summary>
+    public bool IsModifier { get; init; }
+
     /// <summary>What the chip says: <c>symbol = readwrite</c>, or the bare name.</summary>
     public string Text => Value.Length == 0 ? Name : $"{Name} = {Value}";
 
@@ -208,7 +215,7 @@ public sealed record MemberAttribute
         MemberChange.Added => "Added since the last commit",
         MemberChange.Modified => $"Changed since the last commit: was {ValueBefore}",
         MemberChange.Removed => "Deleted since the last commit",
-        _ => "Attribute",
+        _ => IsModifier ? "Modifier on the header" : "Attribute",
     };
 
     public bool IsAdded => Change == MemberChange.Added;
@@ -304,6 +311,36 @@ public sealed record MemberTable
     public IReadOnlyList<MemberAttribute> Attributes { get; init; } = [];
 
     public bool HasAttributes => Attributes.Count > 0;
+
+    /// <summary>
+    /// The keywords on the object's header between its kind and its name (<c>METHOD PUBLIC
+    /// Reset</c>: <c>PUBLIC</c>; <c>FUNCTION_BLOCK ABSTRACT FB</c>: <c>ABSTRACT</c>), in the order
+    /// written; after a comparison, removed ones too. Empty for a format whose headers have none.
+    /// </summary>
+    /// <remarks>
+    /// The second time the Rendered tab hid a header change. On 2026-10-23 a method header that
+    /// gained <c>PUBLIC</c> made its empty table warn "1 declaration change is not shown" beside a
+    /// code block that showed every change, and the warning went: the modifier was ruled framing,
+    /// and the cost — a modifier change neither drawn nor warned about — was written on the parser.
+    /// On 2026-10-28 the same change on <c>FB_Template.Reset</c> was found that way: the tree said M,
+    /// Raw showed <c>METHOD Reset</c> become <c>METHOD PUBLIC Reset</c>, and Rendered drew an empty
+    /// interface and the unchanged code. Drawn now, as chips beside the title, marked as attribute
+    /// chips are: a keyword gained is green, one taken away is struck. Nothing warns, because
+    /// nothing is hidden.
+    /// </remarks>
+    public IReadOnlyList<MemberAttribute> Modifiers { get; init; } = [];
+
+    public bool HasModifiers => Modifiers.Count > 0;
+
+    /// <summary>
+    /// The file line the title and <see cref="Modifiers"/> are read from, when the format knows
+    /// it; null otherwise. For review coverage: a modifier chip drawn as changed vouches for the
+    /// header on both sides, and the chip itself is written on one side only.
+    /// </summary>
+    public LineSpan? Header { get; init; }
+
+    /// <summary><see cref="Header"/> in the OLDER version of a comparison. Set by <see cref="MemberTableDiff.Compare"/>.</summary>
+    public LineSpan? HeaderBefore { get; init; }
 
     /// <summary>
     /// Every declaration line the table does not draw, so a comparison can tell when one of

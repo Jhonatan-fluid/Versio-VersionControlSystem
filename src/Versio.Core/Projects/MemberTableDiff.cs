@@ -116,6 +116,10 @@ public static class MemberTableDiff
             Members = rows,
             ChangeSummary = Summary(added, modified, removed),
             Attributes = CompareAttributes(baseline.Attributes, current.Attributes),
+            // By name, as attributes are: PUBLIC become PRIVATE is one chip gained and one struck,
+            // which reads as the header's own words did, rather than one chip "changed from".
+            Modifiers = CompareAttributes(baseline.Modifiers, current.Modifiers),
+            HeaderBefore = baseline.Header,
             UnshownChange = Unshown(baseline.Unshown, current.Unshown),
             UnshownBefore = baseline.Unshown,
             // The older version's framing rides along, so coverage can vouch for a keyword line
