@@ -69,6 +69,9 @@ public sealed class UpdatesViewModel : ObservableObject
     private CancellationTokenSource? _downloadCancel;
     private int _percent;
     private string _failure = string.Empty;
+    private Stopwatch? _downloadClock;
+    private TimeSpan _lastProgressAt;
+    private bool _applying;
 
     /// <param name="clearRunningWork">
     /// Asks about running work before the download - Stop, Wait or Don't close, the close
@@ -138,7 +141,38 @@ public sealed class UpdatesViewModel : ObservableObject
     public bool IsFailed => _stage == UpdateStage.Failed;
 
     /// <summary>Waiting has no percentage to show; the bar runs instead.</summary>
-    public bool IsIndeterminate => _stage == UpdateStage.WaitingForWork;
+    public bool IsIndeterminate => _stage == UpdateStage.WaitingForWork || IsApplying;
+
+    /// <summary>
+    /// The download has gone quiet: the bytes are in and Velopack is rebuilding the package.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Seen on 0.4.10 → 0.4.11 (2026-10-28).</b> The delta was 3.9 MB and arrived in one
+    /// second: 25% and 50% were logged 50 ms apart. Then nothing for 91 seconds, and the card
+    /// sat on 70% looking frozen. Velopack was rebuilding the 288 MB full package from the
+    /// installed one plus the delta, and it reports no progress while it does - the same
+    /// silent minute had followed 0.4.9 → 0.4.10's download.
+    /// </para>
+    /// <para>
+    /// Nothing outside Velopack can see that phase begin, so it is inferred: no progress for
+    /// <see cref="QuietBeforeApplying"/> while still downloading. Inferred rather than tied to
+    /// a percentage, because where Velopack's download share ends is its own business and has
+    /// moved between versions; silence is what the user sees, whatever causes it.
+    /// </para>
+    /// </remarks>
+    public bool IsApplying => _stage == UpdateStage.Downloading && _applying;
+
+    /// <summary>
+    /// How long without progress before the card says it is applying rather than downloading.
+    /// </summary>
+    /// <remarks>Settable so a test does not have to sit through three real seconds.</remarks>
+    public TimeSpan QuietBeforeApplying { get; set; } = TimeSpan.FromSeconds(3);
+
+    /// <summary>"1:12" since the download began - the part of the card that always moves.</summary>
+    public string ElapsedText => _stage == UpdateStage.Downloading && _downloadClock is { } clock
+        ? $"{(int)clock.Elapsed.TotalMinutes}:{clock.Elapsed.Seconds:00}"
+        : string.Empty;
 
     public bool CanCancel => _stage is UpdateStage.WaitingForWork or UpdateStage.Downloading;
 
@@ -154,9 +188,18 @@ public sealed class UpdatesViewModel : ObservableObject
     public int Percent => _percent;
 
     /// <summary>The bar's fill, 0-1. A scale rather than a width, so the XAML needs no converter.</summary>
-    public double ProgressFraction => _stage == UpdateStage.Restarting ? 1.0 : _percent / 100.0;
+    /// <remarks>
+    /// Empty while applying, so the indeterminate sweep drawn over it shows across the whole
+    /// bar. Left at 70%, the sweep moved only through the empty 30% and the bar still read as
+    /// stuck.
+    /// </remarks>
+    public double ProgressFraction => _stage == UpdateStage.Restarting ? 1.0
+        : IsApplying ? 0.0
+        : _percent / 100.0;
 
-    public string PercentText => _stage == UpdateStage.Downloading ? $"{_percent}%" : string.Empty;
+    public string PercentText => _stage != UpdateStage.Downloading ? string.Empty
+        : IsApplying ? $"Applying the update · {ElapsedText}"
+        : $"{_percent}% · {ElapsedText}";
 
     /// <summary>
     /// "About 12 MB" - the size of what will be fetched, which is the delta when there is one.
@@ -181,6 +224,9 @@ public sealed class UpdatesViewModel : ObservableObject
     {
         UpdateStage.WaitingForWork =>
             "Waiting for the current operation to finish. The download starts as soon as it does.",
+        UpdateStage.Downloading when _applying =>
+            "Applying the changes to your installed version. This can take a minute or two; " +
+            "Versio is still working. Then it closes, installs the update and reopens on its own.",
         UpdateStage.Downloading =>
             "Downloading the update. When it finishes, Versio closes, installs it and reopens on its own.",
         UpdateStage.Restarting =>
@@ -418,8 +464,11 @@ public sealed class UpdatesViewModel : ObservableObject
                                       (offer.DownloadBytes > 0 ? $" ({offer.DownloadBytes:N0} bytes)" : ""));
         Status = $"Downloading Versio {offer.Version}…";
         SetPercent(0);
-        SetStage(UpdateStage.Downloading);
         var stopwatch = Stopwatch.StartNew();
+        _downloadClock = stopwatch;
+        _lastProgressAt = TimeSpan.Zero;
+        _applying = false;
+        SetStage(UpdateStage.Downloading);
 
         // A heartbeat at each quarter: a download is long enough on a site connection that a
         // log with nothing between "downloading" and the next line would read as a hang.
@@ -427,6 +476,8 @@ public sealed class UpdatesViewModel : ObservableObject
         var progress = new Progress<int>(percent =>
         {
             Status = $"Downloading Versio {offer.Version}… {percent}%";
+            _lastProgressAt = stopwatch.Elapsed;
+            SetApplying(false);
             SetPercent(percent);
             var quarter = percent / 25;
             if (quarter > lastQuarter && quarter < 4)
@@ -436,6 +487,11 @@ public sealed class UpdatesViewModel : ObservableObject
                     $"update {offer.Version}: {quarter * 25}% downloaded", isHeartbeat: true);
             }
         });
+
+        // The card's clock, and the watch for Velopack going quiet. Stopped in the finally
+        // whichever way the download ends, so no tick lands on a card showing something else.
+        using var ticking = new CancellationTokenSource();
+        var ticker = TickAsync(offer, stopwatch, ticking.Token);
 
         try
         {
@@ -452,12 +508,80 @@ public sealed class UpdatesViewModel : ObservableObject
             SetStage(UpdateStage.Failed, ex.GetBaseException().Message);
             return false;
         }
+        finally
+        {
+            await ticking.CancelAsync().ConfigureAwait(true);
+            await ticker.ConfigureAwait(true);
+            _applying = false;
+        }
 
         SetPercent(100);
         _downloadedVersion = offer.Version;
         _logger.Info(LogCategory.App,
-            $"update {offer.Version}: downloaded in {stopwatch.Elapsed.TotalSeconds:0.0} s");
+            $"update {offer.Version}: downloaded and applied in {stopwatch.Elapsed.TotalSeconds:0.0} s");
         return true;
+    }
+
+    /// <summary>
+    /// Once a second while downloading: move the clock, and notice Velopack going quiet.
+    /// </summary>
+    /// <remarks>
+    /// The log says so too: the 91 silent seconds of 2026-10-28 have nothing in the log
+    /// between "50% downloaded" and "downloaded", which is the hang-shaped gap AGENTS.md
+    /// asks for a heartbeat over. One line when the quiet starts, then one every 15 s.
+    /// </remarks>
+    private async Task TickAsync(UpdateOffer offer, Stopwatch clock, CancellationToken ct)
+    {
+        var period = QuietBeforeApplying < TimeSpan.FromSeconds(2)
+            ? QuietBeforeApplying / 2
+            : TimeSpan.FromSeconds(1);
+        var nextHeartbeat = TimeSpan.Zero;
+
+        try
+        {
+            while (!ct.IsCancellationRequested)
+            {
+                await Task.Delay(period, ct).ConfigureAwait(true);
+
+                var quiet = clock.Elapsed - _lastProgressAt;
+                if (!_applying && quiet >= QuietBeforeApplying)
+                {
+                    SetApplying(true);
+                    nextHeartbeat = clock.Elapsed + TimeSpan.FromSeconds(15);
+                    _logger.Info(LogCategory.App,
+                        $"update {offer.Version}: no progress for {quiet.TotalSeconds:0} s at {_percent}%; " +
+                        "applying the update (Velopack reports nothing while it rebuilds the package)");
+                }
+                else if (_applying && clock.Elapsed >= nextHeartbeat)
+                {
+                    nextHeartbeat = clock.Elapsed + TimeSpan.FromSeconds(15);
+                    _logger.Log(LogLevel.Information, LogCategory.App,
+                        $"update {offer.Version}: still applying ({quiet.TotalSeconds:0} s since the last progress)",
+                        isHeartbeat: true);
+                }
+
+                OnPropertyChanged(nameof(ElapsedText));
+                OnPropertyChanged(nameof(PercentText));
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            // The download ended; the clock stops with it.
+        }
+    }
+
+    private void SetApplying(bool value)
+    {
+        if (_applying == value)
+        {
+            return;
+        }
+
+        _applying = value;
+        foreach (var name in new[] { nameof(IsApplying), nameof(IsIndeterminate), nameof(Detail), nameof(PercentText), nameof(ProgressFraction) })
+        {
+            OnPropertyChanged(name);
+        }
     }
 
     private void Cancel()
@@ -508,7 +632,8 @@ public sealed class UpdatesViewModel : ObservableObject
         foreach (var name in new[]
                  {
                      nameof(Stage), nameof(IsOverlayOpen), nameof(IsDownloading), nameof(IsRestarting),
-                     nameof(IsFailed), nameof(IsIndeterminate), nameof(CanCancel),
+                     nameof(IsFailed), nameof(IsIndeterminate), nameof(IsApplying), nameof(ElapsedText),
+                     nameof(CanCancel),
                      nameof(DownloadStepCurrent), nameof(DownloadStepDone), nameof(CloseStepCurrent),
                      nameof(ProgressFraction), nameof(PercentText), nameof(SizeText), nameof(Headline),
                      nameof(Detail), nameof(Caption),
