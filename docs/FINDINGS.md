@@ -19,6 +19,60 @@ produce a diff touching everything else.
 
 ---
 
+### A failure over a project that matches HEAD came back at every launch, and a click was never the fix
+
+**2026-10-27, 18:16, the same two rows after the entry below shipped.** The owner rebuilt
+(0.4.7), reinstalled, relaunched — and `CleaningStation_V20_V21.ap21` and
+`TC3_PlcSample_reStrText.tsproj` were back on "failed" with the same TwinCAT and Openness
+refusals. The log shows why: `161b94dc224c: ReadoptedAfterRestart — previous session (pid
+41980) is gone and the work is still unsynced; re-adopting the Failed lock` and the same for
+`64eb778c77ff`, then `commit gate: Blocked — 2 projects have a failed sync`. Nobody had
+pressed Try again, and the owner's objection was that nobody should have to: *there are no
+changes on these projects; they should not be detected and should not be processed.* The
+entry below fixed the button and left the launch alone, and the launch is where the rows
+come from.
+
+**The fix moves into the launch path.** `AdoptCommittedStateAsync` — the fresh-clone
+adoption, which runs between recovery and the catch-up and asks git whether an unrecorded
+project matches HEAD — now acts on a **Failed** lock with no export recorded, not only a Clean
+one. A failed project that git says is untouched (status clean under the project, its payload
+and its mirror, read twice around the hashing, every listed file on disk) has its failure
+dropped and is taken as exported: direction Clean, baseline and `LastSynced` set to the
+hashes, the breaker and coalescer reset as an acknowledgement would, and one Info line that
+carries the reason the failure had held — `the recorded failure (export failed — TcXaeShell…)
+had nothing to do: the project and its mirror match HEAD and no export was ever recorded here,
+so the failure is dropped`. A failed project that git says **did** change is not adopted and
+stays failed with its reason, which is what the owner asked for in the same breath. The
+recovery line at Warning still appears once, at the launch that drops it; the next launch
+reads `NothingToRecover`.
+
+**On "an abandoned lock is never auto-cleared".** The entry below rejected a relaunch-time
+release on that principle, and the principle stands: it guards *unsynced work*. What was
+rejected was a release decided inside the recovery policy, which has no git and, with a blank
+mirror baseline, could not tell a mirror edit from nothing. The adoption path can: it does not
+reason about baselines at all, it asks git, twice, and checks the disk. A failure is dropped
+only on git's word that the work it guarded does not exist — and a record of a run that should
+never have happened is not a lock guarding anything. The human-in-the-loop guard is kept for
+the case it exists for: a failure over a real change.
+
+**One test had modelled exactly the dropped state.**
+`A_failed_project_does_not_hide_another_projects_pending_export` wrote a Failed lock with
+empty hashes over a project identical to HEAD, as the thing that must stay on the panel; with
+the fix it was adopted, the gate exported B, and the assertion read `rows: a=never exported,
+b=never exported`. The test is about a failure that is still true, so A now carries a change
+too.
+
+**Tests.** `SyncOrchestratorTests`: the one adoption test that asserted "a failure is never
+overwritten" is now four — a recorded export is never overwritten, a failure over an untouched
+project is dropped and the project adopted (no run, Clean on disk, gate Proceed, the log line
+with the reason), a failure over a changed project or mirror stays failed (theory, two rows), a
+held direction is never overwritten. `ProjectPanelCalmStateTests`: a first shell fails the
+export, the project is committed outside the app, a second shell on the same repository opens
+with the row not failed, no second export, and the log line. Mutation: the candidate filter
+back to `!= Clean` turns the new orchestrator test red and nothing else.
+
+---
+
 ### "Try again" re-ran the toolchain that had just refused, so a failed export of an untouched project was permanent
 
 **2026-10-27, the same screenshot as the entry below, after the scanner fix.** Two rows

@@ -994,8 +994,10 @@ Suppress deferred work for the duration of a git write.
 
 A failed binding still stops **that** project's sync until it is acknowledged (`Try again` on
 the row — which, since 2026-10-27, asks git before the toolchain: a project and mirror that
-match HEAD are taken as exported and nothing runs, so a failure on a machine without that
-project's toolchain clears in one click instead of coming straight back; FINDINGS 2026-10-27).
+match HEAD are taken as exported and nothing runs). A failure with no export recorded on
+this machine over a project git says is untouched does not wait for the click at all: the
+launch drops it on git's word, because the work it would guard does not exist (FINDINGS
+2026-10-27, both entries). A failure over a project that did change stays until acknowledged.
 It no longer vetoes every other commit in the repository: the gate is scoped to bindings the
 include set actually touches, evaluated **before** `git add`, so a README next to a broken
 import can still land. Mix — failed project's files plus unrelated changes — asks, then drops
