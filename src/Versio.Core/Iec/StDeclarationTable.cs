@@ -77,6 +77,8 @@ public static partial class StDeclarationTable
                 Attributes = Shifted(r.Attributes, firstLine),
             }).ToList(),
             Attributes = Shifted(table.Attributes, firstLine),
+            Modifiers = Shifted(table.Modifiers, firstLine),
+            Header = table.Header?.Shift(firstLine),
             Unshown = table.Unshown.Select(u => u with { Line = u.Line + firstLine }).ToList(),
             Structural = table.Structural.Select(s => s.Shift(firstLine)).ToList(),
         };
@@ -119,6 +121,8 @@ public static partial class StDeclarationTable
         {
             return null;
         }
+
+        table = table with { Header = new LineSpan(header, header) };
 
         // The object's own attributes are the ones written above its header, or on the header
         // line itself. CODESYS writes them there for every kind of object; TwinCAT the same.
@@ -208,12 +212,15 @@ public static partial class StDeclarationTable
     /// </summary>
     /// <remarks>
     /// The keyword and the modifiers are not part of it, since 2026-10-23. The keyword is the
-    /// table's kind, which is drawn; a modifier (<c>PUBLIC</c>, <c>ABSTRACT</c>) is not drawn,
-    /// and is not reported either: on the owner's real pull request a method header that gained
+    /// table's kind, which is drawn. A modifier (<c>PUBLIC</c>, <c>ABSTRACT</c>) was then neither
+    /// drawn nor reported: on the owner's real pull request a method header that gained
     /// <c>PUBLIC</c> made its empty table say "1 declaration change is not shown" beside a code
     /// block that showed every change, and the owner's rule is that the header line is framing.
-    /// The cost, stated: an access modifier changed from one value to another is not drawn and
-    /// not warned about. What remains is what says something the table has no cell for — an
+    /// The cost that bought — a modifier changed, and nothing on the Rendered tab to show it — came
+    /// due on 2026-10-28 (<c>FB_Template.Reset</c>, the same change, found the same way), so the
+    /// leading modifiers are now the table's <see cref="MemberTable.Modifiers"/>, chips beside the
+    /// title that mark their own change. They stay out of the residue for the same reason as the
+    /// keyword: drawn. What remains is what says something the table has no cell for — an
     /// <c>EXTENDS</c>, an <c>IMPLEMENTS</c>, the line's comment.
     /// </remarks>
     private static string? HeaderResidue(List<Line> lines, int header, List<string> words, string first)
@@ -358,7 +365,16 @@ public static partial class StDeclarationTable
             }
         }
 
-        return new MemberTable { Name = name, Members = rows, IsInterface = true };
+        // The keywords between the kind and the name, as written: exactly the words HeaderResidue
+        // leaves out of the line's residue, so each header word is drawn once — as the kind, as a
+        // chip, as the Return row, or reported as residue. A modifier written after the name is not
+        // where the grammar puts it, and stays in the residue where a reader is sent to Raw for it.
+        var modifiers = words.Skip(1)
+            .TakeWhile(w => Modifiers.Contains(w, StringComparer.OrdinalIgnoreCase))
+            .Select(w => new MemberAttribute { Name = w.ToUpperInvariant(), IsModifier = true, Lines = new LineSpan(header, header) })
+            .ToList();
+
+        return new MemberTable { Name = name, Members = rows, IsInterface = true, Modifiers = modifiers };
     }
 
     /// <summary>A structure, union or enumeration: one row per member, no headings.</summary>

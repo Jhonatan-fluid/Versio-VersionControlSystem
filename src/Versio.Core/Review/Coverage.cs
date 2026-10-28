@@ -231,6 +231,7 @@ public static class Coverage
         var newLines = Lines(newText);
         var rows = compared.Members.Where(r => !r.IsSectionHeading).ToList();
         var framing = Structural(compared.StructuralBefore, compared.Structural);
+        var modifiers = Modifiers(compared);
 
         bool SameWords(MemberRow row) =>
             row.Lines is { } now && row.WasLines is { } was
@@ -260,8 +261,31 @@ public static class Coverage
             // vouches for the line it is written on, on the side it exists on.
             var chips = compared.Attributes.Where(a => a.Change != MemberChange.None
                                                        && (side == ReviewSide.New ? a.Lines : a.WasLines) is { } at && at.Contains(line));
-            return chips.Any() || framing(side, line);
+            return chips.Any() || modifiers(side, line) || framing(side, line);
         };
+    }
+
+    /// <summary>
+    /// The header's modifiers, drawn as chips beside the title: one drawn as changed vouches for
+    /// the header line on BOTH sides, because the chip is written on one side only (a gained
+    /// <c>PUBLIC</c> has no line on the older side) while the header line is edited on both.
+    /// </summary>
+    /// <remarks>
+    /// Needed where the header is not framing: a method with a return type has its header as its
+    /// Return row, whose words differ across the sides and whose cells do not, so until 2026-10-28
+    /// a gained <c>PUBLIC</c> was a gap there — and on a method without one it was framing, vouched
+    /// for and not drawn. Every other edit to that line is some other rule's: the return type and
+    /// the comment are the Return row's cells, the name is a row added and one removed, and an
+    /// <c>EXTENDS</c> is in the unshown list, which refuses above.
+    /// </remarks>
+    private static Evidence Modifiers(MemberTable compared)
+    {
+        if (compared.Modifiers.All(m => m.Change == MemberChange.None))
+        {
+            return (_, _) => false;
+        }
+
+        return (side, line) => (side == ReviewSide.New ? compared.Header : compared.HeaderBefore) is { } header && header.Contains(line);
     }
 
     /// <summary>

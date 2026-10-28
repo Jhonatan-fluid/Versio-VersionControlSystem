@@ -139,6 +139,25 @@ public sealed class CoverageTests
         Assert.True(moved.Complete);
     }
 
+    /// <summary>
+    /// A method with a return type has its header as its Return row, so framing never vouched for
+    /// it, and the row's cells do not change when PUBLIC is gained: until 2026-10-28 that line was a
+    /// gap. The modifier is a chip now, drawn as changed on the header line it is written on.
+    /// </summary>
+    [Fact]
+    public void A_modifier_gained_on_a_header_that_is_also_the_return_row_is_vouched_for_by_its_chip()
+    {
+        const string method = "METHOD M_Check : BOOL\nVAR_INPUT\n\tx : INT;\nEND_VAR\n";
+        var report = Table(method, method.Replace("METHOD M_Check", "METHOD PUBLIC M_Check", StringComparison.Ordinal), "M.st");
+
+        Assert.Equal(2, report.Changed);
+        Assert.True(report.Complete);
+
+        // And the other way: the chip struck on the older side vouches for the line there.
+        var back = Table(method.Replace("METHOD M_Check", "METHOD PRIVATE M_Check", StringComparison.Ordinal), method, "M.st");
+        Assert.True(back.Complete, string.Join("; ", Where(back)));
+    }
+
     [Fact]
     public void A_header_that_says_more_than_its_keywords_is_a_gap_and_the_table_says_so()
     {

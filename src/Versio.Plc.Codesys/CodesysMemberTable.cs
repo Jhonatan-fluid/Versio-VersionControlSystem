@@ -177,6 +177,8 @@ public static class CodesysMemberTable
             Attributes = m.Attributes.Select(a => a with { Lines = null }).ToList(),
         }).ToList(),
         Attributes = table.Attributes.Select(a => a with { Lines = null }).ToList(),
+        Modifiers = table.Modifiers.Select(a => a with { Lines = null }).ToList(),
+        Header = null,
         Unshown = [],
         Structural = [],
     };

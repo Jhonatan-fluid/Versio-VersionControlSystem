@@ -1,3 +1,4 @@
+using Versio.Core.Text;
 using Versio.Core.Projects;
 using Xunit;
 
@@ -168,6 +169,32 @@ public sealed class MemberTableDiffTests
 
         Assert.Equal(["a", "gone", "b", "new"], result.Attributes.Select(a => a.Name).ToList());
         Assert.Equal([MemberChange.None, MemberChange.Removed, MemberChange.None, MemberChange.Added], result.Attributes.Select(a => a.Change).ToList());
+    }
+
+    [Fact]
+    public void A_header_modifier_gained_or_swapped_is_marked_as_the_attribute_chips_are()
+    {
+        static MemberTable With(params string[] modifiers) =>
+            Table() with { Modifiers = modifiers.Select(m => new MemberAttribute { Name = m, IsModifier = true, Lines = new LineSpan(1, 1) }).ToList() };
+
+        // FB_Template.Reset, 2026-10-28: METHOD Reset became METHOD PUBLIC Reset and the table
+        // drew nothing for it. One green chip now, carrying the header line for a review comment.
+        var gained = MemberTableDiff.Compare(With(), With("PUBLIC"));
+        var chip = Assert.Single(gained.Modifiers);
+        Assert.Equal(("PUBLIC", MemberChange.Added, true), (chip.Name, chip.Change, chip.IsModifier));
+        Assert.Equal(new LineSpan(1, 1), chip.Lines);
+        Assert.False(gained.HasChangeSummary);
+        Assert.False(gained.HasUnshownChange);
+
+        // By name, as attributes: PRIVATE become PUBLIC is PUBLIC gained and PRIVATE struck, in the
+        // header's own words, rather than one chip "changed from".
+        var swapped = MemberTableDiff.Compare(With("PRIVATE"), With("PUBLIC"));
+        Assert.Equal(["PRIVATE", "PUBLIC"], swapped.Modifiers.Select(m => m.Name).ToList());
+        Assert.Equal([MemberChange.Removed, MemberChange.Added], swapped.Modifiers.Select(m => m.Change).ToList());
+        Assert.Null(swapped.Modifiers[0].Lines);
+        Assert.Equal(new LineSpan(1, 1), swapped.Modifiers[0].WasLines);
+
+        Assert.All(MemberTableDiff.Compare(With("PUBLIC"), With("PUBLIC")).Modifiers, m => Assert.Equal(MemberChange.None, m.Change));
     }
 
     [Fact]

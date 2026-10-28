@@ -59,6 +59,15 @@ public static class MemberTableHtml
         head.Append("<div class=\"mt-head\"><span class=\"mt-title\">");
         hidden += CodeHtml.AppendLine(head, table.Name, SyntaxLanguage.PlainText);
         head.Append("</span>");
+        if (table.HasModifiers)
+        {
+            // Beside the title, where the header writes them, not in the attribute strip: a
+            // PUBLIC is part of what the object is, not a pragma on it.
+            head.Append("<span class=\"mt-mods\">");
+            hidden += Chips(head, table.Modifiers);
+            head.Append("</span>");
+        }
+
         foreach (var caption in new[] { table.NumberCaption, table.InstanceCaption, table.MemoryLayoutCaption })
         {
             if (caption.Length > 0)
