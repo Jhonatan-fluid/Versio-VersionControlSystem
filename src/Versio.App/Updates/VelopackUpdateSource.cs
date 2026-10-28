@@ -78,9 +78,15 @@ public sealed class VelopackUpdateSource(
                 return UpdateCheck.UpToDate();
             }
 
+            // Velopack fetches the delta chain when it has one and the full package when it
+            // does not, so the size the overlay shows has to follow the same choice - the
+            // full package's 80 MB beside a 3 MB delta download would be wrong by 25x.
             var target = info.TargetFullRelease;
+            var bytes = info.DeltasToTarget is { Length: > 0 } deltas
+                ? deltas.Sum(d => d.Size)
+                : target.Size;
             return UpdateCheck.Available(
-                new UpdateOffer(target.Version.ToString(), target.NotesMarkdown ?? string.Empty));
+                new UpdateOffer(target.Version.ToString(), target.NotesMarkdown ?? string.Empty, bytes));
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {

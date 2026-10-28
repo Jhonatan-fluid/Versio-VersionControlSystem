@@ -1,5 +1,6 @@
 using Versio.App.ViewModels;
 using Versio.Core.Abstractions;
+using Versio.Core.Guarding;
 using Versio.Core.Logging;
 using Versio.Core.Settings;
 using Versio.Core.Updates;
@@ -33,7 +34,10 @@ public sealed class UpdatesViewModelTests
 
         public UpdateCheck Answer { get; set; } = UpdateCheck.UpToDate();
 
-        public Exception? DownloadFails { get; init; }
+        public Exception? DownloadFails { get; set; }
+
+        /// <summary>Holds the download open until released, so a test can look mid-download.</summary>
+        public TaskCompletionSource? Gate { get; set; }
 
         public int Checks { get; private set; }
 
@@ -49,7 +53,7 @@ public sealed class UpdatesViewModelTests
             return Task.FromResult(Answer);
         }
 
-        public Task DownloadAsync(UpdateOffer offer, IProgress<int>? progress, CancellationToken ct)
+        public async Task DownloadAsync(UpdateOffer offer, IProgress<int>? progress, CancellationToken ct)
         {
             Downloads++;
             if (DownloadFails is not null)
@@ -57,9 +61,13 @@ public sealed class UpdatesViewModelTests
                 throw DownloadFails;
             }
 
+            if (Gate is not null)
+            {
+                await Gate.Task.WaitAsync(ct);
+            }
+
             progress?.Report(100);
             HasDownloadedUpdate = true;
-            return Task.CompletedTask;
         }
 
         public void ApplyAfterExit(bool restart) => AppliedWithRestart = restart;
@@ -265,6 +273,177 @@ public sealed class UpdatesViewModelTests
         Assert.Equal(0, source.Checks);
         Assert.Equal(0, source.Downloads);
         Assert.Contains(shell.Notifications.Visible, n => n.Headline == "Updates are off");
+    }
+
+    // ------------------------------------------------------------------ the overlay
+
+    [Fact]
+    public async Task Update_now_puts_up_the_overlay_while_downloading_and_keeps_it_through_the_restart()
+    {
+        // The defect this exists for: the first installed update downloaded with nothing on
+        // screen. The overlay must be up for the whole download, and still up when the window
+        // is asked to close, so the vanishing window is the step the card said would come.
+        var gate = new TaskCompletionSource();
+        var source = new FakeSource
+        {
+            Answer = UpdateCheck.Available(Newer with { DownloadBytes = 12 * 1048576L }),
+            Gate = gate,
+        };
+        using var shell = Build(source);
+        await shell.LoadRecentAsync();
+        shell.Asked().Update = _ => UpdateChoice.UpdateNow;
+        UpdateStage? stageAtRestart = null;
+        shell.Updates.RestartRequested += () => stageAtRestart = shell.Updates.Stage;
+
+        var checking = shell.Updates.CheckNowAsync();
+
+        Assert.Equal(UpdateStage.Downloading, shell.Updates.Stage);
+        Assert.True(shell.Updates.IsOverlayOpen);
+        Assert.True(shell.Updates.CancelCommand.CanExecute(null));
+        Assert.Equal("Updating to Versio 0.5.0", shell.Updates.Headline);
+        Assert.Equal("about 12 MB", shell.Updates.SizeText);
+
+        gate.SetResult();
+        await checking;
+
+        Assert.Equal(UpdateStage.Restarting, stageAtRestart);
+        Assert.Equal(UpdateStage.Restarting, shell.Updates.Stage);
+        Assert.Equal(1.0, shell.Updates.ProgressFraction);
+        Assert.False(shell.Updates.CancelCommand.CanExecute(null));
+    }
+
+    [Fact]
+    public async Task Cancel_drops_the_download_without_installing_or_remembering_a_Later()
+    {
+        var store = new MemoryStore(AppSettings.Empty);
+        var source = new FakeSource { Answer = UpdateCheck.Available(Newer), Gate = new TaskCompletionSource() };
+        using var shell = Build(source, store);
+        await shell.LoadRecentAsync();
+        shell.Asked().Update = _ => UpdateChoice.UpdateNow;
+        var restarts = 0;
+        shell.Updates.RestartRequested += () => restarts++;
+
+        var checking = shell.Updates.CheckNowAsync();
+        shell.Updates.CancelCommand.Execute(null);
+        await checking;
+
+        Assert.Equal(UpdateStage.None, shell.Updates.Stage);
+        Assert.False(shell.Updates.IsOverlayOpen);
+        Assert.Equal(0, restarts);
+        Assert.Equal(string.Empty, store.Saved.DismissedUpdateVersion);
+        Assert.Equal("Versio 0.5.0 is available", shell.Updates.Status);
+        shell.Updates.ApplyOnExit();
+        Assert.Null(source.AppliedWithRestart);
+    }
+
+    [Fact]
+    public async Task A_failed_download_stays_on_the_overlay_and_Try_again_carries_on_to_the_restart()
+    {
+        var source = new FakeSource
+        {
+            Answer = UpdateCheck.Available(Newer),
+            DownloadFails = new System.Net.Http.HttpRequestException("connection reset"),
+        };
+        using var shell = Build(source);
+        await shell.LoadRecentAsync();
+        shell.Asked().Update = _ => UpdateChoice.UpdateNow;
+        var restarts = 0;
+        shell.Updates.RestartRequested += () => restarts++;
+
+        await shell.Updates.CheckNowAsync();
+
+        Assert.Equal(UpdateStage.Failed, shell.Updates.Stage);
+        Assert.Contains("connection reset", shell.Updates.Detail, StringComparison.Ordinal);
+        Assert.Contains("still on 0.4.4", shell.Updates.Detail, StringComparison.Ordinal);
+        Assert.True(shell.Updates.TryAgainCommand.CanExecute(null));
+
+        source.DownloadFails = null;
+        // Synchronous here: the fake download completes at once, so the command has run
+        // to the restart by the time Execute returns.
+        shell.Updates.TryAgainCommand.Execute(null);
+
+        Assert.Equal(2, source.Downloads);
+        Assert.Equal(1, restarts);
+        Assert.Equal(UpdateStage.Restarting, shell.Updates.Stage);
+    }
+
+    [Fact]
+    public async Task Close_after_a_failure_takes_the_overlay_away()
+    {
+        var source = new FakeSource
+        {
+            Answer = UpdateCheck.Available(Newer),
+            DownloadFails = new System.Net.Http.HttpRequestException("connection reset"),
+        };
+        using var shell = Build(source);
+        await shell.LoadRecentAsync();
+        shell.Asked().Update = _ => UpdateChoice.UpdateNow;
+        await shell.Updates.CheckNowAsync();
+
+        shell.Updates.CloseOverlayCommand.Execute(null);
+
+        Assert.False(shell.Updates.IsOverlayOpen);
+    }
+
+    [Fact]
+    public async Task A_refused_close_takes_the_overlay_away()
+    {
+        var source = new FakeSource { Answer = UpdateCheck.Available(Newer) };
+        using var shell = Build(source);
+        await shell.LoadRecentAsync();
+        shell.Asked().Update = _ => UpdateChoice.UpdateNow;
+        await shell.Updates.CheckNowAsync();
+
+        shell.Updates.RestartDeclined();
+
+        Assert.False(shell.Updates.IsOverlayOpen);
+    }
+
+    // ------------------------------------------------------------------ running work
+
+    [Fact]
+    public async Task Running_work_is_asked_about_before_the_download_and_Dont_close_downloads_nothing()
+    {
+        var source = new FakeSource { Answer = UpdateCheck.Available(Newer) };
+        using var shell = Build(source);
+        await shell.LoadRecentAsync();
+        shell.Asked().Update = _ => UpdateChoice.UpdateNow;
+        var guards = 0;
+        shell.Asked().Guard = _ =>
+        {
+            guards++;
+            return GuardChoice.Cancel;
+        };
+        using var importing = shell.Busy.Begin(WorkKind.Import, "Importing…");
+
+        await shell.Updates.CheckNowAsync();
+
+        Assert.Equal(1, guards);
+        Assert.Equal(0, source.Downloads);
+        Assert.False(shell.Updates.IsOverlayOpen);
+        Assert.False(importing.Token.IsCancellationRequested);
+    }
+
+    [Fact]
+    public async Task Wait_shows_the_overlay_waiting_and_downloads_once_the_work_ends()
+    {
+        var source = new FakeSource { Answer = UpdateCheck.Available(Newer) };
+        using var shell = Build(source);
+        await shell.LoadRecentAsync();
+        shell.Asked().Update = _ => UpdateChoice.UpdateNow;
+        shell.Asked().Guard = _ => GuardChoice.WaitThenProceed;
+        var importing = shell.Busy.Begin(WorkKind.Import, "Importing…");
+
+        var checking = shell.Updates.CheckNowAsync();
+
+        Assert.Equal(UpdateStage.WaitingForWork, shell.Updates.Stage);
+        Assert.Equal(0, source.Downloads);
+
+        importing.Dispose();
+        await checking.WaitAsync(TimeSpan.FromSeconds(10));
+
+        Assert.Equal(1, source.Downloads);
+        Assert.Equal(UpdateStage.Restarting, shell.Updates.Stage);
     }
 
     [Fact]

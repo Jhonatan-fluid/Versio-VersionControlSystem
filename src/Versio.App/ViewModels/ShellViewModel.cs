@@ -581,7 +581,8 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
             () => Prompts,
             () => _stored.DismissedUpdateVersion,
             RememberDismissedUpdateAsync,
-            () => AskingSomething());
+            () => AskingSomething(),
+            ClearWorkForUpdateAsync);
 
 
         // The SHELL's tracker, not one of its own.
@@ -4927,6 +4928,69 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
     /// </para>
     /// </remarks>
     private bool _closeInFlight;
+
+    /// <summary>
+    /// Before an update downloads: the close guard's question, asked now rather than after
+    /// the download, and without committing to the close.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The same intent and the same dialog as the X button - the update <i>will</i> close
+    /// Versio - so the user meets one question with one meaning. What differs is what happens
+    /// next. <see cref="RequestCloseAsync"/> stops the watchers and quiesces sync because
+    /// the window is going; here the window is not going yet, and a download that fails or is
+    /// cancelled must leave a Versio that still watches its repository. So nothing is torn
+    /// down: work is waited for or stopped, and whatever starts during the download meets
+    /// the real close guard when the window closes.
+    /// </para>
+    /// </remarks>
+    /// <returns>False when the user chose to keep the running work.</returns>
+    private async Task<bool> ClearWorkForUpdateAsync(Action waiting, CancellationToken ct)
+    {
+        if (!Busy.IsBusy)
+        {
+            return true;
+        }
+
+        var choice = Ask(GuardIntent.CloseApp);
+        switch (choice)
+        {
+            case GuardChoice.Proceed:
+                return true;
+
+            case GuardChoice.WaitThenProceed:
+                _logger.Info(LogCategory.App, "update: waiting for what is running to finish first");
+                waiting();
+                await Busy.WhenIdleAsync(ct).ConfigureAwait(true);
+                return true;
+
+            case GuardChoice.CancelWorkAndProceed:
+                waiting();
+                var stopped = Busy.CancelRunning();
+                _logger.Info(LogCategory.App, $"update: asked {stopped} operation(s) to stop first");
+
+                // The close's eight seconds, for the close's reason: a runner that ignores
+                // the token must not hold the update until the job timeout. Past it the
+                // download starts anyway, and the close guard asks again at the restart.
+                using (var deadline = CancellationTokenSource.CreateLinkedTokenSource(ct))
+                {
+                    deadline.CancelAfter(TimeSpan.FromSeconds(8));
+                    try
+                    {
+                        await Busy.WhenIdleAsync(deadline.Token).ConfigureAwait(true);
+                    }
+                    catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+                    {
+                        _logger.Warn(LogCategory.App, "update: still busy after 8s; downloading anyway");
+                    }
+                }
+
+                return true;
+
+            default:
+                return false;
+        }
+    }
 
     /// <returns>True when the window may close now.</returns>
     public async Task<bool> RequestCloseAsync()

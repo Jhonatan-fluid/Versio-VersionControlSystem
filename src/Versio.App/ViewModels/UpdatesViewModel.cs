@@ -26,6 +26,23 @@ namespace Versio.App.ViewModels;
 /// downloaded, and it installs whenever Versio next exits (<see cref="RestartDeclined"/>).
 /// </para>
 /// <para>
+/// <b>Once the user says Update, the window is theirs no longer, and it says so.</b> The first
+/// installed update (0.4.9, 2026-10-27) downloaded behind a one-line status under the gear
+/// menu, which had closed: the user clicked Update and restart and saw nothing at all until
+/// the window vanished. The update now runs under <see cref="Stage"/>, which the window draws
+/// as a dimmed overlay with the progress, what happens next, and Cancel - blocking, because
+/// there is nothing to do in a Versio that is about to close, and a click on a panel that is
+/// about to disappear is a click that will be lost.
+/// </para>
+/// <para>
+/// <b>Running work is asked about before the download, not after it.</b> The close guard
+/// would ask anyway when the window closes, but by then the user has watched a minute of
+/// progress bar over an export they did not know would hold the restart. Asking first means
+/// the overlay never locks the screen over work that still has to finish; it shows "waiting
+/// for the current operation" instead. The close guard still runs at the close, for whatever
+/// started in between.
+/// </para>
+/// <para>
 /// Constructed by the shell, which owns the notification list, the prompts and the settings
 /// file, and hands this class delegates rather than itself - the same arrangement as
 /// <see cref="GitAuthViewModel"/>.
@@ -40,12 +57,24 @@ public sealed class UpdatesViewModel : ObservableObject
     private readonly Func<string> _dismissedVersion;
     private readonly Func<string, Task> _rememberDismissed;
     private readonly Func<IDisposable> _askingSomething;
+    private readonly Func<Action, CancellationToken, Task<bool>> _clearRunningWork;
 
     private bool _checking;
     private string _status = string.Empty;
     private string? _downloadedVersion;
     private bool _restartWanted;
 
+    private UpdateStage _stage;
+    private UpdateOffer? _pending;
+    private CancellationTokenSource? _downloadCancel;
+    private int _percent;
+    private string _failure = string.Empty;
+
+    /// <param name="clearRunningWork">
+    /// Asks about running work before the download - Stop, Wait or Don't close, the close
+    /// guard's own question - and returns false for Don't close. Calls its action when it
+    /// starts waiting, so the overlay can say what it is waiting for.
+    /// </param>
     public UpdatesViewModel(
         VersioLogger logger,
         IUpdateSource source,
@@ -53,7 +82,8 @@ public sealed class UpdatesViewModel : ObservableObject
         Func<IUserPrompts> prompts,
         Func<string> dismissedVersion,
         Func<string, Task> rememberDismissed,
-        Func<IDisposable> askingSomething)
+        Func<IDisposable> askingSomething,
+        Func<Action, CancellationToken, Task<bool>>? clearRunningWork = null)
     {
         _logger = logger;
         _source = source;
@@ -62,6 +92,7 @@ public sealed class UpdatesViewModel : ObservableObject
         _dismissedVersion = dismissedVersion;
         _rememberDismissed = rememberDismissed;
         _askingSomething = askingSomething;
+        _clearRunningWork = clearRunningWork ?? ((_, _) => Task.FromResult(true));
 
         // An error handler of its own, because the outcomes the check expects are all turned
         // into a status and a notice already; anything that still escapes is a defect, and
@@ -71,10 +102,101 @@ public sealed class UpdatesViewModel : ObservableObject
             _logger.Error(LogCategory.App, "the update check failed unexpectedly", ex);
             _notifications.Failure("Could not check for updates", ex.GetBaseException().Message);
         });
+
+        CancelCommand = new RelayCommand(Cancel,
+            () => _stage is UpdateStage.WaitingForWork or UpdateStage.Downloading);
+        TryAgainCommand = new AsyncCommand(TryAgainAsync, () => _stage == UpdateStage.Failed, ex =>
+        {
+            _logger.Error(LogCategory.App, "the update retry failed unexpectedly", ex);
+            SetStage(UpdateStage.Failed, ex.GetBaseException().Message);
+        });
+        CloseOverlayCommand = new RelayCommand(CloseOverlay, () => _stage == UpdateStage.Failed);
     }
 
     /// <summary>The gear menu's Check for updates.</summary>
     public AsyncCommand CheckNowCommand { get; }
+
+    /// <summary>The overlay's Cancel, while waiting or downloading. Nothing is installed yet.</summary>
+    public RelayCommand CancelCommand { get; }
+
+    /// <summary>The overlay's Try again, after a failed download.</summary>
+    public AsyncCommand TryAgainCommand { get; }
+
+    /// <summary>The overlay's Close, after a failed download.</summary>
+    public RelayCommand CloseOverlayCommand { get; }
+
+    /// <summary>Where the update the user accepted has got to; None when no overlay shows.</summary>
+    public UpdateStage Stage => _stage;
+
+    /// <summary>The overlay is up, and the window behind it takes no input.</summary>
+    public bool IsOverlayOpen => _stage != UpdateStage.None;
+
+    public bool IsDownloading => _stage == UpdateStage.Downloading;
+
+    public bool IsRestarting => _stage == UpdateStage.Restarting;
+
+    public bool IsFailed => _stage == UpdateStage.Failed;
+
+    /// <summary>Waiting has no percentage to show; the bar runs instead.</summary>
+    public bool IsIndeterminate => _stage == UpdateStage.WaitingForWork;
+
+    public bool CanCancel => _stage is UpdateStage.WaitingForWork or UpdateStage.Downloading;
+
+    /// <summary>The step strip: Download is current until it is done.</summary>
+    public bool DownloadStepCurrent => _stage is UpdateStage.WaitingForWork or UpdateStage.Downloading
+        or UpdateStage.Failed;
+
+    public bool DownloadStepDone => _stage == UpdateStage.Restarting;
+
+    public bool CloseStepCurrent => _stage == UpdateStage.Restarting;
+
+    /// <summary>0-100, as the download reports it.</summary>
+    public int Percent => _percent;
+
+    /// <summary>The bar's fill, 0-1. A scale rather than a width, so the XAML needs no converter.</summary>
+    public double ProgressFraction => _stage == UpdateStage.Restarting ? 1.0 : _percent / 100.0;
+
+    public string PercentText => _stage == UpdateStage.Downloading ? $"{_percent}%" : string.Empty;
+
+    /// <summary>
+    /// "About 12 MB" - the size of what will be fetched, which is the delta when there is one.
+    /// </summary>
+    /// <remarks>
+    /// Not "5 of 12 MB": Velopack reports one percentage across downloading and applying the
+    /// deltas, so a byte count worked back from it would be a number that looks measured and
+    /// is not.
+    /// </remarks>
+    public string SizeText => _pending is { DownloadBytes: > 0 } offer && _stage == UpdateStage.Downloading
+        ? $"about {offer.DownloadBytes / 1048576.0:0.#} MB"
+        : string.Empty;
+
+    public string Headline => _stage switch
+    {
+        UpdateStage.Restarting => "Update downloaded",
+        UpdateStage.Failed => "Couldn't download the update",
+        _ => $"Updating to Versio {_pending?.Version}",
+    };
+
+    public string Detail => _stage switch
+    {
+        UpdateStage.WaitingForWork =>
+            "Waiting for the current operation to finish. The download starts as soon as it does.",
+        UpdateStage.Downloading =>
+            "Downloading the update. When it finishes, Versio closes, installs it and reopens on its own.",
+        UpdateStage.Restarting =>
+            $"Versio is closing to install {_pending?.Version}. It reopens in a few seconds.",
+        UpdateStage.Failed =>
+            $"{_failure.TrimEnd('.')}. Nothing was installed; you're still on {_source.CurrentVersion}.",
+        _ => string.Empty,
+    };
+
+    /// <summary>The line under the bar.</summary>
+    public string Caption => _stage switch
+    {
+        UpdateStage.WaitingForWork => "Waiting…",
+        UpdateStage.Restarting => "Closing Versio…",
+        _ => string.Empty,
+    };
 
     /// <summary>
     /// The window should close so the downloaded update can install.
@@ -213,6 +335,7 @@ public sealed class UpdatesViewModel : ObservableObject
         {
             _logger.Info(LogCategory.App, "update check cancelled");
             Status = string.Empty;
+            SetStage(UpdateStage.None);
         }
         finally
         {
@@ -237,15 +360,53 @@ public sealed class UpdatesViewModel : ObservableObject
             return;
         }
 
+        _pending = offer;
+        await DownloadThenRestartAsync(offer, ct).ConfigureAwait(true);
+    }
+
+    private async Task DownloadThenRestartAsync(UpdateOffer offer, CancellationToken ct)
+    {
         if (_downloadedVersion != offer.Version)
         {
-            if (!await DownloadAsync(offer, ct).ConfigureAwait(true))
+            // Linked rather than separate: the overlay's Cancel trips this one, and the app
+            // shutting down trips the caller's - and only the first is the user changing
+            // their mind, which is why Cancel also sets the flag that tells them apart.
+            using var cancel = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            _downloadCancel = cancel;
+            try
             {
+                if (!await _clearRunningWork(() => SetStage(UpdateStage.WaitingForWork), cancel.Token)
+                        .ConfigureAwait(true))
+                {
+                    // Don't close: not a Later. The user still wants the version, just not
+                    // over this export, so nothing is remembered and the gear offers it again.
+                    _logger.Info(LogCategory.App,
+                        $"update {offer.Version}: put off, because work is running and the user chose to keep it");
+                    SetStage(UpdateStage.None);
+                    Status = $"Versio {offer.Version} is available";
+                    return;
+                }
+
+                if (!await DownloadAsync(offer, cancel.Token).ConfigureAwait(true))
+                {
+                    return;
+                }
+            }
+            catch (OperationCanceledException) when (cancel.IsCancellationRequested && !ct.IsCancellationRequested)
+            {
+                _logger.Info(LogCategory.App, $"update {offer.Version}: cancelled by the user; nothing was installed");
+                SetStage(UpdateStage.None);
+                Status = $"Versio {offer.Version} is available";
                 return;
+            }
+            finally
+            {
+                _downloadCancel = null;
             }
         }
 
         _restartWanted = true;
+        SetStage(UpdateStage.Restarting);
         Status = $"Versio {offer.Version} is ready - closing to install it";
         _logger.Info(LogCategory.App, $"update {offer.Version}: asking the window to close and install");
         RestartRequested?.Invoke();
@@ -253,8 +414,11 @@ public sealed class UpdatesViewModel : ObservableObject
 
     private async Task<bool> DownloadAsync(UpdateOffer offer, CancellationToken ct)
     {
-        _logger.Info(LogCategory.App, $"update {offer.Version}: downloading");
+        _logger.Info(LogCategory.App, $"update {offer.Version}: downloading" +
+                                      (offer.DownloadBytes > 0 ? $" ({offer.DownloadBytes:N0} bytes)" : ""));
         Status = $"Downloading Versio {offer.Version}…";
+        SetPercent(0);
+        SetStage(UpdateStage.Downloading);
         var stopwatch = Stopwatch.StartNew();
 
         // A heartbeat at each quarter: a download is long enough on a site connection that a
@@ -263,6 +427,7 @@ public sealed class UpdatesViewModel : ObservableObject
         var progress = new Progress<int>(percent =>
         {
             Status = $"Downloading Versio {offer.Version}… {percent}%";
+            SetPercent(percent);
             var quarter = percent / 25;
             if (quarter > lastQuarter && quarter < 4)
             {
@@ -280,14 +445,81 @@ public sealed class UpdatesViewModel : ObservableObject
         {
             _logger.Log(LogLevel.Warning, LogCategory.App, $"update {offer.Version}: download failed", ex);
             Status = "The update download failed";
+
+            // The overlay says it now, and Close takes the overlay away; the notice is what
+            // is left afterwards to say it happened.
             _notifications.Failure($"Could not download Versio {offer.Version}", ex.GetBaseException().Message);
+            SetStage(UpdateStage.Failed, ex.GetBaseException().Message);
             return false;
         }
 
+        SetPercent(100);
         _downloadedVersion = offer.Version;
         _logger.Info(LogCategory.App,
             $"update {offer.Version}: downloaded in {stopwatch.Elapsed.TotalSeconds:0.0} s");
         return true;
+    }
+
+    private void Cancel()
+    {
+        if (_downloadCancel is not { } cancel)
+        {
+            return;
+        }
+
+        _logger.Click("Updates.Cancel");
+        cancel.Cancel();
+    }
+
+    private Task TryAgainAsync()
+    {
+        _logger.Click("Updates.TryAgain");
+        return _pending is { } offer
+            ? DownloadThenRestartAsync(offer, CancellationToken.None)
+            : Task.CompletedTask;
+    }
+
+    private void CloseOverlay()
+    {
+        _logger.Click("Updates.CloseFailed");
+        SetStage(UpdateStage.None);
+    }
+
+    private void SetPercent(int percent)
+    {
+        if (_percent == percent)
+        {
+            return;
+        }
+
+        _percent = percent;
+        OnPropertyChanged(nameof(Percent));
+        OnPropertyChanged(nameof(ProgressFraction));
+        OnPropertyChanged(nameof(PercentText));
+    }
+
+    private void SetStage(UpdateStage stage, string failure = "")
+    {
+        _failure = failure;
+        _stage = stage;
+
+        // Every overlay property reads the stage, so they all move together. One list, so a
+        // property added above and forgotten here shows as the stale text it would draw.
+        foreach (var name in new[]
+                 {
+                     nameof(Stage), nameof(IsOverlayOpen), nameof(IsDownloading), nameof(IsRestarting),
+                     nameof(IsFailed), nameof(IsIndeterminate), nameof(CanCancel),
+                     nameof(DownloadStepCurrent), nameof(DownloadStepDone), nameof(CloseStepCurrent),
+                     nameof(ProgressFraction), nameof(PercentText), nameof(SizeText), nameof(Headline),
+                     nameof(Detail), nameof(Caption),
+                 })
+        {
+            OnPropertyChanged(name);
+        }
+
+        CancelCommand.RaiseCanExecuteChanged();
+        TryAgainCommand.RaiseCanExecuteChanged();
+        CloseOverlayCommand.RaiseCanExecuteChanged();
     }
 
     /// <summary>
@@ -306,6 +538,7 @@ public sealed class UpdatesViewModel : ObservableObject
         }
 
         _restartWanted = false;
+        SetStage(UpdateStage.None);
         _logger.Info(LogCategory.App,
             $"update {_downloadedVersion}: the close was cancelled; it installs when Versio exits");
         Status = $"Versio {_downloadedVersion} installs when you close Versio";
@@ -343,4 +576,23 @@ public sealed class UpdatesViewModel : ObservableObject
 
     private static string Capitalise(string text) =>
         text.Length == 0 ? text : char.ToUpperInvariant(text[0]) + text[1..];
+}
+
+/// <summary>Where an accepted update has got to, as the window's overlay draws it.</summary>
+public enum UpdateStage
+{
+    /// <summary>No update under way; no overlay.</summary>
+    None,
+
+    /// <summary>The user chose Wait or Stop over running work, and it has not finished yet.</summary>
+    WaitingForWork,
+
+    /// <summary>Fetching the package. Cancel is still free: nothing is installed yet.</summary>
+    Downloading,
+
+    /// <summary>Downloaded; the window has been asked to close so the updater can run.</summary>
+    Restarting,
+
+    /// <summary>The download failed; Try again or Close.</summary>
+    Failed,
 }

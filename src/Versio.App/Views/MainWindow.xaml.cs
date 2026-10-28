@@ -73,6 +73,31 @@ public partial class MainWindow : Window
         shell.Updates.RestartRequested += () =>
             Dispatcher.BeginInvoke(Close, System.Windows.Threading.DispatcherPriority.Background);
 
+        // The update overlay blocks the mouse by covering the window, but focus can still sit
+        // on a panel behind it, where Enter and Ctrl+O would act. So: focus goes onto the
+        // overlay when it opens, and PreviewKeyDown drops any key aimed outside it - and any
+        // chord inside it too, because a Ctrl+O pressed on the overlay's own Cancel button
+        // still bubbles up to the window's shortcuts and opens the folder picker behind it.
+        // Tab, Shift+Tab, Enter and Space are what the overlay's buttons need.
+        shell.Updates.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName == nameof(UpdatesViewModel.IsOverlayOpen) && shell.Updates.IsOverlayOpen)
+            {
+                Dispatcher.BeginInvoke(FocusUpdateOverlay, System.Windows.Threading.DispatcherPriority.Input);
+            }
+        };
+        PreviewKeyDown += (_, e) =>
+        {
+            if (shell.Updates.IsOverlayOpen
+                && (e.OriginalSource is not DependencyObject target || !UpdateOverlay.IsAncestorOf(target)
+                    || (Keyboard.Modifiers & ~ModifierKeys.Shift) != ModifierKeys.None)
+                // Alt+F4 still closes, as the title bar's X does: the close guard owns that.
+                && !(e.Key == Key.System && e.SystemKey == Key.F4))
+            {
+                e.Handled = true;
+            }
+        };
+
         // Every dialog the application can open, in one class rather than as a run of
         // closures here. Handed to the shell, which passes them down to Sync - so the two
         // view models share one set of questions and this is the only line that wires them.
@@ -270,6 +295,27 @@ public partial class MainWindow : Window
 
         // Queued behind the event we are still inside. See the remarks.
         await Dispatcher.InvokeAsync(Close, System.Windows.Threading.DispatcherPriority.Normal);
+    }
+
+    /// <summary>
+    /// Into the update overlay: its first button when it has one, the overlay itself while
+    /// it is restarting and has none - focus left on a panel behind it is a key that acts
+    /// on something the user cannot see.
+    /// </summary>
+    private void FocusUpdateOverlay()
+    {
+        if (UpdateCancelButton.IsVisible)
+        {
+            UpdateCancelButton.Focus();
+        }
+        else if (UpdateTryAgainButton.IsVisible)
+        {
+            UpdateTryAgainButton.Focus();
+        }
+        else
+        {
+            UpdateOverlay.Focus();
+        }
     }
 
     /// <summary>State something that has no question in it.</summary>

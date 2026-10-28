@@ -61,7 +61,11 @@ public interface IUpdateSource
 /// <summary>A published version newer than this one.</summary>
 /// <param name="Version">The version as published, e.g. <c>0.5.0</c>.</param>
 /// <param name="NotesMarkdown">The release notes the publisher wrote, or empty.</param>
-public sealed record UpdateOffer(string Version, string NotesMarkdown);
+/// <param name="DownloadBytes">
+/// What the download will fetch - the deltas when there is a chain of them, the full package
+/// otherwise - or 0 when the source does not say.
+/// </param>
+public sealed record UpdateOffer(string Version, string NotesMarkdown, long DownloadBytes = 0);
 
 /// <summary>What a check found.</summary>
 public enum UpdateCheckResult

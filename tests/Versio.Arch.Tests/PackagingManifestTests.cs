@@ -196,6 +196,12 @@ public sealed class PackagingManifestTests
         Assert.Contains("shell.Updates.ApplyOnExit()", startup, StringComparison.Ordinal);
         Assert.Contains("shell.Updates.RestartRequested +=", window, StringComparison.Ordinal);
         Assert.Contains("_shell.Updates.RestartDeclined()", window, StringComparison.Ordinal);
+
+        // The overlay's keyboard half. UpdateOverlayWindowTests sees the overlay appear, but
+        // a never-presented window receives no keys, so the handler that drops keys aimed
+        // behind it and the move of focus onto it are only reachable by reading the source.
+        Assert.Contains("UpdateOverlay.IsAncestorOf(target)", window, StringComparison.Ordinal);
+        Assert.Contains("Dispatcher.BeginInvoke(FocusUpdateOverlay", window, StringComparison.Ordinal);
     }
 
     [Fact]
