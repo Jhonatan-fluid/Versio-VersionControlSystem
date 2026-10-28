@@ -1739,8 +1739,10 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
             // what the pane is answering.
             switch (_shownCommit)
             {
-                case { Path: { } path } commit:
-                    _ = ShowCommitFileAsync(commit.Id, commit.ShortId, path);
+                // Raw's half only: the rendered half folds its own rows and must not be
+                // rebuilt, which the old route (ShowCommitFileAsync) did by clearing it.
+                case { Path: { } path } commit when _git is { } git:
+                    _ = ReadCommitPatchAsync(git, commit.Id, path, commit.Caption);
                     break;
 
                 case { } commit:
@@ -5574,43 +5576,283 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
     }
 
     /// <summary>
-    /// Show what one commit did to one row of its tree.
+    /// Show what one commit did to one row of its tree: the Rendered half as the Project panel
+    /// draws a changed object, marked against the commit's first parent; the Raw half as the
+    /// commit's patch of the row's primary layer.
     /// </summary>
     /// <remarks>
+    /// <para>
     /// The row's commit rides in its <see cref="TreeRow.Context"/>; a row without one is not
-    /// the history's and is ignored rather than guessed at. The file shown is the row's primary
-    /// layer, as the Explorer opens it; a project row has only its binary, whose patch says so.
+    /// the history's and is ignored rather than guessed at. From there this is
+    /// <see cref="ShowNode"/> with the readers swapped: the layers are read at the commit
+    /// (<c>git show</c>, every layer and each child's first file — the web viewer's
+    /// <c>ReadAllAsync</c> reads the same set), the build is <see cref="BuildRenderedContent"/>
+    /// over that text and the commit's own index, and the marks are
+    /// <see cref="StartMarking"/> with <see cref="CommitSources"/>: table, code, ladder and
+    /// catalog each against the parent's copy. Until 2026-10-27 a history row showed the raw
+    /// patch alone, because every reader here was wired to the disk and to HEAD.
+    /// </para>
+    /// <para>
+    /// <b>A deleted object is drawn as what it was, every row struck</b> — the web viewer's
+    /// rule. Its layers are read at the parent, the build is the parent's, and
+    /// <see cref="StruckOut"/> marks every member, line and network removed; the marks that
+    /// read a baseline are skipped, since the parent is already what is on screen.
+    /// </para>
+    /// <para>
+    /// The header is set before anything is read, and every later step checks the pane has
+    /// not moved on (the stale-result rule of <see cref="ShowPathAsync"/>). The web page tab
+    /// stays off: it loads a file URI, and a commit has no file on disk.
+    /// </para>
     /// </remarks>
-    private Task ShowCommitNodeAsync(TreeRow row)
+    private async Task ShowCommitNodeAsync(TreeRow row)
     {
-        if (row.Context is not CommitTreeContext context)
+        if (row.Context is not CommitTreeContext context || _git is not { } git)
         {
-            return Task.CompletedTask;
+            return;
         }
 
-        return ShowCommitFileAsync(context.Commit.Id, context.Commit.ShortId, row.PrimaryFile ?? row.Node.Path);
-    }
+        var commit = context.Commit;
+        var node = row.Node;
 
-    private async Task ShowCommitFileAsync(string commitId, string shortId, string path)
-    {
-        if (_git is null)
+        if (row.IsProject)
         {
+            ShowCommittedProject(row, commit, context.Snapshot);
             return;
         }
 
         // The commit is named in the header as well as the path. Without it this reads
         // identically to the working-tree diff of the same file, which is the one thing a
         // reviewer must not confuse it with.
+        var primary = row.PrimaryFile ?? node.Path;
+        var header = $"{primary} @ {commit.ShortId}";
+        _shownCommit = (commit.Id, commit.ShortId, header, primary);
+        PaneMode = PaneMode.CommitFile;
+        SelectedDiffPath = header;
+        _selectedDiffStaged = false;
+        CanStageHunks = false;
+        ClearRendered();
+
+        // Offered here because only the tree knows an object's sibling layers; a chip opens
+        // that layer's patch at this commit and keeps the rendered half.
+        OfferDiffLayers(node.Files, primary, show: f => ShowCommitLayerAsync(git, commit.Id, commit.ShortId, f));
+
+        var deleted = node.Status == ChangeKind.Deleted;
+        var at = deleted ? commit.Id + "^" : commit.Id;
+        var wanted = node.Files
+            .Concat(node.Children.Select(c => c.Files.FirstOrDefault()).OfType<string>())
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        var texts = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        try
+        {
+            foreach (var file in wanted)
+            {
+                texts[file] = await git.ShowAtCommitAsync(at, file, CancellationToken.None).ConfigureAwait(true);
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.Warn(LogCategory.Git, $"history: could not read {node.Name} as of {commit.ShortId}: {ex.Message}");
+        }
+
+        if (!string.Equals(SelectedDiffPath, header, StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        // An empty answer is a file the commit does not hold (the listing is the commit's own,
+        // so a held file is never empty by accident); the build reads it as absent.
+        var changed = context.Snapshot.Changes.Select(c => c.Path).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        RenderedContent = BuildRenderedContent(row, new RenderInputs(
+            p => texts.TryGetValue(p, out var text) && text.Length > 0 ? text : null,
+            context.Snapshot.Objects,
+            changed.Contains));
+        WebPagePath = null;
+        ShowRendered = HasRenderedView;
+        _logger.Info(LogCategory.Ui,
+            $"history: rendering {node.Name} ({node.Kind}) as of {commit.ShortId} against {commit.ShortId}^: "
+            + $"{texts.Count} layer(s) read{(deleted ? ", drawn from the parent and struck" : string.Empty)}");
+
+        if (deleted)
+        {
+            RenderedContent = StruckOut(RenderedContent);
+        }
+        else
+        {
+            StartMarking(row, CommitSources(git, commit.Id, commit.ShortId));
+        }
+
+        await ReadCommitPatchAsync(git, commit.Id, primary, header).ConfigureAwait(true);
+    }
+
+    /// <summary>A layer chip on a commit's object: that layer's patch, the rendered half kept.</summary>
+    private async Task ShowCommitLayerAsync(IGitClient git, string commitId, string shortId, string path)
+    {
         var header = $"{path} @ {shortId}";
         _shownCommit = (commitId, shortId, header, path);
         PaneMode = PaneMode.CommitFile;
         SelectedDiffPath = header;
         _selectedDiffStaged = false;
         CanStageHunks = false;
-        DiffLayers = [];
-        ClearRendered();
+        OfferDiffLayers(_diffLayers.Select(l => l.Path).ToList(), path, show: f => ShowCommitLayerAsync(git, commitId, shortId, f));
 
-        var patch = await _git
+        await ReadCommitPatchAsync(git, commitId, path, header).ConfigureAwait(true);
+    }
+
+    /// <summary>The project row of a commit's tree: its card as of that commit, and the binary-project sentence.</summary>
+    private void ShowCommittedProject(TreeRow row, CommitRow commit, CommitSnapshot snapshot)
+    {
+        var node = row.Node;
+        _shownCommit = (commit.Id, commit.ShortId, node.Path, node.Path);
+        PaneMode = PaneMode.Project;
+        SelectedDiffPath = node.Path;
+        _selectedDiffStaged = false;
+        CanStageHunks = false;
+        DiffLayers = [];
+
+        RenderedContent = CommittedProjectSummary(node, commit, snapshot);
+        WebPagePath = null;
+        ShowRendered = true;
+        PaneNote = string.Empty;
+
+        var project = snapshot.Repo.Projects.FirstOrDefault(p => string.Equals(p.ProjectPath, node.Path, StringComparison.OrdinalIgnoreCase));
+        SelectedDiff = string.Join(Environment.NewLine,
+        [
+            $"{node.Path} @ {commit.ShortId}",
+            string.Empty,
+            project?.ExportState == "read from its files"
+                ? "This project is a folder of readable files, saved that way by its vendor's IDE. Its objects are the tree underneath this row, as this commit left them."
+                : "This is a binary project file, so there is no diff to show — which is the reason Versio exists. Its reviewable text is the tree underneath this row, as this commit left it.",
+            string.Empty,
+            node.ChangedDescendants switch
+            {
+                0 => "Nothing under it changed in this commit.",
+                1 => "1 exported file under it changed in this commit.",
+                var n => $"{n} exported files under it changed in this commit.",
+            },
+        ]);
+    }
+
+    /// <summary>
+    /// The project card as of one commit: what the commit's own manifest and catalogs say.
+    /// </summary>
+    /// <remarks>
+    /// Its own card rather than <see cref="BuildProjectSummary"/>, which reads the disk, the
+    /// sync state, the coverage and today's manifest — every one of them a fact about now, and
+    /// a card under a commit saying "in sync" would be the same lie as today's name on
+    /// yesterday's file. What a commit can say about a project is what it recorded.
+    /// </remarks>
+    private static ProjectSummaryRender CommittedProjectSummary(Versio.Core.Projects.ProjectTreeNode node, CommitRow commit, CommitSnapshot snapshot)
+    {
+        var project = snapshot.Repo.Projects.FirstOrDefault(p => string.Equals(p.ProjectPath, node.Path, StringComparison.OrdinalIgnoreCase));
+        var manifest = project?.Manifest;
+        var facts = new List<FactRow> { new("As of", $"{commit.ShortId} · {commit.When}") };
+
+        if (project?.ExportState == "read from its files")
+        {
+            facts.Add(new FactRow("Stored as", "its own readable files, saved by the vendor's IDE"));
+        }
+
+        // As Cards.Project says it: a project with no manifest is not exported, and its vendor is not guessed.
+        facts.Add(new FactRow("Vendor", manifest is { } m ? m.Vendor.ToString() : "not exported at this commit"));
+        if (manifest?.ToolchainVersion is { Length: > 0 } producedBy)
+        {
+            facts.Add(new FactRow("Exported by", producedBy));
+        }
+
+        if (manifest is null || project is null)
+        {
+            facts.Add(new FactRow("Mirror", "not exported at this commit"));
+            return new ProjectSummaryRender { Name = node.Name, Facts = facts };
+        }
+
+        facts.Add(new FactRow("Mirror", $"{manifest.Objects.Count} exported file(s) · manifest schema {manifest.Schema}"));
+        facts.Add(new FactRow("Objects", ObjectCounts(manifest)));
+
+        if (project.Libraries.Count > 0)
+        {
+            facts.Add(new FactRow("Libraries",
+                $"{project.Libraries.Sum(l => l.Current.References.Count)} reference(s) in {project.Libraries.Count} manager(s)"));
+        }
+
+        if (project.Tasks.FirstOrDefault()?.Current is { } tasks)
+        {
+            facts.Add(new FactRow("Tasks", string.Join(", ", tasks.Tasks.Select(t => $"{t.Name} ({t.DisplaySchedule})"))));
+        }
+
+        facts.Add(new FactRow("Changed here", node.ChangedDescendants switch
+        {
+            0 => "nothing under it",
+            1 => "1 exported file",
+            var n => $"{n} exported files",
+        }));
+
+        if (manifest.Warnings.Count > 0)
+        {
+            facts.Add(new FactRow("Warnings", $"{manifest.Warnings.Count} — see the log"));
+        }
+
+        return new ProjectSummaryRender { Name = node.Name, Facts = facts };
+    }
+
+    /// <summary>
+    /// One entry per OBJECT, not per file — a GVL is two files and one object, and a summary
+    /// that counted it twice would disagree with the panel beside it. Shared by the three cards.
+    /// </summary>
+    private static string ObjectCounts(Versio.Core.Projects.ProjectManifest manifest) =>
+        string.Join(", ", manifest.Objects
+            .Where(o => !string.IsNullOrEmpty(o.Path))
+            .GroupBy(o => string.IsNullOrEmpty(o.Guid) ? o.Path : o.Guid, StringComparer.Ordinal)
+            .GroupBy(g => g.First().Type, StringComparer.OrdinalIgnoreCase)
+            .OrderByDescending(g => g.Count())
+            .Select(g => Versio.Core.Projects.ObjectTypeNames.Counted(manifest.Vendor, g.Key, g.Count())));
+
+    /// <summary>
+    /// A deleted object, drawn as what it was with every row struck: the web viewer's rule
+    /// (<c>ViewService</c>: "a deleted object is still drawn as what it was, every row struck").
+    /// </summary>
+    /// <remarks>
+    /// The content was built from the parent's copy, so the marks that read a baseline would
+    /// compare it with itself and mark nothing. Instead: the table against an empty one (every
+    /// member removed), each laid code line as a removed line, the ladder against no networks —
+    /// the same comparison <see cref="DrawDeletedDiagramAsync"/> draws for the working tree.
+    /// </remarks>
+    private object? StruckOut(object? rendered)
+    {
+        static MemberTable StruckTable(MemberTable table) =>
+            MemberTableDiff.Compare(table, new MemberTable { Name = table.Name });
+
+        static SourceRender StruckSource(SourceRender source) => source with
+        {
+            Rows = source.Rows
+                .Select(r => r is Versio.Core.Iec.SourceCodeLine line ? new Versio.Core.Iec.SourceRemovedLine(line.Text, line.FileLine) : r)
+                .ToList(),
+            NoChanges = false,
+        };
+
+        LadderRender StruckLadder(LadderRender ladder) => _ladderSource is { } drawn
+            ? ladder with { Comparison = LadderDiff.Compare(drawn.Document.Body, new LadderBody(drawn.Document.Body.BlockName, [])), Pending = false }
+            : ladder;
+
+        return rendered switch
+        {
+            MemberTable table => StruckTable(table),
+            SourceRender source => StruckSource(source),
+            LadderRender ladder => StruckLadder(ladder),
+            InterfaceRender render => render with
+            {
+                Table = StruckTable(render.Table),
+                Source = render.Source is { } s ? StruckSource(s) : null,
+                Ladder = render.Ladder is { } l ? StruckLadder(l) : null,
+            },
+            var other => other,
+        };
+    }
+
+    /// <summary>The Raw half of a commit's row: the commit's patch of one file, with the stale-result rule.</summary>
+    private async Task ReadCommitPatchAsync(IGitClient git, string commitId, string path, string header)
+    {
+        var patch = await git
             .CommitFileDiffAsync(commitId, path, CancellationToken.None, DiffContext)
             .ConfigureAwait(true);
 
@@ -7171,13 +7413,18 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
     public bool HasDiffLayers => _diffLayers.Count > 1;
 
     /// <summary>Offer one chip per layer, with <paramref name="shown"/> marked active.</summary>
-    private void OfferDiffLayers(IReadOnlyList<string> files, string shown) =>
+    /// <param name="show">
+    /// What a chip opens. The working tree's chips open the layer's diff (<see cref="ShowPathAsync"/>);
+    /// a commit's open the layer as that commit changed it (<see cref="ShowCommitLayerAsync"/>,
+    /// 2026-10-27) — the same strip, a different reader behind it.
+    /// </param>
+    private void OfferDiffLayers(IReadOnlyList<string> files, string shown, Func<string, Task>? show = null) =>
         DiffLayers = files.Count > 1
             ? files
                 .Select(f => new DiffLayerChoice(
                     f,
                     isActive: string.Equals(f, shown, StringComparison.OrdinalIgnoreCase),
-                    show: () => _ = ShowPathAsync(f, staged: null)))
+                    show: () => _ = show is null ? ShowPathAsync(f, staged: null) : show(f)))
                 .ToList()
             : [];
 
@@ -7442,21 +7689,26 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
     /// type finds nothing and is left as text: a link to nowhere is worse than none.
     /// </para>
     /// </remarks>
-    private MemberTable LinkTypes(MemberTable table, string sourceFile)
+    /// <param name="objects">
+    /// Which index the names resolve in: today's (<c>Sync.Objects</c>) for the working tree, the
+    /// commit's own for a history row — a type renamed since would otherwise link to a name the
+    /// commit never had.
+    /// </param>
+    /// <param name="isChanged">Whether a path changed in the same view: the pending list, or the commit's files.</param>
+    private MemberTable LinkTypes(MemberTable table, string sourceFile, Versio.Core.Projects.ObjectIndex objects, Func<string, bool> isChanged)
     {
         if (!table.Members.Any(m => m.TypeReference.Length > 0)
-            || Sync.Objects.Lookup(sourceFile) is not { } owner)
+            || objects.Lookup(sourceFile) is not { } owner)
         {
             return table;
         }
 
-        var changed = Pending.Select(p => p.Path).ToHashSet(StringComparer.OrdinalIgnoreCase);
         var linked = 0;
 
         var rows = table.Members.Select(member =>
         {
             if (member.TypeReference.Length == 0
-                || Sync.Objects.FindByName(owner.Project, member.TypeReference) is not { } target)
+                || objects.FindByName(owner.Project, member.TypeReference) is not { } target)
             {
                 return member;
             }
@@ -7465,7 +7717,7 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
             return member with
             {
                 LinkGuid = target.Guid,
-                ReferenceChanged = target.Paths.Any(changed.Contains),
+                ReferenceChanged = target.Paths.Any(isChanged),
             };
         }).ToList();
 
@@ -7684,7 +7936,106 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
     private int _renderGeneration;
 
     /// <summary>
-    /// Mark what changed since the last commit: the table's members, then the ladder's networks.
+    /// Where the two sides of a mark come from.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The working tree compares disk with HEAD; a commit compares the commit with its first
+    /// parent. Every Mark* method below read HEAD and the disk by name until 2026-10-27, which
+    /// is why a history row could only ever show a raw patch: the renderers were right, the
+    /// readers were wired to one place. This is the seam. <see cref="WorkingTreeSources"/> and
+    /// <see cref="CommitSources"/> are the two wirings; the methods do not know which they got.
+    /// </para>
+    /// <para>
+    /// <see cref="Baseline"/> is empty when there is no old copy (a new file, a root commit's
+    /// parent), never null: "nothing to compare with" is an ordinary answer. <see cref="Current"/>
+    /// is null when the file is not there now, which the catalog mark reads as empty (the
+    /// deletion is drawn on the old side) and the source mark reads as a failure to say.
+    /// </para>
+    /// </remarks>
+    /// <param name="BaselineName">What the old side is called in the log: <c>HEAD</c>, or <c>1a2b3c4^</c>.</param>
+    private sealed record PaneSources(
+        Func<string, Task<string>> Baseline,
+        Func<string, Task<string?>> Current,
+        string BaselineName);
+
+    /// <summary>
+    /// What a rendered build reads from and resolves against: the working tree today, or one
+    /// commit. The build itself (<see cref="BuildRenderedContent"/>) is the same either way.
+    /// </summary>
+    /// <param name="Read">A file's text, or null when the view has no such file.</param>
+    /// <param name="Objects">The index member types link through: today's, or the commit's own.</param>
+    /// <param name="IsChanged">Whether a path changed in this view, for the amber tint on a linked type.</param>
+    private sealed record RenderInputs(
+        Func<string, string?> Read,
+        Versio.Core.Projects.ObjectIndex Objects,
+        Func<string, bool> IsChanged);
+
+    /// <summary>The working tree's sources: HEAD against the disk. Null with no repository open.</summary>
+    private PaneSources? WorkingTreeSources()
+    {
+        if (_git is not { } git || RepositoryPath is not { } root)
+        {
+            return null;
+        }
+
+        return new PaneSources(
+            file => git.ShowAtHeadAsync(file, CancellationToken.None),
+            async file =>
+            {
+                // A task deleted in the working tree is in the list with no file on disk
+                // (RenderChoice keeps it, review 2026-10-25, item 8): null here, which the
+                // catalog mark reads as empty — not what HEAD has, and the HEAD side is where
+                // the deletion is drawn. Read as a failure it warned and left the table
+                // unmarked: the deletion hidden a second way.
+                var now = Path.Combine(root, file.Replace('/', Path.DirectorySeparatorChar));
+                return File.Exists(now) ? await File.ReadAllTextAsync(now).ConfigureAwait(true) : null;
+            },
+            "HEAD");
+    }
+
+    /// <summary>A commit's sources: its first parent against itself. Both through <c>git show</c>.</summary>
+    /// <remarks>
+    /// Both sides come from the same line-based reader, so the catalog mark's final-newline
+    /// rule (see there) holds trivially here: there is no disk side to differ. A file the commit
+    /// does not hold reads as empty, which for a catalog is the empty side it wants; a deleted
+    /// object never comes here — <see cref="StruckOut"/> draws it from the parent's copy.
+    /// </remarks>
+    private PaneSources CommitSources(IGitClient git, string commitId, string shortId) =>
+        new(
+            file => git.ShowAtCommitAsync(commitId + "^", file, CancellationToken.None),
+            async file => await git.ShowAtCommitAsync(commitId, file, CancellationToken.None).ConfigureAwait(true),
+            $"{shortId}^");
+
+    /// <summary>The working tree's inputs: the disk, today's index, the pending list. Null with no repository open.</summary>
+    private RenderInputs? WorkingTreeInputs()
+    {
+        if (RepositoryPath is not { } root)
+        {
+            return null;
+        }
+
+        string? ReadOrNull(string relative)
+        {
+            try
+            {
+                return File.ReadAllText(Path.Combine(root, relative.Replace('/', Path.DirectorySeparatorChar)));
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException
+                                          or FileNotFoundException or DirectoryNotFoundException)
+            {
+                return null;
+            }
+        }
+
+        return new RenderInputs(
+            ReadOrNull,
+            Sync.Objects,
+            path => Pending.Any(p => string.Equals(p.Path, path, StringComparison.OrdinalIgnoreCase)));
+    }
+
+    /// <summary>
+    /// Mark what changed since the baseline: the table's members, then the ladder's networks.
     /// </summary>
     /// <remarks>
     /// One after the other, not side by side: each replaces <see cref="RenderedContent"/> and
@@ -7695,21 +8046,22 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         (IPlcProjectFormat Format, string File)? table,
         (IPlcProjectFormat Format, string File, LadderDocument Document, bool Pending)? ladder,
         int generation,
-        string? source = null)
+        string? source,
+        PaneSources sources)
     {
         if (table is { } t)
         {
-            await MarkTableChangesAsync(t.Format, t.File, RenderedContent).ConfigureAwait(true);
+            await MarkTableChangesAsync(t.Format, t.File, RenderedContent, sources).ConfigureAwait(true);
         }
 
         if (source is not null && generation == _renderGeneration)
         {
-            await MarkSourceChangesAsync(source, RenderedContent).ConfigureAwait(true);
+            await MarkSourceChangesAsync(source, RenderedContent, sources).ConfigureAwait(true);
         }
 
         if (ladder is { } l && generation == _renderGeneration)
         {
-            await CompareLadderAsync(l.Format, l.File, l.Document, generation).ConfigureAwait(true);
+            await CompareLadderAsync(l.Format, l.File, l.Document, generation, sources).ConfigureAwait(true);
         }
     }
 
@@ -7730,20 +8082,17 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
     /// blank page that never fills in would look like a hang.
     /// </para>
     /// </remarks>
-    private async Task CompareLadderAsync(IPlcProjectFormat format, string file, LadderDocument document, int generation)
+    private async Task CompareLadderAsync(IPlcProjectFormat format, string file, LadderDocument document, int generation, PaneSources sources)
     {
         LadderBody? old = null;
-        if (_git is not null)
+        try
         {
-            try
-            {
-                var head = await _git.ShowAtHeadAsync(file, CancellationToken.None).ConfigureAwait(true);
-                old = head.Length == 0 ? null : format.TryParseLadder(file, head)?.Body;
-            }
-            catch (Exception ex)
-            {
-                _logger.Warn(LogCategory.Git, $"could not read {file} at HEAD to compare its ladder: {ex.Message}");
-            }
+            var head = await sources.Baseline(file).ConfigureAwait(true);
+            old = head.Length == 0 ? null : format.TryParseLadder(file, head)?.Body;
+        }
+        catch (Exception ex)
+        {
+            _logger.Warn(LogCategory.Git, $"could not read {file} at {sources.BaselineName} to compare its ladder: {ex.Message}");
         }
 
         if (generation != _renderGeneration)
@@ -7752,7 +8101,7 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         }
 
         var comparison = LadderDiff.Compare(old, document.Body);
-        LogLadder(file, document.Body, comparison);
+        LogLadder(file, document.Body, comparison, sources.BaselineName);
         RenderedContent = RenderedContent switch
         {
             LadderRender l => l with { Comparison = comparison, Pending = false },
@@ -7769,21 +8118,16 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
     /// Silent when it is not one: most deleted files are not diagrams, and the Raw diff is
     /// already on screen for those. Dropped if the selection moved while git read.
     /// </remarks>
-    private async Task DrawDeletedDiagramAsync(string file, int generation)
+    private async Task DrawDeletedDiagramAsync(string file, int generation, PaneSources sources)
     {
-        if (_git is null)
-        {
-            return;
-        }
-
         string head;
         try
         {
-            head = await _git.ShowAtHeadAsync(file, CancellationToken.None).ConfigureAwait(true);
+            head = await sources.Baseline(file).ConfigureAwait(true);
         }
         catch (Exception ex)
         {
-            _logger.Warn(LogCategory.Git, $"could not read {file} at HEAD to draw it as deleted: {ex.Message}");
+            _logger.Warn(LogCategory.Git, $"could not read {file} at {sources.BaselineName} to draw it as deleted: {ex.Message}");
             return;
         }
 
@@ -7800,7 +8144,7 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
             }
 
             var comparison = LadderDiff.Compare(document.Body, new LadderBody(document.Body.BlockName, []));
-            LogLadder(file, document.Body, comparison);
+            LogLadder(file, document.Body, comparison, sources.BaselineName);
             RenderedContent = new LadderRender { Path = file, Comparison = comparison, Style = document.Style };
             ShowRendered = true;
             return;
@@ -7808,7 +8152,8 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
     }
 
     /// <summary>One line per ladder drawn: what is on screen, and anything drawn less than faithfully.</summary>
-    private void LogLadder(string file, LadderBody body, LadderComparison comparison)
+    /// <param name="against">The old side's name — HEAD, or a commit's parent — for the line to say what it compared with.</param>
+    private void LogLadder(string file, LadderBody body, LadderComparison comparison, string against = "HEAD")
     {
         var unrecognised = body.Networks.Sum(n => n.Nodes.OfType<LdUnsupported>().Count());
         var otherLanguage = body.Networks.Count(n => n.UnsupportedLanguage is not null);
@@ -7817,9 +8162,9 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         var fbd = body.Networks.Count(n => n.UnsupportedLanguage is null && n.Language == LdLanguage.FunctionBlock);
         var byRank = body.Networks.Count(n => n.UnsupportedLanguage is null && n.Language == LdLanguage.Ladder
                                               && n.Nodes.Count > 0 && !LadderStructure.Of(n).IsSeriesParallel);
-        var against = comparison.HasOldSide ? "against HEAD" : "with nothing committed to compare";
+        var compared = comparison.HasOldSide ? $"against {against}" : "with nothing committed to compare";
         _logger.Info(LogCategory.Ui,
-            $"diagram {file}: {body.Networks.Count} networks ({fbd} FBD) {against}; {comparison.ChangedCount} changed, "
+            $"diagram {file}: {body.Networks.Count} networks ({fbd} FBD) {compared}; {comparison.ChangedCount} changed, "
             + $"{comparison.AddedCount} added, {comparison.RemovedCount} removed, {comparison.MovedCount} moved; "
             + $"{unrecognised} unrecognised parts, {otherLanguage} networks in another language, {byRank} drawn by rank");
     }
@@ -7843,9 +8188,9 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
     /// marked under a row that says "modified".
     /// </para>
     /// </remarks>
-    private async Task MarkTableChangesAsync(IPlcProjectFormat format, string file, object? shown)
+    private async Task MarkTableChangesAsync(IPlcProjectFormat format, string file, object? shown, PaneSources sources)
     {
-        if (_git is null || shown is null)
+        if (shown is null)
         {
             return;
         }
@@ -7853,11 +8198,11 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         string head;
         try
         {
-            head = await _git.ShowAtHeadAsync(file, CancellationToken.None).ConfigureAwait(true);
+            head = await sources.Baseline(file).ConfigureAwait(true);
         }
         catch (Exception ex)
         {
-            _logger.Warn(LogCategory.Git, $"could not read {file} at HEAD to mark its table: {ex.Message}");
+            _logger.Warn(LogCategory.Git, $"could not read {file} at {sources.BaselineName} to mark its table: {ex.Message}");
             return;
         }
 
@@ -7884,7 +8229,7 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
 
         if (baseline is null)
         {
-            _logger.Debug(LogCategory.Ui, $"{file} at HEAD is not a member table; nothing to mark");
+            _logger.Debug(LogCategory.Ui, $"{file} at {sources.BaselineName} is not a member table; nothing to mark");
             return;
         }
 
@@ -7924,14 +8269,9 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
     /// under a member table just as it marks a source shown alone.
     /// </para>
     /// </remarks>
-    private async Task MarkSourceChangesAsync(string file, object? shown)
+    private async Task MarkSourceChangesAsync(string file, object? shown, PaneSources sources)
     {
-        if (_git is null || shown is null)
-        {
-            return;
-        }
-
-        if (RepositoryPath is not { } root)
+        if (shown is null)
         {
             return;
         }
@@ -7940,9 +8280,9 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         string current;
         try
         {
-            head = await _git.ShowAtHeadAsync(file, CancellationToken.None).ConfigureAwait(true);
-            current = await File.ReadAllTextAsync(
-                Path.Combine(root, file.Replace('/', Path.DirectorySeparatorChar))).ConfigureAwait(true);
+            head = await sources.Baseline(file).ConfigureAwait(true);
+            current = await sources.Current(file).ConfigureAwait(true)
+                ?? throw new FileNotFoundException("the file is not in this view", file);
         }
         catch (Exception ex)
         {
@@ -8014,13 +8354,8 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
     /// nothing marked under a DIFF header.
     /// </para>
     /// </remarks>
-    private async Task MarkCatalogChangesAsync(CatalogSource source, object shown)
+    private async Task MarkCatalogChangesAsync(CatalogSource source, object shown, PaneSources sources)
     {
-        if (_git is null || RepositoryPath is not { } root)
-        {
-            return;
-        }
-
         var file = string.Join(", ", source.Files);
         var heads = new List<string>(source.Files.Count);
         var nows = new List<string>(source.Files.Count);
@@ -8028,28 +8363,28 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         {
             foreach (var each in source.Files)
             {
-                heads.Add(await _git.ShowAtHeadAsync(each, CancellationToken.None).ConfigureAwait(true));
+                heads.Add(await sources.Baseline(each).ConfigureAwait(true));
 
-                // A task deleted in the working tree is in the list with no file on disk
-                // (RenderChoice keeps it, review 2026-10-25, item 8): it reads as empty here,
-                // which is not what HEAD has, and the HEAD side is where the deletion is drawn.
-                // Read as a failure it warned and left the table unmarked — the deletion
-                // hidden a second way.
-                var now = Path.Combine(root, each.Replace('/', Path.DirectorySeparatorChar));
-                nows.Add(File.Exists(now) ? File.ReadAllText(now) : string.Empty);
+                // A file the view does not hold - a task deleted in the working tree, which
+                // RenderChoice keeps in the list (review 2026-10-25, item 8) - reads as empty
+                // here, which is not what the baseline has, and the baseline side is where the
+                // deletion is drawn. Read as a failure it warned and left the table unmarked:
+                // the deletion hidden a second way. WorkingTreeSources has the disk half of it.
+                nows.Add(await sources.Current(each).ConfigureAwait(true) ?? string.Empty);
             }
         }
         catch (Exception ex)
         {
-            _logger.Warn(LogCategory.Git, $"could not read {file} at HEAD to mark its table: {ex.Message}");
+            _logger.Warn(LogCategory.Git, $"could not read {file} at {sources.BaselineName} to mark its table: {ex.Message}");
             return;
         }
 
-        // Compared as lines, the only way the HEAD side can be read: ShowAtHeadAsync rebuilds git's
-        // output a line at a time and ends every line, the last included, with '\n'. So the disk
-        // side is given the same final newline. CODESYS writes Libraries.json without one, and
-        // a byte-wise comparison called every clean manager "changed, but not in its rows"
-        // (owner, 2026-10-23, FsLibrary.fbslib).
+        // Compared as lines, the only way the baseline side can be read: the git client rebuilds
+        // git's output a line at a time and ends every line, the last included, with '\n'. So the
+        // other side is given the same final newline. CODESYS writes Libraries.json without one,
+        // and a byte-wise comparison called every clean manager "changed, but not in its rows"
+        // (owner, 2026-10-23, FsLibrary.fbslib). At a commit both sides come from git and the
+        // rule costs nothing; it stays because the disk side still needs it.
         static string Lines(string text)
         {
             var lf = text.Replace("\r\n", "\n");
@@ -8124,7 +8459,7 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
     /// <c>MarkdownPaneFlowTests</c>; the device arm, <c>DeviceTreeFlowTests</c>.
     /// </para>
     /// </remarks>
-    private object? BuildRenderedContent(TreeRow row)
+    private object? BuildRenderedContent(TreeRow row, RenderInputs? inputs)
     {
         _tableSource = null;
         _ladderSource = null;
@@ -8132,30 +8467,17 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         _renderGeneration++;
         RenderedChoice = null;
 
-        if (RepositoryPath is not { } root)
+        // No inputs is no repository: the resets above still happened, so a stale table source
+        // cannot outlive the selection that made it.
+        if (inputs is null)
         {
             return null;
         }
 
         var node = row.Node;
+        var read = inputs.Read;
 
-        string Absolute(string relative) =>
-            Path.Combine(root, relative.Replace('/', Path.DirectorySeparatorChar));
-
-        string? ReadOrNull(string relative)
-        {
-            try
-            {
-                return File.ReadAllText(Absolute(relative));
-            }
-            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException
-                                          or FileNotFoundException or DirectoryNotFoundException)
-            {
-                return null;
-            }
-        }
-
-        var choice = RenderChoice.Decide(node, ReadOrNull, row.PrimaryFile);
+        var choice = RenderChoice.Decide(node, read, row.PrimaryFile);
         RenderedChoice = choice;
 
         // The committed copy of a catalog is read by the reader that read the working one.
@@ -8193,7 +8515,7 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
 
             case RenderKind.MemberTable:
             {
-                var table = LinkTypes((MemberTable)choice.Model!, choice.File!);
+                var table = LinkTypes((MemberTable)choice.Model!, choice.File!, inputs.Objects, inputs.IsChanged);
                 _tableSource = (choice.Format!, choice.File!);
 
                 // A ladder block's code is a diagram, not text: drawn under its table the way the
@@ -8206,14 +8528,15 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
                 // A code block is its interface AND its code. The table alone would take the code
                 // out of the Rendered tab it was always in, so the source rides underneath it.
                 if (choice.Code is CodeUnder.Body or CodeUnder.WholeFile
-                    && SourceRender.Load(Absolute(choice.CodeFile!), choice.CodeFile!,
+                    && read(choice.CodeFile!) is { } codeText
+                    && SourceRender.FromText(codeText, choice.CodeFile!,
                            noChanges: node.Status == ChangeKind.Unmodified) is { } codeView
                     && !codeView.PseudoDiff.Contains('\0'))
                 {
                     // Only the body: the declaration above it is the table, and the BEGIN / END_
                     // marks around it say nothing a reader needs. Core strips its shared indent
                     // and numbers it from 1 (owner, 2026-10-05). Raw keeps the file.
-                    if (choice.Body is { } body && ReadOrNull(choice.CodeFile!) is { } codeText)
+                    if (choice.Body is { } body)
                     {
                         codeView = codeView with { Rows = Versio.Core.Iec.StSourceLayout.Body(codeText, body.Start, body.End) };
                     }
@@ -8231,13 +8554,14 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
             case RenderKind.EmptyObject:
                 return MarkdownRender.From(choice.File!, Versio.Core.Projects.EmptyObjectNote.For(hasChildren: node.Children.Count > 0)) with { IsNote = true };
 
-            case RenderKind.Markdown when ReadOrNull(choice.File!) is { } markdownText:
+            case RenderKind.Markdown when read(choice.File!) is { } markdownText:
                 return MarkdownRender.From(choice.File!, markdownText);
 
             // A web page's Rendered tab is its markup as source; the page itself is the third
             // chip (WebPagePath, set by ShowNode from the same primary file).
             case RenderKind.WebPage or RenderKind.Source:
-                return SourceRender.Load(Absolute(choice.File!), choice.File!,
+                return read(choice.File!) is { } text
+                       && SourceRender.FromText(text, choice.File!,
                            noChanges: node.Status == ChangeKind.Unmodified) is { } source
                        // A NUL says binary — an image or a compiled blob dropped into the
                        // repository — and a code renderer fed one draws a wall of boxes.
@@ -8334,16 +8658,8 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         facts.Add(new FactRow("Mirror",
             $"{manifest.Objects.Count} exported file(s) · manifest schema {manifest.Schema}"));
 
-        // One entry per OBJECT, not per file — a GVL is two files and one object, and a
-        // summary that counted it twice would disagree with the panel beside it.
-        var counts = manifest.Objects
-            .Where(o => !string.IsNullOrEmpty(o.Path))
-            .GroupBy(o => string.IsNullOrEmpty(o.Guid) ? o.Path : o.Guid, StringComparer.Ordinal)
-            .GroupBy(g => g.First().Type, StringComparer.OrdinalIgnoreCase)
-            .OrderByDescending(g => g.Count())
-            .Select(g => Versio.Core.Projects.ObjectTypeNames.Counted(
-                manifest.Vendor, g.Key, g.Count()));
-        facts.Add(new FactRow("Objects", string.Join(", ", counts)));
+        // One entry per OBJECT, not per file; the rule and its reason are on ObjectCounts.
+        facts.Add(new FactRow("Objects", ObjectCounts(manifest)));
 
         var references = manifest.Objects
             .Where(o => o.Form == Versio.Core.Projects.ExportCoverage.LibrariesForm)
@@ -8410,13 +8726,7 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
 
         if (source.Manifest is { } manifest)
         {
-            var counts = manifest.Objects
-                .Where(o => !string.IsNullOrEmpty(o.Path))
-                .GroupBy(o => string.IsNullOrEmpty(o.Guid) ? o.Path : o.Guid, StringComparer.Ordinal)
-                .GroupBy(g => g.First().Type, StringComparer.OrdinalIgnoreCase)
-                .OrderByDescending(g => g.Count())
-                .Select(g => Versio.Core.Projects.ObjectTypeNames.Counted(manifest.Vendor, g.Key, g.Count()));
-            facts.Add(new FactRow("Objects", string.Join(", ", counts)));
+            facts.Add(new FactRow("Objects", ObjectCounts(manifest)));
         }
 
         return new ProjectSummaryRender { Name = node.Name, Facts = facts };
@@ -8605,44 +8915,10 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
 
         // The rendered half, beside whatever the raw half loads below. Rendered first,
         // always, whenever there is one - see ShowRendered's remark for why that changed.
-        RenderedContent = BuildRenderedContent(row);
+        RenderedContent = BuildRenderedContent(row, WorkingTreeInputs());
         WebPagePath = WebPageFor(row.PrimaryFile);
         ShowRendered = HasRenderedView;
-
-        // A changed object's table and ladder learn what changed once the committed copy is read.
-        var tableSource = row.Node.Status != ChangeKind.Unmodified ? _tableSource : null;
-        var ladderSource = _ladderSource is { Pending: true } ? _ladderSource : null;
-
-        // And its source, laid out as text: alone, or as the code under a member table.
-        var sourcePath = row.Node.Status is ChangeKind.Unmodified or ChangeKind.Deleted
-            ? null
-            : RenderedContent switch
-            {
-                SourceRender s => s.Path,
-                InterfaceRender { Source: { } s } => s.Path,
-                _ => null,
-            };
-        if (tableSource is not null || ladderSource is not null || sourcePath is not null)
-        {
-            _ = MarkChangesAsync(tableSource, ladderSource, _renderGeneration, sourcePath);
-        }
-
-        // A library, task or device table learns what changed the same way. Every catalog, not
-        // only a changed row's: an unmodified library row still opens its manager's whole table.
-        // Deleting this call leaves the table unmarked and RenderedPaneFlowTests goes red.
-        if (_catalogSource is { } catalogFile && RenderedContent is { } catalogShown)
-        {
-            _ = MarkCatalogChangesAsync(catalogFile, catalogShown);
-        }
-
-        // A deleted block has no file left to draw, so its committed copy is drawn instead,
-        // every network marked removed. Without this a deleted ladder or FBD block opened on
-        // its raw XML, all red, the one changed block that never showed as a diagram (the
-        // owner, 2026-10-05).
-        if (RenderedContent is null && row.Node.Status == ChangeKind.Deleted && row.PrimaryFile is { } gone)
-        {
-            _ = DrawDeletedDiagramAsync(gone, _renderGeneration);
-        }
+        StartMarking(row, WorkingTreeSources());
 
         if (visualizeOnly)
         {
@@ -8685,8 +8961,64 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         }
     }
 
+    /// <summary>
+    /// Start the marks over a freshly built rendered half: what changed, against the baseline
+    /// the sources name.
+    /// </summary>
+    /// <remarks>
+    /// Extracted from <see cref="ShowNode"/> on 2026-10-27 so the History's route
+    /// (<see cref="ShowCommitNodeAsync"/>) runs the same block over the same records with its
+    /// own sources, rather than a copy that would drift. Null sources is no repository open:
+    /// the rendered half stands unmarked, as it did.
+    /// </remarks>
+    private void StartMarking(TreeRow row, PaneSources? sources)
+    {
+        if (sources is null)
+        {
+            return;
+        }
+
+        // A changed object's table and ladder learn what changed once the baseline copy is read.
+        var tableSource = row.Node.Status != ChangeKind.Unmodified ? _tableSource : null;
+        var ladderSource = _ladderSource is { Pending: true } ? _ladderSource : null;
+
+        // And its source, laid out as text: alone, or as the code under a member table.
+        var sourcePath = row.Node.Status is ChangeKind.Unmodified or ChangeKind.Deleted
+            ? null
+            : RenderedContent switch
+            {
+                SourceRender s => s.Path,
+                InterfaceRender { Source: { } s } => s.Path,
+                _ => null,
+            };
+        if (tableSource is not null || ladderSource is not null || sourcePath is not null)
+        {
+            _ = MarkChangesAsync(tableSource, ladderSource, _renderGeneration, sourcePath, sources);
+        }
+
+        // A library, task or device table learns what changed the same way. Every catalog, not
+        // only a changed row's: an unmodified library row still opens its manager's whole table.
+        // Deleting this call leaves the table unmarked and RenderedPaneFlowTests goes red.
+        if (_catalogSource is { } catalogFile && RenderedContent is { } catalogShown)
+        {
+            _ = MarkCatalogChangesAsync(catalogFile, catalogShown, sources);
+        }
+
+        // A deleted block has no file left to draw, so its baseline copy is drawn instead,
+        // every network marked removed. Without this a deleted ladder or FBD block opened on
+        // its raw XML, all red, the one changed block that never showed as a diagram (the
+        // owner, 2026-10-05).
+        if (RenderedContent is null && row.Node.Status == ChangeKind.Deleted && row.PrimaryFile is { } gone)
+        {
+            _ = DrawDeletedDiagramAsync(gone, _renderGeneration, sources);
+        }
+    }
+
     /// <summary>Drive the pane from a test the way the explorer panel does.</summary>
     internal void ShowTreeRow(TreeRow row, bool visualizeOnly) => ShowNode(row, visualizeOnly);
+
+    /// <summary>Drive the pane from a test the way the history panel does.</summary>
+    internal Task ShowCommitTreeRow(TreeRow row) => ShowCommitNodeAsync(row);
 
     /// <summary>
     /// A repository root the pane can read files from, without opening a real clone.

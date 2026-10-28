@@ -57,6 +57,19 @@ public sealed record SourceRender
             return null;
         }
 
+        return FromText(text, repoRelativePath, noChanges);
+    }
+
+    /// <summary>
+    /// A file's text as a rendered source view, wherever the text came from.
+    /// </summary>
+    /// <remarks>
+    /// Split from <see cref="Load"/> on 2026-10-27 for the History panel, whose text comes from
+    /// <c>git show</c> at a commit rather than from a path on disk; the two shapes of the file
+    /// and the layout rule are the same either way.
+    /// </remarks>
+    public static SourceRender FromText(string text, string repoRelativePath, bool noChanges)
+    {
         var lines = text.Replace("\r\n", "\n").Split('\n');
 
         var builder = new System.Text.StringBuilder(text.Length + lines.Length + 32);
