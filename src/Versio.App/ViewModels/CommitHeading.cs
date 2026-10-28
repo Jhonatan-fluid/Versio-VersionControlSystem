@@ -17,9 +17,11 @@ namespace Versio.App.ViewModels;
 /// </para>
 /// <para>
 /// <see cref="Objects"/> is the git panel's own sentence ("3 POUs changed in RefrigeratorControl,
-/// plus 2 other files"), asked of the files this commit touched. It is read against today's
-/// object index, so an object since renamed or deleted counts among the other files - which is
-/// the honest reading, not a guess at history.
+/// plus 2 other files"), asked of the files this commit touched. Since 2026-10-28 it is read
+/// against the commit's own index (<c>CommitSnapshot.Objects</c>, the manifest as it was in that
+/// commit), so an object since renamed or deleted is still counted as what it was. Until then
+/// it was read against today's index - the honest reading while there was no other, and the
+/// same "today's name on yesterday's file" the history's rows were avoiding by naming nothing.
 /// </para>
 /// </remarks>
 /// <param name="Body">The message after its subject line, trimmed; empty when there is none.</param>

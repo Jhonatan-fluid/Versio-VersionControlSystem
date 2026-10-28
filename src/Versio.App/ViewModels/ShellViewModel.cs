@@ -5565,6 +5565,22 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
             .ConfigureAwait(true);
         var parsed = await Task.Run(() => UnifiedDiffParser.Parse(patch)).ConfigureAwait(true);
 
+        // Counted by the commit's own index, not today's (2026-10-28): an object since renamed
+        // or deleted is still "1 POU changed", which is what happened. The snapshot is the one
+        // the expand reads - cached and shared - so a card click after an expand costs no git
+        // at all; a commit that cannot be read as a project falls back to today's index and
+        // says so, rather than leaving the heading blank over a patch that is on screen.
+        Versio.Core.Projects.ObjectIndex index;
+        try
+        {
+            index = (await History.SnapshotAsync(commitId, shortId).ConfigureAwait(true)).Objects;
+        }
+        catch (Exception ex)
+        {
+            _logger.Warn(LogCategory.Git, $"history: {shortId} could not be read as a project; its heading counts against today's index: {ex.Message}");
+            index = Sync.Objects;
+        }
+
         if (!string.Equals(SelectedDiffPath, caption, StringComparison.Ordinal))
         {
             return;
@@ -5572,7 +5588,7 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
 
         CommitDetail = CommitHeading.Of(
             _shownCommitEntry?.Id == commitId ? _shownCommitEntry : null,
-            message, parsed, Sync.Objects);
+            message, parsed, index);
     }
 
     /// <summary>

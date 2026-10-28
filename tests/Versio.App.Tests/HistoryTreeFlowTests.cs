@@ -144,7 +144,33 @@ public sealed class HistoryTreeFlowTests
     }
 
     [Fact]
-    public async Task A_file_the_commit_deleted_is_drawn_from_the_parent_with_every_line_struck()
+    public async Task The_commit_heading_counts_objects_by_the_commits_own_index()
+    {
+        using var repo = new TempRepo();
+        GivenATrackedProject(repo, MotorV1);
+        Commit(repo, "export");
+        File.WriteAllText(Path.Combine(repo.Path, MotorPath.Replace('/', Path.DirectorySeparatorChar)), MotorV2);
+        Commit(repo, "motor");
+        File.Delete(Path.Combine(repo.Path, MotorPath.Replace('/', Path.DirectorySeparatorChar)));
+        GivenATrackedProject(repo, motor: null);
+        Commit(repo, "remove");
+
+        using var shell = TestShell.Build();
+        await shell.OpenAsync(repo.Path);
+        shell.ActivePanel = ShellPanel.History;
+
+        // The block is gone from today's manifest, so today's index would call its edit "1
+        // other file". The commit's own index knows what it was.
+        var motor = await CommitAt(shell, 1);
+        Assert.Equal("motor", motor.Subject);
+        shell.History.Select(motor);
+
+        await Eventually.Until(() => shell.CommitDetail is { HasObjects: true }, "the commit heading to fill");
+        Assert.Equal("1 POU changed in Machine", shell.CommitDetail!.Objects);
+    }
+
+    [Fact]
+    public async Task An_object_the_commit_deleted_keeps_its_name_and_is_drawn_from_the_parent_struck()
     {
         using var repo = new TempRepo();
         GivenATrackedProject(repo, MotorV1);
@@ -159,10 +185,11 @@ public sealed class HistoryTreeFlowTests
 
         var top = await CommitAt(shell, 0);
         Assert.Equal("remove", top.Subject);
-        // Named by its path under the export root: the manifest no longer lists it, so the
-        // tree has no object name for it yet (that is the next commit's work).
-        var row = await RowNamed(top, "App/FB_Motor.st");
-        Assert.True(row.IsDeleted);
+        // Named and typed from the PARENT's manifest: this commit's no longer lists it, and
+        // a row that read "App/FB_Motor.st" in a tree of object names was the one row with no
+        // name in the commit most worth reading.
+        var row = await RowNamed(top, "FB_Motor");
+        Assert.Equal(("POU", "D", true), (row.TypeLabel, row.Glyph, row.IsDeleted));
 
         shell.History.Select(row);
 
