@@ -19,6 +19,68 @@ produce a diff touching everything else.
 
 ---
 
+### "Try again" re-ran the toolchain that had just refused, so a failed export of an untouched project was permanent
+
+**2026-10-27, the same screenshot as the entry below, after the scanner fix.** Two rows
+left: `CleaningStation_V20_V21.ap21` and `TC3_PlcSample_reStrText.tsproj`, both "failed", the
+banner "2 projects failed to sync". The owner's objection was exact: *nothing has changed in
+these files, so there is nothing to do to them; they should fail only when I change one and the
+machine cannot process it.* This machine cannot run either toolchain — the account is not in
+the `Siemens TIA Openness` group, and TwinCAT XAE is not installed — and both projects were
+identical to HEAD.
+
+**Where the failures came from.** `.versio/local/state.json` holds both locks with
+`AcquiredUtc` 2026-10-17 00:50 and 00:51, `Direction: Failed`, the toolchain's refusal as the
+`Reason`, and an **empty** `Baseline.ProjectHash` and `LastSynced.ProjectHash`. That is the
+first open of this clone on this machine, the one FINDINGS 2026-10-16 describes: no record of
+an export, so the catch-up exported every project, and three refused. The fresh-clone adoption
+(`AdoptCommittedStateAsync`, built on 2026-10-17 in answer to exactly that) takes an untouched
+project as exported instead — but it is narrow on purpose, and acts only on a Clean lock. These
+two were already Failed when it arrived.
+
+**Why nothing could clear them.** Three exits, all shut:
+
+- *Recovery at launch* (`LockRecoveryPolicy`) releases a lock only when the current hashes
+  equal its baseline. Nothing hashes to the empty string, so every launch logged
+  `ReadoptedAfterRestart — the machine rebooted and the work is still unsynced` for work that
+  never existed. Ten days of launches, 10-17 to 10-27, each one re-adopting.
+- *Adoption* skips a Failed lock by design ("a lock, a failure, or a real record is left
+  exactly as it is").
+- *Try again* (`RetryAsync`) acknowledged the failure — which, by design, clears the record of
+  what was exported "so the next event exports rather than trusting anything" — and went
+  straight to `SatisfyGateAsync`, which exported, which the toolchain refused, which set
+  Failed again with the same reason. The button's summary said "Still failing".
+
+**The fix is in the button, not the lock.** After acknowledging, the retry asks git before it
+asks the toolchain: `AdoptCommittedStateAsync` — the view model's launch-time call, with its
+double status read and its on-disk checks — runs between the acknowledgement and the gate. A
+project and mirror that both match HEAD are taken as exported and the gate finds nothing
+behind; a project that differs is not adopted and exports as before, failing again with its
+reason if it must. One click per project clears the owner's two rows for good, because the
+adoption records `LastSynced`, which survives relaunches.
+
+Two App tests in `ProjectPanelCalmStateTests`, through a real repository and the capturing
+toolchain set to refuse: Try again on a project that matches HEAD runs no second export and
+leaves no failure; Try again on a project that still differs runs the export and reports
+"Still failing". Removing the one `await` turns the first red and leaves the second green.
+
+**What was built first and thrown away.** A recovery-policy rule — a Failed lock with no
+project baseline, whose mirror is where the failure left it, released at launch as "never
+exported here" — with a new `LockRecovery` outcome and seven tests, all green. Rejected
+before commit, for the reason the policy's own doc gives: *an abandoned lock is never
+auto-cleared*, and a failure vanishing at relaunch without a human acknowledging it is that,
+however empty its baseline. It also could not tell a text edit made while Failed from
+nothing at all when the mirror baseline was blank too (the first-failure shape, which the
+orchestrator harness produces), and releasing that lock would have let the catch-up export
+over the edit. The button already has the human in the loop; it only needed to ask the
+right question first.
+
+**Still true, and worth knowing on this machine.** A changed TIA or TwinCAT project will fail
+here, and should: the row says why, in the toolchain's words. Only an untouched one now
+stays quiet.
+
+---
+
 ### The repository scanner walked into nested checkouts and tracked another repository's projects
 
 **2026-10-27, from the app showing twelve projects that do not exist in this repository.**

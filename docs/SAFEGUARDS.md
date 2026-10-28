@@ -993,10 +993,13 @@ not a correctness bug — but *"I committed and it immediately went dirty again"
 Suppress deferred work for the duration of a git write.
 
 A failed binding still stops **that** project's sync until it is acknowledged (`Try again` on
-the row). It no longer vetoes every other commit in the repository: the gate is scoped to
-bindings the include set actually touches, evaluated **before** `git add`, so a README next
-to a broken import can still land. Mix — failed project's files plus unrelated changes —
-asks, then drops those paths. Cancel leaves the index alone.
+the row — which, since 2026-10-27, asks git before the toolchain: a project and mirror that
+match HEAD are taken as exported and nothing runs, so a failure on a machine without that
+project's toolchain clears in one click instead of coming straight back; FINDINGS 2026-10-27).
+It no longer vetoes every other commit in the repository: the gate is scoped to bindings the
+include set actually touches, evaluated **before** `git add`, so a README next to a broken
+import can still land. Mix — failed project's files plus unrelated changes — asks, then drops
+those paths. Cancel leaves the index alone.
 
 ### M. An import replaces an object and takes its members with it — **BUILT 2026-08-18**
 
