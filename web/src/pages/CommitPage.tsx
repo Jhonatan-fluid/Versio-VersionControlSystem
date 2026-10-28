@@ -262,6 +262,14 @@ function CommitObjectSection({ owner, repo, base, head, object: o, view, layout,
   const [full, setFull] = useState(false);
   const [shown, setShown] = useState(o.path);
   const layer = o.layers.find((l) => l.path === shown) ?? o.layers[0];
+  // A tree pick after the page loaded means "show me this": the section is asked for at once
+  // rather than when the observer notices the scroll (seen on the fixture preview, 2026-10-27:
+  // the picked section lit up and stayed on "Drawing the file…" in a pane that never scrolls).
+  useEffect(() => {
+    if (active) {
+      setNear(true);
+    }
+  }, [active]);
   useEffect(() => {
     if (near || !section.current || typeof IntersectionObserver === 'undefined') {
       setNear(true);

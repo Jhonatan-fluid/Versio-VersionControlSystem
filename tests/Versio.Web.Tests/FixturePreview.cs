@@ -89,6 +89,20 @@ public sealed class FixturePreview
         // The commit page (Step 8) needs a parent to compare from and a message to show.
         repo.Parents[next] = [repo.Refs["main"]];
         repo.CommitMessages[next] = "Lower the simulated cooling step\n\nThe simulation cooled twice as fast as the plant, so every soak test passed that should not have.\n";
+
+        // A third commit, on branch `history` above `next`, that edits only the native XML layer
+        // of a two-layer GVL: the case the commit page's layer chips exist for (one section for
+        // Glob_Var, the .xml drawn, the .st offered), and the case an object's history used to
+        // miss. /acme/plant/commit/<its sha> and /acme/plant/commits/history/<Glob_Var.gvl.st>.
+        // Its own branch, so pull request 1 and /compare/main...next stay what they were.
+        var globVarXml = "fixtures/projects/MachineWithMembers/Device/Plc Logic/Application/Glob_Var.gvl.xml";
+        var layered = new Dictionary<string, byte[]>(changed, StringComparer.Ordinal)
+        {
+            [globVarXml] = Encoding.UTF8.GetBytes(Encoding.UTF8.GetString(changed[globVarXml]).Replace("TempActual: REAL:=8.0;", "TempActual: REAL:=9.0;", StringComparison.Ordinal)),
+        };
+        var history = github.Commit(repo, "history", layered);
+        repo.Parents[history] = [next];
+        repo.CommitMessages[history] = "Start the simulation one degree warmer\n\nOnly the GVL's native XML carries the initial value here.\n";
         repo.PullFiles[1] = new PullFileList(
         [
             new PullFile(alarm, "modified", null, "@@ -9 +9 @@\n-\tEnable\t\t\t\t: BOOL := TRUE;\n+\tEnable\t\t\t\t: BOOL := FALSE;"),
