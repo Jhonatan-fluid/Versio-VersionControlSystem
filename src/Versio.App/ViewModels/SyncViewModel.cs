@@ -4144,7 +4144,7 @@ public sealed class SyncViewModel : ObservableObject
     /// happened - the acknowledgement exists so that automation does not retry a failing
     /// project forever, not so that it takes two clicks to ask for one retry.
     /// </remarks>
-    private async Task RetryAsync()
+    internal async Task RetryAsync()
     {
         if (_orchestrator is null || FailedProject is not { } row)
         {
@@ -4158,6 +4158,18 @@ public sealed class SyncViewModel : ObservableObject
 
         await _orchestrator.AcknowledgeFailureAsync(row.BindingId!, busy.Token)
             .ConfigureAwait(true);
+
+        // Acknowledging clears the record of what was exported along with the failure, so
+        // the project now reads as never exported here — the same state a fresh clone opens
+        // in, and the launch path answers it by asking git before running anything: a
+        // project and mirror that both match HEAD came out of one commit and need no export.
+        // The retry asks the same question first. Without this, Try again on a project
+        // whose toolchain this machine cannot run re-ran the export that had just refused,
+        // and the failure came straight back: two fixture projects sat behind "acknowledge
+        // the failure" for ten days (2026-10-17 to 2026-10-27) without differing from HEAD
+        // by a byte, because the only way out was a toolchain that was never going to answer.
+        // A project that does differ is not adopted, and the gate below exports it as before.
+        await AdoptCommittedStateAsync(busy.Token).ConfigureAwait(true);
 
         // The acknowledgement only clears the gate. Without this the project would sit in
         // exactly the state it was in before, and the button would look as though it had

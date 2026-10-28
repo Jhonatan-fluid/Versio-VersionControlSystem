@@ -252,10 +252,10 @@ stays that way.
 
 | Suite | Count | Time | Needs |
 |---|---|---|---|
-| `Versio.Core.Tests` | 2,080 | under a second | nothing |
-| `Versio.Integration.Tests` | 254 | ~1 m | real git |
-| `Versio.App.Tests` | 846 | 10 m 57 s on 2026-10-25 (843/846; three catch-up waits, green alone), 12 m 15 s on 2026-10-25 (845/845), 9 m 3 s on 2026-10-25 (838/842; four clipboard tests, `CLIPBRD_E_CANT_OPEN`, environmental), 12 m 49 s on 2026-10-25 (840/841; the same `SourceProjectTests` wait red for the second full run today, green alone), 13 m 29 s on 2026-10-25 (loaded, 835/836; a 21 s catch-up wait passed alone), 13 m 9 s on 2026-10-25 (loaded, 835/836; the 30 s catch-up wait passed alone), 11 m 23 s on 2026-10-24 (loaded), ~3.6 min on 2026-09-22, 8 m 38 s on 2026-10-05, 10 m 46 s on 2026-10-19, 10 m 42 s on 2026-10-22, 10 m 36 s on 2026-10-23 (idleness not checked); STA, no window shown; it was ~50 s once | nothing |
-| `Versio.Arch.Tests` | 36 | instant | nothing — it reads assembly metadata, IL and the `.csproj` files |
+| `Versio.Core.Tests` | 2,092 | under a second | nothing |
+| `Versio.Integration.Tests` | 260 | ~1 m | real git |
+| `Versio.App.Tests` | 867 | 13 m 34 s, 865/867, 2026-10-27 night on `AutoUpdate` (the update overlay; one real regression, fixed, and one `CommitWhileIdeHoldsProjectTests` red, green alone); 11 m 58 s, 854/856, 2026-10-27 on `AutoUpdate` (one 30 s catch-up wait, green alone; one clipboard test, `CLIPBRD_E_CANT_OPEN`, environmental as on 2026-10-25); 10 m 57 s on 2026-10-25 (843/846; three catch-up waits, green alone), 12 m 15 s on 2026-10-25 (845/845), 9 m 3 s on 2026-10-25 (838/842; four clipboard tests, `CLIPBRD_E_CANT_OPEN`, environmental), 12 m 49 s on 2026-10-25 (840/841; the same `SourceProjectTests` wait red for the second full run today, green alone), 13 m 29 s on 2026-10-25 (loaded, 835/836; a 21 s catch-up wait passed alone), 13 m 9 s on 2026-10-25 (loaded, 835/836; the 30 s catch-up wait passed alone), 11 m 23 s on 2026-10-24 (loaded), ~3.6 min on 2026-09-22, 8 m 38 s on 2026-10-05, 10 m 46 s on 2026-10-19, 10 m 42 s on 2026-10-22, 10 m 36 s on 2026-10-23 (idleness not checked); STA, no window shown; it was ~50 s once | nothing |
+| `Versio.Arch.Tests` | 42 | instant | nothing — it reads assembly metadata, IL and the `.csproj` files |
 | `Versio.Plc.Codesys.Pure.Tests` | 405 | under a second | nothing — the planner, the codecs, the protocol |
 | `Versio.Plc.Codesys.Parity.Tests` | 104 | ~15 s | `python` on PATH — **skips cleanly without it, so check the count, not the colour** |
 | `Versio.Plc.TiaPortal.Pure.Tests` | 108 | instant | nothing — format, planner, protocol, LAD and FBD parser |

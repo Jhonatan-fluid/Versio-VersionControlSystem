@@ -6,6 +6,7 @@ using Versio.Core.Git;
 using Versio.Core.Guarding;
 using Versio.Core.Settings;
 using Versio.Core.Sync;
+using Versio.Core.Updates;
 
 namespace Versio.App.Views;
 
@@ -189,5 +190,42 @@ public sealed class WindowPrompts(Window owner, ShellViewModel shell) : IUserPro
 
         window.ShowDialog();
         return window.Chosen;
+    }
+
+    /// <summary>Offer a newer version, with what is in it.</summary>
+    /// <remarks>
+    /// <para>
+    /// The guard's window again, so the offer looks like every other question Versio asks
+    /// rather than like a system dialog from somewhere else.
+    /// </para>
+    /// <para>
+    /// <b>Update leads, which is the opposite of the destructive prompts.</b> Nothing here can
+    /// lose work - the window still closes through its guard - so the answer the publisher
+    /// wants is the one a stray Enter lands on. Escape and the title-bar X are Later.
+    /// </para>
+    /// </remarks>
+    public UpdateChoice? OfferUpdate(UpdatePrompt prompt)
+    {
+        var body = $"Versio {prompt.Offered} is available. You have {prompt.Current}.\n\n" +
+                   "Updating downloads it, closes Versio, installs it and opens it again.";
+        if (prompt.Notes.Length > 0)
+        {
+            body += $"\n\nWhat's new:\n{prompt.Notes}";
+        }
+
+        var window = new GuardPromptWindow(
+            "Update available",
+            body,
+            [
+                new PromptOption("Update and restart", UpdateChoice.UpdateNow),
+                new PromptOption("Later", UpdateChoice.Later),
+            ],
+            cancels: UpdateChoice.Later)
+        {
+            Owner = owner,
+        };
+
+        window.ShowDialog();
+        return window.Result as UpdateChoice?;
     }
 }

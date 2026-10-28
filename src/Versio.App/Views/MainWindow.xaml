@@ -551,11 +551,29 @@
                          needed and looked like it was about the repository. -->
                     <TextBlock Text="HELP" Style="{StaticResource SectionLabel}"
                                Margin="10,6,0,6" />
-                    <Button Content="System information…" Margin="10,0,10,10"
+                    <Button Content="System information…" Margin="10,0,10,4"
                             HorizontalAlignment="Left"
                             Style="{StaticResource GhostButton}"
                             Click="OnOpenSystemInfo"
                             ToolTip="Toolchains, versions and paths on this machine" />
+
+                    <!-- The same check the launch makes, asked for: it answers even when
+                         there is nothing new, and offers a version the launch check was told
+                         Later about. Disabled while a check is already running. The line
+                         under it is what the last check found, or the download's progress -
+                         the popup is where somebody looks after pressing it. -->
+                    <Button Content="Check for updates…" Margin="10,0,10,4"
+                            HorizontalAlignment="Left"
+                            Style="{StaticResource GhostButton}"
+                            Click="OnCheckForUpdates"
+                            Command="{Binding Updates.CheckNowCommand}"
+                            ToolTip="Look for a newer published version of Versio" />
+                    <TextBlock Text="{Binding Updates.Status}" Margin="14,0,10,10"
+                               Visibility="{Binding Updates.HasStatus, Converter={StaticResource BoolToVisibility}}"
+                               TextWrapping="Wrap" MaxWidth="240"
+                               FontFamily="{DynamicResource Font.UI}"
+                               FontSize="{DynamicResource Font.Size.Caption}"
+                               Foreground="{DynamicResource Brush.Text.Secondary}" />
                 </StackPanel>
             </Border>
         </Popup>
@@ -2193,5 +2211,187 @@
                            Foreground="{DynamicResource Brush.Text.Disabled}" />
             </Grid>
         </Border>
+
+        <!-- ========================== UPDATE OVERLAY ========================== -->
+        <!--
+            OVER EVERYTHING, AND IN THE WAY ON PURPOSE.
+
+            The first installed update downloaded behind a status line under a gear menu that
+            had already closed: Update and restart was clicked and nothing on screen moved until
+            the window vanished. Once the user has said update, this Versio is about to close,
+            so the overlay takes the whole window - the scrim swallows the mouse, and
+            OnPreviewKeyDown swallows keys aimed at anything behind it - and says what is
+            happening, how far it has got and what comes next.
+
+            Last in the grid and on the top ZIndex, so it draws over the panels and over the
+            notification toasts' own ZIndex 10.
+
+            COLLAPSED UNTIL A TRIGGER SAYS OTHERWISE, not Visibility bound straight to the flag.
+            Bound directly, it starts at the default Visible and the binding settles after the
+            first layout - and a full-window scrim arranged in that gap swallowed the hit test
+            on the empty state's Open a repository button (ProjectPanelCalmStateTests) while
+            reporting itself Collapsed. A Style's setter is the state from construction on.
+        -->
+        <Grid x:Name="UpdateOverlay" Grid.RowSpan="5" Grid.ColumnSpan="2" Panel.ZIndex="100"
+              Background="#B80A0B0E"
+              Focusable="True" FocusVisualStyle="{x:Null}"
+              KeyboardNavigation.TabNavigation="Cycle">
+            <Grid.Style>
+                <Style TargetType="Grid">
+                    <Setter Property="Visibility" Value="Collapsed" />
+                    <Style.Triggers>
+                        <DataTrigger Binding="{Binding Updates.IsOverlayOpen}" Value="True">
+                            <Setter Property="Visibility" Value="Visible" />
+                        </DataTrigger>
+                    </Style.Triggers>
+                </Style>
+            </Grid.Style>
+            <Border Width="460" HorizontalAlignment="Center" VerticalAlignment="Center"
+                    Background="{DynamicResource Brush.Surface.Raised}"
+                    BorderBrush="{DynamicResource Brush.Border.Strong}" BorderThickness="1"
+                    CornerRadius="10" Padding="24,22"
+                    AutomationProperties.Name="{Binding Updates.Headline}">
+                <StackPanel>
+                    <StackPanel Orientation="Horizontal">
+                        <!-- Segoe Fluent: E896 download, E72C sync, E7BA warning. -->
+                        <TextBlock FontSize="20" VerticalAlignment="Center" Margin="0,0,10,0">
+                            <TextBlock.Style>
+                                <Style TargetType="TextBlock" BasedOn="{StaticResource IconText}">
+                                    <Setter Property="Text" Value="&#xE896;" />
+                                    <Setter Property="Foreground" Value="{DynamicResource Brush.Accent.Default}" />
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding Updates.IsRestarting}" Value="True">
+                                            <Setter Property="Text" Value="&#xE72C;" />
+                                            <Setter Property="Foreground" Value="{DynamicResource Brush.Status.Added}" />
+                                        </DataTrigger>
+                                        <DataTrigger Binding="{Binding Updates.IsFailed}" Value="True">
+                                            <Setter Property="Text" Value="&#xE7BA;" />
+                                            <Setter Property="Foreground" Value="{DynamicResource Brush.Status.Deleted}" />
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </TextBlock.Style>
+                        </TextBlock>
+                        <TextBlock Text="{Binding Updates.Headline}" VerticalAlignment="Center"
+                                   FontFamily="{DynamicResource Font.UI}"
+                                   FontSize="{DynamicResource Font.Size.Subtitle}"
+                                   FontWeight="{DynamicResource Font.Weight.Semibold}"
+                                   Foreground="{DynamicResource Brush.Text.Primary}" />
+                    </StackPanel>
+
+                    <TextBlock Text="{Binding Updates.Detail}" Margin="0,8,0,0" TextWrapping="Wrap"
+                               FontFamily="{DynamicResource Font.UI}"
+                               FontSize="{DynamicResource Font.Size.Body}"
+                               Foreground="{DynamicResource Brush.Text.Secondary}" />
+
+                    <!-- The bar is a scaled Border rather than a ProgressBar: the theme has
+                         no ProgressBar template, and the stock one is a Windows 7 green.
+                         Waiting has no percentage, so it runs indeterminate instead. -->
+                    <Grid Height="8" Margin="0,16,0,8">
+                        <Border CornerRadius="4" Background="{DynamicResource Brush.Surface.Sunken}" />
+                        <Border CornerRadius="4" RenderTransformOrigin="0,0.5">
+                            <Border.RenderTransform>
+                                <ScaleTransform ScaleX="{Binding Updates.ProgressFraction}" />
+                            </Border.RenderTransform>
+                            <Border.Style>
+                                <Style TargetType="Border">
+                                    <Setter Property="Background" Value="{DynamicResource Brush.Accent.Default}" />
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding Updates.IsRestarting}" Value="True">
+                                            <Setter Property="Background" Value="{DynamicResource Brush.Status.Added}" />
+                                        </DataTrigger>
+                                        <DataTrigger Binding="{Binding Updates.IsFailed}" Value="True">
+                                            <Setter Property="Background" Value="{DynamicResource Brush.Status.Deleted}" />
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </Border.Style>
+                        </Border>
+                        <ProgressBar IsIndeterminate="True" Height="8" BorderThickness="0"
+                                     Background="Transparent"
+                                     Foreground="{DynamicResource Brush.Accent.Default}"
+                                     Visibility="{Binding Updates.IsIndeterminate,
+                                         Converter={StaticResource BoolToVisibility}}" />
+                    </Grid>
+
+                    <Grid>
+                        <TextBlock Text="{Binding Updates.PercentText}" HorizontalAlignment="Left"
+                                   FontFamily="{DynamicResource Font.UI}"
+                                   FontSize="{DynamicResource Font.Size.Caption}"
+                                   Foreground="{DynamicResource Brush.Text.Secondary}" />
+                        <TextBlock Text="{Binding Updates.Caption}" HorizontalAlignment="Left"
+                                   FontFamily="{DynamicResource Font.UI}"
+                                   FontSize="{DynamicResource Font.Size.Caption}"
+                                   Foreground="{DynamicResource Brush.Text.Secondary}" />
+                        <TextBlock Text="{Binding Updates.SizeText}" HorizontalAlignment="Right"
+                                   FontFamily="{DynamicResource Font.UI}"
+                                   FontSize="{DynamicResource Font.Size.Caption}"
+                                   Foreground="{DynamicResource Brush.Text.Secondary}" />
+                    </Grid>
+
+                    <!-- The four steps, so "Versio closes" is expected rather than alarming.
+                         Install and Reopen are never current here: by then this window is
+                         gone and the updater's own window is the one showing. -->
+                    <StackPanel Orientation="Horizontal" Margin="0,16,0,0">
+                        <StackPanel.Resources>
+                            <Style x:Key="UpdateStep" TargetType="TextBlock">
+                                <Setter Property="Margin" Value="0,0,18,0" />
+                                <Setter Property="FontFamily" Value="{DynamicResource Font.UI}" />
+                                <Setter Property="FontSize" Value="{DynamicResource Font.Size.Caption}" />
+                                <Setter Property="Foreground" Value="{DynamicResource Brush.Text.Disabled}" />
+                            </Style>
+                        </StackPanel.Resources>
+                        <TextBlock>
+                            <TextBlock.Style>
+                                <Style TargetType="TextBlock" BasedOn="{StaticResource UpdateStep}">
+                                    <Setter Property="Text" Value="Download" />
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding Updates.DownloadStepCurrent}" Value="True">
+                                            <Setter Property="Foreground" Value="{DynamicResource Brush.Text.Primary}" />
+                                        </DataTrigger>
+                                        <DataTrigger Binding="{Binding Updates.DownloadStepDone}" Value="True">
+                                            <Setter Property="Text" Value="✓ Download" />
+                                            <Setter Property="Foreground" Value="{DynamicResource Brush.Status.Added}" />
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </TextBlock.Style>
+                        </TextBlock>
+                        <TextBlock Text="Close Versio">
+                            <TextBlock.Style>
+                                <Style TargetType="TextBlock" BasedOn="{StaticResource UpdateStep}">
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding Updates.CloseStepCurrent}" Value="True">
+                                            <Setter Property="Foreground" Value="{DynamicResource Brush.Text.Primary}" />
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </TextBlock.Style>
+                        </TextBlock>
+                        <TextBlock Text="Install" Style="{StaticResource UpdateStep}" />
+                        <TextBlock Text="Reopen" Style="{StaticResource UpdateStep}" />
+                    </StackPanel>
+
+                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,18,0,0">
+                        <Button x:Name="UpdateCancelButton" Content="Cancel" Padding="14,5"
+                                Style="{StaticResource GhostButton}"
+                                Command="{Binding Updates.CancelCommand}"
+                                ToolTip="Stop the download. Nothing has been installed yet."
+                                Visibility="{Binding Updates.CanCancel,
+                                    Converter={StaticResource BoolToVisibility}}" />
+                        <Button Content="Close" Padding="14,5"
+                                Style="{StaticResource GhostButton}"
+                                Command="{Binding Updates.CloseOverlayCommand}"
+                                Visibility="{Binding Updates.IsFailed,
+                                    Converter={StaticResource BoolToVisibility}}" />
+                        <Button x:Name="UpdateTryAgainButton" Content="Try again" Padding="14,5" Margin="8,0,0,0"
+                                Style="{StaticResource AccentButton}"
+                                Command="{Binding Updates.TryAgainCommand}"
+                                Visibility="{Binding Updates.IsFailed,
+                                    Converter={StaticResource BoolToVisibility}}" />
+                    </StackPanel>
+                </StackPanel>
+            </Border>
+        </Grid>
     </Grid>
 </Window>

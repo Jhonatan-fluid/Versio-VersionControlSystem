@@ -1,6 +1,7 @@
 using Versio.App.Mvvm;
 using Versio.Core.Guarding;
 using Versio.Core.Settings;
+using Versio.Core.Updates;
 using Xunit;
 
 namespace Versio.App.Tests;
@@ -51,6 +52,11 @@ public sealed class StubPromptsTests
         Assert.Null(stub.AskAboutStashedWork(new ChoicePrompt("t", "b", [])));
         Assert.Null(stub.AskAboutMissingRepository(
             new MissingRepositoryPrompt("t", "b", [])));
+
+        // Null is Later. An unset stub that answered Update now would download and close the
+        // shell in any test that happened to run a launch check.
+        Assert.Null(stub.OfferUpdate(new UpdatePrompt("0.4.4", "0.5.0", string.Empty)));
+        Assert.Null(NullPrompts.Instance.OfferUpdate(new UpdatePrompt("0.4.4", "0.5.0", string.Empty)));
     }
 
     [Fact]

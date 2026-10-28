@@ -330,14 +330,73 @@ public class SyncOrchestratorTests
     }
 
     [Fact]
-    public async Task A_recorded_export_or_a_failure_is_never_overwritten_by_adoption()
+    public async Task A_recorded_export_is_never_overwritten_by_adoption()
     {
+        var h = new Harness();
+        h.Codesys.EnqueueSuccess("plc/A/Main.st");
+        await h.ProjectChanged();
+        var recorded = h.Locks.State!.Bindings[BindingId].LastSynced;
+
+        Assert.Empty(await h.Orchestrator.AdoptCommittedStateAsync(Fixed(Status()), Listed, CancellationToken.None));
+        Assert.Equal(recorded, h.Locks.State!.Bindings[BindingId].LastSynced);
+    }
+
+    [Fact]
+    public async Task A_failure_over_a_project_git_says_is_untouched_is_dropped_and_the_project_adopted()
+    {
+        // 2026-10-27, after ten days: two projects whose toolchain this machine cannot run at
+        // all failed on the clone's first open, with no export recorded and nothing changed
+        // against HEAD, and every launch brought the failure back. A failure over work that
+        // git says does not exist is dropped on git's word, and the project is taken as
+        // exported like any other untouched one: no click, no toolchain.
+        var h = new Harness();
+        h.Codesys.EnqueueFailure("TcXaeShell.DTE.17.0 was not found");
+        await h.ProjectChanged();
+        Assert.Equal(SyncDirection.Failed, h.Orchestrator.StateOf(BindingId));
+        var runs = h.Codesys.Jobs.Count;
+
+        var adopted = await h.Orchestrator.AdoptCommittedStateAsync(Fixed(Status()), Listed, CancellationToken.None);
+
+        Assert.Equal([BindingId], adopted);
+        Assert.Equal(runs, h.Codesys.Jobs.Count);
+        Assert.Equal(SyncDirection.Clean, h.Orchestrator.StateOf(BindingId));
+        var persisted = h.Locks.State!.Bindings[BindingId];
+        Assert.Equal(SyncDirection.Clean, persisted.Direction);
+        Assert.Null(persisted.AcquiredUtc);
+        Assert.NotEmpty(persisted.LastSynced.ProjectHash);
+        Assert.Equal(GateDecision.Proceed,
+            (await h.Orchestrator.EvaluateCommitGateAsync(CancellationToken.None)).Decision);
+        Assert.Contains(h.Log, e =>
+            e.Message.Contains("the recorded failure (", StringComparison.Ordinal)
+            && e.Message.Contains("TcXaeShell.DTE.17.0 was not found", StringComparison.Ordinal)
+            && e.Message.Contains("failure is dropped", StringComparison.Ordinal));
+    }
+
+    [Theory]
+    [InlineData("plc/A.project")]
+    [InlineData("plc/A/Simulation.st")]
+    public async Task A_failure_over_a_project_that_did_change_stays_failed(string changed)
+    {
+        // The other half: git reports a change under the binding, so the toolchain's refusal
+        // is the truth about this project and it stays on the row until it is acknowledged.
         var h = new Harness();
         h.Codesys.EnqueueFailure("boom");
         await h.ProjectChanged();
 
-        Assert.Empty(await h.Orchestrator.AdoptCommittedStateAsync(Fixed(Status()), Listed, CancellationToken.None));
+        Assert.Empty(await h.Orchestrator.AdoptCommittedStateAsync(Fixed(Status(changed)), Listed, CancellationToken.None));
         Assert.Equal(SyncDirection.Failed, h.Orchestrator.StateOf(BindingId));
+    }
+
+    [Fact]
+    public async Task A_held_direction_is_never_overwritten_by_adoption()
+    {
+        var h = new Harness();
+        h.Codesys.EnqueueSuccess("plc/A/Main.st");
+        await h.ProjectChanged();
+        Assert.Equal(SyncDirection.ProjectAuthoritative, h.Orchestrator.StateOf(BindingId));
+
+        Assert.Empty(await h.Orchestrator.AdoptCommittedStateAsync(Fixed(Status()), Listed, CancellationToken.None));
+        Assert.Equal(SyncDirection.ProjectAuthoritative, h.Orchestrator.StateOf(BindingId));
     }
 
     // --- the happy path -------------------------------------------------------

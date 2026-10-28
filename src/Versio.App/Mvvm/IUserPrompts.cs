@@ -2,6 +2,7 @@ using Versio.Core.Git;
 using Versio.Core.Guarding;
 using Versio.Core.Settings;
 using Versio.Core.Sync;
+using Versio.Core.Updates;
 
 namespace Versio.App.Mvvm;
 
@@ -119,6 +120,15 @@ public interface IUserPrompts
     /// operation here that does not also go through <see cref="ConfirmDestructive"/>.
     /// </remarks>
     ProjectBackup? AskWhichBackup(string project, IReadOnlyList<ProjectBackup> backups);
+
+    /// <summary>Offer a newer version. Null means later.</summary>
+    /// <remarks>
+    /// Later is the answer that changes nothing, so it is what no answer means - a host with
+    /// no window must never start a download and close the application on its own. Choosing
+    /// Update now does not close anything either: the window closes through its own guard,
+    /// which still asks about work in progress.
+    /// </remarks>
+    UpdateChoice? OfferUpdate(UpdatePrompt prompt);
 }
 
 /// <summary>
@@ -168,4 +178,6 @@ public sealed class NullPrompts : IUserPrompts
 
     public ProjectBackup? AskWhichBackup(string project, IReadOnlyList<ProjectBackup> backups) =>
         null;
+
+    public UpdateChoice? OfferUpdate(UpdatePrompt prompt) => null;
 }

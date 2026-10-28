@@ -728,8 +728,8 @@ public sealed class SyncOrchestrator
     }
 
     /// <summary>
-    /// Some enabled binding is Clean with no export recorded on this machine: the only state
-    /// <see cref="AdoptCommittedStateAsync"/> acts on.
+    /// Some enabled binding is Clean or Failed with no export recorded on this machine: the
+    /// only states <see cref="AdoptCommittedStateAsync"/> acts on.
     /// </summary>
     /// <remarks>
     /// Public so the caller can skip asking git for a file listing on every refresh when there
@@ -738,7 +738,7 @@ public sealed class SyncOrchestrator
     public bool HasUnrecordedBindings => _bindings.Values.Any(b =>
         b.Enabled
         && _locks.TryGetValue(b.Id, out var l)
-        && l.Direction == SyncDirection.Clean
+        && l.Direction is SyncDirection.Clean or SyncDirection.Failed
         && l.LastSynced.ProjectHash.Length == 0);
 
     /// <summary>
@@ -764,12 +764,30 @@ public sealed class SyncOrchestrator
     /// needs to happen is that the engine stops believing it has never seen them.
     /// </para>
     /// <para>
-    /// <b>Narrow on purpose.</b> Only a binding that is Clean and has no recorded export: a
-    /// lock, a failure, or a real record is left exactly as it is. Only when git reports
-    /// nothing changed or untracked under the project, its payload or its mirror. And only
-    /// when git lists both the project and at least one mirror file, so a gitignored project,
-    /// or a mirror that was never committed, is not taken as "unchanged" just because status
-    /// is silent about it. Anything else exports as before.
+    /// <b>Narrow on purpose.</b> Only a binding that is Clean or Failed and has no recorded
+    /// export: a held direction, or a real record, is left exactly as it is. Only when git
+    /// reports nothing changed or untracked under the project, its payload or its mirror. And
+    /// only when git lists both the project and at least one mirror file, so a gitignored
+    /// project, or a mirror that was never committed, is not taken as "unchanged" just because
+    /// status is silent about it. Anything else exports as before.
+    /// </para>
+    /// <para>
+    /// <b>Failed is included since 2026-10-27, and it was the one state this skipped on
+    /// purpose.</b> The first open of this clone on a second machine (2026-10-17) exported
+    /// every project, and two of those exports failed because that machine cannot run their
+    /// toolchains at all. The failures were recorded against an empty record and an empty
+    /// baseline, and from then on nothing could end them: recovery re-adopted a Failed lock
+    /// whose baseline nothing can match, this method left failures alone, and Try again re-ran
+    /// the export that had just refused. Ten days of "2 projects failed to sync" over two
+    /// projects that matched HEAD by the byte. A failure says the toolchain could not do what
+    /// was asked; when git says there was nothing to ask for, the failure is not information
+    /// about this project, it is a record of a run that should not have happened. So it is
+    /// dropped, said in the log with the reason it carried, and the project is taken as
+    /// exported like any other untouched one. A failed project that <i>has</i> changed stays
+    /// failed, exactly as before: git reports the change, and the toolchain's refusal is then
+    /// the truth about it. Auto-clearing a failure is otherwise forbidden here, and this is
+    /// not that: a failure is dropped only on git's word that the work it guarded does not
+    /// exist.
     /// </para>
     /// </remarks>
     /// <para>
@@ -836,7 +854,7 @@ public sealed class SyncOrchestrator
         foreach (var binding in _bindings.Values.Where(b => b.Enabled))
         {
             if (!_locks.TryGetValue(binding.Id, out var current)
-                || current.Direction != SyncDirection.Clean
+                || current.Direction is not (SyncDirection.Clean or SyncDirection.Failed)
                 || current.LastSynced.ProjectHash.Length > 0)
             {
                 continue;
@@ -932,12 +950,25 @@ public sealed class SyncOrchestrator
             }
 
             var swapped = false;
+            var droppedFailure = false;
+            var failedBecause = string.Empty;
             lock (_lockWrite)
             {
                 if (_locks.TryGetValue(c.Binding.Id, out var now) && ReferenceEquals(now, c.Read))
                 {
+                    // A Failed lock becomes Clean here, outside the state machine. Deliberate:
+                    // FailureAcknowledged is the human's trigger and is logged as a human
+                    // intervening, and this is the opposite — the engine concluding, on git's
+                    // word, that there was never anything to fail at.
+                    droppedFailure = now.Direction == SyncDirection.Failed;
+                    failedBecause = now.Reason;
                     _locks[c.Binding.Id] = now with
                     {
+                        Direction = SyncDirection.Clean,
+                        AcquiredUtc = droppedFailure ? null : now.AcquiredUtc,
+                        Reason = droppedFailure
+                            ? "nothing to do: the project and its mirror match HEAD"
+                            : now.Reason,
                         Baseline = now.Baseline with
                         {
                             ProjectHash = projectHash,
@@ -962,6 +993,21 @@ public sealed class SyncOrchestrator
             }
 
             adopted.Add(c.Binding.Id);
+
+            if (droppedFailure)
+            {
+                // The same resets AcknowledgeFailureAsync does, because the failure is over
+                // either way: a tripped breaker would otherwise refuse the next real change.
+                _breaker.Reset(c.Binding.Id);
+                _coalescers[c.Binding.Id].Reset();
+
+                _log.Info(LogCategory.Lock,
+                    $"{c.Binding.Id}: the recorded failure ({failedBecause}) had nothing to " +
+                    "do: the project and its mirror match HEAD and no export was ever recorded " +
+                    $"here, so the failure is dropped and that is taken as exported (project " +
+                    $"{Short(projectHash)}, mirror {Short(mirrorHash)}) without running the toolchain");
+                continue;
+            }
 
             _log.Info(LogCategory.Lock,
                 $"{c.Binding.Id}: no export recorded on this machine; the project and its mirror " +

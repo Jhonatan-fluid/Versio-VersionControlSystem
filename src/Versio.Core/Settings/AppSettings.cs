@@ -69,6 +69,15 @@ public sealed record AppSettings
     /// <summary>Panel sizes the user has dragged.</summary>
     [JsonPropertyName("layout")] public LayoutSettings Layout { get; init; } = new();
 
+    /// <summary>
+    /// The update the user answered Later to, so the launch check stops asking about it.
+    /// </summary>
+    /// <remarks>
+    /// One version, not a switch: a newer release asks again (<c>UpdatePolicy</c>). Empty in
+    /// every settings file written before updates existed, which reads as "never dismissed".
+    /// </remarks>
+    [JsonPropertyName("dismissedUpdate")] public string DismissedUpdateVersion { get; init; } = string.Empty;
+
     public static readonly AppSettings Empty = new();
 }
 

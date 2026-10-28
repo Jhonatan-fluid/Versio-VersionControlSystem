@@ -1,7 +1,7 @@
 #Requires -Version 5.1
 <#
 .SYNOPSIS
-    Publish a self-contained Versio payload and pack Setup.exe plus a per-machine MSI,
+    Publish a self-contained Versio payload and pack Setup.exe plus an MSI, both per-user,
     as a staged launch sequence: banner, version menu, seven timed phases, liftoff.
 
 .DESCRIPTION
@@ -22,220 +22,34 @@ param(
     [string] $Version,
 
     # No spinner, no countdown, no ANSI: for CI logs and captured output.
-    [switch] $Plain
+    [switch] $Plain,
+
+    # Markdown notes baked into the package. Velopack carries them in the release feed, and
+    # the app shows them in its update prompt - so they travel with the version they describe
+    # instead of living in a GitHub page the user never sees. Publish-Versio.ps1 passes it.
+    [string] $ReleaseNotes,
+
+    # Called by Publish-Versio.ps1, which has more to do after the pack: no countdown, and no
+    # Explorer window popping up over the publish's own prompts. Colours stay - unlike -Plain.
+    [switch] $Unattended,
+
+    # Where vpk writes, default artifacts\releases. The publish packs into a folder of its
+    # own holding only the PUBLISHED previous release, because vpk builds the delta against
+    # whatever newest package it finds there - and artifacts\releases keeps every local pack,
+    # including ones that never shipped. A delta against one of those would not apply on any
+    # user's machine.
+    [string] $ReleasesDir
 )
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
-# ---------------------------------------------------------------------------- presentation
-
-$Esc = [char]27
-$script:UseAnsi = -not $Plain
-
-# Color on, color off. Everything styled goes through this so -Plain produces clean text
-# for a CI log instead of escape soup.
-function C([string] $Code) {
-    if ($script:UseAnsi) { return "$Esc[${Code}m" }
-    return ''
-}
-
-function Write-Banner {
-    Write-Host ""
-    Write-Host "$(C '97')  ##   ##  #######  ######    #####   ####   #######  $(C '0')"
-    Write-Host "$(C '96')  ##   ##  ##       ##   ##  ##        ##   ##     ## $(C '0')"
-    Write-Host "$(C '96')  ##   ##  #####    ######    #####    ##   ##     ## $(C '0')"
-    Write-Host "$(C '36')   ## ##   ##       ##   ##       ##   ##   ##     ## $(C '0')"
-    Write-Host "$(C '34')    ###    #######  ##   ##   #####   ####   #######  $(C '0')"
-    Write-Host "$(C '90')  ==================================================  $(C '0')"
-    Write-Host "$(C '37')           PLC projects, versioned in git             $(C '0')"
-}
-
-function Format-Elapsed([TimeSpan] $Span) {
-    if ($Span.TotalSeconds -ge 60) {
-        return ('{0} m {1:00} s' -f [int][math]::Floor($Span.TotalMinutes), $Span.Seconds)
-    }
-    return ('{0:0.0} s' -f $Span.TotalSeconds)
-}
-
-function Format-Mb([long] $Bytes) {
-    return ('{0:N1} MB' -f ($Bytes / 1MB))
-}
-
-# Labels arrive pre-dotted so every phase and check lines up, same as the bat's list.
-function Format-Label([string] $Text) {
-    return ($Text + ' ').PadRight(32, '.')
-}
-
-# ---------------------------------------------------------------------------- pack log
+# The banner, the phase lines, the log and the version menu are shared with
+# Publish-Versio.ps1, so a publish looks and behaves like a pack because it runs the same code.
+. (Join-Path $PSScriptRoot 'PackCommon.ps1')
 
 $script:LogPath = Join-Path $Repo 'artifacts\pack.log'
-
-function Log([string] $Line) {
-    Add-Content -LiteralPath $script:LogPath -Value ("[{0:HH:mm:ss}] {1}" -f (Get-Date), $Line) -Encoding UTF8
-}
-
-# ---------------------------------------------------------------------------- phases
-
 $script:PhaseTotal = 7
-$script:PhaseIndex = 0
-$script:PhaseLabel = ''
-$script:PhaseWatch = $null
-$script:TickCount = 0
-
-function Start-Phase([string] $Label) {
-    $script:PhaseIndex++
-    $script:PhaseLabel = Format-Label $Label
-    $script:PhaseWatch = [System.Diagnostics.Stopwatch]::StartNew()
-    Log ("=== [{0}/{1}] {2}" -f $script:PhaseIndex, $script:PhaseTotal, $Label)
-    Write-Host -NoNewline ("$(C '90')  [{0}/{1}]$(C '0') $(C '37'){2}$(C '0') " -f `
-        $script:PhaseIndex, $script:PhaseTotal, $script:PhaseLabel)
-    if ($Plain) { Write-Host "" }
-}
-
-# One frame of the working animation: spinner plus live elapsed seconds, redrawn in
-# place. -Plain skips it entirely - a redrawn line is escape soup in a captured log.
-function Write-Tick {
-    if ($Plain) { return }
-    $spin = '|/-\'
-    $frame = $spin[$script:TickCount % 4]
-    $script:TickCount++
-    Write-Host -NoNewline ("`r$(C '90')  [{0}/{1}]$(C '0') $(C '37'){2}$(C '0') $(C '36'){3}$(C '0') $(C '90'){4,4} s $(C '0')" -f `
-        $script:PhaseIndex, $script:PhaseTotal, $script:PhaseLabel, $frame, [int]$script:PhaseWatch.Elapsed.TotalSeconds)
-}
-
-function Complete-Phase([string] $Note = '') {
-    $elapsed = Format-Elapsed $script:PhaseWatch.Elapsed
-    $suffix = ''
-    if ($Note.Length -gt 0) { $suffix = "  $(C '90')$Note$(C '0')" }
-    $line = ("  $(C '90')[{0}/{1}]$(C '0') $(C '37'){2}$(C '0') $(C '92')OK$(C '0')  $(C '90'){3,8}$(C '0'){4}" -f `
-        $script:PhaseIndex, $script:PhaseTotal, $script:PhaseLabel, $elapsed, $suffix)
-    if ($Plain) {
-        Write-Host $line
-    } else {
-        Write-Host ("`r" + $line + (' ' * 12))
-    }
-    Log ("=== done in " + $elapsed)
-}
-
-# Run a child process with its output captured into pack.log, animating the current
-# phase line while it works. The console stays readable; the log stays complete.
-function Invoke-LoggedProcess {
-    param(
-        [string] $FilePath,
-        [string] $Arguments
-    )
-
-    Log ("run: " + $FilePath + ' ' + $Arguments)
-    $out = [System.IO.Path]::GetTempFileName()
-    $err = [System.IO.Path]::GetTempFileName()
-
-    $p = Start-Process -FilePath $FilePath -ArgumentList $Arguments -NoNewWindow -PassThru `
-        -RedirectStandardOutput $out -RedirectStandardError $err
-
-    # Touch the handle now or PowerShell 5.1 never caches it, and ExitCode reads $null
-    # after the process exits - every failure would say "exit " with the number missing.
-    $null = $p.Handle
-
-    while (-not $p.HasExited) {
-        Write-Tick
-        Start-Sleep -Milliseconds 200
-    }
-    $p.WaitForExit()
-
-    foreach ($f in @($out, $err)) {
-        Get-Content -LiteralPath $f -ErrorAction SilentlyContinue |
-            ForEach-Object { Log ('  ' + $_) }
-        Remove-Item -LiteralPath $f -Force -ErrorAction SilentlyContinue
-    }
-
-    return $p.ExitCode
-}
-
-function Quote([string] $Value) {
-    if ($Value -match '[\s"]') { return '"' + ($Value -replace '"', '\"') + '"' }
-    return $Value
-}
-
-# ---------------------------------------------------------------------------- version
-
-function Get-VersioVersion {
-    $props = Join-Path $Repo 'Directory.Build.props'
-    $utf8 = New-Object System.Text.UTF8Encoding $false
-    $text = [System.IO.File]::ReadAllText($props, $utf8)
-    if ($text -notmatch '<VersioVersion>([^<]+)</VersioVersion>') {
-        throw "Directory.Build.props has no VersioVersion"
-    }
-    return $Matches[1].Trim()
-}
-
-function Assert-SemVer([string] $Value) {
-    if ($Value -notmatch '^\d+\.\d+\.\d+$') {
-        throw "version '$Value' is not x.y.z (what vpk pack will accept)"
-    }
-}
-
-function Set-VersioVersion([string] $NewVersion) {
-    Assert-SemVer $NewVersion
-    $props = Join-Path $Repo 'Directory.Build.props'
-    $utf8 = New-Object System.Text.UTF8Encoding $false
-    $text = [System.IO.File]::ReadAllText($props, $utf8)
-    $updated = [regex]::Replace(
-        $text,
-        '<VersioVersion>[^<]+</VersioVersion>',
-        "<VersioVersion>$NewVersion</VersioVersion>",
-        1)
-    if ($updated -eq $text -and $text -notmatch "<VersioVersion>$NewVersion</VersioVersion>") {
-        throw "Directory.Build.props VersioVersion was not replaced"
-    }
-    # File APIs, not Get-Content/Set-Content: those add a BOM and can corrupt the file.
-    [System.IO.File]::WriteAllText($props, $updated, $utf8)
-}
-
-# The bump menu, under the banner so choosing a version is part of the show rather than
-# a bare prompt. Returns $null for a clean quit - the one exit that must not read as
-# either success or failure to the bat.
-function Read-VersionChoice([string] $Current) {
-    Assert-SemVer $Current
-    $parts = $Current.Split('.') | ForEach-Object { [int]$_ }
-    $major = [int]$parts[0]
-    $minor = [int]$parts[1]
-    $patch = [int]$parts[2]
-    $asPatch = "$major.$minor.$($patch + 1)"
-    $asMinor = "$major.$($minor + 1).0"
-    $asMajor = "$($major + 1).0.0"
-
-    Write-Host ""
-    Write-Host "$(C '93')   MISSION PARAMETERS$(C '0')$(C '90') - current version $Current$(C '0')"
-    Write-Host ""
-    Write-Host "$(C '37')     1) Last number (patch)  -> $(C '96')$asPatch$(C '0')   $(C '90')[Enter]$(C '0')"
-    Write-Host "$(C '37')     2) Middle (minor)       -> $(C '96')$asMinor$(C '0')"
-    Write-Host "$(C '37')     3) First (major)        -> $(C '96')$asMajor$(C '0')"
-    Write-Host "$(C '37')     4) Keep                 -> $(C '96')$Current$(C '0')"
-    Write-Host "$(C '37')     5) Type one$(C '0')"
-    Write-Host "$(C '90')     Q) Quit - touch nothing$(C '0')"
-    Write-Host ""
-    $choice = Read-Host "   Choice [1]"
-    if ([string]::IsNullOrWhiteSpace($choice)) {
-        $choice = '1'
-    }
-    switch ($choice.Trim().ToLowerInvariant()) {
-        '1' { return $asPatch }
-        '2' { return $asMinor }
-        '3' { return $asMajor }
-        '4' { return $Current }
-        '5' {
-            $typed = Read-Host "   Version (x.y.z)"
-            if ([string]::IsNullOrWhiteSpace($typed)) {
-                throw "no version typed"
-            }
-            Assert-SemVer $typed.Trim()
-            return $typed.Trim()
-        }
-        'q' { return $null }
-        default { throw "not a choice: $choice (1-5, Q)" }
-    }
-}
 
 # ---------------------------------------------------------------------------- intro
 
@@ -284,10 +98,19 @@ try {
     Write-Host "$(C '92')   PACKING Versio $chosen$(C '0')$(C '90') - child output goes to artifacts\pack.log$(C '0')"
     Write-Host ""
 
+    # Checked before seven minutes of publishing rather than by vpk at the very end, where a
+    # mistyped path would throw away the whole build for a file that was never going to exist.
+    if (-not [string]::IsNullOrWhiteSpace($ReleaseNotes) -and -not (Test-Path -LiteralPath $ReleaseNotes)) {
+        throw "release notes not found: $ReleaseNotes"
+    }
+
     $total = [System.Diagnostics.Stopwatch]::StartNew()
     $packVersion = Get-VersioVersion
     $publish = Join-Path $Repo 'artifacts\publish'
     $releases = Join-Path $Repo 'artifacts\releases'
+    if (-not [string]::IsNullOrWhiteSpace($ReleasesDir)) {
+        $releases = $ReleasesDir
+    }
     $icon = Join-Path $Repo 'assets\versio.ico'
     $powershell = 'powershell.exe'
 
@@ -463,8 +286,18 @@ try {
     # --legacyConsole (-x) turns the overwrite question off; --yes (-y) is the
     # answer. --yes alone still draws the prompt and waits for a timeout.
     # Global flags belong before `pack` - System.CommandLine parses them on vpk itself.
-    $vpkArgs = ('--legacyConsole --yes --skip-updates pack --packId Versio --packVersion {0} --packTitle Versio --packAuthors Versio --packDir {1} --mainExe Versio.exe --icon {2} --msi --instLocation PerMachine --outputDir {3}' -f `
+    #
+    # PER-USER, and that is what makes self-update possible. A per-machine install lives
+    # under Program Files, so applying an update needs elevation - a UAC prompt on every
+    # release, and a flat failure on a managed laptop whose user is not an administrator,
+    # which is most of them. Per-user installs to %LOCALAPPDATA%\Versio, where the user can
+    # write, and settings already live beside it in VersioUser (AppUserPaths). The MSI is
+    # still built for IT to push through Intune; it installs per-user too.
+    $vpkArgs = ('--legacyConsole --yes --skip-updates pack --packId Versio --packVersion {0} --packTitle Versio --packAuthors Versio --packDir {1} --mainExe Versio.exe --icon {2} --msi --instLocation PerUser --outputDir {3}' -f `
         $packVersion, (Quote $publish), (Quote $icon), (Quote $releases))
+    if (-not [string]::IsNullOrWhiteSpace($ReleaseNotes)) {
+        $vpkArgs += (' --releaseNotes {0}' -f (Quote $ReleaseNotes))
+    }
     $code = Invoke-LoggedProcess $vpk $vpkArgs
     if ($code -ne 0) {
         throw "vpk pack failed (exit $code)"
@@ -506,7 +339,7 @@ try {
     Write-Check 'TIA Portal host' (Join-Path $publish 'tia\Versio.Plc.TiaPortal.Host.exe')
     Write-Check 'TwinCAT host' (Join-Path $publish 'twincat\Versio.Plc.TwinCat.Host.exe')
     Write-Check 'Setup.exe' $setup.FullName (Format-Mb $setup.Length)
-    Write-Check 'Per-machine MSI' $msi.FullName (Format-Mb $msi.Length)
+    Write-Check 'Per-user MSI' $msi.FullName (Format-Mb $msi.Length)
     Write-Host ""
     Write-Host ("$(C '90')   payload {0:N0} files - {1} - full log artifacts\pack.log$(C '0')" -f `
         $payload.Count, (Format-Mb $payload.Sum))
@@ -514,7 +347,7 @@ try {
     Log ("PACKED " + $setup.FullName)
     Log ("PACKED " + $msi.FullName)
 
-    if ($Plain) {
+    if ($Plain -or $Unattended) {
         Write-Host "   LIFTOFF - $releases"
     } else {
         Write-Host -NoNewline "$(C '93')   LIFTOFF in 3$(C '0')"

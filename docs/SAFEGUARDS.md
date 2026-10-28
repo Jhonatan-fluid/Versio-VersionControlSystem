@@ -379,6 +379,23 @@ is orphaned — hidden, holding the project, and mid-write if it was importing.
   the engineer opened during the run (FINDINGS 2026-10-24, item 28); no reported PID now
   means nothing is reaped by name, and the log says so.
 - On every path out, kill orphaned CODESYS children explicitly. `KillTree` already exists.
+- **An update restart is a close, and goes through this guard (2026-10-27).** *Update and
+  restart* downloads first, then `UpdatesViewModel.RestartRequested` posts `Close` exactly as
+  the X does — so an import in flight is asked about (Stop / Wait / Don't close), never cut
+  short for an update. The installer is handed the package only in `App.Exit`, after the
+  shell has released the repository, and it waits for the process to end before touching a
+  file. **Don't close keeps the download**: `RestartDeclined` turns the restart off, and the
+  update installs at the user's own next exit without reopening Versio behind them.
+- **And the same question is asked before the download (2026-10-27, later).** *Update and
+  restart* now puts a blocking overlay over the window for the whole download (FINDINGS
+  2026-10-27, the update overlay), so
+  running work is asked about first — `ShellViewModel.ClearWorkForUpdateAsync`, the same
+  `CloseApp` intent and dialog — rather than discovered after a minute of progress bar. Unlike
+  `RequestCloseAsync` it tears nothing down: no `StopWatching`, no `Quiesce`, because a
+  download that fails or is cancelled must leave a Versio that still watches its repository.
+  Wait shows *waiting for the current operation*; Stop gives the work the close's eight
+  seconds; Don't close downloads nothing and records no Later. The close guard still runs at
+  the restart, for anything that started during the download.
 
 ---
 
@@ -986,10 +1003,15 @@ not a correctness bug — but *"I committed and it immediately went dirty again"
 Suppress deferred work for the duration of a git write.
 
 A failed binding still stops **that** project's sync until it is acknowledged (`Try again` on
-the row). It no longer vetoes every other commit in the repository: the gate is scoped to
-bindings the include set actually touches, evaluated **before** `git add`, so a README next
-to a broken import can still land. Mix — failed project's files plus unrelated changes —
-asks, then drops those paths. Cancel leaves the index alone.
+the row — which, since 2026-10-27, asks git before the toolchain: a project and mirror that
+match HEAD are taken as exported and nothing runs). A failure with no export recorded on
+this machine over a project git says is untouched does not wait for the click at all: the
+launch drops it on git's word, because the work it would guard does not exist (FINDINGS
+2026-10-27, both entries). A failure over a project that did change stays until acknowledged.
+It no longer vetoes every other commit in the repository: the gate is scoped to bindings the
+include set actually touches, evaluated **before** `git add`, so a README next to a broken
+import can still land. Mix — failed project's files plus unrelated changes — asks, then drops
+those paths. Cancel leaves the index alone.
 
 ### M. An import replaces an object and takes its members with it — **BUILT 2026-08-18**
 

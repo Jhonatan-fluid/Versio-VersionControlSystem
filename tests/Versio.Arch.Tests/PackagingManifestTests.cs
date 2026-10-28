@@ -119,15 +119,102 @@ public sealed class PackagingManifestTests
     [Fact]
     public void Pack_asks_how_to_bump_VersioVersion()
     {
+        // The menu and the writer moved into PackCommon.ps1 so the publish script asks the
+        // same question the same way. The pack still takes -Version and dot-sources them; a
+        // pack that stopped loading the common file would fail on its first Log call, but
+        // only when somebody ran it, so the line is pinned here.
+        var pack = File.ReadAllText(Path.Combine(TestPaths.Root, "tools", "pack", "Pack-Versio.ps1"));
+        var common = File.ReadAllText(Path.Combine(TestPaths.Root, "tools", "pack", "PackCommon.ps1"));
+        Assert.Contains(". (Join-Path $PSScriptRoot 'PackCommon.ps1')", pack, StringComparison.Ordinal);
+        Assert.Contains("[string] $Version", pack, StringComparison.Ordinal);
+        Assert.Contains("Last number (patch)", common, StringComparison.Ordinal);
+        Assert.Contains("Middle (minor)", common, StringComparison.Ordinal);
+        Assert.Contains("First (major)", common, StringComparison.Ordinal);
+        Assert.Contains("Keep", common, StringComparison.Ordinal);
+        Assert.Contains("Type one", common, StringComparison.Ordinal);
+        Assert.Contains("function Set-VersioVersion", common, StringComparison.Ordinal);
+        Assert.Contains("[System.IO.File]::WriteAllText", common, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Pack_installs_per_user_so_an_update_needs_no_administrator()
+    {
+        // PerMachine puts Versio under Program Files, and every update then needs elevation:
+        // a UAC prompt per release, and a failure outright for a user who is not an
+        // administrator - which, on a managed laptop, is most of them.
         var text = File.ReadAllText(Path.Combine(TestPaths.Root, "tools", "pack", "Pack-Versio.ps1"));
-        Assert.Contains("Last number (patch)", text, StringComparison.Ordinal);
-        Assert.Contains("Middle (minor)", text, StringComparison.Ordinal);
-        Assert.Contains("First (major)", text, StringComparison.Ordinal);
-        Assert.Contains("Keep", text, StringComparison.Ordinal);
-        Assert.Contains("Type one", text, StringComparison.Ordinal);
-        Assert.Contains("function Set-VersioVersion", text, StringComparison.Ordinal);
-        Assert.Contains("[string] $Version", text, StringComparison.Ordinal);
-        Assert.Contains("[System.IO.File]::WriteAllText", text, StringComparison.Ordinal);
+        Assert.Contains("--instLocation PerUser", text, StringComparison.Ordinal);
+        Assert.DoesNotContain("PerMachine --", text, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Publish_entry_point_is_at_the_repo_root()
+    {
+        Assert.True(File.Exists(Path.Combine(TestPaths.Root, "Publish_Release.bat")));
+        Assert.True(File.Exists(Path.Combine(TestPaths.Root, "tools", "pack", "Publish-Versio.ps1")));
+    }
+
+    [Fact]
+    public void Publish_never_puts_the_token_on_a_command_line()
+    {
+        // Every child-process command line is written to publish.log by Invoke-LoggedProcess,
+        // and is readable by any process on the machine while vpk runs. The token reaches vpk
+        // through a response file instead; a format string that spelled out --token would put
+        // it straight back in the log.
+        var text = File.ReadAllText(Path.Combine(TestPaths.Root, "tools", "pack", "Publish-Versio.ps1"));
+        Assert.Contains("New-TokenResponseFile", text, StringComparison.Ordinal);
+        Assert.DoesNotContain("--token {", text, StringComparison.Ordinal);
+        Assert.DoesNotContain("--token $", text, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void The_update_repository_is_named_once()
+    {
+        // The app checks it and the publish uploads to it. Two copies of the URL would let a
+        // build look in one repository while releases went to another, and every installed
+        // copy would report itself up to date for ever.
+        var props = File.ReadAllText(Path.Combine(TestPaths.Root, "Directory.Build.props"));
+        var app = File.ReadAllText(Path.Combine(TestPaths.Root, "src", "Versio.App", "Versio.App.csproj"));
+        var publish = File.ReadAllText(Path.Combine(TestPaths.Root, "tools", "pack", "Publish-Versio.ps1"));
+        Assert.Contains("<VersioUpdateRepo>https://github.com/", props, StringComparison.Ordinal);
+        Assert.Contains("$(VersioUpdateRepo)", app, StringComparison.Ordinal);
+        Assert.Contains("<VersioUpdateRepo>", publish, StringComparison.Ordinal);
+        Assert.DoesNotContain("github.com/fluidstackio", publish, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void The_update_flow_is_wired_where_no_unit_test_reaches()
+    {
+        // The view model's half is driven by UpdatesViewModelTests. These four lines are the
+        // composition root's and the window's, and deleting any one leaves every test green:
+        // no launch check, an update downloaded and never installed, a restart that never
+        // closes the window, or a refused close that goes on restarting at the next exit.
+        var startup = File.ReadAllText(Path.Combine(TestPaths.Root, "src", "Versio.App", "App.xaml.cs"));
+        var window = File.ReadAllText(
+            Path.Combine(TestPaths.Root, "src", "Versio.App", "Views", "MainWindow.xaml.cs"));
+        Assert.Contains("shell.Updates.CheckOnLaunchAsync(", startup, StringComparison.Ordinal);
+        Assert.Contains("shell.Updates.ApplyOnExit()", startup, StringComparison.Ordinal);
+        Assert.Contains("shell.Updates.RestartRequested +=", window, StringComparison.Ordinal);
+        Assert.Contains("_shell.Updates.RestartDeclined()", window, StringComparison.Ordinal);
+
+        // The overlay's keyboard half. UpdateOverlayWindowTests sees the overlay appear, but
+        // a never-presented window receives no keys, so the handler that drops keys aimed
+        // behind it and the move of focus onto it are only reachable by reading the source.
+        Assert.Contains("UpdateOverlay.IsAncestorOf(target)", window, StringComparison.Ordinal);
+        Assert.Contains("Dispatcher.BeginInvoke(FocusUpdateOverlay", window, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Pack_and_publish_scripts_stay_pure_ascii()
+    {
+        // Windows PowerShell 5.1 reads a BOM-less script as the ANSI codepage. One em-dash in
+        // a string and the console shows mojibake - or a comparison quietly stops matching.
+        foreach (var name in new[] { "Pack-Versio.ps1", "PackCommon.ps1", "Publish-Versio.ps1" })
+        {
+            var bytes = File.ReadAllBytes(Path.Combine(TestPaths.Root, "tools", "pack", name));
+            var offender = Array.FindIndex(bytes, b => b > 0x7F);
+            Assert.True(offender < 0, $"{name} has a non-ASCII byte at offset {offender}");
+        }
     }
 
     [Fact]

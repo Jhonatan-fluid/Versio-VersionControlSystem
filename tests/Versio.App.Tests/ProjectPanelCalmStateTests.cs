@@ -256,7 +256,10 @@ public sealed class ProjectPanelCalmStateTests
         }
         """);
 
-        // B has a real change, so it is not adopted from HEAD and has an export pending.
+        // Both have a real change, so neither is adopted from HEAD. A's change is what keeps
+        // its failure standing: since 2026-10-27 a failure over a project that matches HEAD is
+        // dropped at launch, and this test is about a failure that is still true.
+        File.WriteAllBytes(Path.Combine(repo.Path, "plc", "A.project"), [0x03]);
         File.WriteAllBytes(Path.Combine(repo.Path, "plc", "B.project"), [0x02]);
 
         using var shell = TestShell.Build(out _, toolchain: new CapturingToolchain());
@@ -310,6 +313,116 @@ public sealed class ProjectPanelCalmStateTests
         // And the card says why, in the toolchain's words rather than "export failed" alone.
         shell.Sync.RefreshFailure(row.Path);
         Assert.Contains("is not installed", shell.Sync.FailureDetail, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Try_again_on_a_failed_project_that_matches_HEAD_adopts_it_instead_of_exporting()
+    {
+        // Seen 2026-10-27, after ten days: two fixture projects whose toolchain this machine
+        // cannot run (not in the Openness group; no TwinCAT) sat on "failed" since their first
+        // export on 2026-10-17, identical to HEAD the whole time. Try again acknowledged the
+        // failure and re-ran the export that had just refused, so the failure came straight
+        // back. The launch path already answers an unrecorded project by asking git, and the
+        // retry now asks the same question first: untouched against HEAD, nothing to run.
+        using var repo = new TempRepo(identity: true);
+        GivenACommittedProject(repo);
+        File.WriteAllBytes(Path.Combine(repo.Path, "plc", "Machine.project"), [0x09, 0x09]);
+
+        var toolchain = new CapturingToolchain
+        {
+            FailWith = "Owner 'AzureAD\\Someone' of this process is not member of the windows group 'Siemens TIA Openness'",
+        };
+        using var shell = TestShell.Build(out var sink, toolchain: toolchain);
+        await shell.OpenAsync(repo.Path);
+
+        // The commit happens outside the app, as the owner's did: from here on the project
+        // and its mirror are what HEAD holds, and the failure is the only thing left.
+        repo.Git("add -A");
+        repo.Git("commit -q --allow-empty -m settled");
+        await shell.RefreshAsync();
+
+        var row = Assert.Single(shell.Sync.Projects, p => p.BindingId == "b1");
+        Assert.Equal("failed", row.State);
+        var exportsBefore = toolchain.Jobs.Count(j => j.Operation == Versio.Core.Plc.PlcOperation.Export);
+        Assert.Equal(1, exportsBefore);
+
+        shell.Sync.RefreshFailure(row.Path);     // what selecting the row does
+        Assert.True(shell.Sync.RetryCommand.CanExecute(null));
+        await shell.Sync.RetryAsync();
+
+        // No second run of a toolchain that had just said no.
+        Assert.Equal(exportsBefore, toolchain.Jobs.Count(j => j.Operation == Versio.Core.Plc.PlcOperation.Export));
+        Assert.Null(shell.Sync.FailedProject);
+        Assert.Contains(sink.Snapshot(), e =>
+            e.Message.Contains("never exported on this machine match HEAD", StringComparison.Ordinal));
+
+        await shell.RefreshAsync();
+        row = Assert.Single(shell.Sync.Projects, p => p.BindingId == "b1");
+        Assert.NotEqual("failed", row.State);
+        Assert.DoesNotContain("failed to sync", shell.Sync.StalenessSummary, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task A_relaunch_drops_a_failure_over_a_project_that_matches_HEAD_without_a_click()
+    {
+        // The owner's correction, 2026-10-27: a project nothing changed must not be on the
+        // panel at all, and must not be run through anything. Try again was still a click,
+        // and a relaunch brought the two rows straight back. The launch path's adoption now
+        // covers a failure with no export recorded: the second open below finds the failed
+        // lock on disk, asks git, and drops it.
+        using var repo = new TempRepo(identity: true);
+        GivenACommittedProject(repo);
+        File.WriteAllBytes(Path.Combine(repo.Path, "plc", "Machine.project"), [0x09, 0x09]);
+
+        var toolchain = new CapturingToolchain { FailWith = "TcXaeShell.DTE.17.0 was not found" };
+        using (var first = TestShell.Build(out _, toolchain: toolchain))
+        {
+            await first.OpenAsync(repo.Path);
+            await first.RefreshAsync();
+            Assert.Equal("failed", Assert.Single(first.Sync.Projects, p => p.BindingId == "b1").State);
+        }
+
+        repo.Git("add -A");
+        repo.Git("commit -q --allow-empty -m settled");
+        var exportsBefore = toolchain.Jobs.Count(j => j.Operation == Versio.Core.Plc.PlcOperation.Export);
+
+        using var second = TestShell.Build(out var sink, toolchain: toolchain);
+        await second.OpenAsync(repo.Path);
+        await second.RefreshAsync();
+
+        var row = Assert.Single(second.Sync.Projects, p => p.BindingId == "b1");
+        Assert.NotEqual("failed", row.State);
+        Assert.Null(second.Sync.FailedProject);
+        Assert.DoesNotContain("failed to sync", second.Sync.StalenessSummary, StringComparison.Ordinal);
+        Assert.Equal(exportsBefore, toolchain.Jobs.Count(j => j.Operation == Versio.Core.Plc.PlcOperation.Export));
+        Assert.Contains(sink.Snapshot(), e =>
+            e.Message.Contains("failure is dropped", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task Try_again_on_a_failed_project_that_still_differs_from_HEAD_exports_it()
+    {
+        // The other half: a project that really has changed is not adopted, and the retry
+        // runs the export as it always did — which fails again here, and says so.
+        using var repo = new TempRepo(identity: true);
+        GivenACommittedProject(repo);
+        File.WriteAllBytes(Path.Combine(repo.Path, "plc", "Machine.project"), [0x09, 0x09]);
+
+        var toolchain = new CapturingToolchain { FailWith = "TcXaeShell.DTE.17.0 was not found" };
+        using var shell = TestShell.Build(out _, toolchain: toolchain);
+        await shell.OpenAsync(repo.Path);
+        await shell.RefreshAsync();
+
+        var row = Assert.Single(shell.Sync.Projects, p => p.BindingId == "b1");
+        Assert.Equal("failed", row.State);
+        var exportsBefore = toolchain.Jobs.Count(j => j.Operation == Versio.Core.Plc.PlcOperation.Export);
+
+        shell.Sync.RefreshFailure(row.Path);
+        await shell.Sync.RetryAsync();
+
+        Assert.Equal(exportsBefore + 1, toolchain.Jobs.Count(j => j.Operation == Versio.Core.Plc.PlcOperation.Export));
+        Assert.Contains("Still failing", shell.Sync.Summary, StringComparison.Ordinal);
+        Assert.NotNull(shell.Sync.FailedProject);
     }
 
     [Fact]

@@ -66,6 +66,38 @@ public partial class MainWindow : Window
         shell.HandedOverToOtherWindow += () =>
             Dispatcher.BeginInvoke(Close, System.Windows.Threading.DispatcherPriority.Background);
 
+        // An update is downloaded and the user said Update and restart. The window closes the
+        // way the X closes it, through OnClosing and the shell's close guard, so an import in
+        // flight is asked about rather than cut short. Posted for the same reason as the line
+        // above: the request arrives from inside the update command's own await.
+        shell.Updates.RestartRequested += () =>
+            Dispatcher.BeginInvoke(Close, System.Windows.Threading.DispatcherPriority.Background);
+
+        // The update overlay blocks the mouse by covering the window, but focus can still sit
+        // on a panel behind it, where Enter and Ctrl+O would act. So: focus goes onto the
+        // overlay when it opens, and PreviewKeyDown drops any key aimed outside it - and any
+        // chord inside it too, because a Ctrl+O pressed on the overlay's own Cancel button
+        // still bubbles up to the window's shortcuts and opens the folder picker behind it.
+        // Tab, Shift+Tab, Enter and Space are what the overlay's buttons need.
+        shell.Updates.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName == nameof(UpdatesViewModel.IsOverlayOpen) && shell.Updates.IsOverlayOpen)
+            {
+                Dispatcher.BeginInvoke(FocusUpdateOverlay, System.Windows.Threading.DispatcherPriority.Input);
+            }
+        };
+        PreviewKeyDown += (_, e) =>
+        {
+            if (shell.Updates.IsOverlayOpen
+                && (e.OriginalSource is not DependencyObject target || !UpdateOverlay.IsAncestorOf(target)
+                    || (Keyboard.Modifiers & ~ModifierKeys.Shift) != ModifierKeys.None)
+                // Alt+F4 still closes, as the title bar's X does: the close guard owns that.
+                && !(e.Key == Key.System && e.SystemKey == Key.F4))
+            {
+                e.Handled = true;
+            }
+        };
+
         // Every dialog the application can open, in one class rather than as a run of
         // closures here. Handed to the shell, which passes them down to Sync - so the two
         // view models share one set of questions and this is the only line that wires them.
@@ -245,6 +277,10 @@ public partial class MainWindow : Window
         if (!await _shell.RequestCloseAsync())
         {
             _closeInFlight = false;
+
+            // If the close was for an update, the user has just chosen to keep working. The
+            // download is kept and installs when Versio next exits, without restarting it.
+            _shell.Updates.RestartDeclined();
             return;
         }
 
@@ -259,6 +295,27 @@ public partial class MainWindow : Window
 
         // Queued behind the event we are still inside. See the remarks.
         await Dispatcher.InvokeAsync(Close, System.Windows.Threading.DispatcherPriority.Normal);
+    }
+
+    /// <summary>
+    /// Into the update overlay: its first button when it has one, the overlay itself while
+    /// it is restarting and has none - focus left on a panel behind it is a key that acts
+    /// on something the user cannot see.
+    /// </summary>
+    private void FocusUpdateOverlay()
+    {
+        if (UpdateCancelButton.IsVisible)
+        {
+            UpdateCancelButton.Focus();
+        }
+        else if (UpdateTryAgainButton.IsVisible)
+        {
+            UpdateTryAgainButton.Focus();
+        }
+        else
+        {
+            UpdateOverlay.Focus();
+        }
     }
 
     /// <summary>State something that has no question in it.</summary>
@@ -485,6 +542,17 @@ public partial class MainWindow : Window
         var rows = await _shell.BuildSystemInfoAsync(CancellationToken.None);
         new SystemInfoWindow(rows) { Owner = this }.ShowDialog();
     }
+
+    /// <summary>
+    /// Close the popup before the check runs; the button's command does the checking.
+    /// </summary>
+    /// <remarks>
+    /// The same reason as <see cref="OnOpenSystemInfo"/>: the check may end in a modal - the
+    /// update offer - and one opening behind an open popup leaves the popup hanging over it.
+    /// Click is raised before the command executes, so the popup is gone first.
+    /// </remarks>
+    private void OnCheckForUpdates(object sender, RoutedEventArgs e) =>
+        SettingsPopup.IsOpen = false;
 
     private void OnOpenSettings(object sender, RoutedEventArgs e)
     {

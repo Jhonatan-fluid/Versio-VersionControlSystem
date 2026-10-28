@@ -118,7 +118,8 @@ Both directions run automatically and deterministically. A per-project **directi
 | **Project tree** — CODESYS structure, roll-up badges, search | ✅ 34 unit tests + built from the export this repository commits |
 | **Methods and properties under the object that owns them** | ✅ manifest schema 4 records each member's owner GUID and the tree nests by it — a chain, since a property owns its accessors. Before this a function block's methods were its siblings, and four `InitRoom` methods on four different rooms were four rows in one folder. A mirror exported earlier carries no parents and stays flat until it is re-exported |
 | **Library and task rows, layer chips, context menu** | ✅ one node per library reference, task, device parameter and empty slot; chips in the diff header for ST / native / tasks / libraries / devices; a themed context menu on changed rows. Device YAML is export-only |
-| Packaging | ✅ `Build_Package.bat` produces unsigned `Setup.exe` and a per-machine MSI. It asks how to bump `VersioVersion` first. PortableGit, .NET 9 and both vendor hosts ship in the payload. CODESYS / Portal / XAE are detected, never bundled. Signing and the update feed are still open. |
+| Packaging | ✅ `Build_Package.bat` produces unsigned `Setup.exe` and an MSI, both **per-user** (so an update needs no administrator). It asks how to bump `VersioVersion` first. PortableGit, .NET 9 and both vendor hosts ship in the payload. CODESYS / Portal / XAE are detected, never bundled. Signing is still open. |
+| **Auto-update** | ✅ **2026-10-27.** `Publish_Release.bat` builds a release and publishes it to the private `fluidstackio/versio-releases`; every installed Versio offers it at launch (Update and restart / Later) and from the gear menu's *Check for updates…*. Read with the github.com sign-in Git Credential Manager already holds, so users set no token. Once accepted, a blocking overlay shows the download's progress and what happens next, with Cancel. The restart closes through the close guard, so an import in flight is asked about, never cut short. See *Releasing an update* below |
 
 **[docs/STATUS.md](docs/STATUS.md)** has the current state and what is next — the only live
 status page.
@@ -371,6 +372,35 @@ That is not tidiness for its own sake — it is what makes the risky parts (the 
 
 ---
 
+## Releasing an update
+
+**Double-click `Publish_Release.bat`.** It walks through, in order:
+
+1. checks the source tree (warns off `main` or with uncommitted changes),
+2. finds a GitHub token that can write to the releases repository — `VERSIO_RELEASE_TOKEN`, then
+   your stored git sign-in, then asks (hidden input),
+3. asks for the version, starting from the latest published release, and refuses one that is
+   not newer (installed copies would never be offered it),
+4. opens **Notepad** with the release notes prefilled from the commit subjects since the last
+   `v*` tag — what you save is what users see in the update prompt,
+5. fetches the previous published release so `vpk` can build a delta, then runs the normal pack,
+6. asks **Publish / Draft / Quit** — a draft is invisible to installed copies,
+7. uploads, checks GitHub actually serves the feed, copies what it shipped into
+   `artifacts\releases` (where `Build_Package.bat` puts local builds), then commits
+   `Release x.y.z`, tags `vx.y.z` and asks before pushing.
+
+The copy is one way on purpose. The publish packs in `artifacts\publish-releases`, holding only
+the previous *published* package, so a local build that never shipped can never become the base
+of a delta users download.
+
+Where releases go is `VersioUpdateRepo` in `Directory.Build.props` — one URL, read by the app
+and by the script. Users need **read access to that repository** (a GitHub team with Read on it) and
+to be signed in to GitHub in Versio once; nothing else. The token never reaches a log or a
+command line: `vpk` gets it through a response file deleted on the way out.
+
+A machine on a version older than the first one with the update check (0.4.x) installs the new
+`Setup.exe` by hand once; an old **per-machine** install is uninstalled first.
+
 ## Building and testing
 
 **Requirements**
@@ -381,7 +411,7 @@ That is not tidiness for its own sake — it is what makes the risky parts (the 
 | git | 2.x with `git-lfs`, **on `PATH` for a development F5 build**. The installer payload
   ships PortableGit (`git\cmd\git.exe`) so a packaged machine does not need Git for Windows.
   `Build_Package.bat` at the repo root publishes that payload and packs `Setup.exe` plus a
-  per-machine MSI. It asks how to bump the product version (`Directory.Build.props`
+  per-user MSI. It asks how to bump the product version (`Directory.Build.props`
   `VersioVersion`) before packing; Settings → Help → System information shows that number. |
 | CODESYS | 3.5 SP22 — **`Versio.Plc.Codesys.Tests` only**; the fast loop needs none |
 | TIA Portal | Openness membership — **`Versio.Plc.TiaPortal.Tests` only**; skips cleanly without it |
@@ -405,10 +435,10 @@ dotnet test tests/Versio.Core.Tests
 
 | Suite | Tests | Needs | Runs in |
 |---|---|---|---|
-| `Versio.Core.Tests` | 2,080 | nothing — pure, no IO, no clock, no UI | ~0.3 s |
-| `Versio.Integration.Tests` | 254 | a real `git.exe` and the real filesystem | ~55 s |
-| `Versio.Arch.Tests` | 36 | nothing — it reads assembly metadata, IL, and the project files | instant |
-| `Versio.App.Tests` | 846 | Windows (WPF). Builds the real dialogs against the real stylesheet on an STA thread; **no window is ever shown**. One test runs the web viewer too, over every fixture row, and references `Versio.Web.Tests` for its fake GitHub | ~3.6–11 min |
+| `Versio.Core.Tests` | 2,092 | nothing — pure, no IO, no clock, no UI | ~0.3 s |
+| `Versio.Integration.Tests` | 260 | a real `git.exe` and the real filesystem | ~55 s |
+| `Versio.Arch.Tests` | 42 | nothing — it reads assembly metadata, IL, and the project files | instant |
+| `Versio.App.Tests` | 867 | Windows (WPF). Builds the real dialogs against the real stylesheet on an STA thread; **no window is ever shown**. One test runs the web viewer too, over every fixture row, and references `Versio.Web.Tests` for its fake GitHub | ~3.6–11 min |
 | `Versio.Plc.Codesys.Pure.Tests` | 405 | nothing — the vendor's planner, codecs, protocol, LD/FBD parser and File-Based Storage layout, pure | under a second |
 | `Versio.Plc.Codesys.Parity.Tests` | 104 | `python` on PATH, no CODESYS — **skips cleanly without python, so check the count** | ~15 s |
 | `Versio.Plc.TiaPortal.Pure.Tests` | 108 | nothing — format, planner, protocol, scrubber, member table, LAD and FBD parser | instant |

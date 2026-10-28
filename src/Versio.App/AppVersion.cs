@@ -28,4 +28,17 @@ internal static class AppVersion
             return plus < 0 ? raw : raw[..plus];
         }
     }
+
+    /// <summary>
+    /// The GitHub repository updates are published to, or empty when this build names none.
+    /// </summary>
+    /// <remarks>
+    /// Baked in at build time from <c>VersioUpdateRepo</c> in Directory.Build.props - the same
+    /// property the publish script uploads to, so the two cannot drift apart.
+    /// </remarks>
+    public static string UpdateRepository =>
+        Assembly.GetExecutingAssembly()
+            .GetCustomAttributes<AssemblyMetadataAttribute>()
+            .FirstOrDefault(a => a.Key == "VersioUpdateRepo")
+            ?.Value ?? string.Empty;
 }

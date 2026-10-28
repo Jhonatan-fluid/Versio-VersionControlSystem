@@ -19,6 +19,310 @@ produce a diff touching everything else.
 
 ---
 
+### The first real update downloaded with nothing on screen; the update overlay
+
+**2026-10-27, night, the owner's own installed 0.4.9.** The first end-to-end update worked, and
+looked broken: *Update and restart* was clicked, the dialog closed, and nothing on screen moved
+until the window vanished a while later. The download's only voice was `UpdatesViewModel.Status`,
+a line under *Check for updates…* in the gear menu, and the menu closes when the item is
+clicked, so the progress went into a popup nobody could see. The log had every quarter
+(`update 0.4.9: 25% downloaded`…). The screen had none of it. That fits the rule at the top of
+AGENTS.md: the code was correct and the user saw a silent failure.
+
+**What replaced it** (the owner approved a mock-up first): `UpdatesViewModel.Stage`, which is
+`None`, `WaitingForWork`, `Downloading`, `Restarting` or `Failed`. The window draws it as an
+overlay over every row and column (`UpdateOverlay`, ZIndex 100) with:
+
+- a scrim that swallows the mouse;
+- the version, a sentence on what happens next, a bar with the percentage, and the download
+  size;
+- a step strip: Download → Close Versio → Install → Reopen;
+- **Cancel** while waiting or downloading, and **Try again** / **Close** after a failure.
+
+It blocks on purpose. Once the user has said update, this Versio is about to close, and a
+click on a panel that is about to disappear is a click that will be lost.
+
+**Three things a first draft got wrong, and what was rejected:**
+
+- **Covering the window does not block the keyboard.** Focus stays on whatever panel had it,
+  so Enter and Ctrl+O still act behind the scrim. `PreviewKeyDown` now drops keys aimed outside
+  the overlay. On the second pass it also drops chords inside it: a Ctrl+O pressed on the
+  overlay's own Cancel button would bubble to the window's `KeyBinding`s and open the folder
+  picker behind it. That one was found by reading the code, not observed. Tab, Shift+Tab, Enter and Space are what the buttons need. Alt+F4 still passes,
+  like the title bar's X, because the close guard owns that path.
+- **"5.1 of 12 MB" was rejected.** Velopack reports one percentage across downloading *and*
+  applying deltas, so a byte count worked back from it would look measured and not be. The
+  card shows the percentage and *about N MB*. The size is the delta chain when there is one,
+  otherwise the full package: on a delta update the full package's ~80 MB would be wrong by
+  25×.
+- **Running work is asked about before the download, not after.** The close guard already asked
+  at the restart, but only after a minute of progress bar over an export the user did not know
+  would hold the restart. `ShellViewModel.ClearWorkForUpdateAsync` asks the same `CloseApp`
+  question first, and tears nothing down: no `StopWatching`, no `Quiesce`, because a cancelled
+  download must leave a Versio that still watches its repository. The close guard still runs
+  at the restart for anything that started in between (SAFEGUARDS §3.4).
+
+**Evidence.**
+
+- 8 new App tests: 7 in `UpdatesViewModelTests` for the stages, Cancel, Try again, Close, a
+  refused restart, and Don't close / Wait over a running import; 1 in
+  `UpdateOverlayWindowTests`, which checks the overlay in the real window, because a misspelt
+  binding path would fail silently and bring back exactly this defect.
+- Four mutations, each red: the stage change not raising `IsOverlayOpen`, the shell not passing
+  `ClearWorkForUpdateAsync`, the overlay's `Visibility` unbound, and no `Downloading` stage.
+- The keyboard half needs a presented window, so `PackagingManifestTests` pins it by source
+  text.
+- The card was rendered headless to PNG in the downloading and failed states and looked at.
+  The failure toast posted alongside is hit-tested *under* the scrim, which keeps it as the
+  record left behind after Close.
+- **The full App suite caught one regression**, and it was the overlay's (865/867, 13 m 34 s).
+  `ProjectPanelCalmStateTests` hit-tests the empty state's *Open a repository* button, and the
+  click landed on `UpdateOverlay`, which reported itself `Collapsed` at the time. With
+  `Visibility` bound straight to `IsOverlayOpen`, the scrim starts at the default Visible and
+  the binding settles after the first layout, so a full-window Grid was arranged in that gap.
+  The test is green on the base commit. Fixed by starting the overlay `Collapsed` in a Style
+  and showing it from a `DataTrigger`, so its state is right from construction; the
+  misspelt-path mutation still turns the window test red. The other red,
+  `CommitWhileIdeHoldsProjectTests`, was green alone, as it was before this change.
+- **Not seen yet:** the overlay during a real update on an installed copy, the dark theme, and
+  the restarting state live. That needs a 0.5.x published over an installed 0.4.9.
+
+---
+
+### A failure over a project that matches HEAD came back at every launch, and a click was never the fix
+
+**2026-10-27, 18:16, the same two rows after the entry below shipped.** The owner rebuilt
+(0.4.7), reinstalled, relaunched — and `CleaningStation_V20_V21.ap21` and
+`TC3_PlcSample_reStrText.tsproj` were back on "failed" with the same TwinCAT and Openness
+refusals. The log shows why: `161b94dc224c: ReadoptedAfterRestart — previous session (pid
+41980) is gone and the work is still unsynced; re-adopting the Failed lock` and the same for
+`64eb778c77ff`, then `commit gate: Blocked — 2 projects have a failed sync`. Nobody had
+pressed Try again, and the owner's objection was that nobody should have to: *there are no
+changes on these projects; they should not be detected and should not be processed.* The
+entry below fixed the button and left the launch alone, and the launch is where the rows
+come from.
+
+**The fix moves into the launch path.** `AdoptCommittedStateAsync` — the fresh-clone
+adoption, which runs between recovery and the catch-up and asks git whether an unrecorded
+project matches HEAD — now acts on a **Failed** lock with no export recorded, not only a Clean
+one. A failed project that git says is untouched (status clean under the project, its payload
+and its mirror, read twice around the hashing, every listed file on disk) has its failure
+dropped and is taken as exported: direction Clean, baseline and `LastSynced` set to the
+hashes, the breaker and coalescer reset as an acknowledgement would, and one Info line that
+carries the reason the failure had held — `the recorded failure (export failed — TcXaeShell…)
+had nothing to do: the project and its mirror match HEAD and no export was ever recorded here,
+so the failure is dropped`. A failed project that git says **did** change is not adopted and
+stays failed with its reason, which is what the owner asked for in the same breath. The
+recovery line at Warning still appears once, at the launch that drops it; the next launch
+reads `NothingToRecover`.
+
+**On "an abandoned lock is never auto-cleared".** The entry below rejected a relaunch-time
+release on that principle, and the principle stands: it guards *unsynced work*. What was
+rejected was a release decided inside the recovery policy, which has no git and, with a blank
+mirror baseline, could not tell a mirror edit from nothing. The adoption path can: it does not
+reason about baselines at all, it asks git, twice, and checks the disk. A failure is dropped
+only on git's word that the work it guarded does not exist — and a record of a run that should
+never have happened is not a lock guarding anything. The human-in-the-loop guard is kept for
+the case it exists for: a failure over a real change.
+
+**One test had modelled exactly the dropped state.**
+`A_failed_project_does_not_hide_another_projects_pending_export` wrote a Failed lock with
+empty hashes over a project identical to HEAD, as the thing that must stay on the panel; with
+the fix it was adopted, the gate exported B, and the assertion read `rows: a=never exported,
+b=never exported`. The test is about a failure that is still true, so A now carries a change
+too.
+
+**Tests.** `SyncOrchestratorTests`: the one adoption test that asserted "a failure is never
+overwritten" is now four — a recorded export is never overwritten, a failure over an untouched
+project is dropped and the project adopted (no run, Clean on disk, gate Proceed, the log line
+with the reason), a failure over a changed project or mirror stays failed (theory, two rows), a
+held direction is never overwritten. `ProjectPanelCalmStateTests`: a first shell fails the
+export, the project is committed outside the app, a second shell on the same repository opens
+with the row not failed, no second export, and the log line. Mutation: the candidate filter
+back to `!= Clean` turns the new orchestrator test red and nothing else.
+
+---
+
+### "Try again" re-ran the toolchain that had just refused, so a failed export of an untouched project was permanent
+
+**2026-10-27, the same screenshot as the entry below, after the scanner fix.** Two rows
+left: `CleaningStation_V20_V21.ap21` and `TC3_PlcSample_reStrText.tsproj`, both "failed", the
+banner "2 projects failed to sync". The owner's objection was exact: *nothing has changed in
+these files, so there is nothing to do to them; they should fail only when I change one and the
+machine cannot process it.* This machine cannot run either toolchain — the account is not in
+the `Siemens TIA Openness` group, and TwinCAT XAE is not installed — and both projects were
+identical to HEAD.
+
+**Where the failures came from.** `.versio/local/state.json` holds both locks with
+`AcquiredUtc` 2026-10-17 00:50 and 00:51, `Direction: Failed`, the toolchain's refusal as the
+`Reason`, and an **empty** `Baseline.ProjectHash` and `LastSynced.ProjectHash`. That is the
+first open of this clone on this machine, the one FINDINGS 2026-10-16 describes: no record of
+an export, so the catch-up exported every project, and three refused. The fresh-clone adoption
+(`AdoptCommittedStateAsync`, built on 2026-10-17 in answer to exactly that) takes an untouched
+project as exported instead — but it is narrow on purpose, and acts only on a Clean lock. These
+two were already Failed when it arrived.
+
+**Why nothing could clear them.** Three exits, all shut:
+
+- *Recovery at launch* (`LockRecoveryPolicy`) releases a lock only when the current hashes
+  equal its baseline. Nothing hashes to the empty string, so every launch logged
+  `ReadoptedAfterRestart — the machine rebooted and the work is still unsynced` for work that
+  never existed. Ten days of launches, 10-17 to 10-27, each one re-adopting.
+- *Adoption* skips a Failed lock by design ("a lock, a failure, or a real record is left
+  exactly as it is").
+- *Try again* (`RetryAsync`) acknowledged the failure — which, by design, clears the record of
+  what was exported "so the next event exports rather than trusting anything" — and went
+  straight to `SatisfyGateAsync`, which exported, which the toolchain refused, which set
+  Failed again with the same reason. The button's summary said "Still failing".
+
+**The fix is in the button, not the lock.** After acknowledging, the retry asks git before it
+asks the toolchain: `AdoptCommittedStateAsync` — the view model's launch-time call, with its
+double status read and its on-disk checks — runs between the acknowledgement and the gate. A
+project and mirror that both match HEAD are taken as exported and the gate finds nothing
+behind; a project that differs is not adopted and exports as before, failing again with its
+reason if it must. One click per project clears the owner's two rows for good, because the
+adoption records `LastSynced`, which survives relaunches.
+
+Two App tests in `ProjectPanelCalmStateTests`, through a real repository and the capturing
+toolchain set to refuse: Try again on a project that matches HEAD runs no second export and
+leaves no failure; Try again on a project that still differs runs the export and reports
+"Still failing". Removing the one `await` turns the first red and leaves the second green.
+
+**What was built first and thrown away.** A recovery-policy rule — a Failed lock with no
+project baseline, whose mirror is where the failure left it, released at launch as "never
+exported here" — with a new `LockRecovery` outcome and seven tests, all green. Rejected
+before commit, for the reason the policy's own doc gives: *an abandoned lock is never
+auto-cleared*, and a failure vanishing at relaunch without a human acknowledging it is that,
+however empty its baseline. It also could not tell a text edit made while Failed from
+nothing at all when the mirror baseline was blank too (the first-failure shape, which the
+orchestrator harness produces), and releasing that lock would have let the catch-up export
+over the edit. The button already has the human in the loop; it only needed to ask the
+right question first.
+
+**Still true, and worth knowing on this machine.** A changed TIA or TwinCAT project will fail
+here, and should: the row says why, in the toolchain's words. Only an untouched one now
+stays quiet.
+
+---
+
+### The repository scanner walked into nested checkouts and tracked another repository's projects
+
+**2026-10-27, from the app showing twelve projects that do not exist in this repository.**
+The owner opened `C:\GIT\Versio` and the project panel listed every fixture three times over,
+each extra copy "not exported", six things needing attention and a ManifestMismatch naming
+`.claude/worktrees/modest-bohr-35127e/fixtures/projects/MachineWithMembers`. Today's log says
+what happened, in order:
+
+```
+15:56:51.283 DBG [Fs]   found project .claude/worktrees/modest-bohr-35127e/fixtures/projects/MachineWithMembers.project
+                        ... (twelve such lines, four fixtures × three worktrees)
+15:56:51.896 INF [Sync] tracking .claude/worktrees/modest-bohr-35127e/fixtures/projects/MachineWithMembers.project automatically as fcde73c41007
+15:56:51.986 INF [Git]  added 2 rule(s) for the toolchain's scratch files: .claude/worktrees/modest-bohr-35127e/...
+```
+
+`.claude/worktrees/` holds three Claude Code worktrees — `git worktree add` checkouts of
+this repository, each a full tree with the fixtures and a `.versio/repo.json` of its own.
+`RepoScanner` walked into them because its skip list names folders *called* `.git`, and a
+linked worktree's `.git` is not a folder at all but a one-line file (`gitdir: C:/GIT/Versio/
+.git/worktrees/modest-bohr-35127e`). So the walk found twelve project files, the orphan
+scanner adopted every one under a fresh binding id, and every export tree among them —
+carrying the id the *real* repository had given that fixture — read as a ManifestMismatch
+against the id it had just been handed. The commit made through the app one minute later
+("lets go", `b1d5891`) then wrote all of it into git: 12 bindings into `repo.json`, 129 lines
+into `.gitignore`, 84 into `.gitattributes`.
+
+**Why the worktrees had not been noticed.** `.git/info/exclude` lists `.claude/worktrees/`, so
+git status never showed them and the status bar said "No changes". The exclude is the right
+tool for git; the scanner reads the disk, not git, and had no equivalent rule.
+
+**The fix is a rule about children, not a name.** The walk now stops at any child directory
+that holds a `.git` entry — `Path.Exists`, not `Directory.Exists`, so a worktree's file counts
+— and says so in the log at Debug, because a project that is not offered for tracking must be
+findable there. The root is exempt: it always has a `.git` of its own, and applying the rule
+there would find nothing anywhere. Three integration tests in `RepoScannerNestedCheckoutTests`:
+a worktree (`.git` file) is not walked into, a clone (`.git` folder) is not walked into, and
+the root's own `.git`, as a file or a folder, does not stop the scan. The first two go red
+with the one `if` removed; the third passes either way, which is the point of it.
+
+**What was rejected.** Honouring git's own exclude and ignore files from the scanner — the
+scanner has no git client by design (it runs on a background thread without one in every
+unit test), and ignoring a path is a weaker statement than "this is another repository".
+Adding `.claude` to the skip list — a name, which is exactly the shape of rule that failed.
+
+**The cleanup.** `.gitignore`, `.gitattributes` and `.versio/repo.json` were restored to the
+parent of `b1d5891` (`git checkout b1d5891~1 -- …`, 312 deletions, nothing else in those
+files had changed in that commit) and committed on their own. The three worktrees are left in
+place; with the scanner fixed they are invisible to the app, as they already were to git.
+
+**Not this.** The "2 projects failed to sync" in the same screenshot are the TIA and TwinCAT
+fixtures, whose Failed locks were re-adopted after a reboot; on this machine TwinCAT XAE is not
+installed and the account is not in the Openness group, so neither can export. Acknowledging
+them clears the commit gate. Separate state, correctly reported.
+
+---
+
+### Auto-update: the stored git sign-in reads the private releases repository, so users set no token
+
+**2026-10-27, measured before building the update check (STATUS item 5, open question 4).**
+The plan was GitHub Releases in a private `fluidstackio/versio-releases`, read by Velopack's
+`GithubSource` — which needs a token, because GitHub answers a private repository it cannot see
+with 404. The fallback was a fine-grained token per user, pasted into Settings and stored with
+DPAPI. Before building that, the token Git Credential Manager already stores for github.com was
+tried against the API, with `GCM_INTERACTIVE=never` so nothing could prompt:
+
+```
+credential: username=Jhonatan-fluid, token length 40, prefix gho_
+GET /user                                     -> 200  X-OAuth-Scopes: gist, read:org, repo, workflow
+GET /repos/fluidstackio/versio-releases       -> 200  (private: true)
+GET /repos/fluidstackio/versio-releases/releases -> 200
+GET /repos/fluidstackio/Versio                -> 200
+```
+
+**So the token path was not built.** GCM's OAuth token carries `repo` and is already authorized
+for the organisation's SSO; the update check reads it (`StoredGitCredential`) and hands it to
+Velopack for one check at a time. It is the one place the application takes a secret back from
+git, and its remarks say so and why.
+
+**What this did not measure:** a user with only Read on the releases repository (this account
+is an admin of it), and downloading an asset (the repository had no release yet). Both are the
+first thing to check with a second account; if either fails, the token fallback is the plan's
+Phase 5 and nothing else changes — `VelopackUpdateSource` takes the token as a delegate.
+
+**Three things the publish script learned on the way, each now a comment where it bit:**
+
+- **Windows PowerShell 5.1 corrupts a string piped into git.** Piping the request string into
+  ``git credential fill`` answered *refusing to work with credential missing protocol field*. The
+  script writes stdin through a `Process` with a BOM-less UTF-8 writer instead.
+- **Windows PowerShell 5.1's `Invoke-RestMethod` emits a JSON array as one object.** `@(...)`
+  around the call counted the empty releases page as one release. `Get-Releases` enumerates it
+  and returns with the unary comma.
+- **vpk accepts a response file.** `--token` is its only way in, and a command line is written
+  to `publish.log` and visible to every process while vpk runs. `@file` was confirmed by passing
+  a bogus token that way: vpk answered 401 from GitHub rather than rejecting the argument, so the
+  file was read and the token used. The file is deleted in a `finally`.
+
+**The first real run failed, and published nothing (same day, later).** After the notes
+were written, the publish stopped on *The property 'Elapsed' cannot be found on this
+object*: `Invoke-LoggedProcess` animates the current phase while it waits, and the
+Fetch-Deps call was the one place it ran before any phase had started, so the spinner read
+a timer that did not exist and strict mode ended the script. Nothing had been built,
+bumped or uploaded. Fetch-Deps is now a phase of its own, and `Write-Tick` draws nothing
+when no phase is running - checked by running a logged process outside a phase and inside
+one. No test covers the scripts' runtime: the Arch tests read them as text.
+
+**The same run showed what Notepad does to the notes.** Windows 11 Notepad's Markdown mode
+saved the prefilled `- ` items as `* ` and escaped every underscore, so the prompt would
+have read `Publish\_Release.bat`. `UpdatePolicy.NotesForPrompt` now takes the backslash
+escapes off and draws every bullet as `- `, with that text as its test.
+
+**And one design point, recorded because the obvious version is wrong:** the publish packs into
+`artifacts\publish-releases`, holding only the previous *published* package, not into
+`artifacts\releases`. vpk builds the delta against the newest package in its output folder, and
+`artifacts\releases` keeps every local pack — a delta against one that never shipped would not
+apply on any user's machine.
+
+---
+
 ### The review's seventh round: three more, one of them a restore that adopted what it put back
 
 **2026-10-25, the reviewer read `749e3a1` and sent three confirmed items — one P1, two P2.**
