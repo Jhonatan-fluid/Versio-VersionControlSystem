@@ -256,7 +256,10 @@ public sealed class ProjectPanelCalmStateTests
         }
         """);
 
-        // B has a real change, so it is not adopted from HEAD and has an export pending.
+        // Both have a real change, so neither is adopted from HEAD. A's change is what keeps
+        // its failure standing: since 2026-10-27 a failure over a project that matches HEAD is
+        // dropped at launch, and this test is about a failure that is still true.
+        File.WriteAllBytes(Path.Combine(repo.Path, "plc", "A.project"), [0x03]);
         File.WriteAllBytes(Path.Combine(repo.Path, "plc", "B.project"), [0x02]);
 
         using var shell = TestShell.Build(out _, toolchain: new CapturingToolchain());
@@ -357,6 +360,43 @@ public sealed class ProjectPanelCalmStateTests
         row = Assert.Single(shell.Sync.Projects, p => p.BindingId == "b1");
         Assert.NotEqual("failed", row.State);
         Assert.DoesNotContain("failed to sync", shell.Sync.StalenessSummary, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task A_relaunch_drops_a_failure_over_a_project_that_matches_HEAD_without_a_click()
+    {
+        // The owner's correction, 2026-10-27: a project nothing changed must not be on the
+        // panel at all, and must not be run through anything. Try again was still a click,
+        // and a relaunch brought the two rows straight back. The launch path's adoption now
+        // covers a failure with no export recorded: the second open below finds the failed
+        // lock on disk, asks git, and drops it.
+        using var repo = new TempRepo(identity: true);
+        GivenACommittedProject(repo);
+        File.WriteAllBytes(Path.Combine(repo.Path, "plc", "Machine.project"), [0x09, 0x09]);
+
+        var toolchain = new CapturingToolchain { FailWith = "TcXaeShell.DTE.17.0 was not found" };
+        using (var first = TestShell.Build(out _, toolchain: toolchain))
+        {
+            await first.OpenAsync(repo.Path);
+            await first.RefreshAsync();
+            Assert.Equal("failed", Assert.Single(first.Sync.Projects, p => p.BindingId == "b1").State);
+        }
+
+        repo.Git("add -A");
+        repo.Git("commit -q --allow-empty -m settled");
+        var exportsBefore = toolchain.Jobs.Count(j => j.Operation == Versio.Core.Plc.PlcOperation.Export);
+
+        using var second = TestShell.Build(out var sink, toolchain: toolchain);
+        await second.OpenAsync(repo.Path);
+        await second.RefreshAsync();
+
+        var row = Assert.Single(second.Sync.Projects, p => p.BindingId == "b1");
+        Assert.NotEqual("failed", row.State);
+        Assert.Null(second.Sync.FailedProject);
+        Assert.DoesNotContain("failed to sync", second.Sync.StalenessSummary, StringComparison.Ordinal);
+        Assert.Equal(exportsBefore, toolchain.Jobs.Count(j => j.Operation == Versio.Core.Plc.PlcOperation.Export));
+        Assert.Contains(sink.Snapshot(), e =>
+            e.Message.Contains("failure is dropped", StringComparison.Ordinal));
     }
 
     [Fact]
