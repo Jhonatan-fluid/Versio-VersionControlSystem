@@ -41,7 +41,7 @@ places that HTML.
      the diff, layout, tree, tables,       TryParseLibraryCatalog, TryParseTask,
      catalogs, cards; SafeXml              TryParseDeviceCatalog, HoldsNoSettings, SectionsFor
    Versio.Infrastructure (vendor-neutral)
-     RollingFileSink, SystemClock, RepoConfigStore.Parse
+     RollingFileSink, SystemClock
          │
          ▼
  GitHub ───────────────────────────────────────────────────────────────────────────────────
@@ -83,7 +83,7 @@ the project file, the IL and every vendor reference (section 7).
 | `PullWriteEndpoints.cs` | **Pull request review, write side** (slices 2–4): `/comments`, `/line-comments`, `/anchor-comments` (a drawn element by its anchor id: re-rendered, resolved and tagged by the server, posted at the element's own lines inside GitHub's hunks or on the file), `/threads/{id}/replies`, `/threads/{id}/resolve`, `PATCH /comments/{id}`, `/comments/{id}/delete`, `/markdown` (preview); reviews (C2): `/reviews` (one call with `commit_id` = the snapshot's head), `/reviews/pending/threads` (a draft, into the viewer's pending review on the head, created with `commitOID` the first time), `/reviews/{id}/submit`, `/reviews/{id}/submit-historical` (an older pending review, for the commit the request names), `/reviews/{id}/discard`, `/reviewers`, `/viewed`; metadata (slice 5, `PullMetaEndpoints.cs`, the same partial class): `/edit` (title, description, base — each naming what it replaces), `/state`, `/draft`, `/labels`, `/assignees`, and `POST /api/repos/{owner}/{repo}/pulls` (open one, through `RunWithoutSnapshotAsync`: no pull request, so no snapshot), with `POST /api/repos/{owner}/{repo}/markdown` previewing the form's description the same way the review's `/markdown` does, and `POST /api/repos/{owner}/{repo}/commits/{sha}/comments` (Step 3b, the same way: a commit is its own revision, named by its full sha and resolved first; settled by the viewer's tagged comment on that commit); the merge tier (slice 6, `PullMergeEndpoints.cs`, each marked `MergeEndpoint`, which `WriteGate` answers 404 for unless `Web:Writes:Merge`): `/merge` (`sha` = the snapshot's head, only in a `mergeStateStatus` anyone may merge in), `/update-branch` (`expected_head_sha`; or `method: REBASE` through `updatePullRequestBranch`, whose lost answer stays unknown since a rebase leaves nothing to recognise), `/auto-merge` (`expectedHeadOid`), and from Step 6 `/delete-branch` (after a merge or a close, this repository's branch only, refused unless its tip is still the pull request's head — GitHub's ref delete has no expected commit, so the moment between that read and the delete stays open, said on the button), `/restore-branch` (at that head), `/merge-queue` (in with `expectedHeadOid`, or out; only where the base has a queue); the rest of GitHub's page (FINISH.md Step 5): `/reviews/{id}/dismiss` (an approval or request for changes, with its reason), `PATCH /reviews/{id}` (the viewer's own submitted summary), teams by slug on `/reviewers` (`addTeams` / `removeTeams`, which is also "re-request"); `PullConversationWriteEndpoints.cs`: `/reactions` (a comment, a review or the pull request's own node — S7 checked for all four kinds), `/comments/{id}/minimize` (a reason, or null to show again), `/lock`, `/milestone` (one the repository has, as labels), `/subscription`; `PullSuggestionEndpoints.cs` (merge tier): `/suggestions/apply` — the ```suggestion blocks of one or several review comments (`Review/Suggestions.cs`: the first fence; applied bottom-up with the file's own line endings kept) committed as ONE `createCommitOnBranch` whose `expectedHeadOid` is the reviewed head, refused for an outdated thread, an old-side one, overlapping lines or a fork's branch, and settled after a lost answer by the live head's parent and the operation tag in its message. `MapWrite` marks each; `WriteGate` (middleware, before any body is read) applies the kill switch, the forgery checks, the body cap and person-only access; `Writes.RunAsync` takes each through snapshot, operation key, reservation, preconditions (node scope, GitHub's hunks, staleness), the call, and the record — reconciling, never retrying, an unknown outcome |
 | `Documents.cs` | What the Documentation tab serves raw, and how: the extension allowlist, the content type chosen by us, inline for PDF alone. The self-XSS reasoning is on the class; the threat row is in THREAT-MODEL (Tampering) |
 | **`Repo/`** | |
-| `RepoModel.cs` | `RepoModelLoader` turns one commit into a `RepoModel`: GitHub's file list, `.versio/repo.json`'s bindings, each export's `_manifest.json`, each project's library, task and device catalogs, any File-Based Storage source project, then `RepoExplorerBuilder`. Cached per repository and commit; concurrent loads of one commit share one; each blob fetched once. `NodeFor(path)` is an index; `Objects` is Core's `ObjectIndex`, for type links |
+| `RepoModel.cs` | `RepoModelLoader` turns one commit into a `RepoModel`: GitHub's file list, then Core's `ProjectSnapshotLoader` (since 2026-10-27; it was this class's own code) reads `.versio/repo.json`'s bindings, each export's `_manifest.json`, each project's library, task and device catalogs and any File-Based Storage source project through a blob reader, then `RepoExplorerBuilder`. Cached per repository and commit; concurrent loads of one commit share one; each blob fetched once. `NodeFor(path)` is an index; `Objects` is Core's `ObjectIndex`, for type links |
 | `SingleFlight.cs` | Concurrent requests for the same key share one piece of work (model loads, visibility checks, branch resolution) |
 | **`Review/`** | |
 | `ReviewSnapshot.cs` | `ReviewSnapshot` (base tip, merge-base, head, issued, viewer) and `ReviewSnapshots`, which seals it with Data Protection and opens it only for the same repository, pull request and viewer, within 8 hours. Integrity, never access |
@@ -154,7 +154,8 @@ the project file, the IL and every vendor reference (section 7).
 | `src/Versio.Core/Iec/Ladder/LadderHtml.cs` (changed) | Takes an optional `LadderWording`; the desktop's text by default |
 | `src/Versio.Core/Projects/ProjectTreeBuilder.cs` (changed) | `ProjectTreeNode.PrimaryFile`, moved from the desktop's `TreeRow`; which layer is code comes from `PlcFormats.LanguageFor`, never a list of extensions (the list held Siemens' `.scl` and `.udt` until a review found them) |
 | `src/Versio.Core/Plc/PlcFormats.cs` (changed) | `LanguageFor`: a vendor's `SyntaxFor`, else the neutral catalog. The desktop's highlighter, its layer labels, the tree and the web viewer all ask it |
-| `src/Versio.Infrastructure/Bindings/RepoConfigStore.cs` (changed) | `Parse(string)`, the store's own reader of `repo.json` |
+| `src/Versio.Core/Bindings/RepoConfigJson.cs` (2026-10-27; was `RepoConfigStore.Parse` in Infrastructure) | `Parse(string)`, the one reader of `repo.json`'s text and the options the desktop store writes with; the store forwards to it |
+| `src/Versio.Core/Projects/ProjectSnapshot.cs` (2026-10-27; was `RepoModelLoader`'s own reading) | `ProjectSnapshotLoader.LoadAsync(files, reader, …)`: `repo.json`, manifests, catalogs and source projects at one version, for any host that can answer "the text of this path" — GitHub's blobs here, `git show` in the desktop's History panel |
 | `src/Versio.Core/Logging/LogEvent.cs` (changed) | `LogCategory.Web` and `LogCategory.Auth` |
 
 ### Tests
@@ -187,8 +188,8 @@ Opening `/acme/plant/blob/main/Device/Plc%20Logic/Application/Signals.xml`:
 4. **Commit.** `IRepoSource.ResolveCommitAsync` turns `main` into a SHA **with that
    credential**. Only now is any cache consulted.
 5. **Model.** `RepoModelLoader.LoadAsync` (cached per repository and commit): tree →
-   `repo.json` → manifests → `RepoExplorerBuilder.Build`. The same call builds the tree the
-   page shows.
+   Core's `ProjectSnapshotLoader` (`repo.json` → manifests → catalogs, through the blob
+   reader) → `RepoExplorerBuilder.Build`. The same call builds the tree the page shows.
 6. **View.** `ViewService.ViewAsync`: `NodeFor(path)` finds the `Signals` object and its
    layers; every layer's blob is read (cached by hash); Core's `RenderChoice.Decide` is handed
    the reader and asks each registered format `TryParseMemberTable` over each layer. Signals
@@ -236,7 +237,8 @@ run the same code. Everything below is **called, not copied**.
 | What | From → to |
 |---|---|
 | Which layer a pane opens | `TreeRow.PrimaryFile` (WPF view model) → `ProjectTreeNode.PrimaryFile` (Core); `TreeRow` delegates |
-| Reading `repo.json` | `RepoConfigStore.LoadAsync` internals → `RepoConfigStore.Parse(string)` |
+| Reading `repo.json` | `RepoConfigStore.LoadAsync` internals → `RepoConfigStore.Parse(string)` → Core's `RepoConfigJson.Parse` (2026-10-27, so the History panel can read a commit's copy too) |
+| Reading a project at a commit | `RepoModelLoader`'s manifest-and-catalog walk → Core's `ProjectSnapshotLoader` (2026-10-27), which the desktop's History panel now calls over `git show` |
 
 ### New in Core, ready for the desktop to adopt
 
