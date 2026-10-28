@@ -2386,9 +2386,12 @@ that row; reverting the fix fails both of its tests.
 
 The history list has its own template now. The glyph and its colour still come from
 `ChangeGlyph`, which is where that decision actually lives — what is no longer shared is the
-object surface. And a commit's files stay *paths* on purpose: the object index describes the
+object surface. ~~And a commit's files stay *paths* on purpose: the object index describes the
 **current** export, so naming a historical path from it would put today's name on yesterday's
-file.
+file.~~ — Struck 2026-10-28: the objection stands and the rows are named from the manifest as
+it was in that commit (FINDINGS, *The history panel named nothing, and its reason was half
+right*); the own-template rule stands too, and the history now carries its own copy of the
+Explorer's `TreeRow` template for exactly the reason above.
 
 ### Two things worth knowing before the next phase
 

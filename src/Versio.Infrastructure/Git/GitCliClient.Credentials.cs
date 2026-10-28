@@ -216,34 +216,43 @@ public sealed partial class GitCliClient
 
     /// <summary>A file's content as HEAD has it, or empty when HEAD has no such file.</summary>
     /// <remarks>
+    /// <see cref="ShowAtCommitAsync"/> at <c>HEAD</c>; one implementation, so the two cannot
+    /// disagree about the path form or what a failure means.
+    /// </remarks>
+    public Task<string> ShowAtHeadAsync(string path, CancellationToken ct) =>
+        ShowAtCommitAsync("HEAD", path, ct);
+
+    /// <summary>A file's content as one commit has it, or empty when that commit has no such file.</summary>
+    /// <remarks>
     /// <para>
-    /// <b><c>HEAD:./path</c> rather than <c>HEAD:path</c>.</b> Without the <c>./</c> git treats
-    /// the argument as relative to the repository root only by luck of the working directory,
-    /// and a leading component that happens to match a revision name is ambiguous. The explicit
-    /// form is what makes the path a path.
+    /// <b><c>&lt;commit&gt;:./path</c> rather than <c>&lt;commit&gt;:path</c>.</b> Without the
+    /// <c>./</c> git treats the argument as relative to the repository root only by luck of the
+    /// working directory, and a leading component that happens to match a revision name is
+    /// ambiguous. The explicit form is what makes the path a path.
     /// </para>
     /// <para>
     /// <b>Not trimmed, unlike every other reader here — but not byte-exact either.</b>
     /// <see cref="RunAsync"/> reassembles stdout from <c>OutputDataReceived</c> line events,
     /// appending <c>'\n'</c> per line, so CRLF content comes back LF and a file without a
     /// final newline is indistinguishable from one with it. Every caller today is line-based
-    /// (the catalog baselines, the merged-diff builder) and the mirror is committed
-    /// <c>eol=lf</c> with a final newline, so nothing observes the difference — but a future
-    /// <i>byte</i> comparison against a recorded hash must not be built on this method: it
-    /// would mismatch on exactly those two shapes for a reason that has nothing to do with
-    /// the file. That comparison needs <c>git show</c> with raw byte capture, which nothing
-    /// has needed yet.
+    /// (the catalog baselines, the merged-diff builder, the History panel's snapshot and marks)
+    /// and the mirror is committed <c>eol=lf</c> with a final newline, so nothing observes the
+    /// difference — but a future <i>byte</i> comparison against a recorded hash must not be
+    /// built on this method: it would mismatch on exactly those two shapes for a reason that
+    /// has nothing to do with the file. That comparison needs <c>git show</c> with raw byte
+    /// capture, which nothing has needed yet.
     /// </para>
     /// <para>
-    /// A missing path, an empty repository and a mirror that was never committed all exit
-    /// non-zero and all mean the same thing to the caller: there is no old copy. Reported as
-    /// empty rather than thrown, because for the caller it is an ordinary answer.
+    /// A missing path, an empty repository, a revision that does not resolve (a root commit's
+    /// <c>^</c>) and a mirror that was never committed all exit non-zero and all mean the same
+    /// thing to the caller: there is no copy at that version. Reported as empty rather than
+    /// thrown, because for the caller it is an ordinary answer.
     /// </para>
     /// </remarks>
-    public async Task<string> ShowAtHeadAsync(string path, CancellationToken ct)
+    public async Task<string> ShowAtCommitAsync(string commit, string path, CancellationToken ct)
     {
         var result = await RunAsync(
-            ["show", $"HEAD:./{path.Replace('\\', '/')}"], null, ct, TimeSpan.FromSeconds(15))
+            ["show", $"{commit}:./{path.Replace('\\', '/')}"], null, ct, TimeSpan.FromSeconds(15))
             .ConfigureAwait(false);
 
         return result.Success ? result.StdOut : string.Empty;

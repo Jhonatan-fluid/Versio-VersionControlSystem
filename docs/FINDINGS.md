@@ -19,6 +19,144 @@ produce a diff touching everything else.
 
 ---
 
+### The history panel named nothing, and its reason was half right
+
+**2026-10-27 → 28, on `HistoryRendering`.** The user: "the commit history just shows raw files
+right now, nothing shows in project format, or with the project detection. It needs to render
+completely" — like the Explorer and the changed-files list, and showing *what changed in that
+commit*. A commit expanded to bare paths (`CommitFileRow`), and a click showed a raw git patch
+(`ShowCommitFileAsync`), while every other tree in the app drew object names, type chips,
+vendor pills and a Rendered pane with amber / green / struck marks.
+
+**The reason was recorded, and it was right.** `HistoryPanelView.xaml`, GP-J and the entry
+below (*A commit's files stay paths, deliberately*): the object index describes the *current*
+export, so naming a historical path from it would put today's name on yesterday's file. What
+was wrong was the conclusion. The answer was never to name nothing; it was to read
+**yesterday's manifest**. The web viewer had been doing exactly that since 2026-10-11
+(`RepoModelLoader`: GitHub's tree, `repo.json`, each manifest and catalog at the commit), and
+nothing on the desktop called it because it lived in `Versio.Web`.
+
+**What was built**, six commits, each with its mutation check:
+
+- `ProjectSnapshotLoader` in Core (`src/Versio.Core/Projects/ProjectSnapshot.cs`): the web's
+  manifest-and-catalog walk over a file list and a reader, with `repo.json`'s parse
+  (`RepoConfigJson`) moved out of the Infrastructure store so Core can reach it. The web passes
+  its blob fetch; the desktop passes `git show`. The web's behaviour is unchanged (504/504,
+  every problem wording the same).
+- Two `IGitClient` primitives: `ListTreeAsync` (`ls-tree -r -z --name-only`, the working-tree
+  parser's NUL contract) and `ShowAtCommitAsync` (`<commit>:./path`; `ShowAtHeadAsync` is now
+  that at `HEAD`, one implementation). A root commit's `^` reads as empty, never a throw.
+- The History panel reads a commit as a project on expand (`HistoryViewModel.BuildSnapshotAsync`):
+  `ls-tree`, `name-status`, the loader, then `RepoExplorerBuilder` with the commit's changes,
+  changed-only — the same builder, the same `TreeRow`, a third copy of the Explorer's row
+  template (a shared template is the exact shape of the GP-J regression). The commit rides on
+  the row (`TreeRow.Context`), because a row realised three levels down cannot otherwise say
+  which commit it belongs to. A task cache so a card click and an expand share one read; a
+  failed read is a row that says so and re-arms, where "…" used to stay for the session.
+- The Rendered pane at the commit (`ShowCommitNodeAsync`): the one real refactor. Every one of
+  the five mark methods read HEAD and the disk *by name*; `PaneSources` (baseline, current, a
+  name for the log) now goes through all five and `RenderInputs` (reader, index, what changed)
+  through `BuildRenderedContent` and `LinkTypes`. The working tree passes what it always did; a
+  commit passes itself and its first parent, and its own index. `StartMarking` is one method
+  for both routes. A deleted object is drawn from the parent's copy with every member, line
+  and network struck (`StruckOut`) — the web viewer's rule — rather than compared with itself.
+- Deleted objects keep their names (`WithDeletedObjectsAsync`): the commit's manifest no longer
+  lists them, so the parent's is read for exactly those paths — one extra read per binding with
+  a deletion — and they draw as `FB_Motor · POU`, struck, not `App/FB_Motor.st`.
+- The commit heading counts by the commit's index, not today's: a block edited in one commit
+  and deleted since is "1 POU changed in Machine", not "1 other file".
+
+**Measured**, by the tests that hold the counts: expanding a commit costs `1 ls-tree +
+1 name-status + 1 show per config, manifest and catalog [+ 1 parent manifest per binding with a
+deletion]` — four spawns on the fixture, five with a deletion, two on a repository with no
+`repo.json`; nothing per changed file. A click costs the object's layers at the commit (one or
+two), the same at the parent, and the patch.
+
+**Rejected.** `cat-file --batch` for O(1) reads: its size-framed output cannot survive the CLI
+runner's line reassembly (the remark on `ShowAtCommitAsync`). The whole project at a commit by
+default: the question a commit answers is what it touched; the whole tree is the same snapshot
+with `ChangedOnly` off. A loader that also built the tree: the desktop needs the commit's
+changes and changed-only, the web the plain tree. Keeping the name `RepoSnapshot`: Core's
+`Bindings` already has one (the orphan scanner's), found by the compiler.
+
+**What the mutations proved.** Deleting `History.TreeSelected +=` in the shell turned
+`HistoryTreeFlowTests` red; wiring the commit route to the working-tree sources turned both
+parent-baseline tests red; counting the heading against `Sync.Objects` again turned the heading
+test red. Each was restored, touched and rebuilt before the next run, as the 2026-10-10 lesson
+says.
+
+**The web viewer's half** — one section per object on `/commit/<sha>`, an object's history
+over every layer — was built in its own session on `claude/inspiring-kowalevski-25da44` (six
+commits, the entry below this one) and merged into `HistoryRendering` on 2026-10-28: the code
+merged clean, since the two halves share only Core's loader and the web branch forked before
+it; the three documents both sides wrote (this file, STATUS, the web ARCHITECTURE) conflicted
+and were reconciled by hand, keeping both entries. Web 508 and vitest 216 re-run on the merged
+tree. **Left as it is.**
+`DeviceTreeFlowTests` went red once in a full App run after the reader seam landed, green alone
+and in a 74-test pane-flow run; the message was not captured, and the class is on the watch
+list with the catch-up waits.
+
+---
+
+### The commit page drew one section per layer file, and an object's history covered one layer
+
+**2026-10-27, the web viewer, found while bringing commit history to the project format the
+Code and Compare views already draw in.** Two gaps with one cause: the commit and history
+routes never looked at the project model.
+
+**The commit page.** `GET /commit` called `source.GetCommitAsync` and nothing else, so it had
+no `RepoModel.NodeFor` and answered GitHub's raw file list; `CommitPage.tsx` mapped that list to
+one section per file. A GVL edited in its native XML was a section headed by `…/Glob_Var.gvl.xml`
+with no object name, no type chip, no vendor pill, and the manifest sat between it and the next
+object as a third section — while the marked tree in the sidebar, built from the same two
+commits, drew the object once with its marks. The tree's pick scrolled to `file-<primary file>`,
+and when only the XML had changed no section had that id, so the click did nothing.
+
+**History.** GitHub's list-commits takes one `path`, and `/history` passed the page's path
+through, so an object's history was one layer's: the XML-only commit above was absent from the
+history of the GVL whose readable file the page had asked about. The fake GitHub ignored `path`
+altogether, so no server test could have seen it.
+
+**What was built.** `Repo/TouchedObjects.cs`: `ObjectFor` (the newer-then-older `NodeFor`
+expression that `/compare` and `/pulls/{n}/files` each carried a copy of), `Marked` (the `/tree`
+base block, extracted), and `Group`, which regroups GitHub's list as one entry per object with
+every layer, the touched ones flagged, drawn from the primary file when the commit touched it
+and from the first touched layer otherwise, the status read off the marked tree's row. `/commit`
+loads the commit and its first parent (the page's own `/tree?base=` loads the same two, cached
+by commit) and answers `objects`; a failed load keeps the card and says why in
+`objectsUnavailable`. `/history?path=` looks the node up at the ref and lists each of its files,
+bounded at four, merged by sha with `touched`. The page: one section per object under
+`ChangeSectionHead.tsx`, the header the review's `FileSection` now shares, with a chip per layer;
+the commits page names the object and marks each row's touched files; the review's Commits tab
+links to the commit page.
+
+**The double pass, twice.** The mutation check for the parent-side fallback in `ObjectFor` was
+toothless at first: the test's deleting commit removed the POU's file but left its manifest
+entry, so the commit's own index still found the object and the fallback could be deleted green.
+An export removes both, and once the test did too, the mutant turned the removed POU into a
+nameless file. The same pass found that a removed object is a struck *file* row in the marked
+tree (its manifest entry is gone), at the object's own path — so the row index covers every
+non-folder row, and a test pins that every object entry's key is a tree row with the same status.
+
+**The look (the fixture preview, `VERSIO_WEB_PREVIEW=1`).** One section per object with chip,
+pill and folder; the tree pick scrolled to the section's id and lit it — and the section stayed
+on "Drawing the file…", because `near` was seeded from `active` at mount only and the observer
+never fires in a pane that does not scroll. An active section is now asked for at once. The
+preview's three changed objects were all one-layer, so it gained branch `history`, one commit
+that edits only Glob_Var's native XML: one section, the `.xml` chip lit and marked M, the `.st`
+chip switching the drawing (both requests in the log), and the object's history page naming
+both layers with the XML-only commit touching one. The server log carries one line per request:
+`commit … 1 files as 1 objects and 0 plain files`, `history … 2 commits over 2 list(s) of Glob_Var`.
+
+**Rejected.** A `GetCommitAsync` per history row for `touched` without a path (fifty GitHub
+calls per page load for a column the commit's page answers; `touched` is empty there, and says
+so). A folder path to GitHub's list-commits (pulls every sibling object's commits in). Building
+the tree inside `/commit`'s answer (the page already loads it, and the sidebar must agree with the
+sections, not duplicate them). Moving `ProjectTreeBuilder.Stronger` out of Core or restating it in
+the web (the status is read off the row the tree built, so the two cannot disagree).
+
+---
+
 ### The first real update downloaded with nothing on screen; the update overlay
 
 **2026-10-27, night, the owner's own installed 0.4.9.** The first end-to-end update worked, and
@@ -7979,9 +8117,11 @@ its colour still come from `ChangeGlyph`, which is where that decision actually 
 `HistoryRowChromeTests` builds a commit file row and reads it. Reverting the template fails both
 of its tests.
 
-**A commit's files stay paths, deliberately.** Naming them from the object index was tempting and
+~~**A commit's files stay paths, deliberately.** Naming them from the object index was tempting and
 is wrong: the index describes the *current* export, so a renamed object would put today's name
-on yesterday's file.
+on yesterday's file.~~ — Since 2026-10-28 the rows are named from the manifest *as it was in that
+commit*, which is what the objection was asking for all along; see *The history panel named
+nothing, and its reason was half right* at the top of this file.
 
 ### The same repository, twice in the dropdown, because git and Windows spell paths differently
 

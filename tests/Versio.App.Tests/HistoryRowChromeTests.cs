@@ -4,6 +4,7 @@ using Versio.App.ViewModels;
 using Versio.App.Views;
 using Versio.Core.Git;
 using Versio.Core.Logging;
+using Versio.Core.Projects;
 using Versio.Infrastructure.Platform;
 using Xunit;
 
@@ -86,9 +87,16 @@ public sealed class HistoryRowChromeTests
         });
     }
 
+    /// <summary>A row of a commit's tree, with the commit hung on it, as the panel builds them.</summary>
+    private static TreeRow Row(CommitRow commit, ProjectTreeNode node) =>
+        new(node, 0, expansion: null, context: new CommitTreeContext(commit,
+            new CommitSnapshot(commit.Id, commit.ShortId, new ProjectSnapshot([], [], false, []), [], [], 0)));
+
     [Fact]
-    public void A_realised_commit_file_row_shows_its_path()
+    public void A_realised_commit_file_row_shows_its_path_and_its_letter()
     {
+        // A loose file - a document, a script - is drawn as its path in the mono face, with
+        // the commit's letter before it, exactly as the Explorer draws a loose file.
         StaHarness.Run(() =>
         {
             var (window, shell) = Build();
@@ -99,10 +107,13 @@ public sealed class HistoryRowChromeTests
 
             var commit = Commit();
             commit.Children.Clear();
-            commit.Children.Add(new CommitFileRow(commit, new CommitFile
+            commit.Children.Add(Row(commit, new ProjectTreeNode
             {
-                Path = "plc/Machine/App/FB_Motor.st",
-                Kind = ChangeKind.Modified,
+                Name = "README.md",
+                Path = "README.md",
+                Kind = ProjectNodeKind.File,
+                Status = ChangeKind.Modified,
+                Files = ["README.md"],
             }));
             commit.IsExpanded = true;
 
@@ -117,25 +128,26 @@ public sealed class HistoryRowChromeTests
             var panel = Assert.IsAssignableFrom<FrameworkElement>(
                 window.FindName("HistoryPanel"));
             var texts = AllOf<TextBlock>(panel)
-                .Where(t => t.DataContext is CommitFileRow)
+                .Where(t => t.DataContext is TreeRow)
                 .Select(t => t.Text)
                 .ToList();
 
             // THE ASSERTION THE REGRESSION WOULD HAVE FAILED. Every row rendered blank.
-            Assert.Contains("plc/Machine/App/FB_Motor.st", texts);
+            Assert.Contains("README.md", texts);
 
-            // And the glyph is still there, still coloured by ChangeGlyph - the part that was
-            // always worth sharing between the two panels.
+            // And the glyph is still there, the same letter and brush as everywhere else.
             Assert.Contains("M", texts);
         });
     }
 
     [Fact]
-    public void A_commit_file_row_never_renders_an_object_chip_or_a_lock()
+    public void A_commit_object_row_renders_its_name_and_type_chip_and_no_lock()
     {
-        // A CommitFileRow is a path, not an object. Any control here bound to GP-J's object
-        // surface is a control bound to a property that does not exist - which renders as
-        // nothing, or worse, as a lock glyph on every row in the panel.
+        // The row that was deliberately a bare path until 2026-10-27: an object, named and
+        // typed from the manifest as it was in that commit. Any control here bound to a property
+        // the row lacks renders as nothing, or worse, as a lock glyph on every row in the panel -
+        // the GP-J regression this file exists for - so the name, the chip and the letter are all
+        // asserted present, and every visible text under the row non-empty.
         StaHarness.Run(() =>
         {
             var (window, shell) = Build();
@@ -145,10 +157,15 @@ public sealed class HistoryRowChromeTests
 
             var commit = Commit();
             commit.Children.Clear();
-            commit.Children.Add(new CommitFileRow(commit, new CommitFile
+            commit.Children.Add(Row(commit, new ProjectTreeNode
             {
-                Path = "README.md",
-                Kind = ChangeKind.Added,
+                Name = "FB_Motor",
+                Path = "plc/Machine/App/FB_Motor.st",
+                Kind = ProjectNodeKind.Object,
+                Type = "POU",
+                TypeName = "POU",
+                Status = ChangeKind.Added,
+                Files = ["plc/Machine/App/FB_Motor.st"],
             }));
             commit.IsExpanded = true;
             shell.History.Commits.Add(commit);
@@ -162,24 +179,22 @@ public sealed class HistoryRowChromeTests
             var panel = Assert.IsAssignableFrom<FrameworkElement>(
                 window.FindName("HistoryPanel"));
 
-            var texts = AllOf<TextBlock>(panel)
-                .Where(t => t.DataContext is CommitFileRow)
-                .Select(t => t.Text)
+            var blocks = AllOf<TextBlock>(panel)
+                .Where(t => t.DataContext is TreeRow)
                 .ToList();
+            var texts = blocks.Select(t => t.Text).ToList();
 
-            // The glyph and the path are both there...
+            // The letter, the name and the type chip are all there...
             Assert.Contains("A", texts);
-            Assert.Contains("README.md", texts);
+            Assert.Contains("FB_Motor", texts);
+            Assert.Contains("POU", texts);
 
-            // ...and the lock glyph GP-J added is NOT, which is the symptom that gave the
-            // regression away: a failed Visibility binding leaves an element Visible, so every
-            // row in this panel wore a lock.
-            //
-            // Asserted on text rather than on Borders because a TreeViewItem's own chrome
-            // carries the row's DataContext too — "no visible Border under a CommitFileRow"
-            // matches the container and proves nothing, and neither does an empty TextBlock:
-            // the container has one of those too.
-            Assert.DoesNotContain("", texts);
+            // ...and nothing is drawn from a binding the row does not have. The Explorer's
+            // template this one copies binds nothing a TreeRow lacks; the proof is that every
+            // VISIBLE TextBlock under the row has text. The pill and the badge keep their empty
+            // text behind a collapsed Border, which is the design, not a failed binding - and
+            // the lock glyph of the GP-J regression is not a text this template can draw at all.
+            Assert.All(blocks.Where(b => b.IsVisible), b => Assert.NotEqual("", b.Text));
         });
     }
 

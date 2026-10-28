@@ -59,6 +59,12 @@ public sealed class RemotePollerTests
         public Task<string> ShowAtHeadAsync(string path, CancellationToken ct) =>
             Task.FromResult(string.Empty);
 
+        public Task<string> ShowAtCommitAsync(string commit, string path, CancellationToken ct) =>
+            throw new NotSupportedException();
+
+        public Task<IReadOnlyList<string>> ListTreeAsync(string commit, CancellationToken ct) =>
+            throw new NotSupportedException();
+
 
         /// <summary>What the forge's request refs come back as.</summary>
         public string RequestRefs { get; set; } = string.Empty;

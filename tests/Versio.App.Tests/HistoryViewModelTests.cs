@@ -90,17 +90,17 @@ internal sealed class CountingGitClient : IGitClient
         return Task.FromResult(page);
     }
 
+    /// <summary>What every commit changed. Settable for the one test that needs an object's path.</summary>
+    public IReadOnlyList<CommitFile> Files { get; set; } =
+    [
+        new() { Path = "a.st", Kind = ChangeKind.Modified },
+        new() { Path = "b.st", Kind = ChangeKind.Added },
+    ];
+
     public Task<IReadOnlyList<CommitFile>> CommitFilesAsync(string commit, CancellationToken ct)
     {
         FileCalls.Add(commit);
-
-        IReadOnlyList<CommitFile> files =
-        [
-            new() { Path = "a.st", Kind = ChangeKind.Modified },
-            new() { Path = "b.st", Kind = ChangeKind.Added },
-        ];
-
-        return Task.FromResult(files);
+        return Task.FromResult(Files);
     }
 
     public Task<string> CommitFileDiffAsync(
@@ -194,6 +194,31 @@ internal sealed class CountingGitClient : IGitClient
         throw new NotSupportedException();
     public Task<string> ShowAtHeadAsync(string path, CancellationToken ct) =>
         Task.FromResult(string.Empty);
+
+    /// <summary>What every commit's tree lists. One tree for all commits: the tests here are
+    /// about how often git is asked, not about what differs between commits.</summary>
+    public IReadOnlyList<string> Tree { get; set; } = ["a.st", "b.st"];
+
+    /// <summary>A file's text at a commit, keyed <c>"&lt;commit&gt;:&lt;path&gt;"</c>; anything else reads as empty.</summary>
+    public Dictionary<string, string> Blobs { get; } = new(StringComparer.Ordinal);
+
+    /// <summary>Every commit whose tree was listed, in order. Counted for the reason FileCalls is.</summary>
+    public List<string> TreeCalls { get; } = [];
+
+    /// <summary>Every <c>(commit, path)</c> read, in order: the count the snapshot's budget holds still.</summary>
+    public List<(string Commit, string Path)> BlobCalls { get; } = [];
+
+    public Task<IReadOnlyList<string>> ListTreeAsync(string commit, CancellationToken ct)
+    {
+        TreeCalls.Add(commit);
+        return Task.FromResult(Tree);
+    }
+
+    public Task<string> ShowAtCommitAsync(string commit, string path, CancellationToken ct)
+    {
+        BlobCalls.Add((commit, path));
+        return Task.FromResult(Blobs.TryGetValue($"{commit}:{path}", out var text) ? text : string.Empty);
+    }
 
 
     public Task<GitResult> SignInAsync(string protocol, string host, CancellationToken ct)
@@ -469,19 +494,109 @@ public class HistoryViewModelTests
 
     /// <summary>A collapsed commit costs nothing beyond the row itself.</summary>
     [Fact]
-    public void A_commits_files_are_not_read_until_it_is_expanded()
+    public void A_commits_tree_is_not_read_until_it_is_expanded()
     {
         var git = new CountingGitClient();
         var history = Attached(git);
         history.IsVisible = true;
 
+        Assert.Empty(git.TreeCalls);
         Assert.Empty(git.FileCalls);
 
         history.Commits[0].IsExpanded = true;
 
+        // One listing, one name-status, and - with no repo.json in this tree - no file read
+        // at all: a repository that is not set up for Versio costs two spawns per commit.
+        Assert.Equal(history.Commits[0].Id, Assert.Single(git.TreeCalls));
         Assert.Equal(history.Commits[0].Id, Assert.Single(git.FileCalls));
-        Assert.Equal(["a.st", "b.st"], history.Commits[0].Children.Select(c => c.Path));
+        Assert.Empty(git.BlobCalls);
+        Assert.Equal(["a.st", "b.st"], history.Commits[0].Children.OfType<TreeRow>().Select(r => r.Node.Path));
     }
+
+    /// <summary>
+    /// A commit with a repo.json names its rows from the manifest AS OF THAT COMMIT.
+    /// </summary>
+    /// <remarks>
+    /// The rows were bare paths until 2026-10-27, because naming them from today's index would
+    /// put today's name on yesterday's file. The fix reads yesterday's manifest, and this holds
+    /// the two things that make it right: the name and type come from the blob read at the
+    /// commit's own id, and the read costs exactly the config and the manifest - never the
+    /// objects, never the README.
+    /// </remarks>
+    [Fact]
+    public void Expanding_a_versio_commit_reads_the_manifest_at_that_commit()
+    {
+        var git = new CountingGitClient
+        {
+            Tree = [".versio/repo.json", "README.md", "plc/Machine.project", "plc/Machine/_manifest.json", "plc/Machine/App/FB_Motor.st"],
+            Files = [new CommitFile { Path = "plc/Machine/App/FB_Motor.st", Kind = ChangeKind.Modified }],
+        };
+        var history = Attached(git);
+        history.IsVisible = true;
+        var commit = history.Commits[0];
+        git.Blobs[$"{commit.Id}:.versio/repo.json"] =
+            """{ "schema": 1, "bindings": [ { "id": "abc123", "projectPath": "plc/Machine.project", "exportPath": "plc/Machine" } ] }""";
+        git.Blobs[$"{commit.Id}:plc/Machine/_manifest.json"] =
+            """
+            { "schema": 3, "bindingId": "abc123", "project": "Machine.project", "objectCount": 1,
+              "objects": [ { "guid": "g1", "name": "FB_Motor", "type": "POU", "form": "ST_DECL", "path": "App/FB_Motor.st" } ],
+              "skipped": [], "warnings": [] }
+            """;
+
+        commit.IsExpanded = true;
+
+        var rows = Flatten(commit.Children.OfType<TreeRow>()).ToList();
+        var motor = Assert.Single(rows, r => r.Name == "FB_Motor");
+        Assert.Equal(("POU", "M", "plc/Machine/App/FB_Motor.st"), (motor.TypeLabel, motor.Glyph, motor.Node.Path));
+        Assert.Same(commit, Assert.IsType<CommitTreeContext>(motor.Context).Commit);
+        Assert.Contains(rows, r => r.IsProject && r.Name == "Machine.project");
+        // Changed-only: the README the commit did not touch is not a row.
+        Assert.DoesNotContain(rows, r => r.Node.Path == "README.md");
+        Assert.Equal([(commit.Id, ".versio/repo.json"), (commit.Id, "plc/Machine/_manifest.json")], git.BlobCalls);
+    }
+
+    /// <summary>
+    /// A commit that deletes an object reads the parent's manifest once, and names the row from it.
+    /// </summary>
+    /// <remarks>
+    /// Without the parent the row is the bare path, struck - the one row in the tree with no
+    /// name, in the commit most worth reading. The read is bounded: one manifest, at the parent,
+    /// for the binding with the deletion, and nothing of the parent otherwise (the test above
+    /// holds the no-deletion budget).
+    /// </remarks>
+    [Fact]
+    public void A_commit_that_deletes_an_object_names_it_from_the_parents_manifest()
+    {
+        var git = new CountingGitClient
+        {
+            Tree = [".versio/repo.json", "plc/Machine.project", "plc/Machine/_manifest.json"],
+            Files = [new CommitFile { Path = "plc/Machine/App/FB_Motor.st", Kind = ChangeKind.Deleted }],
+        };
+        var history = Attached(git);
+        history.IsVisible = true;
+        var commit = history.Commits[0];
+        git.Blobs[$"{commit.Id}:.versio/repo.json"] =
+            """{ "schema": 1, "bindings": [ { "id": "abc123", "projectPath": "plc/Machine.project", "exportPath": "plc/Machine" } ] }""";
+        git.Blobs[$"{commit.Id}:plc/Machine/_manifest.json"] =
+            """{ "schema": 3, "bindingId": "abc123", "project": "Machine.project", "objectCount": 0, "objects": [], "skipped": [], "warnings": [] }""";
+        git.Blobs[$"{commit.Id}^:plc/Machine/_manifest.json"] =
+            """
+            { "schema": 3, "bindingId": "abc123", "project": "Machine.project", "objectCount": 1,
+              "objects": [ { "guid": "g1", "name": "FB_Motor", "type": "POU", "form": "ST_DECL", "path": "App/FB_Motor.st" } ],
+              "skipped": [], "warnings": [] }
+            """;
+
+        commit.IsExpanded = true;
+
+        var motor = Assert.Single(Flatten(commit.Children.OfType<TreeRow>()), r => r.Name == "FB_Motor");
+        Assert.Equal(("POU", "D", true), (motor.TypeLabel, motor.Glyph, motor.IsDeleted));
+        Assert.Equal(
+            [(commit.Id, ".versio/repo.json"), (commit.Id, "plc/Machine/_manifest.json"), ($"{commit.Id}^", "plc/Machine/_manifest.json")],
+            git.BlobCalls);
+    }
+
+    private static IEnumerable<TreeRow> Flatten(IEnumerable<TreeRow> rows) =>
+        rows.SelectMany(r => Flatten(r.Children).Prepend(r));
 
     /// <summary>
     /// Opening the same commit twice asks git once.
@@ -503,6 +618,7 @@ public class HistoryViewModelTests
         commit.IsExpanded = false;
         commit.IsExpanded = true;
 
+        Assert.Single(git.TreeCalls);
         Assert.Single(git.FileCalls);
     }
 
@@ -535,7 +651,7 @@ public class HistoryViewModelTests
         history.IsVisible = true;
 
         var picked = new List<string>();
-        history.FileSelected += row => picked.Add(row.Path);
+        history.TreeSelected += row => picked.Add(row.Node.Path);
 
         var commit = history.Commits[0];
 

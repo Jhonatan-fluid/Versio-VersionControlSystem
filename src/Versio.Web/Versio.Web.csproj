@@ -14,8 +14,8 @@
          Versio.Core and the three PURE vendor packs, and references no *.Infrastructure pack and
          no .Host, because nothing here may drive an IDE, start a process or clone. The pure packs
          are exactly the part that parses a vendor's files; that is all a viewer needs.
-         Versio.Infrastructure is vendor-neutral and is referenced for the rolling log file, the
-         system clock and the one reader of repo.json. -->
+         Versio.Infrastructure is vendor-neutral and is referenced for the rolling log file and
+         the system clock (repo.json's reader moved to Core on 2026-10-27). -->
   </PropertyGroup>
 
   <ItemGroup>

@@ -31,7 +31,17 @@ function byDay(commits: Commit[]): { day: string; commits: Commit[] }[] {
   return groups;
 }
 
-/** /owner/repo/commits/ref[/path]: GitHub's commits page — by day, each openable and comparable. */
+/** A layer's file name, for a chip. */
+function fileName(label: string): string {
+  return label.slice(label.lastIndexOf('/') + 1);
+}
+
+/**
+ * /owner/repo/commits/ref[/path]: GitHub's commits page — by day, each openable and comparable.
+ * With a path that is an object's, the OBJECT's history (2026-10-27): the heading names it and
+ * its files, a chip per file narrows the list to that one file, and each row says which of the
+ * files the commit touched when there is more than one.
+ */
 export function CommitsPage({ me }: { me: Me | null }) {
   const { owner = '', repo = '', ref = '', '*': path } = useParams();
   const location = useLocation();
@@ -40,12 +50,14 @@ export function CommitsPage({ me }: { me: Me | null }) {
   const branches = useAsync((s) => api.branches(owner, repo, s), [owner, repo]);
   // GitHub's /commits with no ref is the default branch's (review, 2026-10-24: it landed on NotFound).
   const refShown = ref || (info.state === 'ok' ? info.value.defaultBranch : '');
-  const commits = useAsync((s) => (refShown ? api.history(owner, repo, refShown, path || undefined, s) : new Promise<never>(() => {})), [owner, repo, refShown, path]);
+  const history = useAsync((s) => (refShown ? api.history(owner, repo, refShown, path || undefined, s) : new Promise<never>(() => {})), [owner, repo, refShown, path]);
   // Compare opens on the default branch against the ref shown, as from the repository page. It
   // first compared the ref with itself, which always opened on "no differences" (found in review).
   const defaultBranch = info.state === 'ok' ? info.value.defaultBranch : 'main';
   const signIn = me?.signInAvailable && !me.signedIn ? api.signInUrl(location.pathname) : null;
-  usePageTitle(path ? `History for ${path}` : `Commits · ${refShown}`, `${owner}/${repo}`);
+  const object = history.state === 'ok' ? history.value.object : null;
+  const layers = history.state === 'ok' ? history.value.layers : [];
+  usePageTitle(path ? `History for ${object ?? path}` : `Commits · ${refShown}`, `${owner}/${repo}`);
 
   return (
     <RepoLayout me={me} owner={owner} repo={repo} nav="commits" refName={refShown}>
@@ -56,18 +68,33 @@ export function CommitsPage({ me }: { me: Me | null }) {
           truncated={branches.state === 'ok' && branches.value.truncated}
           onPick={(r) => navigate(commitsUrl(owner, repo, r, path || undefined))}
         />
-        {path && <span className="text-muted">History for <code>{path}</code></span>}
+        {path && !object && <span className="text-muted">History for <code>{path}</code></span>}
+        {path && object && (
+          <span className="text-muted history-object" title={history.state === 'ok' ? history.value.objectLabel ?? undefined : undefined}>
+            History for <span className="text-bold">{object}</span> · {layers.length} file{layers.length === 1 ? '' : 's'}
+            {history.state === 'ok' && history.value.layersCut && <> (the first {layers.length} of them)</>}
+          </span>
+        )}
         <Link to={compareUrl(owner, repo, defaultBranch, refShown, path || undefined)} className="btn btn-small" style={{ marginLeft: 'auto' }}>
           <Icon name="diff" className="btn-icon" />
           <span className="btn-text">Compare</span>
         </Link>
       </div>
-      {commits.state === 'loading' && <Loading what="Reading the commits…" />}
-      {commits.state === 'error' && <ErrorPanel error={commits.error} signInUrl={signIn} />}
-      {commits.state === 'ok' && commits.value.length === 0 && <Blankslate icon="git-commit" heading="No commits here">Nothing has touched this path on this branch.</Blankslate>}
-      {commits.state === 'ok' && (
+      {path && object && layers.length > 1 && (
+        // A chip per file: the one asked about is lit; another opens that file's own history,
+        // which is one layer's list and says so by naming no object (a file is its own node).
+        <div className="layers" aria-label="Files of this object">
+          {layers.map((l) => (
+            <Link key={l.path} to={commitsUrl(owner, repo, refShown, l.path)} className={`chip${l.path === path ? ' is-on' : ''}`} title={l.label}>{fileName(l.label)}</Link>
+          ))}
+        </div>
+      )}
+      {history.state === 'loading' && <Loading what="Reading the commits…" />}
+      {history.state === 'error' && <ErrorPanel error={history.error} signInUrl={signIn} />}
+      {history.state === 'ok' && history.value.commits.length === 0 && <Blankslate icon="git-commit" heading="No commits here">Nothing has touched this path on this branch.</Blankslate>}
+      {history.state === 'ok' && (
         <ol className="commits">
-          {byDay(commits.value.slice(0, HistoryLimit)).map((group) => (
+          {byDay(history.value.commits.slice(0, HistoryLimit)).map((group) => (
             <li key={group.day + group.commits[0]!.sha}>
               <div className="commit-day">
                 <Icon name="git-commit" />
@@ -87,6 +114,10 @@ export function CommitsPage({ me }: { me: Me | null }) {
                           <Avatar login={c.author} size={16} />
                           <span className="text-bold">{c.author}</span>
                           <span>committed <RelativeTime when={c.when} /></span>
+                          {layers.length > 1 && c.touched.map((t) => {
+                            const label = layers.find((l) => l.path === t)?.label ?? t;
+                            return <span key={t} className="chip commit-touched" title={label}>{fileName(label)}</span>;
+                          })}
                         </div>
                       </div>
                       <div className="commit-side">
@@ -103,7 +134,7 @@ export function CommitsPage({ me }: { me: Me | null }) {
           ))}
         </ol>
       )}
-      {commits.state === 'ok' && commits.value.length > HistoryLimit && (
+      {history.state === 'ok' && history.value.commits.length > HistoryLimit && (
         <p className="text-muted" style={{ marginTop: 16 }}>The latest {HistoryLimit} commits. Older ones are on GitHub.</p>
       )}
     </RepoLayout>

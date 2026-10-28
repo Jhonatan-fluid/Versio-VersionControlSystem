@@ -38,11 +38,12 @@ public sealed class TreeRow : ObservableObject
     private bool _isSelected;
     private ProjectTreeNode _node;
 
-    public TreeRow(ProjectTreeNode node, int depth, TreeExpansion? expansion = null)
+    public TreeRow(ProjectTreeNode node, int depth, TreeExpansion? expansion = null, object? context = null)
     {
         _node = node;
         Depth = depth;
         _expansion = expansion;
+        Context = context;
 
         // Anything on the path to a change opens itself, and so does a project. Somebody who
         // had to expand five levels by hand to find the object they just edited would
@@ -59,6 +60,19 @@ public sealed class TreeRow : ObservableObject
 
     public ProjectTreeNode Node => _node;
 
+    /// <summary>
+    /// Which tree this row belongs to, when the node alone cannot say.
+    /// </summary>
+    /// <remarks>
+    /// The only identity a row has beyond its path. The Project and Explorer trees need none:
+    /// their rows are the working tree's, and the shell reads the disk. The History panel hangs
+    /// the commit on it (<c>CommitTreeContext</c>), because a row realised three levels down by
+    /// <see cref="Realised"/> cannot be told by anyone else which commit it belongs to — and the
+    /// shell, handed the row, must read the file at that commit rather than from disk.
+    /// Opaque here so this class stays what it is: a row, not a history row.
+    /// </remarks>
+    public object? Context { get; }
+
     /// <summary>This row's children, built the first time anything asks for them.</summary>
     /// <remarks>
     /// Observable so a later export can add and remove rows here without the level being
@@ -68,7 +82,7 @@ public sealed class TreeRow : ObservableObject
     public IReadOnlyList<TreeRow> Children => Realised;
 
     private ObservableCollection<TreeRow> Realised =>
-        _children ??= [.. _node.Children.Select(c => new TreeRow(c, Depth + 1, _expansion))];
+        _children ??= [.. _node.Children.Select(c => new TreeRow(c, Depth + 1, _expansion, Context))];
 
     /// <summary>
     /// Take fresh facts for the node this row already represents.
@@ -100,7 +114,7 @@ public sealed class TreeRow : ObservableObject
 
         if (_children is not null)
         {
-            Reconcile(_children, fresh.Children, Depth + 1, _expansion);
+            Reconcile(_children, fresh.Children, Depth + 1, _expansion, Context);
         }
     }
 
@@ -133,7 +147,8 @@ public sealed class TreeRow : ObservableObject
         ObservableCollection<TreeRow> rows,
         IReadOnlyList<ProjectTreeNode> fresh,
         int depth,
-        TreeExpansion? expansion)
+        TreeExpansion? expansion,
+        object? context = null)
     {
         var live = fresh.Select(n => n.Path).ToHashSet(StringComparer.OrdinalIgnoreCase);
 
@@ -149,7 +164,7 @@ public sealed class TreeRow : ObservableObject
         {
             if (i >= rows.Count)
             {
-                rows.Add(new TreeRow(fresh[i], depth, expansion));
+                rows.Add(new TreeRow(fresh[i], depth, expansion, context));
                 continue;
             }
 
@@ -159,7 +174,7 @@ public sealed class TreeRow : ObservableObject
                 var later = IndexOf(rows, fresh[i].Path, from: i + 1);
                 if (later < 0)
                 {
-                    rows.Insert(i, new TreeRow(fresh[i], depth, expansion));
+                    rows.Insert(i, new TreeRow(fresh[i], depth, expansion, context));
                     continue;
                 }
 

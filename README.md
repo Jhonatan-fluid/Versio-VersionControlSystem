@@ -103,7 +103,7 @@ Both directions run automatically and deterministically. A per-project **directi
 | **Change summary and drafted commit subject** — *"1 GVL and 1 POU changed in RefrigeratorControl"*, and a **Draft** button that writes `Modify FB_Motor, Glob_Var` | ✅ counted by object, not by file — one GVL is two files and one edit. Both describe exactly what the commit button will record, and Draft refuses to overwrite anything you have typed |
 | **Merge / pull request button** — GitHub, GitLab, Azure DevOps, Bitbucket, Gitea | ✅ opens the forge's own page with both branches **pre-filled and nothing submitted**. Says *pull request* or *merge request* as that forge does. Turns into **Go to** on its own when one already exists, found through the forge's hidden refs — **no API token, nothing stored**. A host it cannot identify gets **no button**, never a guess; set `"forge"` in `repo.json` for a self-hosted instance |
 | **The commit gate, enforced** — a stale export is exported and staged first | ✅ push releases the direction locks, commit does not |
-| **History panel** — commits with hash, local date and time, author and subject; expand for the files, click a file for its diff | ✅ its own rail button, and lazy at four levels: the log is not read until the panel is opened, then a page at a time; a commit's files when it is expanded; a patch when a file is clicked |
+| **History panel** — commits with hash, local date and time, author and subject; expand for the project tree as of that commit (objects named and typed from the commit's own manifest, A/M/D, a deleted object struck under its name), click an object for its Rendered view marked against the first parent and the commit's patch on Raw | ✅ its own rail button, and lazy at four levels: the log is not read until the panel is opened, then a page at a time; a commit's tree when it is expanded (a handful of `git show`s, never one per file); an object's layers and patch when it is clicked |
 | **Stash** — push, apply, pop, drop | ✅ **not as buttons.** The six permanent controls were withdrawn and the operations kept; they drive the auto-stash now, which is where a stash is actually wanted — at the moment a branch switch would otherwise strand uncommitted work. A manual stash UI is still deliberately absent |
 | **Per-hunk stage and unstage** | ✅ the hunk is copied verbatim and applied to the index; the working tree is never touched |
 | **Branch creation** — validated against git's own rules as you type | ✅ creates from HEAD and switches; 35 unit tests over the rules, and the dialog says *which* rule was broken |
@@ -235,7 +235,7 @@ Versio.sln
 │  ├─ Versio.Plc.TwinCat.Pure.Tests/ 27 pure vendor tests — format, planner, protocol
 │  ├─ Versio.Plc.TwinCat.Tests/ 6 tests against real TwinCAT XAE; skip with a count when
 │  │                            TcXaeShell.DTE.17.0 or the fixture is missing
-│  └─ Versio.Web.Tests/         450 tests of the web viewer against a faked GitHub: the
+│  └─ Versio.Web.Tests/         508 tests of the web viewer against a faked GitHub: the
 │                               renderers' choices over the real fixtures, the security
 │                               rules against the real host, sign-in end to end
 ├─ tools/                       PowerShell and python harnesses. tools/tia/ is the second
@@ -431,21 +431,21 @@ dotnet test tests/Versio.Core.Tests
 > `%LOCALAPPDATA%\Microsoft\dotnet\dotnet.exe`, or set `DOTNET_ROOT` to it — the same install
 > layout that makes a framework-dependent `Versio.exe` fail to start, noted again below.
 
-**Twelve suites, and they need different things** (plus the web page's own vitest suite in `web/`, 209 tests, which needs the pinned Node):
+**Twelve suites, and they need different things** (plus the web page's own vitest suite in `web/`, 216 tests, which needs the pinned Node):
 
 | Suite | Tests | Needs | Runs in |
 |---|---|---|---|
-| `Versio.Core.Tests` | 2,092 | nothing — pure, no IO, no clock, no UI | ~0.3 s |
-| `Versio.Integration.Tests` | 260 | a real `git.exe` and the real filesystem | ~55 s |
+| `Versio.Core.Tests` | 2,103 | nothing — pure, no IO, no clock, no UI | ~0.3 s |
+| `Versio.Integration.Tests` | 261 | a real `git.exe` and the real filesystem | ~55 s |
 | `Versio.Arch.Tests` | 42 | nothing — it reads assembly metadata, IL, and the project files | instant |
-| `Versio.App.Tests` | 867 | Windows (WPF). Builds the real dialogs against the real stylesheet on an STA thread; **no window is ever shown**. One test runs the web viewer too, over every fixture row, and references `Versio.Web.Tests` for its fake GitHub | ~3.6–11 min |
+| `Versio.App.Tests` | 874 | Windows (WPF). Builds the real dialogs against the real stylesheet on an STA thread; **no window is ever shown**. One test runs the web viewer too, over every fixture row, and references `Versio.Web.Tests` for its fake GitHub | ~3.6–11 min |
 | `Versio.Plc.Codesys.Pure.Tests` | 405 | nothing — the vendor's planner, codecs, protocol, LD/FBD parser and File-Based Storage layout, pure | under a second |
 | `Versio.Plc.Codesys.Parity.Tests` | 104 | `python` on PATH, no CODESYS — **skips cleanly without python, so check the count** | ~15 s |
 | `Versio.Plc.TiaPortal.Pure.Tests` | 108 | nothing — format, planner, protocol, scrubber, member table, LAD and FBD parser | instant |
 | `Versio.Plc.TiaPortal.Tests` | 5 | **a real TIA Portal**; skips cleanly without Openness membership | seconds when skipped |
 | `Versio.Plc.TwinCat.Pure.Tests` | 27 | nothing — the vendor's planner, format and protocol, and the host's text rules compiled in as source | instant |
 | `Versio.Plc.TwinCat.Tests` | 6 | **a real TwinCAT XAE**; skips cleanly without `TcXaeShell.DTE.17.0` | seconds when skipped; ~5 min when XAE runs the import gate |
-| `Versio.Web.Tests` | 504 | nothing — the web viewer against a faked GitHub; one test starts the built server | a few seconds |
+| `Versio.Web.Tests` | 508 | nothing — the web viewer against a faked GitHub; one test starts the built server | a few seconds |
 | `Versio.Plc.Codesys.Tests` | 55 | **a real CODESYS**, and **skips cleanly** without one | **~30 min** |
 
 The first ten are the loop to work in. The last is the gate before a commit — and it is a

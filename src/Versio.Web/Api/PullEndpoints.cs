@@ -141,7 +141,7 @@ public static class PullEndpoints
                     change = f.Change,
                     previousPath = f.PreviousPath,
                     previousLabel = f.PreviousPath is null ? null : CodeHtml.Spelled(f.PreviousPath),
-                    @object = (head.NodeFor(f.Path) ?? mergeBase.NodeFor(f.Path)) is { Kind: ProjectNodeKind.Object } n ? CodeHtml.Spelled(n.Name) : null,
+                    @object = TouchedObjects.ObjectFor(head, mergeBase, f.Path) is { } n ? CodeHtml.Spelled(n.Name) : null,
                     inline = f.InlineUnavailable is null,
                     inlineUnavailable = f.InlineUnavailable,
                     // GitHub's "+12 −3" per file, counted from the patch it gave; null without one

@@ -363,6 +363,23 @@ public sealed partial class GitCliClient
         return result.Success ? GitNameStatusParser.Parse(result.StdOut) : [];
     }
 
+    /// <summary>Every path one commit's tree holds.</summary>
+    /// <remarks>
+    /// <c>ls-tree -r</c> walks the whole tree, which is what the History panel's snapshot needs
+    /// (a project's manifest and catalogs sit at every depth). <c>-z</c> and the NUL contract
+    /// are <see cref="ListWorkingTreeAsync"/>'s, parsed by the same Core parser, so a quoted
+    /// umlaut cannot come back as a path that does not exist. A revision that does not resolve
+    /// fails the command, and an empty listing is the honest answer: there is no tree to list.
+    /// </remarks>
+    public async Task<IReadOnlyList<string>> ListTreeAsync(string commit, CancellationToken ct)
+    {
+        var result = await RunAsync(
+            ["ls-tree", "-r", "-z", "--name-only", commit], null, ct)
+            .ConfigureAwait(false);
+
+        return result.Success ? WorkingTreeListParser.Parse(result.StdOut) : [];
+    }
+
     /// <summary>The patch one commit applied to one file.</summary>
     /// <remarks>
     /// <c>git show</c> with a pathspec rather than a diff between the commit and its parent.

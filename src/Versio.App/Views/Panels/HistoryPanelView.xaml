@@ -246,30 +246,159 @@
                         </StackPanel>
                     </HierarchicalDataTemplate>
 
-                    <!-- ITS OWN TEMPLATE, AND IT HAS TO BE.
+                    <!-- A COMMIT'S ROWS ARE THE PROJECT TREE'S ROWS, AS OF THAT COMMIT.
 
-                         This drew ChangeRowTemplate until GP-J, on the
-                         argument that a deletion should be the same colour and
-                         the same letter wherever it is seen. Then GP-J taught
-                         that template to show an OBJECT - Primary, TypeLabel,
-                         IsExportOnly - and a CommitFileRow has none of those.
-                         WPF fails a binding to a missing property silently, so
-                         every row in this panel rendered with no filename at
-                         all and a lock glyph it had no business showing: the
-                         Visibility binding failed too, and a failed Visibility
-                         binding leaves the element Visible.
+                         ITS OWN TEMPLATES, AND THEY HAVE TO BE. The file row drew
+                         ChangeRowTemplate until GP-J, on the argument that a
+                         deletion should be the same colour and the same letter
+                         wherever it is seen. Then GP-J taught that template to
+                         show an OBJECT - Primary, TypeLabel, IsExportOnly - and
+                         the history's row had none of those. WPF fails a binding
+                         to a missing property silently, so every row in this
+                         panel rendered with no filename at all and a lock glyph
+                         it had no business showing: the Visibility binding
+                         failed too, and a failed Visibility binding leaves the
+                         element Visible. Found by opening the app, not by any
+                         test - the realised-row tests GP-J added cover the git
+                         panel's own lists and never came here; HistoryRowChrome
+                         Tests exists because of it. The rule stands: a template
+                         matches the row type it is handed, and each type here
+                         has its own.
 
-                         Found by opening the app, not by any test - the
-                         realised-row tests GP-J added cover the git panel's own
-                         lists and never came here.
+                         From GP-J until 2026-10-27 a commit's files deliberately
+                         stayed PATHS, and the reason was right: the object index
+                         describes the CURRENT export, and naming a historical
+                         path from it would put today's name on yesterday's
+                         file. The answer was never to name nothing. These rows
+                         are TreeRows built from the manifest AS IT WAS IN THAT
+                         COMMIT (HistoryViewModel.BuildSnapshotAsync, through
+                         Core's ProjectSnapshotLoader), so yesterday's file
+                         carries yesterday's name, type and vendor: the same row
+                         type, the same facts and the same look as the Explorer,
+                         minus its context menu - nothing here is on disk to
+                         reveal. A third copy of the Explorer's row markup rather
+                         than a shared template, on purpose: a shared template is
+                         exactly the shape that produced the GP-J regression.
 
                          The glyph and its colour still come from one place:
-                         ChangeGlyph, which is where that decision actually
-                         lives. What is NOT shared is the object surface, and a
-                         commit's files deliberately stay paths - the object
-                         index describes the CURRENT export, and naming a
-                         historical path from it would put today's name on
-                         yesterday's file. -->
+                         ChangeGlyph for the note rows, and TreeRow.Glyph (the
+                         same letters, the same brushes) for the tree. -->
+                    <HierarchicalDataTemplate DataType="{x:Type vm:TreeRow}"
+                                              ItemsSource="{Binding Children}">
+                        <Grid Margin="0,1" Background="Transparent">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="14" />
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Grid.Column="0" Text="{Binding Glyph}"
+                                       VerticalAlignment="Center"
+                                       FontFamily="{DynamicResource Font.Mono}"
+                                       FontSize="{DynamicResource Font.Size.Caption}"
+                                       FontWeight="{DynamicResource Font.Weight.Semibold}"
+                                       Foreground="{Binding BrushKey,
+                                           Converter={StaticResource ResourceKey}}" />
+                            <DockPanel Grid.Column="1">
+                                <!-- What kind of row, before its name. Dim, so the
+                                     name stays what the eye lands on. -->
+                                <TextBlock DockPanel.Dock="Left" Margin="0,0,6,0"
+                                           Style="{StaticResource IconText}" FontSize="12"
+                                           VerticalAlignment="Center"
+                                           Foreground="{DynamicResource Brush.Text.Secondary}"
+                                           Text="{Binding IconKey,
+                                               Converter={StaticResource ResourceKey}}" />
+                                <TextBlock Text="{Binding Name}"
+                                           VerticalAlignment="Center"
+                                           FontSize="{DynamicResource Font.Size.Body}"
+                                           Foreground="{DynamicResource Brush.Text.Primary}"
+                                           TextTrimming="CharacterEllipsis"
+                                           ToolTip="{Binding Node.Path}">
+                                    <TextBlock.Style>
+                                        <Style TargetType="TextBlock">
+                                            <Setter Property="FontFamily"
+                                                    Value="{DynamicResource Font.UI}" />
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding IsFile}" Value="True">
+                                                    <Setter Property="FontFamily"
+                                                            Value="{DynamicResource Font.Mono}" />
+                                                </DataTrigger>
+                                                <DataTrigger Binding="{Binding IsProject}" Value="True">
+                                                    <Setter Property="FontWeight"
+                                                            Value="{DynamicResource Font.Weight.Semibold}" />
+                                                </DataTrigger>
+                                                <!-- Struck and dimmed: gone in this commit. See
+                                                     TreeRow.IsDeleted. The Foreground is the
+                                                     TextBlock's local value, which a style cannot
+                                                     override, so it moved into this style. -->
+                                                <DataTrigger Binding="{Binding IsDeleted}" Value="True">
+                                                    <Setter Property="TextDecorations"
+                                                            Value="Strikethrough" />
+                                                    <Setter Property="Foreground"
+                                                            Value="{DynamicResource Brush.Text.Secondary}" />
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </TextBlock.Style>
+                                </TextBlock>
+                            </DockPanel>
+                            <TextBlock Grid.Column="2" Text="{Binding Annotation}"
+                                       VerticalAlignment="Center" Margin="8,0,0,0"
+                                       FontFamily="{DynamicResource Font.UI}"
+                                       FontSize="{DynamicResource Font.Size.Caption}"
+                                       Foreground="{DynamicResource Brush.Text.Disabled}" />
+                            <!-- TOOLCHAIN: which IDE opens what is in here - "TIA Portal V21",
+                                 as the Explorer draws it and for the Explorer's reasons: an
+                                 identity in the accent colour, never a status; last column,
+                                 one minimum width, so the pills line up as a column. -->
+                            <Border Grid.Column="4" Margin="8,0,4,0" MinWidth="100"
+                                    Background="{DynamicResource Brush.Accent.Muted}"
+                                    CornerRadius="8" Padding="6,0"
+                                    VerticalAlignment="Center"
+                                    ToolTip="PLC project as of this commit">
+                                <Border.Style>
+                                    <Style TargetType="Border">
+                                        <Setter Property="Visibility" Value="Visible" />
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding Toolchain}" Value="">
+                                                <Setter Property="Visibility" Value="Collapsed" />
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </Border.Style>
+                                <TextBlock Text="{Binding Toolchain}"
+                                           TextAlignment="Center"
+                                           FontFamily="{DynamicResource Font.UI}"
+                                           FontSize="{DynamicResource Font.Size.Caption}"
+                                           Foreground="{DynamicResource Brush.Text.Primary}" />
+                            </Border>
+                            <Border Grid.Column="3" Margin="8,0,4,0"
+                                    Background="{DynamicResource Brush.Surface.Sunken}"
+                                    CornerRadius="8" Padding="6,0"
+                                    VerticalAlignment="Center">
+                                <Border.Style>
+                                    <Style TargetType="Border">
+                                        <Setter Property="Visibility" Value="Visible" />
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding Badge}" Value="">
+                                                <Setter Property="Visibility" Value="Collapsed" />
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </Border.Style>
+                                <TextBlock Text="{Binding Badge}"
+                                           FontFamily="{DynamicResource Font.Mono}"
+                                           FontSize="{DynamicResource Font.Size.Caption}"
+                                           Foreground="{Binding BrushKey,
+                                               Converter={StaticResource ResourceKey}}" />
+                            </Border>
+                        </Grid>
+                    </HierarchicalDataTemplate>
+
+                    <!-- A NOTE, NOT A FILE: "Reading the project as of c0ffee1…", why a merge
+                         lists nothing, why a read failed. One quiet mono line under the commit,
+                         ChangeGlyph's blank where a letter would be. -->
                     <DataTemplate DataType="{x:Type vm:CommitFileRow}">
                         <Grid ToolTip="{Binding Path}">
                             <Grid.ColumnDefinitions>

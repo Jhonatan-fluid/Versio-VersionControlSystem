@@ -33,8 +33,8 @@ UX remainder) is built and tested as of 2026-08-25** — UX-6 find boxes, UX-7 `
 Escape, UX-8 copy-a-commit, UX-12 amend-while-unpushed — and its visual half joins the
 eyeball list in item 2. Do not start from `archive/` or a handoff.
 
-**Tests:** 4,475 across twelve projects (plus 211 vitest in `web/`), last counted 2026-10-27
-on `AutoUpdate` after the update overlay (Core 2,092, Integration 260, App 867, Arch 42, Web 504) — re-derived by summing the table below; the toolchain-gated
+**Tests:** 4,498 across twelve projects (plus 216 vitest in `web/`), last counted 2026-10-28
+on `HistoryRendering` with the web half merged (Core 2,103, Integration 261, App 874, Arch 42, Web 508) — re-derived by summing the table below; the toolchain-gated
 counts (TIA 5, TwinCAT 6, CODESYS 55) are from their last gate runs, not re-run for the count. **The Rendered view of an ST object reads like the IDE (2026-09-20):** no
 `@@` line, one gutter, a Declaration / Implementation divider, and the implementation
 numbered from 1 so a compile error's line number can be found — FINDINGS 2026-09-20. **With TIA Portal open, a commit no longer records a stale mirror**: the
@@ -73,9 +73,9 @@ marking, duplicate-param keys, and the detail-pane lookup. All of them are in
 
 | Project | Tests | Time | Needs |
 |---|---|---|---|
-| `Versio.Core.Tests` | 2,092 (nothing skipped) | under a second | nothing |
-| `Versio.Integration.Tests` | 260 | ~1 m (2 m 18 s loaded) | real git |
-| `Versio.App.Tests` | 867 (re-counted 2026-10-27, night) | 13 m 34 s, 865/867, 2026-10-27 night on `AutoUpdate` after the update overlay (`ProjectPanelCalmStateTests` was a real regression of the overlay, fixed, FINDINGS 2026-10-27 the update overlay; `CommitWhileIdeHoldsProjectTests` red after 53 s, green alone); 11 m 15 s, 854/859, 2026-10-27 night on `AutoUpdate` from an in-tree scratch `OutDir` (the running app still locked `src/Versio.App/bin`; the five red were the `SourceProjectTests` catch-up wait, green alone, and four clipboard tests, `CLIPBRD_E_CANT_OPEN` alone too — another program held the clipboard, as on 2026-10-25); 17 m, 853/858, 2026-10-27 evening on `AutoUpdate`, built with `-p:OutDir` into a scratch folder outside the tree because the running app locked `src/Versio.App/bin` (four red were `repository root not found` — `RenderChoiceParityTests` and three `SourceProjectCatalogTests` climb from the build output to the repository and could not; all four green from an in-tree scratch output; the fifth was the 21 s catch-up wait in `SourceProjectTests`, green alone as before); 11 m 58 s, 854/856, 2026-10-27 on `AutoUpdate` (one 30 s catch-up wait, green alone; one clipboard test, `CLIPBRD_E_CANT_OPEN`, environmental as on 2026-10-25); 10 m 57 s, 843/846, 2026-10-25 night (three catch-up waits red, all green alone and in their classes; FINDINGS 2026-10-25 seventh round); **12 m 15 s, 845/845, idle, 2026-10-25 night**; 9 m 3 s, 838/842, 2026-10-25 night (the CODESYS run beside it; the four red are the clipboard tests, `CLIPBRD_E_CANT_OPEN`, red alone and on the untouched base too — another program held the clipboard; FINDINGS 2026-10-25 fifth round); 12 m 49 s, 840/841, 2026-10-25 evening (nothing else of this session running; `SourceProjectTests.A_program_with_no_variables…` red after 13 s for the second full run today, green alone and in its class — a watch item, FINDINGS 2026-10-25 fourth round); 13 m 29 s, 835/836, loaded, 2026-10-25 (the third round's CODESYS run beside it; a 21 s catch-up wait in `SourceProjectTests` failed and passed alone in 4 s); 13 m 9 s, 835/836, loaded, 2026-10-25 (the CODESYS gate ran beside it; the one 30 s catch-up wait failed and passed alone in 4 s); **12 m 22 s, 833/833, idle, 2026-10-24**; 11 m 23 s the same day loaded (three gates beside it; one 30 s catch-up wait failed and passed alone in 4 s) and 16 m 30 s under three builds; 10 m 45 s (loaded: mutation checks ran beside it) and 10 m 36 s on 2026-10-23; 12 m 19 s, 10 m 42 s and 9 m 5 s on 2026-10-22; 10 m 46 s on 2026-10-19; 10 m 58 s on 2026-10-16; 6 m 35 s on 2026-10-10; 8 m 38 s on 2026-10-05; ~3.6 min on 2026-09-22 | nothing |
+| `Versio.Core.Tests` | 2,103 (nothing skipped) | under a second | nothing |
+| `Versio.Integration.Tests` | 261 | ~1 m (2 m 18 s loaded) | real git |
+| `Versio.App.Tests` | 874 (re-counted 2026-10-28) | 11 m 50 s, 873/874, 2026-10-28 on `HistoryRendering` (the History panel in project format; one clipboard test, `CLIPBRD_E_CANT_OPEN`, environmental as before; an earlier full run the same night was 871/872 with `DeviceTreeFlowTests` red once, green alone and in its class); 13 m 34 s, 865/867, 2026-10-27 night on `AutoUpdate` after the update overlay (`ProjectPanelCalmStateTests` was a real regression of the overlay, fixed, FINDINGS 2026-10-27 the update overlay; `CommitWhileIdeHoldsProjectTests` red after 53 s, green alone); 11 m 15 s, 854/859, 2026-10-27 night on `AutoUpdate` from an in-tree scratch `OutDir` (the running app still locked `src/Versio.App/bin`; the five red were the `SourceProjectTests` catch-up wait, green alone, and four clipboard tests, `CLIPBRD_E_CANT_OPEN` alone too — another program held the clipboard, as on 2026-10-25); 17 m, 853/858, 2026-10-27 evening on `AutoUpdate`, built with `-p:OutDir` into a scratch folder outside the tree because the running app locked `src/Versio.App/bin` (four red were `repository root not found` — `RenderChoiceParityTests` and three `SourceProjectCatalogTests` climb from the build output to the repository and could not; all four green from an in-tree scratch output; the fifth was the 21 s catch-up wait in `SourceProjectTests`, green alone as before); 11 m 58 s, 854/856, 2026-10-27 on `AutoUpdate` (one 30 s catch-up wait, green alone; one clipboard test, `CLIPBRD_E_CANT_OPEN`, environmental as on 2026-10-25); 10 m 57 s, 843/846, 2026-10-25 night (three catch-up waits red, all green alone and in their classes; FINDINGS 2026-10-25 seventh round); **12 m 15 s, 845/845, idle, 2026-10-25 night**; 9 m 3 s, 838/842, 2026-10-25 night (the CODESYS run beside it; the four red are the clipboard tests, `CLIPBRD_E_CANT_OPEN`, red alone and on the untouched base too — another program held the clipboard; FINDINGS 2026-10-25 fifth round); 12 m 49 s, 840/841, 2026-10-25 evening (nothing else of this session running; `SourceProjectTests.A_program_with_no_variables…` red after 13 s for the second full run today, green alone and in its class — a watch item, FINDINGS 2026-10-25 fourth round); 13 m 29 s, 835/836, loaded, 2026-10-25 (the third round's CODESYS run beside it; a 21 s catch-up wait in `SourceProjectTests` failed and passed alone in 4 s); 13 m 9 s, 835/836, loaded, 2026-10-25 (the CODESYS gate ran beside it; the one 30 s catch-up wait failed and passed alone in 4 s); **12 m 22 s, 833/833, idle, 2026-10-24**; 11 m 23 s the same day loaded (three gates beside it; one 30 s catch-up wait failed and passed alone in 4 s) and 16 m 30 s under three builds; 10 m 45 s (loaded: mutation checks ran beside it) and 10 m 36 s on 2026-10-23; 12 m 19 s, 10 m 42 s and 9 m 5 s on 2026-10-22; 10 m 46 s on 2026-10-19; 10 m 58 s on 2026-10-16; 6 m 35 s on 2026-10-10; 8 m 38 s on 2026-10-05; ~3.6 min on 2026-09-22 | nothing |
 | `Versio.Arch.Tests` | 42 | instant | nothing |
 | `Versio.Plc.Codesys.Pure.Tests` | 405 | under a second | nothing |
 | `Versio.Plc.Codesys.Parity.Tests` | 104 | ~15 s | `python` on PATH — skips cleanly without it, so check the count |
@@ -83,8 +83,8 @@ marking, duplicate-param keys, and the detail-pane lookup. All of them are in
 | `Versio.Plc.TiaPortal.Tests` | 5 | seconds when skipped; 3 m 1 s on 2026-10-25 when Portal is there but refuses the host (1 passed, 4 skipped, not an Openness member); minutes when Portal runs the import gate | **real TIA Portal** — skips without Openness membership or LFS content |
 | `Versio.Plc.TwinCat.Pure.Tests` | 27 | instant | nothing — the host's text rules are compiled in as source |
 | `Versio.Plc.TwinCat.Tests` | 6 | seconds when skipped (4 s, 6 skipped, 2026-10-25); ~5 min when XAE runs the import gate | **real TwinCAT XAE** — skips without `TcXaeShell.DTE.17.0` or the fixture |
-| `Versio.Web.Tests` | 504 | ~25 s | nothing — GitHub is faked |
-| `web/` (vitest) | 211 | ~21 s on 2026-10-24 (the review page waits for its reads, not ticks; it was ~3 min) | the pinned Node in `web/.node` |
+| `Versio.Web.Tests` | 508 | ~38 s on 2026-10-27 (~25 s before the object-history tests) | nothing — GitHub is faked |
+| `web/` (vitest) | 216 | ~22 s on 2026-10-27 (the review page waits for its reads, not ticks; it was ~3 min) | the pinned Node in `web/.node` |
 | `Versio.Plc.Codesys.Tests` | 55 | **~30 min**; 41 m 14 s, 55/55, on 2026-10-11 on `WebViewer`; 1 h 22 m, 53/55, on 2026-10-25 on `VersioWeb` loaded (the two red are item 11's `<masked-guid>` regression) | **real CODESYS** |
 
 The first ten are the loop to work in — about thirty seconds plus the UI suite. The last is
@@ -370,7 +370,13 @@ One list. Reorder it; do not copy it into another file.
    write path, the live head's checks, both flakes retired, the App permission list). **What is
    left there is the owner's: the real-GitHub gates on a throwaway repository, writes on, merge
    last** — and the named future renderers and anchors (ladder elements, catalog rows, the
-   desktop's own ST links). The history below is how it got here. The design, the security rules and what each step measured are
+   desktop's own ST links). **2026-10-27: commit history renders in project format** — the
+   commit page draws one section per object (name, type chip, vendor pill, A/M/D, a chip per
+   layer) over the project-format comparison instead of one raw-path section per layer file,
+   an object's history covers every one of its files and says which each commit touched, and
+   the review's Commits tab links to the commit page (`TouchedObjects.cs`,
+   `ChangeSectionHead.tsx`; FINDINGS 2026-10-27). The desktop half is on `HistoryRendering`.
+   The history below is how it got here. The design, the security rules and what each step measured are
    in [`web/PLAN.md`](web/PLAN.md). An ASP.NET Core server (`src/Versio.Web`) renders with
    Versio.Core and the three pure packs; a React page (`web/`) places that HTML and draws no
    code. Built: the HTML renderers for source, text diffs and member tables (Outpost's Step 2b,
@@ -640,6 +646,25 @@ Close Versio **and** Portal before a host rebuild. Click **Yes to all** on Openn
     into the files they carried and the poll reports a tracked file that is gone. No python
     touched. Still not done: branch deletion addresses the hardcoded "origin" (the first
     round's item 39), and the merge twin of the sixth round's item 4.
+18. **The History panel renders a commit in project format — built 2026-10-27 → 28 on
+    `HistoryRendering`**, six commits; FINDINGS 2026-10-28, *The history panel named nothing,
+    and its reason was half right*. A commit expands to the same changed-only tree the
+    Explorer builds, named from the commit's **own** manifest (Core's `ProjectSnapshotLoader`,
+    lifted from the web viewer, over `git show`); a deleted object keeps its name from the
+    parent's; a click renders as the Project panel renders a change, marked against the
+    first parent (table, code, ladder, catalogs; a deleted object drawn struck), with the
+    commit's patch on Raw and layer chips that keep the rendered half; the commit heading
+    counts by the commit's index. Measured by the tests: an expand is `ls-tree + name-status
+    + one show per config, manifest and catalog [+ the parent manifest per binding with a
+    deletion]` — four spawns on the fixture, two on a repository with no `repo.json`. The web
+    viewer's half (one section per object on `/commit/<sha>`, an object's history over every
+    layer) was built in its own session on `claude/inspiring-kowalevski-25da44` and merged here
+    on 2026-10-28, six more commits; FINDINGS 2026-10-27, *The commit page drew one section per
+    layer file*. **Owner eyeball, web:** `FixturePreview` on a fixture commit — one section per
+    object with its chips, a layer chip switching the drawing, the tree pick scrolling to it.
+    **Owner eyeball:** expand a commit on this repository in both themes — chips, pills, the
+    struck deleted row — click an object, confirm Rendered then Raw, and read the
+    `history:` lines in the log (zero `ERR`).
 
 ---
 

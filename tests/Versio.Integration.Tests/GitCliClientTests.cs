@@ -494,6 +494,47 @@ public sealed class GitCliClientTests(ITestOutputHelper output) : IDisposable
     }
 
     [SkippableFact]
+    public async Task A_commit_lists_its_own_tree_and_reads_a_file_as_it_was_then()
+    {
+        // The History panel's two primitives: the listing it finds a commit's manifest in, and
+        // the read it draws yesterday's file from. Both must answer for the commit asked, not
+        // for HEAD, or the panel would put today's content under yesterday's heading - the
+        // defect the panel's paths-only rows were avoiding by naming nothing at all.
+        Skip.IfNot(GitAvailable, "git not on PATH");
+        await InitAsync();
+
+        // A space and an umlaut: the shapes git quotes without -z, which is how a listing
+        // comes to name a file that does not exist.
+        const string Named = "plc/Kühlschrank Regelung.st";
+        Write(Named, "PROGRAM Old\nx := 1;\n");
+        Write("plc/Keep.st", "PROGRAM Keep\n");
+        await Client.StageAsync([Named, "plc/Keep.st"], CancellationToken.None);
+        await Client.CommitAsync("first", CancellationToken.None);
+        var first = await Client.RevParseAsync("HEAD", CancellationToken.None);
+
+        File.Delete(Path.Combine(_repo, "plc", "Kühlschrank Regelung.st"));
+        Write("plc/Keep.st", "PROGRAM Keep\ny := 2;\n");
+        await Client.StageAsync([Named, "plc/Keep.st"], CancellationToken.None);
+        await Client.CommitAsync("second", CancellationToken.None);
+        var second = await Client.RevParseAsync("HEAD", CancellationToken.None);
+
+        Assert.Equal(["plc/Keep.st", Named], await Client.ListTreeAsync(first, CancellationToken.None));
+        Assert.Equal(["plc/Keep.st"], await Client.ListTreeAsync(second, CancellationToken.None));
+
+        var then = await Client.ShowAtCommitAsync(first, Named, CancellationToken.None);
+        Assert.Equal("PROGRAM Old\nx := 1;\n", then.Replace("\r\n", "\n"));
+        Assert.Equal("PROGRAM Keep\n", (await Client.ShowAtCommitAsync(first, "plc/Keep.st", CancellationToken.None)).Replace("\r\n", "\n"));
+
+        // The first parent of the second commit is the first; the first has no parent, and
+        // asking for one is the ordinary "no old copy" answer, never a throw - a root commit
+        // is exactly the one somebody scrolls to the bottom of the history to look at.
+        Assert.Equal("PROGRAM Keep\n", (await Client.ShowAtCommitAsync(second + "^", "plc/Keep.st", CancellationToken.None)).Replace("\r\n", "\n"));
+        Assert.Equal(string.Empty, await Client.ShowAtCommitAsync(first + "^", "plc/Keep.st", CancellationToken.None));
+        Assert.Equal(string.Empty, await Client.ShowAtCommitAsync(second, Named, CancellationToken.None));
+        Assert.Empty(await Client.ListTreeAsync(first + "^", CancellationToken.None));
+    }
+
+    [SkippableFact]
     public async Task The_index_is_weighed_not_the_working_copy_that_replaced_it()
     {
         // The large-file preflight measured FileInfo, and the commit records the index: a

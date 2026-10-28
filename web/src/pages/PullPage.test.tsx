@@ -1647,7 +1647,9 @@ describe('PullPage conversation', () => {
     const row = host.querySelector('.commit-row')!;
     expect(row.querySelector('.verified-badge')?.textContent).toBe('Verified');
     expect(row.textContent).toContain('Merge');
-    expect(row.querySelector('a.commit-sha')?.getAttribute('href')).toBe('https://github.com/acme/plant/commit/' + head);
+    // The sha opens the commit's own page (FINISH.md B4); GitHub is the small external link beside it.
+    expect(row.querySelector('a.commit-sha')?.getAttribute('href')).toBe('/acme/plant/commit/' + head);
+    expect(row.querySelector('a[title="This commit on GitHub"]')?.getAttribute('href')).toBe('https://github.com/acme/plant/commit/' + head);
     expect(row.querySelector('.commit-body')).toBeNull();
     await click(row.querySelector('.commit-expand')!, host);
     expect(row.querySelector('.commit-body')?.textContent).toBe('It was wrong.');

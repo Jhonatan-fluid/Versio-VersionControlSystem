@@ -1,41 +1,35 @@
 using System.Collections.ObjectModel;
+using System.Diagnostics;
 using System.Globalization;
 using System.Windows.Data;
 using Versio.App.Mvvm;
 using Versio.Core.Abstractions;
 using Versio.Core.Git;
 using Versio.Core.Logging;
+using Versio.Core.Projects;
 
 namespace Versio.App.ViewModels;
 
-/// <summary>One file inside an expanded commit.</summary>
+/// <summary>
+/// A row under a commit that is not part of its tree: "reading…", why a commit lists nothing,
+/// or why it could not be read.
+/// </summary>
 /// <remarks>
-/// Carries the commit it came from, because that is what the diff needs: the same path exists
-/// in every commit that ever touched it, and a row that knew only its path could not say
-/// which of those changes to render.
+/// <para>
+/// A row rather than a separate panel, because the tree needs <i>something</i> under a
+/// collapsed commit for the expander to be drawn at all — and a placeholder that then says
+/// what happened is more use than one that vanishes and leaves the row looking broken.
+/// </para>
+/// <para>
+/// Until 2026-10-27 this type was also the file row — one per raw path a commit touched. A
+/// commit's files are <see cref="TreeRow"/>s now, built from the commit's own manifest
+/// (<see cref="CommitSnapshot"/>), so what is left here is the note.
+/// </para>
 /// </remarks>
 public sealed class CommitFileRow : ObservableObject
 {
     private bool _isSelected;
 
-    /// <summary>A real file row.</summary>
-    public CommitFileRow(CommitRow commit, CommitFile file)
-    {
-        Commit = commit;
-        Path = file.Path;
-        Glyph = ChangeGlyph.For(file.Kind);
-        BrushKey = ChangeGlyph.BrushFor(file.Kind);
-        OriginalPath = file.OriginalPath;
-    }
-
-    /// <summary>
-    /// A row that is not a file: "loading…", or why a commit lists none.
-    /// </summary>
-    /// <remarks>
-    /// A row rather than a separate panel, because the tree needs <i>something</i> under a
-    /// collapsed commit for the expander to be drawn at all — and a placeholder that then says
-    /// what happened is more use than one that vanishes and leaves the row looking broken.
-    /// </remarks>
     public CommitFileRow(CommitRow commit, string note)
     {
         Commit = commit;
@@ -47,17 +41,14 @@ public sealed class CommitFileRow : ObservableObject
 
     public CommitRow Commit { get; }
 
-    /// <summary>The path, or the note's text — whichever this row is.</summary>
+    /// <summary>The note's text. Named for the template that draws it in the file column.</summary>
     public string Path { get; }
 
     public string Glyph { get; }
 
     public string BrushKey { get; }
 
-    /// <summary>Where a renamed or copied file came from, otherwise null.</summary>
-    public string? OriginalPath { get; }
-
-    /// <summary>True for a placeholder. Clicking one shows nothing, because it names no file.</summary>
+    /// <summary>Always true: clicking a note shows nothing, because it names no file.</summary>
     public bool IsNote { get; }
 
     /// <summary>
@@ -84,10 +75,10 @@ public sealed class CommitFileRow : ObservableObject
 /// </summary>
 /// <remarks>
 /// <para>
-/// <b>Its files are fetched the first time it is expanded, and never again.</b> A commit is
-/// immutable — its hash <i>is</i> its content — so the list of files behind one can be held
-/// for the life of the session with no risk at all of going stale. That is what makes caching
-/// safe here when the same trick would be wrong for the working tree.
+/// <b>Its tree is read the first time it is expanded, and never again.</b> A commit is
+/// immutable — its hash <i>is</i> its content — so the project snapshot behind one can be
+/// held for the life of the session with no risk at all of going stale. That is what makes
+/// caching safe here when the same trick would be wrong for the working tree.
 /// </para>
 /// <para>
 /// The patches themselves are deliberately <i>not</i> held. A commit that touches an exported
@@ -98,15 +89,15 @@ public sealed class CommitFileRow : ObservableObject
 /// </remarks>
 public sealed class CommitRow : ObservableObject
 {
-    private readonly Func<CommitRow, Task> _loadFiles;
+    private readonly Func<CommitRow, Task> _loadTree;
     private bool _isExpanded;
     private bool _isSelected;
     private bool _requested;
 
-    public CommitRow(CommitEntry commit, Func<CommitRow, Task> loadFiles)
+    public CommitRow(CommitEntry commit, Func<CommitRow, Task> loadTree)
     {
         Entry = commit;
-        _loadFiles = loadFiles;
+        _loadTree = loadTree;
 
         // Seeded so the expander exists before anything is known about the commit's contents.
         // With no child there is no chevron, and with no chevron there is nothing to click to
@@ -176,8 +167,16 @@ public sealed class CommitRow : ObservableObject
         set => SetProperty(ref _isUnpushed, value);
     }
 
-    /// <summary>The files this commit touched, once somebody has asked for them.</summary>
-    public ObservableCollection<CommitFileRow> Children { get; } = [];
+    /// <summary>
+    /// What this commit touched, as the project tree draws it, once somebody has asked.
+    /// </summary>
+    /// <remarks>
+    /// <see cref="TreeRow"/>s for the tree and <see cref="CommitFileRow"/>s for the notes, so
+    /// the collection is of <c>object</c>; the view picks a template by type. One list rather
+    /// than two, because the tree needs one child under a collapsed commit for its expander,
+    /// and that child is a note until the tree arrives.
+    /// </remarks>
+    public ObservableCollection<object> Children { get; } = [];
 
     public bool IsExpanded
     {
@@ -192,16 +191,28 @@ public sealed class CommitRow : ObservableObject
             // Once per row, not once per expand: collapsing a commit and opening it again
             // must not spawn a second `git show` for an answer that cannot have changed.
             _requested = true;
-            _ = _loadFiles(this);
+            _ = _loadTree(this);
         }
     }
 
-    /// <summary>Replace the placeholder with what git said — or with why it said nothing.</summary>
-    public void ShowFiles(IReadOnlyList<CommitFile> files)
+    /// <summary>Say what is happening while the snapshot is read.</summary>
+    /// <remarks>
+    /// Replaces the seeded "…": a commit on a large export tree costs a handful of git spawns,
+    /// and a row that sat on "…" for a second read as hung. The text names the commit so that
+    /// an expanded row two screens down still says what it is waiting for.
+    /// </remarks>
+    public void ShowReading()
+    {
+        Children.Clear();
+        Children.Add(new CommitFileRow(this, $"Reading the project as of {ShortId}…"));
+    }
+
+    /// <summary>Replace the placeholder with the commit's tree — or with why there is none.</summary>
+    public void ShowTree(CommitSnapshot snapshot)
     {
         Children.Clear();
 
-        if (files.Count == 0)
+        if (snapshot.Changes.Count == 0)
         {
             // Nearly always a merge: git suppresses the combined diff, so there is no file
             // list to show. Saying which beats an empty branch that reads as a failure.
@@ -210,10 +221,36 @@ public sealed class CommitRow : ObservableObject
             return;
         }
 
-        foreach (var file in files)
+        // The roots expand by TreeRow's own rule - a project, or anything with changed
+        // descendants opens itself - which for a changed-only tree is the path to every change.
+        var context = new CommitTreeContext(this, snapshot);
+        foreach (var root in snapshot.Nodes)
         {
-            Children.Add(new CommitFileRow(this, file));
+            Children.Add(new TreeRow(root, 0, expansion: null, context));
         }
+
+        // A manifest or catalog that could not be read is a row, not a silence: the tree above
+        // it is then drawn from less than the commit holds, and the reader should know. Each
+        // problem is in the log; one line here is enough to send them there.
+        if (snapshot.Repo.Problems.Count > 0)
+        {
+            Children.Add(new CommitFileRow(this, snapshot.Repo.Problems.Count == 1
+                ? "1 file of this commit could not be read as a project — the log says which."
+                : $"{snapshot.Repo.Problems.Count} files of this commit could not be read as a project — the log says which."));
+        }
+    }
+
+    /// <summary>The snapshot could not be read at all; say so, and let the next expand try again.</summary>
+    /// <remarks>
+    /// Before this a failed read left "…" under the commit for the rest of the session — the
+    /// shape of a hang, with the one row that could explain it saying nothing. Re-armed rather
+    /// than kept, because the cause is nearly always of the moment (git busy, a lock held).
+    /// </remarks>
+    public void ShowFailure(string why)
+    {
+        Children.Clear();
+        Children.Add(new CommitFileRow(this, $"Could not read this commit: {why}"));
+        _requested = false;
     }
 }
 
@@ -246,14 +283,23 @@ public sealed class HistoryViewModel : ObservableObject
     public const int PageSize = 50;
 
     /// <summary>
-    /// File lists already fetched, by commit id.
+    /// Snapshots already read, or being read, by commit id.
     /// </summary>
     /// <remarks>
+    /// <para>
     /// Survives a reload of the list, because a commit's contents cannot change underneath it.
     /// A refresh after a commit therefore costs one <c>git log</c> and no <c>git show</c> at
     /// all for anything the user had already opened.
+    /// </para>
+    /// <para>
+    /// <b>The task, not the result</b>, so that two askers for one commit share one read: a
+    /// click on the commit card wants its index for the heading while the expand is still
+    /// reading the same manifests (the web viewer's single-flight argument, in one line). A
+    /// task that failed is taken out again by <see cref="SnapshotAsync"/>, so a cause of the
+    /// moment is not remembered as the answer.
+    /// </para>
     /// </remarks>
-    private readonly Dictionary<string, IReadOnlyList<CommitFile>> _files = [];
+    private readonly Dictionary<string, Task<CommitSnapshot>> _snapshots = [];
 
     private readonly VersioLogger _logger;
 
@@ -358,8 +404,12 @@ public sealed class HistoryViewModel : ObservableObject
     /// <summary>Raised when a commit row is picked, for the shell to render its patch.</summary>
     public event Action<CommitRow>? CommitSelected;
 
-    /// <summary>Raised when a file inside a commit is picked.</summary>
-    public event Action<CommitFileRow>? FileSelected;
+    /// <summary>Raised when a row of a commit's tree is picked — an object, a file, a project.</summary>
+    /// <remarks>
+    /// The row carries its commit in <see cref="TreeRow.Context"/> (a <see cref="CommitTreeContext"/>),
+    /// which is how the shell knows to read the file at that commit and not from disk.
+    /// </remarks>
+    public event Action<TreeRow>? TreeSelected;
 
     /// <summary>One line under the list: how much of the history is loaded.</summary>
     public string Summary
@@ -497,7 +547,7 @@ public sealed class HistoryViewModel : ObservableObject
 
             foreach (var commit in page)
             {
-                Commits.Add(new CommitRow(commit, LoadFilesAsync)
+                Commits.Add(new CommitRow(commit, LoadTreeAsync)
                 {
                     IsUnpushed = _unpushed.Contains(commit.Id),
                 });
@@ -519,27 +569,154 @@ public sealed class HistoryViewModel : ObservableObject
         }
     }
 
-    /// <summary>Fetch one commit's file list, once.</summary>
-    private async Task LoadFilesAsync(CommitRow row)
+    /// <summary>Read one commit's tree into its row, once.</summary>
+    private async Task LoadTreeAsync(CommitRow row)
     {
         if (_git is null)
         {
             return;
         }
 
-        if (_files.TryGetValue(row.Id, out var cached))
+        row.ShowReading();
+        try
         {
-            row.ShowFiles(cached);
-            return;
+            row.ShowTree(await SnapshotAsync(row.Id, row.ShortId).ConfigureAwait(true));
+        }
+        catch (Exception ex)
+        {
+            // Said twice on purpose: in the log for whoever reads it later, and on the row for
+            // whoever is looking at it now. The old code let the exception go, which left "…"
+            // under the commit for good.
+            _logger.Error(LogCategory.Git, $"history: could not read {row.ShortId} as a project tree", ex);
+            row.ShowFailure(ex.Message);
+        }
+    }
+
+    /// <summary>
+    /// The commit read as a project, shared by everyone who asks for that commit.
+    /// </summary>
+    /// <remarks>
+    /// Public because the shell asks too: the commit heading counts the commit's objects by
+    /// the commit's own index (<see cref="CommitSnapshot.Objects"/>), and a click on the card
+    /// must not read the manifests a second time while the expand is reading them.
+    /// </remarks>
+    public async Task<CommitSnapshot> SnapshotAsync(string commitId, string shortId)
+    {
+        if (_git is not { } git)
+        {
+            throw new InvalidOperationException("No repository is attached to the history.");
         }
 
-        var files = await _git.CommitFilesAsync(row.Id, CancellationToken.None)
-            .ConfigureAwait(true);
+        if (!_snapshots.TryGetValue(commitId, out var task))
+        {
+            task = BuildSnapshotAsync(git, commitId, shortId);
+            _snapshots[commitId] = task;
+        }
 
-        _files[row.Id] = files;
-        row.ShowFiles(files);
+        try
+        {
+            return await task.ConfigureAwait(true);
+        }
+        catch
+        {
+            // Only this read's own entry: a later successful read of the same commit must not
+            // be thrown away by a failure that finished after it.
+            if (_snapshots.TryGetValue(commitId, out var held) && ReferenceEquals(held, task))
+            {
+                _snapshots.Remove(commitId);
+            }
 
-        _logger.Debug(LogCategory.Git, $"history: {files.Count} files in {row.ShortId}");
+            throw;
+        }
+    }
+
+    /// <summary>
+    /// Read a commit as a project: its tree, its changes, and its manifests as they were.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The call budget is the point, and the log line at the end reports it: one
+    /// <c>ls-tree</c>, one <c>--name-status</c>, then one <c>show</c> per file
+    /// <see cref="ProjectSnapshotLoader"/> asks for — <c>repo.json</c>, each binding's manifest,
+    /// each project's catalogs — plus the parent's manifest for each binding the commit deleted
+    /// an object from. Nothing per changed file, nothing per object: a commit touching four
+    /// hundred exported files costs the same handful of spawns as one touching one. A
+    /// <c>cat-file --batch</c> would be fewer still, and was rejected: its size-framed output
+    /// cannot survive the CLI runner's line reassembly (see <c>ShowAtCommitAsync</c>'s remark).
+    /// </para>
+    /// <para>
+    /// <b>Changed-only.</b> The question a commit answers is "what did this touch", so the tree
+    /// holds the changed objects and the folders and projects above them. The whole project as
+    /// of the commit is the same snapshot with the option off, and is one toggle away when
+    /// somebody asks for it.
+    /// </para>
+    /// <para>
+    /// Every path read came from the commit's own listing, so an empty answer from
+    /// <c>git show</c> is an empty file, and git's own failure is already a line in the log
+    /// (the runner logs every command). The loader is handed the text as text.
+    /// </para>
+    /// </remarks>
+    private async Task<CommitSnapshot> BuildSnapshotAsync(IGitClient git, string commitId, string shortId)
+    {
+        _logger.Info(LogCategory.Git, $"history: reading {shortId} as a project tree");
+        var watch = Stopwatch.StartNew();
+
+        var files = await git.ListTreeAsync(commitId, CancellationToken.None).ConfigureAwait(true);
+        var changes = await git.CommitFilesAsync(commitId, CancellationToken.None).ConfigureAwait(true);
+
+        var reads = 0;
+        async Task<SnapshotRead> Read(string path)
+        {
+            reads++;
+            return SnapshotRead.Of(await git.ShowAtCommitAsync(commitId, path, CancellationToken.None).ConfigureAwait(true));
+        }
+
+        var repo = await ProjectSnapshotLoader.LoadAsync(
+            files, Read, $"as of {shortId}", _logger, LogCategory.Git, shortId, CancellationToken.None).ConfigureAwait(true);
+
+        // What this commit deleted - and the old place of what it renamed - is no longer in its
+        // manifest, so the parent's manifest names those rows (the loader has the reasoning).
+        // One read per binding with a deletion, none otherwise; the parent of a root commit
+        // has nothing, which reads as absent.
+        async Task<SnapshotRead> ReadParent(string path)
+        {
+            reads++;
+            var text = await git.ShowAtCommitAsync(commitId + "^", path, CancellationToken.None).ConfigureAwait(true);
+            return text.Length == 0 ? SnapshotRead.Absent : SnapshotRead.Of(text);
+        }
+
+        var gone = changes.Where(c => c.Kind == ChangeKind.Deleted).Select(c => c.Path)
+            .Concat(changes.Where(c => c.OriginalPath is { Length: > 0 }).Select(c => c.OriginalPath!))
+            .ToList();
+        repo = await ProjectSnapshotLoader.WithDeletedObjectsAsync(
+            repo, gone, ReadParent, _logger, LogCategory.Git, shortId, CancellationToken.None).ConfigureAwait(true);
+
+        // A commit has one side: what it did to each path is its "staged" state, and nothing
+        // is unstaged. The same mapping the web viewer's marked tree uses.
+        var marks = changes.Select(c => new FileChange
+        {
+            Path = c.Path,
+            Staged = c.Kind,
+            Unstaged = ChangeKind.Unmodified,
+            OriginalPath = c.OriginalPath,
+            SimilarityScore = c.SimilarityScore,
+        }).ToList();
+        var nodes = RepoExplorerBuilder.Build(
+            files, repo.Projects,
+            new ProjectTreeOptions { ChangedOnly = true, HideUnchangedProjects = true },
+            changes: marks);
+
+        var gitCalls = 2 + reads;
+        foreach (var problem in repo.Problems)
+        {
+            _logger.Warn(LogCategory.Git, $"history: {shortId}: {problem}");
+        }
+
+        _logger.Info(LogCategory.Git,
+            $"history: {shortId}: {files.Count} files, {repo.Projects.Count} project(s), {changes.Count} changed, "
+            + $"{repo.Problems.Count} problem(s), {gitCalls} git calls in {watch.ElapsedMilliseconds} ms");
+
+        return new CommitSnapshot(commitId, shortId, repo, changes, nodes, gitCalls);
     }
 
     /// <summary>The row last handed to <see cref="Select"/>, kept so it can be let go of.</summary>
@@ -552,8 +729,9 @@ public sealed class HistoryViewModel : ObservableObject
 
         switch (row)
         {
-            case CommitFileRow { IsNote: false } file:
-                FileSelected?.Invoke(file);
+            // A folder groups; it has no file of its own to show. A note names nothing.
+            case TreeRow { IsFolder: false } tree:
+                TreeSelected?.Invoke(tree);
                 break;
 
             case CommitRow commit:
@@ -573,8 +751,12 @@ public sealed class HistoryViewModel : ObservableObject
     {
         switch (_selected)
         {
-            case CommitFileRow file:
-                file.IsSelected = false;
+            case TreeRow tree:
+                tree.IsSelected = false;
+                break;
+
+            case CommitFileRow note:
+                note.IsSelected = false;
                 break;
 
             case CommitRow commit:
@@ -589,7 +771,7 @@ public sealed class HistoryViewModel : ObservableObject
     {
         _selected = null;
         Commits.Clear();
-        _files.Clear();
+        _snapshots.Clear();
         _stale = true;
         HasMore = false;
 

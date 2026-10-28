@@ -100,7 +100,54 @@ export interface CommitDetail {
   verified: boolean | null;
   url: string | null;
   filesTruncated: boolean;
-  files: { path: string; label: string; status: string; additions: number; deletions: number; previousPath: string | null; previousLabel: string | null }[];
+  files: CommitFileEntry[];
+  /**
+   * The files regrouped the way the tree draws them (2026-10-27): one entry per object with every
+   * layer, one per file outside any object, in GitHub's order. Empty, with `objectsUnavailable`
+   * saying why, when the project trees could not be read; empty and silent for a root commit.
+   */
+  objects: CommitObject[];
+  objectsUnavailable: string | null;
+}
+
+/** One file of a commit as GitHub lists it; `status` is GitHub's word (added, modified, removed, renamed, copied, changed). */
+export interface CommitFileEntry {
+  path: string;
+  label: string;
+  status: string;
+  additions: number;
+  deletions: number;
+  previousPath: string | null;
+  previousLabel: string | null;
+}
+
+/** One file of an object in a commit: touched or not. */
+export interface CommitLayer extends CommitFileEntry {
+  /** Whether the commit lists this file; an untouched layer is here so the chips offer it. */
+  changed: boolean;
+}
+
+/** One thing a commit changed as the engineer thinks of it: an object with its layers, or a file outside any export. */
+export interface CommitObject {
+  /** What the page addresses the section by: the object's tree path, or the file's path. */
+  key: string;
+  kind: 'object' | 'file';
+  name: string;
+  /** The key for display, spelled. */
+  label: string;
+  /** The layer drawn first: the readable file when the commit touched it, else the first touched layer. */
+  path: string;
+  /** The drawn layer's old path when the commit renamed it. */
+  from: string | null;
+  type: string | null;
+  typeName: string | null;
+  /** The vendor pill of the object's project; empty for a file. */
+  toolchain: string;
+  /** The tree's word: added, modified, deleted, renamed. */
+  status: string;
+  additions: number;
+  deletions: number;
+  layers: CommitLayer[];
 }
 
 export interface Tag {
@@ -176,6 +223,24 @@ export interface Commit {
   message: string;
   author: string;
   when: string;
+  /** Which of the object's files this commit touched, when the history is an object's; empty on a branch's history. */
+  touched: string[];
+}
+
+/**
+ * A branch's history, or an object's (2026-10-27): with a path, the server looks the path's object
+ * up at the ref and lists every one of its files, so a commit that touched only the native XML is
+ * in the history of the object whose readable file was asked about.
+ */
+export interface History {
+  /** The object's name when the path is an object's; null for a plain file or no path. */
+  object: string | null;
+  objectLabel: string | null;
+  /** The files listed; one entry for a plain file, none for a branch. */
+  layers: { path: string; label: string }[];
+  /** The object has more files than the server lists (its bound); the page says so. */
+  layersCut: boolean;
+  commits: Commit[];
 }
 
 /** A pull request as the list shows it (docs/web/FINISH.md, B10); names spelled by the server (rule 9). */
@@ -760,7 +825,7 @@ export const api = {
   compareView: (owner: string, repo: string, base: string, head: string, path: string, view: PaneView, layout: Layout, from?: string, signal?: AbortSignal, full?: boolean) =>
     get<View>(`${repoBase(owner, repo)}/compare/view${query({ base, head, path, from, view, layout, full: full ? '1' : undefined })}`, signal),
   history: (owner: string, repo: string, ref: string, path?: string, signal?: AbortSignal) =>
-    get<Commit[]>(`${repoBase(owner, repo)}/history${query({ ref, path })}`, signal),
+    get<History>(`${repoBase(owner, repo)}/history${query({ ref, path })}`, signal),
   pulls: (owner: string, repo: string, signal?: AbortSignal, q?: string, after?: string) =>
     get<PullList>(`${repoBase(owner, repo)}/pulls${query({ q, after: after && !/^\d+$/.test(after) ? after : undefined, page: after && /^\d+$/.test(after) ? after : undefined })}`, signal),
   /** The new pull request's description previewed through the server's Markdown (a write-shaped call, as the review page's preview is). */
