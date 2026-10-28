@@ -19,6 +19,67 @@ produce a diff touching everything else.
 
 ---
 
+### A method header that gained PUBLIC showed nowhere on the Rendered tab, by decision
+
+**2026-10-28, `main`, the owner's `CodesysStandardLibrary`, commit `5780206` in the History
+panel.** `FB_Template.Reset`: the tree said M, Raw showed `METHOD Reset` become
+`METHOD PUBLIC Reset`, and the Rendered tab drew the title, an empty interface table and the
+two unchanged lines of code with nothing marked and no sentence. The owner's words: "just found
+another thing that doesnt show under render".
+
+**Cause: it was decided, and the decision's cost came due.** On 2026-10-23 the same change
+(`MoveHome`, the owner's real pull request) made its empty table warn "1 declaration change is
+not shown in this table" beside a code block that showed every change, and the owner ruled the
+header line framing. `HeaderResidue` then left the modifiers out of the residue, and its remark
+stated the cost in so many words: *an access modifier changed from one value to another is not
+drawn and not warned about*. Both halves of that were true five days later. Dropping the warning
+was right — it said "go to Raw" about a line Raw had nothing more to say about — but it
+removed the only thing that showed the change, instead of drawing the change.
+
+**Fix: the header's modifiers are chips beside the title.** `MemberTable.Modifiers` carries the
+keywords between the kind and the name (`PUBLIC`, `PRIVATE`, `PROTECTED`, `INTERNAL`, `FINAL`,
+`ABSTRACT`), in the order written, read by the neutral declaration reader so CODESYS and
+TwinCAT get them alike. They are `MemberAttribute` chips with `IsModifier` set, drawn by the
+same chip template on the desktop (an `ItemsControl` docked after the name) and the same
+`Chips` in `MemberTableHtml` (a `mt-mods` span inside the head), and compared by
+`CompareAttributes` by name — so `PUBLIC` gained is one green chip, and `PRIVATE` become
+`PUBLIC` is `PRIVATE` struck beside `PUBLIC` green, the header's own words rather than one chip
+"changed from". The attribute strip under the title is untouched: a modifier is part of what the
+object is, not a pragma on it. Nothing warns, because nothing is hidden.
+
+**Review coverage found a second, older gap while this was tested.** The header line stays
+framing when it is only keywords, so a method without a return type was vouched for before and
+after. A method *with* a return type has its header as its Return row, whose words differ across
+the sides and whose cells do not, so a gained `PUBLIC` there was a coverage gap all along, on
+both sides. And a chip cannot close it alone: the chip is written on one side only (a gained
+`PUBLIC` has no line on the older side), while the header line is edited on both. So the table
+now carries `Header` / `HeaderBefore` (the line the title and modifiers are read from), and
+`Coverage.Table` vouches for the header on both sides when any modifier chip is drawn as
+changed. Every other edit to that line belongs to another rule: the type and the comment are the
+Return row's cells, the name is a row added and one removed, an `EXTENDS` is unshown and refused.
+
+**Checked by breaking it**, each mutation turning at least one Core test red and the restored
+file touched before the green baseline: the modifier arm of `Coverage.Table`; the `Modifiers`
+comparison in `MemberTableDiff.Compare` (three tests red); the `mt-mods` span; the `TakeWhile`
+that reads the keywords; the `Header` assignment; and the `Header` shift to file lines in
+`Parse`. Four tests added: `StDeclarationTableTests`, `MemberTableDiffTests`,
+`MemberTableHtmlTests`, `CoverageTests`. Core 2,107.
+
+**The XAML is covered this time.** On 2026-10-23 the chip template was left to the owner's eye,
+because the App suite drives the view model and not the templates. `ModifierChipWindowTests`
+realises the real window over a one-method source project committed as `METHOD DoIt` and edited
+to `METHOD PUBLIC DoIt`, waits for the marked table, lays the window out headless, and asserts
+the `ItemsControl` after the name is visible, holds a `PUBLIC` text in the added-status brush,
+and sits to the right of the name on its line. Pointing its `ItemsSource` at `Attributes`
+instead of `Modifiers` — the silent-binding failure that test exists for — turns it red. With
+`SNAP_OUT` set it writes the laid-out window to a PNG, which was looked at: the chip reads
+`DoIt` `PUBLIC` in green over the interface table. App 875. The dev build could not be pointed
+at the owner's library while the installed Versio held it — a second Versio on the same
+repository hands over to the first — so the look on the owner's own repository is theirs to
+eyeball on the next release.
+
+---
+
 ### The history panel named nothing, and its reason was half right
 
 **2026-10-27 → 28, on `HistoryRendering`.** The user: "the commit history just shows raw files
