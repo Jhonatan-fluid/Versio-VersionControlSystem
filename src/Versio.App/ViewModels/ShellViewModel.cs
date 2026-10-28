@@ -673,7 +673,7 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         // it is rendered. Keeping the render here is what stops a second diff pane growing
         // in the history panel the first time it needs something the shared one already does.
         History.CommitSelected += row => _ = ShowCommitAsync(row.Entry);
-        History.FileSelected += row => _ = ShowCommitFileAsync(row);
+        History.TreeSelected += row => _ = ShowCommitNodeAsync(row);
 
         logger.Info(LogCategory.App, "Versio started");
     }
@@ -5573,9 +5573,23 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
             message, parsed, Sync.Objects);
     }
 
-    /// <summary>Show what one commit did to one file.</summary>
-    private Task ShowCommitFileAsync(CommitFileRow row) =>
-        ShowCommitFileAsync(row.Commit.Id, row.Commit.ShortId, row.Path);
+    /// <summary>
+    /// Show what one commit did to one row of its tree.
+    /// </summary>
+    /// <remarks>
+    /// The row's commit rides in its <see cref="TreeRow.Context"/>; a row without one is not
+    /// the history's and is ignored rather than guessed at. The file shown is the row's primary
+    /// layer, as the Explorer opens it; a project row has only its binary, whose patch says so.
+    /// </remarks>
+    private Task ShowCommitNodeAsync(TreeRow row)
+    {
+        if (row.Context is not CommitTreeContext context)
+        {
+            return Task.CompletedTask;
+        }
+
+        return ShowCommitFileAsync(context.Commit.Id, context.Commit.ShortId, row.PrimaryFile ?? row.Node.Path);
+    }
 
     private async Task ShowCommitFileAsync(string commitId, string shortId, string path)
     {
