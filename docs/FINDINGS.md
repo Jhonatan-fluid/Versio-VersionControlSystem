@@ -19,6 +19,79 @@ produce a diff touching everything else.
 
 ---
 
+### The history panel named nothing, and its reason was half right
+
+**2026-10-27 → 28, on `HistoryRendering`.** The user: "the commit history just shows raw files
+right now, nothing shows in project format, or with the project detection. It needs to render
+completely" — like the Explorer and the changed-files list, and showing *what changed in that
+commit*. A commit expanded to bare paths (`CommitFileRow`), and a click showed a raw git patch
+(`ShowCommitFileAsync`), while every other tree in the app drew object names, type chips,
+vendor pills and a Rendered pane with amber / green / struck marks.
+
+**The reason was recorded, and it was right.** `HistoryPanelView.xaml`, GP-J and the entry
+below (*A commit's files stay paths, deliberately*): the object index describes the *current*
+export, so naming a historical path from it would put today's name on yesterday's file. What
+was wrong was the conclusion. The answer was never to name nothing; it was to read
+**yesterday's manifest**. The web viewer had been doing exactly that since 2026-10-11
+(`RepoModelLoader`: GitHub's tree, `repo.json`, each manifest and catalog at the commit), and
+nothing on the desktop called it because it lived in `Versio.Web`.
+
+**What was built**, six commits, each with its mutation check:
+
+- `ProjectSnapshotLoader` in Core (`src/Versio.Core/Projects/ProjectSnapshot.cs`): the web's
+  manifest-and-catalog walk over a file list and a reader, with `repo.json`'s parse
+  (`RepoConfigJson`) moved out of the Infrastructure store so Core can reach it. The web passes
+  its blob fetch; the desktop passes `git show`. The web's behaviour is unchanged (504/504,
+  every problem wording the same).
+- Two `IGitClient` primitives: `ListTreeAsync` (`ls-tree -r -z --name-only`, the working-tree
+  parser's NUL contract) and `ShowAtCommitAsync` (`<commit>:./path`; `ShowAtHeadAsync` is now
+  that at `HEAD`, one implementation). A root commit's `^` reads as empty, never a throw.
+- The History panel reads a commit as a project on expand (`HistoryViewModel.BuildSnapshotAsync`):
+  `ls-tree`, `name-status`, the loader, then `RepoExplorerBuilder` with the commit's changes,
+  changed-only — the same builder, the same `TreeRow`, a third copy of the Explorer's row
+  template (a shared template is the exact shape of the GP-J regression). The commit rides on
+  the row (`TreeRow.Context`), because a row realised three levels down cannot otherwise say
+  which commit it belongs to. A task cache so a card click and an expand share one read; a
+  failed read is a row that says so and re-arms, where "…" used to stay for the session.
+- The Rendered pane at the commit (`ShowCommitNodeAsync`): the one real refactor. Every one of
+  the five mark methods read HEAD and the disk *by name*; `PaneSources` (baseline, current, a
+  name for the log) now goes through all five and `RenderInputs` (reader, index, what changed)
+  through `BuildRenderedContent` and `LinkTypes`. The working tree passes what it always did; a
+  commit passes itself and its first parent, and its own index. `StartMarking` is one method
+  for both routes. A deleted object is drawn from the parent's copy with every member, line
+  and network struck (`StruckOut`) — the web viewer's rule — rather than compared with itself.
+- Deleted objects keep their names (`WithDeletedObjectsAsync`): the commit's manifest no longer
+  lists them, so the parent's is read for exactly those paths — one extra read per binding with
+  a deletion — and they draw as `FB_Motor · POU`, struck, not `App/FB_Motor.st`.
+- The commit heading counts by the commit's index, not today's: a block edited in one commit
+  and deleted since is "1 POU changed in Machine", not "1 other file".
+
+**Measured**, by the tests that hold the counts: expanding a commit costs `1 ls-tree +
+1 name-status + 1 show per config, manifest and catalog [+ 1 parent manifest per binding with a
+deletion]` — four spawns on the fixture, five with a deletion, two on a repository with no
+`repo.json`; nothing per changed file. A click costs the object's layers at the commit (one or
+two), the same at the parent, and the patch.
+
+**Rejected.** `cat-file --batch` for O(1) reads: its size-framed output cannot survive the CLI
+runner's line reassembly (the remark on `ShowAtCommitAsync`). The whole project at a commit by
+default: the question a commit answers is what it touched; the whole tree is the same snapshot
+with `ChangedOnly` off. A loader that also built the tree: the desktop needs the commit's
+changes and changed-only, the web the plain tree. Keeping the name `RepoSnapshot`: Core's
+`Bindings` already has one (the orphan scanner's), found by the compiler.
+
+**What the mutations proved.** Deleting `History.TreeSelected +=` in the shell turned
+`HistoryTreeFlowTests` red; wiring the commit route to the working-tree sources turned both
+parent-baseline tests red; counting the heading against `Sync.Objects` again turned the heading
+test red. Each was restored, touched and rebuilt before the next run, as the 2026-10-10 lesson
+says.
+
+**Left as it is.** The web viewer's half — one section per object on `/commit/<sha>`, an
+object's history over every layer — was built in its own session on
+`claude/inspiring-kowalevski-25da44` (six commits; Web 508, vitest 216) and is not merged here.
+`DeviceTreeFlowTests` went red once in a full App run after the reader seam landed, green alone
+and in a 74-test pane-flow run; the message was not captured, and the class is on the watch
+list with the catch-up waits.
+
 ### The first real update downloaded with nothing on screen; the update overlay
 
 **2026-10-27, night, the owner's own installed 0.4.9.** The first end-to-end update worked, and
@@ -7979,9 +8052,11 @@ its colour still come from `ChangeGlyph`, which is where that decision actually 
 `HistoryRowChromeTests` builds a commit file row and reads it. Reverting the template fails both
 of its tests.
 
-**A commit's files stay paths, deliberately.** Naming them from the object index was tempting and
+~~**A commit's files stay paths, deliberately.** Naming them from the object index was tempting and
 is wrong: the index describes the *current* export, so a renamed object would put today's name
-on yesterday's file.
+on yesterday's file.~~ — Since 2026-10-28 the rows are named from the manifest *as it was in that
+commit*, which is what the objection was asking for all along; see *The history panel named
+nothing, and its reason was half right* at the top of this file.
 
 ### The same repository, twice in the dropdown, because git and Windows spell paths differently
 
