@@ -99,6 +99,107 @@ public sealed class PackagingManifestTests
     }
 
     [Fact]
+    public void Pack_trims_PortableGit_before_the_gates_that_prove_it_still_works()
+    {
+        // The trim has to run after the extraction-finished poll and before the LFS, GCM, sh
+        // and helper-pin checks: moved below them, those gates would pass on a tree that is
+        // not the one that ships. Deleting the call leaves every other test green and ships
+        // 140 MB more in every install and every update.
+        var pack = File.ReadAllText(Path.Combine(TestPaths.Root, "tools", "pack", "Pack-Versio.ps1"));
+        Assert.Contains(". (Join-Path $PSScriptRoot 'Trim-PortableGit.ps1')", pack, StringComparison.Ordinal);
+
+        var poll = pack.IndexOf("Log (\"GCM at \"", StringComparison.Ordinal);
+        var trim = pack.IndexOf("Remove-UnusedPortableGit $gitOut", StringComparison.Ordinal);
+        var lfs = pack.IndexOf("& $gitExe 'lfs' 'version'", StringComparison.Ordinal);
+        var gcm = pack.IndexOf("& $gitExe 'credential-manager' '--version'", StringComparison.Ordinal);
+        var sh = pack.IndexOf("alias.versio-sh=!echo sh-ok", StringComparison.Ordinal);
+        var pin = pack.IndexOf("config --system credential.helper manager", StringComparison.Ordinal);
+        Assert.All(new[] { poll, trim, lfs, gcm, sh, pin }, i => Assert.True(i >= 0));
+        Assert.True(poll < trim, "the trim must wait for the extraction-finished poll");
+        Assert.True(trim < lfs && trim < gcm && trim < sh && trim < pin,
+            "every payload gate must run against the trimmed git");
+    }
+
+    [Fact]
+    public void PortableGit_denylist_never_names_what_Versio_runs()
+    {
+        // A denylist fails safe only while it stays a list of whole unused subsystems. Each
+        // fragment here is something a Versio git spawn reaches: GCM (MinGit was rejected for
+        // lacking it, FINDINGS 2026-08-24), LFS, the remote helper and its TLS stack, the MSYS
+        // runtime and sh that every hook runs under, ssh, gpg for signed commits, astextplain's
+        // tools, and the GPL text that has to travel with the binaries.
+        var entries = DenylistEntries();
+        string[] kept =
+        [
+            "credential", "gcm", "avalonia", "identity", "skia", "harfbuzz", "msal",
+            "git-lfs", "git-remote", "curl", "ssl", "crypto", "msys-2.0", "\\sh.exe", "\\bash.exe",
+            "coreutils", "ssh", "gpg", "gnupg", "astextplain", "file.exe", "misc", "antiword",
+            "pdftotext", "license", "copying", "\\cmd", "etc\\", "git.exe", "pki",
+        ];
+        foreach (var entry in entries)
+        {
+            foreach (var fragment in kept)
+            {
+                Assert.False(
+                    entry.Contains(fragment, StringComparison.OrdinalIgnoreCase),
+                    $"denylist entry '{entry}' names '{fragment}', which Versio needs");
+            }
+
+            // A whole bin or libexec folder, or a bare wildcard, is an allowlist's job.
+            var segments = entry.Split('\\');
+            Assert.DoesNotContain("*", segments);
+            Assert.True(segments.Length >= 2 || entry.EndsWith(".exe", StringComparison.Ordinal),
+                $"denylist entry '{entry}' is a top-level folder");
+        }
+
+        // And it still cuts what was measured: an emptied list would pass every check above.
+        Assert.Contains(@"usr\share\vim", entries);
+        Assert.Contains(@"usr\lib\perl5", entries);
+        Assert.Contains(@"usr\share\perl5", entries);
+        Assert.Contains(@"mingw64\share\doc\git-doc", entries);
+        Assert.Contains(@"mingw64\lib\tcl8.6", entries);
+    }
+
+    [Fact]
+    public void Dropping_perl_marks_Word_2007_diffs_binary()
+    {
+        // astextplain extracts .docx text with docx2txt.pl. Without perl it falls back to
+        // `cat` and the diff panel shows zip bytes as text; -diff makes it "Binary files
+        // differ" instead. Removing perl from the list is the only reason to remove this.
+        var text = File.ReadAllText(Path.Combine(TestPaths.Root, "tools", "pack", "Trim-PortableGit.ps1"));
+        Assert.Contains("Set-WordDiffBinary $Root $Write", text, StringComparison.Ordinal);
+        Assert.Contains("docx|docm|dotx|dotm", text, StringComparison.Ordinal);
+        Assert.Contains("'$1$2-diff'", text, StringComparison.Ordinal);
+    }
+
+    private static List<string> DenylistEntries()
+    {
+        var text = File.ReadAllText(Path.Combine(TestPaths.Root, "tools", "pack", "Trim-PortableGit.ps1"));
+        var start = text.IndexOf("$script:PortableGitDenylist = @(", StringComparison.Ordinal);
+        Assert.True(start >= 0, "Trim-PortableGit.ps1 declares $script:PortableGitDenylist");
+        var end = text.IndexOf("\n)", start, StringComparison.Ordinal);
+        Assert.True(end > start);
+
+        // Single-quoted literals only, read line by line so a quote inside a comment is not
+        // taken for an entry.
+        var entries = new List<string>();
+        foreach (var line in text[start..end].Split('\n').Skip(1))
+        {
+            var code = line.TrimStart();
+            if (code.StartsWith('#'))
+            {
+                continue;
+            }
+
+            entries.AddRange(System.Text.RegularExpressions.Regex.Matches(code, "'([^']+)'")
+                .Select(m => m.Groups[1].Value));
+        }
+
+        Assert.NotEmpty(entries);
+        return entries;
+    }
+
+    [Fact]
     public void Git_spawn_applies_bundled_defaults_in_one_place()
     {
         // ApplyBundledDefaults is PATH + the GCM pin. Calling only PrependHelperPath
@@ -209,7 +310,7 @@ public sealed class PackagingManifestTests
     {
         // Windows PowerShell 5.1 reads a BOM-less script as the ANSI codepage. One em-dash in
         // a string and the console shows mojibake - or a comparison quietly stops matching.
-        foreach (var name in new[] { "Pack-Versio.ps1", "PackCommon.ps1", "Publish-Versio.ps1" })
+        foreach (var name in new[] { "Pack-Versio.ps1", "PackCommon.ps1", "Publish-Versio.ps1", "Trim-PortableGit.ps1" })
         {
             var bytes = File.ReadAllBytes(Path.Combine(TestPaths.Root, "tools", "pack", name));
             var offender = Array.FindIndex(bytes, b => b > 0x7F);

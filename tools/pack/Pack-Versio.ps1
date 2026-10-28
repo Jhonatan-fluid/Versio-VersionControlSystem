@@ -48,6 +48,10 @@ $ErrorActionPreference = 'Stop'
 # Publish-Versio.ps1, so a publish looks and behaves like a pack because it runs the same code.
 . (Join-Path $PSScriptRoot 'PackCommon.ps1')
 
+# The PortableGit denylist lives in its own file so it can be run against an extracted copy
+# without seven minutes of publishing first - which is how its sizes were measured.
+. (Join-Path $PSScriptRoot 'Trim-PortableGit.ps1')
+
 $script:LogPath = Join-Path $Repo 'artifacts\pack.log'
 $script:PhaseTotal = 7
 
@@ -231,11 +235,29 @@ try {
     }
     Log ("GCM at " + $gcm.FullName)
 
+    # After the GCM poll, because that is the extraction-finished signal: deleting from a
+    # tree the extractor is still writing would race it. Before every check below, so the
+    # LFS, GCM, sh and helper-pin gates all run against the git that actually ships.
+    $trim = Remove-UnusedPortableGit $gitOut { param($line) Log $line }
+
     $lfs = (& $gitExe 'lfs' 'version' | Out-String).Trim()
     if ($LASTEXITCODE -ne 0) {
         throw "bundled git lfs version failed - this archive is not PortableGit"
     }
     Log $lfs
+
+    # What the trim must not have taken. GCM is spawned by git as a helper, so a missing
+    # DLL in its folder shows up here and not at the user's first Sign in. A `!` alias runs
+    # under usr\bin\sh exactly as an LFS hook does, so this is the hook path without a repo.
+    $gcmVersion = (& $gitExe 'credential-manager' '--version' | Out-String).Trim()
+    if ($LASTEXITCODE -ne 0) {
+        throw "bundled git credential-manager --version failed after the trim"
+    }
+    Log ("GCM " + $gcmVersion)
+    $shell = (& $gitExe '-c' 'alias.versio-sh=!echo sh-ok' 'versio-sh' | Out-String).Trim()
+    if ($shell -ne 'sh-ok') {
+        throw "bundled git cannot run sh after the trim (got '$shell') - hooks would fail"
+    }
 
     # PortableGit's first-run helper is helper-selector (a GUI). GIT_TERMINAL_PROMPT=0
     # does not suppress it, and "Always use this" cannot persist under Program Files.
@@ -249,7 +271,7 @@ try {
     if ($pinnedHelper -ne 'manager') {
         throw "bundled git credential.helper is '$pinnedHelper', expected manager"
     }
-    Complete-Phase 'LFS + GCM + helper pin'
+    Complete-Phase ('{0} trimmed to {1} + LFS + GCM + pin' -f (Format-Mb $trim.Before), (Format-Mb $trim.After))
 
     # -- 6: payload gates -----------------------------------------------------------
 
