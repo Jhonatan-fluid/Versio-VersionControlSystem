@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router';
 import type { CheckAnnotation, CoverageGap, Layout, Me, PaneView, PendingReviewView, ReviewCheck, ReviewCommits, ReviewFile, ReviewFileView, ReviewSnapshot, ReviewStatus, ReviewThread, ReviewThreads, ReviewTimeline, ThreadPlacement } from '../api';
 import { ApiError, api } from '../api';
+import { ChangeSectionHead } from '../components/ChangeSectionHead';
 import type { Annotation } from '../components/FragmentHost';
 import { FragmentHost } from '../components/FragmentHost';
 import { safeHref } from '../fragment';
@@ -28,8 +29,6 @@ const tabs: { id: Tab; label: string }[] = [
   { id: 'checks', label: 'Checks' },
   { id: 'files', label: 'Files changed' },
 ];
-
-const mark: Record<ReviewFile['change'], string> = { added: 'A', modified: 'M', deleted: 'D', renamed: 'R' };
 
 const unavailable: Record<string, string> = {
   'no-patch': 'GitHub shows no line diff for this file (binary, or too large), so comments go on the file, not a line.',
@@ -1311,41 +1310,16 @@ function FileSection({ writer, snap, owner, repo, file, active, threads, threads
 
   const segments = file.label.split('/');
   const name = file.object ?? segments[segments.length - 1] ?? file.label;
-  const folder = segments.slice(0, -1).join(' › ').replace(/\^/g, '');
   return (
     <section ref={host} className={`file-review${open ? '' : ' is-folded'}${viewed ? ' is-viewed' : ''}`} data-file={path} id={`diff-${encodeURIComponent(path)}`}>
-      <div className="pane-head">
-        <div className="pane-title" title={file.label}>
-          <button type="button" className="btn btn-invisible btn-small file-chevron" aria-expanded={open} aria-label={open ? 'Collapse this file' : 'Expand this file'} onClick={() => setOpen(!open)}>
-            <Icon name={open ? 'chevron-down' : 'chevron-right'} />
-          </button>
-          <span className={`change change-${file.change}`} title={file.change}>{mark[file.change]}</span>
-          <h2 className="review-file">{name}</h2>
-          {folder && <span className="pane-folder" title={file.label}>{folder}</span>}
-          {file.change === 'renamed' && file.previousLabel && <span className="text-muted text-small">renamed from {file.previousLabel}</span>}
-          {file.additions !== undefined && file.additions !== null && file.deletions !== undefined && file.deletions !== null && (
-            <span className="diffstat"><span className="diffstat-add">+{file.additions}</span> <span className="diffstat-del">−{file.deletions}</span></span>
-          )}
-        </div>
-        <div className="pane-tools">
-          {writer && (
-            <label className="review-viewed-label">
-              <input type="checkbox" checked={viewed} onChange={(e) => onViewed(e.target.checked)} /> Viewed
-            </label>
-          )}
-          <div className="segmented" role="tablist" aria-label="View">
-            <button type="button" role="tab" aria-selected={view === 'rendered'} onClick={() => setView('rendered')}>Rendered</button>
-            <button type="button" role="tab" aria-selected={view === 'raw'} onClick={() => setView('raw')}>Raw</button>
-          </div>
-          <label className="full-file-label" title="Every line, on both tabs; clear, the drawing is folded to the lines around each change">
-            <input type="checkbox" checked={full} onChange={(e) => setFull(e.target.checked)} /> Show full file
+      <ChangeSectionHead open={open} onToggle={() => setOpen(!open)} status={file.change} name={name} label={file.label}
+        renamedFrom={file.change === 'renamed' ? file.previousLabel : null} additions={file.additions} deletions={file.deletions}
+        view={view} onView={setView} layout={layout} onLayout={setLayout} full={full} onFull={setFull}
+        extraTools={writer && (
+          <label className="review-viewed-label">
+            <input type="checkbox" checked={viewed} onChange={(e) => onViewed(e.target.checked)} /> Viewed
           </label>
-          <div className="segmented" role="group" aria-label="Layout">
-            <button type="button" aria-pressed={layout === 'unified'} onClick={() => setLayout('unified')}>Unified</button>
-            <button type="button" aria-pressed={layout === 'split'} onClick={() => setLayout('split')}>Side by side</button>
-          </div>
-        </div>
-      </div>
+        )} />
       {open && (
         <div className="file-review-body">
           <FileReview writer={writer} path={path} file={file} result={result} threads={threads} threadsState={threadsState} view={view} onView={setView}
