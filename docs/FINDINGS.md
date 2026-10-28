@@ -19,6 +19,101 @@ produce a diff touching everything else.
 
 ---
 
+### PortableGit was two-fifths of every update
+
+**2026-10-28, after *The update card sat on 70%*.** A delta update downloads in about a
+second, and then Velopack rebuilds the full package from the installed copy plus the delta:
+91 s on 0.4.10 → 0.4.11. The installed copy was 686 MB, and `git/` was 410 MB of it
+(mingw64 211, usr 197). Most of what that rebuild recompresses is a git nobody changed.
+
+**What Versio actually runs**, read from `GitExecutable` and every `RunAsync` call: `cmd\git.exe`
+(the launcher, which puts mingw64\bin and usr\bin on PATH), the builtins, `git-remote-https`
+and its curl/OpenSSL stack, `git lfs`, `credential fill` through GCM, and — not from Versio's
+own code but from the repositories it opens — **sh**, because every hook runs under it (`git lfs
+install` writes four) and so does every `!` alias. Two things in PortableGit's own config also
+run: the `filter "lfs"` driver and the `astextplain` diff driver, which `etc\gitattributes`
+routes `*.doc`, `*.pdf`, `*.docx` and others through, and which Versio's plain `git diff`
+triggers. The one editor path (`rebase --continue`) runs with `GIT_EDITOR=":"`.
+
+**What was cut**, a denylist in `tools/pack/Trim-PortableGit.ps1`, measured on an extracted
+2.55.0.5 (MiB, `Get-ChildItem` sums):
+
+| Removed | MB | Why it was safe |
+|---|---|---|
+| vim (six 3.8 MB copies of one exe) + `usr\share\vim` | 61.3 | no editor is ever launched |
+| perl + `usr\lib\perl5`, `usr\share\perl5` | 38.8 | callers are send-email, `c_rehash`, `docx2txt.pl` |
+| `mingw64\share\doc\git-doc` | 19.1 | `git help` opens a browser |
+| Tcl/Tk, gitk, git gui (both DLL copies) | 12.9 | Versio is the GUI |
+| Subversion DLLs | 3.3 | their consumer, git-svn, is not even shipped |
+| mintty, tig, nano, `git-bash.exe` | 5.9 | nothing draws a console |
+| **PortableGit** | **384.9 → 244.1** | |
+
+Packed 0.4.11 against the published one: full `.nupkg` **287.8 → 231.6 MB**, Setup.exe 292.3
+→ 236.1 MB, MSI 162.7 → 134.3 MB, extracted payload 686 → 532 MB. The compressed saving is
+smaller than the raw one because vim's runtime and perl's modules are text and zip well; the
+rebuild after a delta works on the uncompressed bytes, so it should shrink by about the raw
+fifth. **The update time itself is not measured** — that needs two published releases.
+
+**A denylist, not an allowlist.** An allowlist would have to name every DLL git, curl, ssh, sh,
+git-lfs and GCM load, and the PortableGit bump that adds one more ships a git that fails at
+first push. A denylist fails the other way: a bump that adds something ships it. Entries that
+match nothing are logged (`trim: not present`) rather than thrown, as a prompt to re-read the
+list after a bump.
+
+**Kept, and why** (the full list is in the script header): GCM and everything beside it —
+MinGit was rejected for lacking it (*PortableGit's helper-selector kept asking*, 2026-08-24);
+git-lfs; the DLLs duplicated in `libexec\git-core`, which are deliberate upstream so that
+Windows' search order (exe folder, then System32, then PATH) cannot hand git-remote-https a
+stray System32 libcrypto; the MSYS runtime, sh, bash, coreutils; ssh; gpg, because
+`commit.gpgsign` in a user's global config calls it; `file` + `magic.mgc`, antiword and
+pdftotext, astextplain's tools; and every licence file.
+
+**The one thing it cost.** astextplain extracts `.docx` text with `docx2txt.pl` and falls back to
+`cat`. Measured with PATH holding only System32: the untrimmed git showed `-Pump one / +Pump
+two`, the trimmed one showed the zip's bytes as text. **The first check said both worked** —
+this shell's PATH carries a Git for Windows install whose perl answered instead, which is
+exactly what a developer box would report. The trim therefore rewrites the eight Word 2007
+patterns (`docx docm dotx dotm`, both cases) in the payload's `etc\gitattributes` to `-diff`,
+so they read *Binary files differ*, which `UnifiedDiffParser` already handles for every vendor
+binary. Keeping perl instead would cost 38.8 MB; if a `.docx` text diff turns out to matter,
+that is the trade to revisit. `.odt` was already falling back to `cat` before this — there is
+no `odt2txt` in PortableGit — and is untouched.
+
+**Gates.** The pack trims right after the extraction-finished poll (GCM appearing) and before
+every check, so `git lfs version`, the new `git credential-manager --version`, a `!` alias
+that must print `sh-ok` (the hook path without a repository), and the helper pin all run
+against the git that ships. `PackagingManifestTests` pins the order, a denylist that never
+names a kept fragment (`credential`, `git-lfs`, `msys-2.0`, `ssh`, `gpg`, `license`, …) and
+still names what was measured, and the `-diff` step. Mutation-checked one at a time: GCM
+added to the list, `usr\bin\*` added, vim dropped, the call removed, the `-diff` step removed
+— each red alone, baseline green. **The second pass found a silent no-op:** entries are
+wildcard patterns (`perl5.*.exe`), and the first version joined them onto an unescaped root,
+so a checkout under a folder named `[x]` matched nothing — measured, 384.9 → 384.9 MB, every
+entry "not present", pack green. The root is now `WildcardPattern.Escape`d, and the pack throws
+if the trim removed nothing at all.
+
+**Evidence.** Integration 261/261 and App 874/874 (17 m 53 s, the owner's Versio open beside it)
+with the trimmed, manager-pinned git as the **only** git on PATH. A first Integration run
+before the pin went 259/261 — the two `CredentialTests` met `helper-selector`, which is the
+2026-08-24 finding reproducing, not the trim. From the extracted full package with PATH =
+System32 and `GCM_INTERACTIVE=never`: public clone; commit with LFS hooks; push to a bare
+repository through the LFS pre-push hook; fetch; ls-remote; a fresh clone that smudged the LFS
+object back byte-identical; `credential fill` for github.com answered by GCM from the stored
+credential with no window; and ls-remote plus a shallow clone of the private
+`fluidstackio/versio-releases`.
+
+**Installed, with the owner's leave** (they closed Versio first): `Setup.exe --silent` over
+the 0.4.11 install, `current` 686 → 528 MB. The installed git, PATH = System32,
+`GCM_INTERACTIVE=never`: shallow clone and fetch of the private releases repository, and a
+push of a throwaway one-commit branch to `fluidstackio/Versio`, read back with ls-remote and
+deleted at once. The installed app on `C:\GIT\Versio` logged `git found … current\git\cmd\git.exe`,
+`git credential fill ok`, `credential for https://github.com: stored`, and no `ERR` line.
+**Not done:** a sign-in from nothing. That means erasing the owner's stored GitHub credential
+and completing GCM's browser flow, which is theirs to do; what was proved is that the trimmed
+GCM reads, and pushes with, the credential it stored before.
+
+---
+
 ### The update card sat on 70% for a minute and a half: Velopack applying a delta in silence
 
 **2026-10-28, the owner's installed 0.4.10 updating to 0.4.11.** The overlay of the entry
@@ -52,7 +147,9 @@ is its own business; silence is what the user sees.
 **Why it is 288 MB, and what is not done here.** Bundled git is 410 MB of the 686 MB install
 (PortableGit, kept over MinGit for Git Credential Manager; the 2026-08-24 entry). Every delta
 update recompresses that unchanged git into the new full package, which is most of those 91
-seconds. Trimming the bundled git is the real cure and is left as its own task.
+seconds. ~~Trimming the bundled git is the real cure and is left as its own task.~~ Done the
+same day: *PortableGit was two-fifths of every update*, the entry above (384.9 → 244.1 MB;
+full package 287.8 → 231.6 MB).
 
 **Evidence.**
 
