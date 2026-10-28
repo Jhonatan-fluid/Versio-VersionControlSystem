@@ -386,6 +386,16 @@ is orphaned — hidden, holding the project, and mid-write if it was importing.
   shell has released the repository, and it waits for the process to end before touching a
   file. **Don't close keeps the download**: `RestartDeclined` turns the restart off, and the
   update installs at the user's own next exit without reopening Versio behind them.
+- **And the same question is asked before the download (2026-10-27, later).** *Update and
+  restart* now puts a blocking overlay over the window for the whole download (FINDINGS
+  2026-10-27, the update overlay), so
+  running work is asked about first — `ShellViewModel.ClearWorkForUpdateAsync`, the same
+  `CloseApp` intent and dialog — rather than discovered after a minute of progress bar. Unlike
+  `RequestCloseAsync` it tears nothing down: no `StopWatching`, no `Quiesce`, because a
+  download that fails or is cancelled must leave a Versio that still watches its repository.
+  Wait shows *waiting for the current operation*; Stop gives the work the close's eight
+  seconds; Don't close downloads nothing and records no Later. The close guard still runs at
+  the restart, for anything that started during the download.
 
 ---
 

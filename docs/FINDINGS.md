@@ -19,6 +19,76 @@ produce a diff touching everything else.
 
 ---
 
+### The first real update downloaded with nothing on screen; the update overlay
+
+**2026-10-27, night, the owner's own installed 0.4.9.** The first end-to-end update worked, and
+looked broken: *Update and restart* was clicked, the dialog closed, and nothing on screen moved
+until the window vanished a while later. The download's only voice was `UpdatesViewModel.Status`,
+a line under *Check for updates…* in the gear menu, and the menu closes when the item is
+clicked, so the progress went into a popup nobody could see. The log had every quarter
+(`update 0.4.9: 25% downloaded`…). The screen had none of it. That fits the rule at the top of
+AGENTS.md: the code was correct and the user saw a silent failure.
+
+**What replaced it** (the owner approved a mock-up first): `UpdatesViewModel.Stage`, which is
+`None`, `WaitingForWork`, `Downloading`, `Restarting` or `Failed`. The window draws it as an
+overlay over every row and column (`UpdateOverlay`, ZIndex 100) with:
+
+- a scrim that swallows the mouse;
+- the version, a sentence on what happens next, a bar with the percentage, and the download
+  size;
+- a step strip: Download → Close Versio → Install → Reopen;
+- **Cancel** while waiting or downloading, and **Try again** / **Close** after a failure.
+
+It blocks on purpose. Once the user has said update, this Versio is about to close, and a
+click on a panel that is about to disappear is a click that will be lost.
+
+**Three things a first draft got wrong, and what was rejected:**
+
+- **Covering the window does not block the keyboard.** Focus stays on whatever panel had it,
+  so Enter and Ctrl+O still act behind the scrim. `PreviewKeyDown` now drops keys aimed outside
+  the overlay. On the second pass it also drops chords inside it: a Ctrl+O pressed on the
+  overlay's own Cancel button would bubble to the window's `KeyBinding`s and open the folder
+  picker behind it. That one was found by reading the code, not observed. Tab, Shift+Tab, Enter and Space are what the buttons need. Alt+F4 still passes,
+  like the title bar's X, because the close guard owns that path.
+- **"5.1 of 12 MB" was rejected.** Velopack reports one percentage across downloading *and*
+  applying deltas, so a byte count worked back from it would look measured and not be. The
+  card shows the percentage and *about N MB*. The size is the delta chain when there is one,
+  otherwise the full package: on a delta update the full package's ~80 MB would be wrong by
+  25×.
+- **Running work is asked about before the download, not after.** The close guard already asked
+  at the restart, but only after a minute of progress bar over an export the user did not know
+  would hold the restart. `ShellViewModel.ClearWorkForUpdateAsync` asks the same `CloseApp`
+  question first, and tears nothing down: no `StopWatching`, no `Quiesce`, because a cancelled
+  download must leave a Versio that still watches its repository. The close guard still runs
+  at the restart for anything that started in between (SAFEGUARDS §3.4).
+
+**Evidence.**
+
+- 8 new App tests: 7 in `UpdatesViewModelTests` for the stages, Cancel, Try again, Close, a
+  refused restart, and Don't close / Wait over a running import; 1 in
+  `UpdateOverlayWindowTests`, which checks the overlay in the real window, because a misspelt
+  binding path would fail silently and bring back exactly this defect.
+- Four mutations, each red: the stage change not raising `IsOverlayOpen`, the shell not passing
+  `ClearWorkForUpdateAsync`, the overlay's `Visibility` unbound, and no `Downloading` stage.
+- The keyboard half needs a presented window, so `PackagingManifestTests` pins it by source
+  text.
+- The card was rendered headless to PNG in the downloading and failed states and looked at.
+  The failure toast posted alongside is hit-tested *under* the scrim, which keeps it as the
+  record left behind after Close.
+- **The full App suite caught one regression**, and it was the overlay's (865/867, 13 m 34 s).
+  `ProjectPanelCalmStateTests` hit-tests the empty state's *Open a repository* button, and the
+  click landed on `UpdateOverlay`, which reported itself `Collapsed` at the time. With
+  `Visibility` bound straight to `IsOverlayOpen`, the scrim starts at the default Visible and
+  the binding settles after the first layout, so a full-window Grid was arranged in that gap.
+  The test is green on the base commit. Fixed by starting the overlay `Collapsed` in a Style
+  and showing it from a `DataTrigger`, so its state is right from construction; the
+  misspelt-path mutation still turns the window test red. The other red,
+  `CommitWhileIdeHoldsProjectTests`, was green alone, as it was before this change.
+- **Not seen yet:** the overlay during a real update on an installed copy, the dark theme, and
+  the restarting state live. That needs a 0.5.x published over an installed 0.4.9.
+
+---
+
 ### A failure over a project that matches HEAD came back at every launch, and a click was never the fix
 
 **2026-10-27, 18:16, the same two rows after the entry below shipped.** The owner rebuilt
