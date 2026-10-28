@@ -39,6 +39,9 @@ public sealed class UpdatesViewModelTests
         /// <summary>Holds the download open until released, so a test can look mid-download.</summary>
         public TaskCompletionSource? Gate { get; set; }
 
+        /// <summary>Reported before waiting on the gate: the quick delta, then the quiet.</summary>
+        public int? ReportFirst { get; init; }
+
         public int Checks { get; private set; }
 
         public int Downloads { get; private set; }
@@ -59,6 +62,11 @@ public sealed class UpdatesViewModelTests
             if (DownloadFails is not null)
             {
                 throw DownloadFails;
+            }
+
+            if (ReportFirst is { } first)
+            {
+                progress?.Report(first);
             }
 
             if (Gate is not null)
@@ -313,6 +321,35 @@ public sealed class UpdatesViewModelTests
     }
 
     [Fact]
+    public async Task A_download_that_goes_quiet_says_it_is_applying_rather_than_sitting_on_a_percentage()
+    {
+        // 0.4.10 -> 0.4.11: a 3.9 MB delta reached 50% in a second, then Velopack rebuilt the
+        // 288 MB package for 91 s with no progress at all, and the card sat on 70% looking
+        // frozen. The quiet has to turn into something that moves and says what it is.
+        var gate = new TaskCompletionSource();
+        var source = new FakeSource { Answer = UpdateCheck.Available(Newer), Gate = gate, ReportFirst = 50 };
+        using var shell = Build(source);
+        await shell.LoadRecentAsync();
+        shell.Asked().Update = _ => UpdateChoice.UpdateNow;
+        shell.Updates.QuietBeforeApplying = TimeSpan.FromMilliseconds(100);
+
+        var checking = shell.Updates.CheckNowAsync();
+
+        await Eventually.Until(() => shell.Updates.IsApplying, "the quiet to be read as applying");
+        Assert.True(shell.Updates.IsIndeterminate);
+        Assert.Equal(0.0, shell.Updates.ProgressFraction);
+        Assert.StartsWith("Applying the update · ", shell.Updates.PercentText, StringComparison.Ordinal);
+        Assert.Contains("still working", shell.Updates.Detail, StringComparison.Ordinal);
+        Assert.True(shell.Updates.CancelCommand.CanExecute(null));
+
+        gate.SetResult();
+        await checking;
+
+        Assert.False(shell.Updates.IsApplying);
+        Assert.Equal(UpdateStage.Restarting, shell.Updates.Stage);
+    }
+
+    [Fact]
     public async Task Cancel_drops_the_download_without_installing_or_remembering_a_Later()
     {
         var store = new MemoryStore(AppSettings.Empty);
@@ -358,9 +395,10 @@ public sealed class UpdatesViewModelTests
         Assert.True(shell.Updates.TryAgainCommand.CanExecute(null));
 
         source.DownloadFails = null;
-        // Synchronous here: the fake download completes at once, so the command has run
-        // to the restart by the time Execute returns.
+        // Execute is async void, and the download's clock is stopped with an await, so the
+        // command is still finishing when Execute returns: wait for the restart it ends in.
         shell.Updates.TryAgainCommand.Execute(null);
+        await Eventually.Until(() => restarts == 1, "Try again to reach the restart");
 
         Assert.Equal(2, source.Downloads);
         Assert.Equal(1, restarts);
