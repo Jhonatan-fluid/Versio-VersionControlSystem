@@ -1,6 +1,7 @@
 using System.Net;
 using System.Text;
 using System.Text.Json;
+using Versio.Web.Sources;
 using Xunit;
 
 namespace Versio.Web.Tests;
@@ -127,6 +128,120 @@ public sealed class BrowseTests
         Assert.Equal(["src/New.st:added", "src/Old.st:removed", "src/Pump.st:modified"], commit.GetProperty("files").EnumerateArray().Select(f => $"{f.GetProperty("path").GetString()}:{f.GetProperty("status").GetString()}"));
         (await host.GetAsync("/api/repos/acme/plant/commit?sha=not-a-sha")).AssertStatus(HttpStatusCode.NotFound);
         (await host.GetAsync("/api/repos/acme/plant/commit?sha=" + new string('0', 40))).AssertStatus(HttpStatusCode.NotFound);
+    }
+
+    /// <summary>
+    /// A Versio repository with one CODESYS export, then a commit that edits only the native XML
+    /// layer of a two-layer GVL, removes a POU whole, and adds a document outside any export.
+    /// </summary>
+    private static FakeGitHub BuildVersio(out string head)
+    {
+        var github = new FakeGitHub();
+        var repo = github.Add("acme", "plant");
+        var files = FakeGitHub.FromDisk(".versio/repo.json", "fixtures/projects/MachineWithMembers");
+        var start = github.Commit(repo, "main", files);
+        var next = new Dictionary<string, byte[]>(files, StringComparer.Ordinal)
+        {
+            [GlobVarXml] = Encoding.UTF8.GetBytes(Encoding.UTF8.GetString(files[GlobVarXml]).Replace("TempActual", "TempMeasured", StringComparison.Ordinal)),
+            ["docs/x.md"] = Encoding.UTF8.GetBytes("# x\n"),
+        };
+        // Removed as an export removes an object: the file and its manifest entry together. With
+        // the entry left in, the commit's own index still names the object, and the parent-side
+        // fallback in ObjectFor is never what finds it (the first version of this test left the
+        // entry in, and the fallback could be deleted with the test staying green).
+        next.Remove(Simulation);
+        var manifest = System.Text.Json.Nodes.JsonNode.Parse(Encoding.UTF8.GetString(files[Manifest]))!.AsObject();
+        var objects = manifest["objects"]!.AsArray();
+        var entry = objects.Single(o => o!["path"]!.GetValue<string>().EndsWith("/Simulation.st", StringComparison.Ordinal));
+        objects.Remove(entry);
+        manifest["objectCount"] = objects.Count;
+        next[Manifest] = Encoding.UTF8.GetBytes(manifest.ToJsonString());
+        head = github.Commit(repo, "edit", next);
+        repo.Parents[head] = [start];
+        return github;
+    }
+
+    private const string Application = "fixtures/projects/MachineWithMembers/Device/Plc Logic/Application";
+    private const string GlobVarXml = Application + "/Glob_Var.gvl.xml";
+    private const string Simulation = Application + "/Simulation.st";
+    private const string Manifest = "fixtures/projects/MachineWithMembers/_manifest.json";
+
+    /// <summary>
+    /// The commit page drew one section per layer file until 2026-10-27: a GVL edited in its
+    /// native XML was a section headed by an .xml path, with no name, chip or pill, and the tree
+    /// beside it drew the object once. `objects` groups GitHub's list the way the tree does: one
+    /// entry per object with every layer (the touched ones flagged), drawn from the layer the
+    /// commit touched, with the row's status and the project's pill; a file outside any export is
+    /// a plain entry. The removed POU is still an object — found at the parent, where its node
+    /// still is — and not a nameless file.
+    /// </summary>
+    [Fact]
+    public async Task A_commits_files_are_grouped_by_object_with_every_layer_the_touched_one_drawn_and_the_tree_rows_status_and_pill()
+    {
+        await using var host = await TestHost.StartAsync(BuildVersio(out var head));
+
+        var commit = Json(await (await host.GetAsync($"/api/repos/acme/plant/commit?sha={head}")).Body());
+
+        Assert.Equal(JsonValueKind.Null, commit.GetProperty("objectsUnavailable").ValueKind);
+        Assert.Equal(4, commit.GetProperty("files").GetArrayLength());
+        var objects = commit.GetProperty("objects").EnumerateArray().ToList();
+        // GitHub's order: an entry sits where its first file was listed, and the manifest, inside
+        // the export but no object's layer, is a plain file like the document outside it.
+        Assert.Equal(["x.md:file", "Glob_Var:object", "Simulation:object", "_manifest.json:file"], objects.Select(o => $"{o.GetProperty("name").GetString()}:{o.GetProperty("kind").GetString()}"));
+
+        var gvl = objects[1];
+        Assert.Equal((GlobVarXml, "modified", "GVL"), (gvl.GetProperty("path").GetString(), gvl.GetProperty("status").GetString(), gvl.GetProperty("type").GetString()));
+        Assert.False(string.IsNullOrEmpty(gvl.GetProperty("typeName").GetString()));
+        Assert.False(string.IsNullOrEmpty(gvl.GetProperty("toolchain").GetString()));
+        Assert.NotEqual(GlobVarXml, gvl.GetProperty("key").GetString());
+        Assert.Equal([(Application + "/Glob_Var.gvl.st", "unmodified", false), (GlobVarXml, "modified", true)],
+            gvl.GetProperty("layers").EnumerateArray().Select(l => (l.GetProperty("path").GetString(), l.GetProperty("status").GetString(), l.GetProperty("changed").GetBoolean())));
+        Assert.Equal((1, 1), (gvl.GetProperty("additions").GetInt32(), gvl.GetProperty("deletions").GetInt32()));
+
+        var doc = objects[0];
+        Assert.Equal(("docs/x.md", "docs/x.md", "added", ""), (doc.GetProperty("key").GetString(), doc.GetProperty("path").GetString(), doc.GetProperty("status").GetString(), doc.GetProperty("toolchain").GetString()));
+        Assert.Equal(JsonValueKind.Null, doc.GetProperty("type").ValueKind);
+
+        var pou = objects[2];
+        Assert.Equal(("deleted", Simulation, "POU"), (pou.GetProperty("status").GetString(), pou.GetProperty("path").GetString(), pou.GetProperty("type").GetString()));
+
+        // The page scrolls a tree pick to the section whose id is the row's path: every object
+        // entry's key is a row of the marked tree the page draws beside it, with the same status.
+        var tree = Json(await (await host.GetAsync($"/api/repos/acme/plant/tree?ref={head}&base=main&changed=1")).Body());
+        var rows = Flatten(tree.GetProperty("nodes")).ToDictionary(n => n.GetProperty("path").GetString()!, n => n.GetProperty("status").GetString());
+        foreach (var o in objects.Where(o => o.GetProperty("kind").GetString() == "object"))
+        {
+            Assert.Equal(o.GetProperty("status").GetString(), rows[o.GetProperty("key").GetString()!]);
+        }
+    }
+
+    /// <summary>
+    /// The grouping needs the two project trees, and a rate limit on those must not cost the
+    /// commit: the card and GitHub's file list are answered, the grouping is absent and says why.
+    /// </summary>
+    [Fact]
+    public async Task A_commit_whose_project_trees_cannot_be_read_keeps_its_card_and_files_and_says_why_the_objects_are_missing()
+    {
+        var github = BuildVersio(out var head);
+        github.BeforeTree = _ => Task.FromResult(RepoFailure.RateLimited);
+        string log;
+        await using (var host = await TestHost.StartAsync(github))
+        {
+            var response = await host.GetAsync($"/api/repos/acme/plant/commit?sha={head}");
+            response.AssertStatus(HttpStatusCode.OK);
+            var commit = Json(await response.Body());
+
+            Assert.Equal(4, commit.GetProperty("files").GetArrayLength());
+            Assert.Equal(0, commit.GetProperty("objects").GetArrayLength());
+            Assert.Contains("rate limit", commit.GetProperty("objectsUnavailable").GetString(), StringComparison.Ordinal);
+            log = string.Concat(Directory.GetFiles(host.LogDirectory).Select(f =>
+            {
+                using var stream = new FileStream(f, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+                return new StreamReader(stream).ReadToEnd();
+            }));
+        }
+
+        Assert.Contains("could not be read (RateLimited); 4 files answered ungrouped", log, StringComparison.Ordinal);
     }
 
     [Fact]

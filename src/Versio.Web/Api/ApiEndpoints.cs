@@ -160,16 +160,7 @@ public static partial class ApiEndpoints
                 }
 
                 baseSha = older.Value!.Model.CommitSha;
-                var changes = ViewService.ChangedPaths(older.Value!.Model, m)
-                    .Select(c => new Versio.Core.Git.FileChange
-                    {
-                        Path = c.Path,
-                        Staged = c.Change switch { "added" => Versio.Core.Git.ChangeKind.Added, "deleted" => Versio.Core.Git.ChangeKind.Deleted, _ => Versio.Core.Git.ChangeKind.Modified },
-                        Unstaged = Versio.Core.Git.ChangeKind.Unmodified,
-                    })
-                    .ToList();
-                nodes = RepoExplorerBuilder.Build(m.Files.Keys.OrderBy(p => p, StringComparer.Ordinal).ToList(), m.Projects,
-                    new ProjectTreeOptions { ChangedOnly = changed == "1", HideUnchangedProjects = changed == "1" }, changes: changes);
+                nodes = TouchedObjects.Marked(older.Value!.Model, m, changedOnly: changed == "1");
             }
 
             return Results.Ok(new
@@ -185,8 +176,13 @@ public static partial class ApiEndpoints
 
         // One commit, as GitHub's /commit/sha shows it (Step 8): the message, both people, the
         // parents, the stats and the files; the drawing of each file is the compare view's, from
-        // the first parent.
-        api.MapGet("/commit", async (string owner, string repo, string? sha, HttpContext http, AccessResolver access, IRepoSource source, CancellationToken ct) =>
+        // the first parent. Since 2026-10-27 the files are also grouped by object (`objects`):
+        // the commit and its first parent are loaded as /compare loads them (cached by commit,
+        // and the page's marked tree loads the same two), and TouchedObjects reads each object's
+        // row off the marked tree. A load that fails keeps the card and the raw files, and says
+        // in `objectsUnavailable` why the grouping is missing, so a rate limit on the manifests
+        // costs the project format and not the commit.
+        api.MapGet("/commit", async (string owner, string repo, string? sha, HttpContext http, AccessResolver access, IRepoSource source, Loader load, IVersioLogger log, CancellationToken ct) =>
         {
             if (!Valid(owner, repo) || sha is not { Length: >= 7 and <= 40 } || !sha.All(Uri.IsHexDigit))
             {
@@ -206,6 +202,7 @@ public static partial class ApiEndpoints
             }
 
             var c = commit.Value!;
+            var (objects, objectsUnavailable) = await GroupedAsync(http, load, log, who.Value!, owner, repo, c, ct).ConfigureAwait(false);
             var newline = c.Message.IndexOf('\n', StringComparison.Ordinal);
             return Results.Ok(new
             {
@@ -225,6 +222,33 @@ public static partial class ApiEndpoints
                 url = c.Url,
                 filesTruncated = c.FilesTruncated,
                 files = c.Files.Select(f => new { path = f.Path, label = CodeHtml.Spelled(f.Path), status = f.Status, additions = f.Additions, deletions = f.Deletions, previousPath = f.PreviousPath, previousLabel = f.PreviousPath is { } prev ? CodeHtml.Spelled(prev) : null }),
+                objects = objects.Select(o => new
+                {
+                    key = o.Key,
+                    kind = o.Kind,
+                    name = CodeHtml.Spelled(o.Name),
+                    label = CodeHtml.Spelled(o.Key),
+                    path = o.Path,
+                    from = o.From,
+                    type = o.Type,
+                    typeName = o.TypeName is null ? null : CodeHtml.Spelled(o.TypeName),
+                    toolchain = CodeHtml.Spelled(o.Toolchain),
+                    status = o.Status,
+                    additions = o.Additions,
+                    deletions = o.Deletions,
+                    layers = o.Layers.Select(l => new
+                    {
+                        path = l.Path,
+                        label = CodeHtml.Spelled(l.Path),
+                        status = l.Status,
+                        additions = l.Additions,
+                        deletions = l.Deletions,
+                        previousPath = l.PreviousPath,
+                        previousLabel = l.PreviousPath is { } prev ? CodeHtml.Spelled(prev) : null,
+                        changed = l.Changed,
+                    }),
+                }),
+                objectsUnavailable,
             });
         });
 
@@ -364,7 +388,7 @@ public static partial class ApiEndpoints
                     path = c.Path,
                     label = CodeHtml.Spelled(c.Path),
                     change = c.Change,
-                    @object = (newer.Value.Model.NodeFor(c.Path) ?? older.Value.Model.NodeFor(c.Path)) is { Kind: ProjectNodeKind.Object } n ? CodeHtml.Spelled(n.Name) : null,
+                    @object = TouchedObjects.ObjectFor(newer.Value.Model, older.Value.Model, c.Path) is { } n ? CodeHtml.Spelled(n.Name) : null,
                 }),
             });
         });
@@ -815,13 +839,56 @@ public static partial class ApiEndpoints
     /// <summary>A failure as the status and words the page can act on; nothing in it depends on the request.</summary>
     internal static IResult Refused(RepoFailure failure) => failure switch
     {
-        RepoFailure.Unauthorized => Results.Json(new { error = "sign-in", message = "Sign in to see this repository." }, statusCode: 401),
-        RepoFailure.SsoRequired => Results.Json(new { error = "sso", message = "This organisation requires single sign-on. Authorise your GitHub session for it, then reload." }, statusCode: 403),
-        RepoFailure.RateLimited => Results.Json(new { error = "rate-limit", message = "GitHub's rate limit is spent for now. Try again in a few minutes." }, statusCode: 429),
-        RepoFailure.TooLarge => Results.Json(new { error = "too-large", message = "This is too large to show here." }, statusCode: 413),
-        RepoFailure.Upstream => Results.Json(new { error = "upstream", message = "GitHub could not be reached. Try again shortly." }, statusCode: 502),
-        _ => Results.Json(new { error = "not-found", message = "Not found, or not visible to you." }, statusCode: 404),
+        RepoFailure.Unauthorized => Results.Json(new { error = "sign-in", message = Message(failure) }, statusCode: 401),
+        RepoFailure.SsoRequired => Results.Json(new { error = "sso", message = Message(failure) }, statusCode: 403),
+        RepoFailure.RateLimited => Results.Json(new { error = "rate-limit", message = Message(failure) }, statusCode: 429),
+        RepoFailure.TooLarge => Results.Json(new { error = "too-large", message = Message(failure) }, statusCode: 413),
+        RepoFailure.Upstream => Results.Json(new { error = "upstream", message = Message(failure) }, statusCode: 502),
+        _ => Results.Json(new { error = "not-found", message = Message(failure) }, statusCode: 404),
     };
+
+    /// <summary>The words for a failure, the same whether it refuses a whole answer or explains a missing part of one.</summary>
+    internal static string Message(RepoFailure failure) => failure switch
+    {
+        RepoFailure.Unauthorized => "Sign in to see this repository.",
+        RepoFailure.SsoRequired => "This organisation requires single sign-on. Authorise your GitHub session for it, then reload.",
+        RepoFailure.RateLimited => "GitHub's rate limit is spent for now. Try again in a few minutes.",
+        RepoFailure.TooLarge => "This is too large to show here.",
+        RepoFailure.Upstream => "GitHub could not be reached. Try again shortly.",
+        _ => "Not found, or not visible to you.",
+    };
+
+    /// <summary>
+    /// A commit's files grouped by object, or why they could not be: the commit and its first
+    /// parent loaded, the marked tree between them built, <see cref="TouchedObjects.Group"/> read.
+    /// A root commit has nothing to compare from and groups nothing, which is not a failure and
+    /// is not said as one; the page draws "the first commit" for it.
+    /// </summary>
+    private static async Task<(IReadOnlyList<TouchedEntry> Objects, string? Unavailable)> GroupedAsync(
+        HttpContext http, Loader load, IVersioLogger log, RepoAccess who, string owner, string repo, CommitDetail c, CancellationToken ct)
+    {
+        var at = $"{owner}/{repo}@{c.Sha[..Math.Min(8, c.Sha.Length)]}";
+        if (c.Parents.Count == 0)
+        {
+            log.Info(LogCategory.Web, $"commit {who} {at}: {c.Files.Count} files, a root commit, nothing grouped");
+            return ([], null);
+        }
+
+        var head = await load.ModelAsync(http, owner, repo, c.Sha, ct).ConfigureAwait(false);
+        var parent = head.Ok ? await load.ModelAsync(http, owner, repo, c.Parents[0], ct).ConfigureAwait(false) : head;
+        if (!head.Ok || !parent.Ok)
+        {
+            var failure = head.Ok ? parent.Failure : head.Failure;
+            log.Warn(LogCategory.Web, $"commit {who} {at}: the {(head.Ok ? "parent's" : "commit's")} project tree could not be read ({failure}); {c.Files.Count} files answered ungrouped");
+            return ([], $"The objects could not be listed: {Message(failure)}");
+        }
+
+        var marked = TouchedObjects.Marked(parent.Value!.Model, head.Value!.Model, changedOnly: true);
+        var objects = TouchedObjects.Group(c.Files, head.Value.Model, parent.Value.Model, marked);
+        var grouped = objects.Count(o => o.Kind == "object");
+        log.Info(LogCategory.Web, $"commit {who} {at}: {c.Files.Count} files as {grouped} objects and {objects.Count - grouped} plain files");
+        return (objects, null);
+    }
 
     /// <summary>
     /// What a pull request's changes are measured from: the merge-base of its base branch's tip
