@@ -493,12 +493,24 @@ public sealed record PlcToolchainStatus
     public string? Profile { get; init; }
 
     /// <summary>
-    /// Several usable installations were found and none can be chosen safely.
+    /// Several usable installations were found.
     /// </summary>
     /// <remarks>
-    /// Distinct from simply unavailable. Picking one for the user risks silently upgrading
-    /// their project to a newer toolchain version, which is not a recoverable mistake — so
-    /// this is reported and refused rather than guessed.
+    /// <para>
+    /// When <see cref="Available"/> is false, none could be chosen safely: picking one for the
+    /// user risks silently upgrading their project to a newer toolchain version, which is not
+    /// a recoverable mistake — so the list is reported and the choice refused rather than
+    /// guessed. That is the first vendor's case, where nothing on the project file says which
+    /// profile it was written with.
+    /// </para>
+    /// <para>
+    /// When <see cref="Available"/> is true, the list is information: the vendor can tell
+    /// from the project itself which installation may open it (a TIA Portal project's
+    /// extension is its release) and its runner picks per project, refusing a release that
+    /// is not installed. Nothing above the seam ever offered a pick from this list — it
+    /// reaches Settings → System information and nowhere else — so a vendor that can decide
+    /// should, rather than go unavailable waiting for a choice no dialog asks for (2026-10-29).
+    /// </para>
     /// </remarks>
     public IReadOnlyList<string> Candidates { get; init; } = [];
 }

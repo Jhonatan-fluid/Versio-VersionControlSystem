@@ -19,7 +19,8 @@ namespace Versio.Plc.TiaPortal.Infrastructure;
 public sealed class LocalTiaPortalRunner(
     string hostExecutablePath,
     string profile,
-    IVersioLogger? logger = null) : IPlcRunner
+    IVersioLogger? logger = null,
+    IEnumerable<string>? searchRoots = null) : IPlcRunner
 {
     private const string GlobalMutexName = @"Global\Versio.TiaPortal.SingleInstance";
 
@@ -72,6 +73,69 @@ public sealed class LocalTiaPortalRunner(
         Path.Combine(baseDirectory, "Versio.Plc.TiaPortal.Host.exe"),
     ];
 
+    /// <summary>
+    /// Which installed Portal may open this project, or the sentence that says none may.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The project file's extension is the release (<c>.ap20</c> opens in V20 and nothing
+    /// else without an upgrade), so it decides, and the pinned profile is consulted only for
+    /// a path whose extension carries no number. Until 2026-10-29 this chose the profile's
+    /// install and otherwise <i>the newest</i>, which on a machine with V20 and V21 — where the
+    /// locator could see only V21 — opened a V20 project in V21 and got Portal's
+    /// compatibility error back. Falling to the newest is exactly the silent-upgrade path
+    /// the toolchain refuses several installs over; it was reachable from here all along.
+    /// </para>
+    /// <para>
+    /// A release that is not installed is a refusal, not a fallback. The sentence names what
+    /// the project needs and what the machine has, and says that upgrading is the user's act
+    /// in Portal: Versio never calls <c>OpenWithUpgrade</c>, because an upgrade rewrites every
+    /// file in the project and cannot be undone.
+    /// </para>
+    /// </remarks>
+    public static (TiaPortalInstall? Install, string? Refusal) ChooseInstall(
+        IReadOnlyList<TiaPortalInstall> installs, string projectPath, string profile)
+    {
+        if (installs.Count == 0)
+        {
+            return (null, "TIA Portal is not installed on this machine.");
+        }
+
+        var release = TiaPortalProjectFormat.ReleaseOf(projectPath);
+        if (release is null)
+        {
+            var byProfile = installs.FirstOrDefault(i =>
+                string.Equals(i.Version, profile, StringComparison.OrdinalIgnoreCase));
+            return (byProfile ?? installs[0], null);
+        }
+
+        var match = installs.FirstOrDefault(i =>
+            string.Equals(i.Version, release, StringComparison.OrdinalIgnoreCase));
+        if (match is not null)
+        {
+            return (match, null);
+        }
+
+        var installed = string.Join(", ", installs.Select(i => i.Version));
+        var name = Path.GetFileName(projectPath);
+        var newer = installs.FirstOrDefault(i => ReleaseNumber(i.Version) > ReleaseNumber(release));
+        var wayOut = newer is null
+            // Every installed Portal is older than the project: an older Portal cannot open a
+            // newer project at all, so "upgrade it" would send the user to a dialog that does
+            // not exist. The only way out is the release the file names.
+            ? $"Install Portal {release}; an older Portal cannot open a newer project."
+            : $"Install Portal {release}, or upgrade the project yourself in Portal {newer.Version} "
+              + "— Versio never upgrades a project, because an upgrade rewrites every file in it "
+              + "and cannot be undone.";
+        return (null,
+            $"{name} is a TIA Portal {release} project and Portal {release} is not installed "
+            + $"on this machine (installed: {installed}). {wayOut}");
+    }
+
+    /// <summary>The number in <c>V21</c>, or -1 for a folder name that does not read as one.</summary>
+    private static int ReleaseNumber(string version) =>
+        version.Length > 1 && int.TryParse(version.AsSpan(1), out var n) ? n : -1;
+
     public async Task<PlcResult> RunAsync(
         PlcJob job, IProgress<PlcProgress>? progress, CancellationToken cancellationToken)
     {
@@ -84,13 +148,13 @@ public sealed class LocalTiaPortalRunner(
         }
 
         var only = job.Projects[0];
-        var install = new TiaPortalLocator(logger: _log).FindInstalls()
-            .FirstOrDefault(i => string.Equals(i.Version, profile, StringComparison.OrdinalIgnoreCase))
-            ?? new TiaPortalLocator(logger: _log).FindInstalls().FirstOrDefault();
+        var (install, refusal) = ChooseInstall(
+            new TiaPortalLocator(searchRoots, _log).FindInstalls(), only.ProjectPath, profile);
 
         if (install is null)
         {
-            return PlcResult.Failure("TIA Portal is not installed on this machine.");
+            _log.Warn(TiaPortalLog.Category, $"{job.Operation} of {only.ProjectPath} refused: {refusal}");
+            return PlcResult.Failure(refusal!);
         }
 
         // The orchestrator leaves the plan null only when no format claims the path any
@@ -120,7 +184,8 @@ public sealed class LocalTiaPortalRunner(
 
         var jobFile = WriteJobFile(native);
         _log.Info(TiaPortalLog.Category,
-            $"{job.Operation} of {only.ProjectPath} via {hostExecutablePath} [{profile}]");
+            $"{job.Operation} of {only.ProjectPath} via {hostExecutablePath} "
+            + $"[Portal {install.Version}, {install.ApiShape}; profile {profile}]");
         _log.Debug(TiaPortalLog.Category, $"job file {jobFile}, timeout {native.TimeoutSeconds}s");
 
         try
