@@ -291,7 +291,6 @@
                                 <ColumnDefinition Width="*" />
                                 <ColumnDefinition Width="Auto" />
                                 <ColumnDefinition Width="Auto" />
-                                <ColumnDefinition Width="Auto" />
                             </Grid.ColumnDefinitions>
                             <TextBlock Grid.Column="0" Text="{Binding Glyph}"
                                        VerticalAlignment="Center"
@@ -352,7 +351,7 @@
                                  as the Explorer draws it and for the Explorer's reasons: an
                                  identity in the accent colour, never a status; last column,
                                  one minimum width, so the pills line up as a column. -->
-                            <Border Grid.Column="4" Margin="8,0,4,0" MinWidth="100"
+                            <Border Grid.Column="3" Margin="8,0,4,0" MinWidth="100"
                                     Background="{DynamicResource Brush.Accent.Muted}"
                                     CornerRadius="8" Padding="6,0"
                                     VerticalAlignment="Center"
@@ -372,26 +371,6 @@
                                            FontFamily="{DynamicResource Font.UI}"
                                            FontSize="{DynamicResource Font.Size.Caption}"
                                            Foreground="{DynamicResource Brush.Text.Primary}" />
-                            </Border>
-                            <Border Grid.Column="3" Margin="8,0,4,0"
-                                    Background="{DynamicResource Brush.Surface.Sunken}"
-                                    CornerRadius="8" Padding="6,0"
-                                    VerticalAlignment="Center">
-                                <Border.Style>
-                                    <Style TargetType="Border">
-                                        <Setter Property="Visibility" Value="Visible" />
-                                        <Style.Triggers>
-                                            <DataTrigger Binding="{Binding Badge}" Value="">
-                                                <Setter Property="Visibility" Value="Collapsed" />
-                                            </DataTrigger>
-                                        </Style.Triggers>
-                                    </Style>
-                                </Border.Style>
-                                <TextBlock Text="{Binding Badge}"
-                                           FontFamily="{DynamicResource Font.Mono}"
-                                           FontSize="{DynamicResource Font.Size.Caption}"
-                                           Foreground="{Binding BrushKey,
-                                               Converter={StaticResource ResourceKey}}" />
                             </Border>
                         </Grid>
                     </HierarchicalDataTemplate>

@@ -196,17 +196,13 @@ code, kbd, pre { font-family: var(--font-mono); }
 .change-deleted { color: var(--color-danger-fg); }
 .change-renamed { color: var(--color-accent-fg); }
 /* The desktop's tree row (TreeRow), drawn here since Step 8: the vendor's pill on a project, the
-   type or detail beside the name, the change glyph at the end, a struck deleted name, and on a
-   folder the count of changes below it in the strongest state's colour. */
+   type or detail beside the name, the change glyph at the end, and a struck deleted name. The
+   count of changes below a folder went with the desktop's on 2026-10-29: the roll-up colour on
+   the name already says it, and the number read as a count of items. */
 .tree-filter-row { display: flex; gap: 4px; align-items: center; }
 .tree-pill { font: 600 10px/16px var(--font-ui); border: 1px solid var(--color-accent-fg); color: var(--color-accent-fg); border-radius: 999px; padding: 0 6px; flex: none; }
 .tree-annotation { font-size: 11px; color: var(--color-fg-muted); overflow: hidden; text-overflow: ellipsis; flex: none; max-width: 40%; }
-.tree-badge { margin-left: auto; font: 600 11px/16px var(--font-ui); border-radius: 999px; padding: 0 6px; background: var(--color-neutral-muted); color: var(--color-fg-muted); flex: none; }
-.tree-badge.tone-added { color: var(--color-success-fg); background: var(--color-success-subtle); }
-.tree-badge.tone-modified { color: var(--color-attention-fg); background: var(--color-attention-subtle); }
-.tree-badge.tone-deleted { color: var(--color-danger-fg); background: var(--color-danger-subtle); }
 .tree-row > .change { margin-left: auto; }
-.tree-row > .tree-badge + .change { margin-left: 4px; }
 .tree-row.is-deleted .tree-name { text-decoration: line-through; color: var(--color-fg-muted); }
 .tree-row.tone-added .tree-name { color: var(--color-success-fg); }
 .tree-row.tone-modified .tree-name { color: var(--color-attention-fg); }

@@ -298,7 +298,6 @@
                                     <ColumnDefinition Width="14" />
                                     <ColumnDefinition Width="*" />
                                     <ColumnDefinition Width="Auto" />
-                                    <ColumnDefinition Width="Auto" />
                                 </Grid.ColumnDefinitions>
 
                                 <TextBlock Grid.Column="0" Text="{Binding Glyph}"
@@ -390,28 +389,6 @@
                                     </TextBlock.Style>
                                 </TextBlock>
 
-                                <!-- Roll-up count, so a change is never hidden
-                                     behind a collapsed folder. -->
-                                <Border Grid.Column="3" Margin="8,0,4,0"
-                                        Background="{DynamicResource Brush.Surface.Sunken}"
-                                        CornerRadius="8" Padding="6,0"
-                                        VerticalAlignment="Center">
-                                    <Border.Style>
-                                        <Style TargetType="Border">
-                                            <Setter Property="Visibility" Value="Visible" />
-                                            <Style.Triggers>
-                                                <DataTrigger Binding="{Binding Badge}" Value="">
-                                                    <Setter Property="Visibility" Value="Collapsed" />
-                                                </DataTrigger>
-                                            </Style.Triggers>
-                                        </Style>
-                                    </Border.Style>
-                                    <TextBlock Text="{Binding Badge}"
-                                               FontFamily="{DynamicResource Font.Mono}"
-                                               FontSize="{DynamicResource Font.Size.Caption}"
-                                               Foreground="{Binding BrushKey,
-                                                   Converter={StaticResource ResourceKey}}" />
-                                </Border>
                             </Grid>
                         </HierarchicalDataTemplate>
                     </TreeView.ItemTemplate>

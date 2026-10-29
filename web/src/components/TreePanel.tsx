@@ -132,7 +132,6 @@ function Node({ node, depth, filter, selected, onSelect, openAll }: { node: Tree
     ? node.detail || ''
     : node.typeName ?? '';
   const tone = status !== 'unmodified' ? status : node.rollUp && node.rollUp !== 'unmodified' ? node.rollUp : '';
-  const badge = branch && (node.changedDescendants ?? 0) > 0 ? String(node.changedDescendants) : '';
 
   return (
     <li role="treeitem" aria-expanded={branch ? shown : undefined} aria-selected={isSelected}>
@@ -159,7 +158,6 @@ function Node({ node, depth, filter, selected, onSelect, openAll }: { node: Tree
         <span className="tree-name">{node.name}</span>
         {node.toolchain && <span className="tree-pill" title="The toolchain that opens this project">{node.toolchain}</span>}
         {annotation && <span className="tree-annotation">{annotation}</span>}
-        {badge && <span className={`tree-badge tone-${tone}`} title={`${badge} changed below`}>{badge}</span>}
         {mark && <span className={`change change-${status}`} aria-label={status}>{mark}</span>}
       </button>
       {branch && shown && (

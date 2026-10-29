@@ -346,17 +346,14 @@ public sealed class TreeRow : ObservableObject
         _ => " ",
     };
 
-    /// <summary>How many descendants changed, blank on a leaf or a quiet folder.</summary>
+    /// <summary>The brush for the name: this node's own change, else the strongest one below it.</summary>
     /// <remarks>
-    /// Shown on folders and projects only. On a leaf the glyph already says everything, and a
-    /// "0" beside every unchanged object would be noise in the one view meant to be scannable
-    /// - which matters more now that every object is drawn rather than only the changed ones.
+    /// The roll-up is what says a collapsed folder has changes under it. A count used to
+    /// sit beside it too — "91" on a folder, "1357" on a project — and after a first export
+    /// every object is a change, so the owner read the numbers as a count of items and found
+    /// them misleading on every vendor (2026-10-29). The colour carries the one fact that
+    /// matters, and the facts pane still states the number for whoever asks.
     /// </remarks>
-    public string Badge =>
-        Node.Children.Count > 0 && Node.ChangedDescendants > 0
-            ? Node.ChangedDescendants.ToString(System.Globalization.CultureInfo.InvariantCulture)
-            : string.Empty;
-
     public string BrushKey => BrushFor(
         Node.Status != ChangeKind.Unmodified ? Node.Status : Node.RollUp);
 

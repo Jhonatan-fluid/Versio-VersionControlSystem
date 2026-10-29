@@ -41,15 +41,17 @@ describe('TreePanel', () => {
     document.body.innerHTML = '';
   });
 
-  it('draws the pill, the detail, the type, the glyphs, the struck name and the folder badge, as the desktop does', async () => {
+  it('draws the pill, the detail, the type, the glyphs and the struck name, as the desktop does, and no count', async () => {
     const { host, root } = await render(tree);
     const rows = Array.from(host.querySelectorAll<HTMLElement>('.tree-row'));
     const row = (name: string) => rows.find((r) => r.querySelector('.tree-name')?.textContent === name)!;
 
     expect(row('Plant.project').querySelector('.tree-pill')?.textContent).toBe('CODESYS V3.5 SP19');
     expect(row('Plant.project').querySelector('.tree-annotation')?.textContent).toBe('in sync');
-    expect(row('Plant.project').querySelector('.tree-badge')?.textContent).toBe('2');
-    expect(row('Plant.project').querySelector('.tree-badge')?.className).toContain('tone-deleted');
+    // Two changed descendants in the fixture, and no number drawn for them: the roll-up
+    // tone on the row is what says it (dropped with the desktop's badge, 2026-10-29).
+    expect(row('Plant.project').querySelector('.tree-badge')).toBeNull();
+    expect(row('Plant.project').className).toContain('tone-deleted');
     expect(row('Pump').querySelector('.tree-annotation')?.textContent).toBe('Function block');
     expect(row('Pump').querySelector('.change')?.textContent).toBe('M');
     expect(row('Old').querySelector('.change')?.textContent).toBe('D');
