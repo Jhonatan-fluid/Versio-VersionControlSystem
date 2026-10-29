@@ -289,6 +289,92 @@ public class SyncRunSignallingTests
         Assert.Equal(SyncVerdict.Completed, later.Verdict);
     }
 
+    [Fact]
+    public async Task A_follow_up_that_finds_nothing_does_not_hide_the_export_that_ran()
+    {
+        // The scenario the first test's remark describes as the ordinary one: a save lands
+        // mid-run, the export already going captures it, and the queued follow-up correctly
+        // finds nothing at the hash gate. The loop then returned the follow-up's NoChange,
+        // so the caller acted on "nothing happened" over a run that had just taken 136 s —
+        // no rescan, no summary, and a project row left saying "exporting…" an hour later
+        // (LBB101.ap20, 2026-10-29).
+        var h = new Harness(new OrchestratorOptions
+        {
+            RequireImportConfirmation = false,
+            MinimumInterval = TimeSpan.Zero,
+        });
+
+        h.Codesys.EnqueueSuccess("plc/A/Main.st");
+
+        var firstRun = true;
+        h.Codesys.BeforeRun = _ =>
+        {
+            if (!firstRun)
+            {
+                return Task.CompletedTask;
+            }
+
+            firstRun = false;
+            h.Clock.Advance(TimeSpan.FromSeconds(20));
+            h.SetProject("v2");
+            return h.Saved();
+        };
+
+        var outcome = await h.Saved();
+
+        // One toolchain run, one follow-up that stopped at the gate, and the run is what
+        // comes back.
+        Assert.Single(h.Codesys.Jobs);
+        Assert.Contains(h.Sink.Snapshot(),
+            e => e.Message.Contains("arrived while the last run was in flight"));
+        Assert.Equal(SyncVerdict.Completed, outcome.Verdict);
+        Assert.True(outcome.DidWork);
+    }
+
+    [Fact]
+    public async Task A_follow_up_that_fails_is_what_comes_back()
+    {
+        // The other direction: a follow-up that ran and failed is the fresher fact, and
+        // keeping the first run's success over it would hide a failure behind a summary
+        // that says the export went fine.
+        var h = new Harness(new OrchestratorOptions
+        {
+            RequireImportConfirmation = false,
+            MinimumInterval = TimeSpan.Zero,
+        });
+
+        h.Codesys.EnqueueSuccess("plc/A/Main.st");
+        h.Codesys.EnqueueFailure("the IDE refused the second time");
+
+        var firstRun = true;
+        h.Codesys.BeforeRun = _ =>
+        {
+            if (!firstRun)
+            {
+                return Task.CompletedTask;
+            }
+
+            firstRun = false;
+            h.Clock.Advance(TimeSpan.FromSeconds(20));
+            h.SetProject("v2");
+            return h.Saved();
+        };
+
+        h.Orchestrator.RunFinished += _ =>
+        {
+            if (h.Codesys.Jobs.Count == 1)
+            {
+                h.SetProject("v3");
+            }
+        };
+
+        var outcome = await h.Saved();
+
+        Assert.Equal(2, h.Codesys.Jobs.Count);
+        Assert.Equal(SyncVerdict.Failed, outcome.Verdict);
+        Assert.Contains("refused the second time", outcome.Explanation, StringComparison.Ordinal);
+    }
+
     // --- the throttled job ----------------------------------------------------
 
     [Fact]

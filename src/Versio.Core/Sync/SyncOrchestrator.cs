@@ -1055,16 +1055,43 @@ public sealed class SyncOrchestrator
     /// <summary>
     /// Attempt the job, then keep going while the coalescer says a follow-up must start now.
     /// </summary>
+    /// <returns>
+    /// The outcome the caller should act on: the last attempt that ran the toolchain or
+    /// failed, and only when none did, the last attempt of all.
+    /// </returns>
+    /// <remarks>
+    /// <para>
+    /// <b>A follow-up that finds nothing must not hide the run that did the work.</b> This
+    /// returned whatever the last attempt said, and the commonest follow-up says
+    /// <see cref="SyncVerdict.NoChange"/>: a save landing mid-run is captured by the export
+    /// already going, so the queued attempt reaches the hash gate and stops. The caller
+    /// then read "nothing happened" over a 136 s export — no summary, no lock sentence, no
+    /// rescan — and the project row it had set to "exporting…" when the run started was
+    /// put back by nothing. Observed 2026-10-29 on LBB101.ap20: the row still said it an
+    /// hour after the export finished (FINDINGS 2026-10-29).
+    /// </para>
+    /// <para>
+    /// A follow-up that itself ran or failed is the fresher fact and wins; a refused one is
+    /// already in the log at the gate that refused it, and the next save submits it again.
+    /// </para>
+    /// </remarks>
     private async Task<SyncOutcome> RunLoopAsync(SyncJob job, bool slotHeld, CancellationToken ct)
     {
+        SyncOutcome? significant = null;
+
         while (true)
         {
             var (outcome, ranWithSlot) = await AttemptAsync(job, slotHeld, ct)
                 .ConfigureAwait(false);
 
+            if (outcome.DidWork || outcome.IsFailure)
+            {
+                significant = outcome;
+            }
+
             if (!ranWithSlot || !_coalescers[job.BindingId].OnJobCompleted())
             {
-                return outcome;
+                return significant ?? outcome;
             }
 
             _log.Info(LogCategory.Sync,
