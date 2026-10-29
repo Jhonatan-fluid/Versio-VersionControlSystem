@@ -144,10 +144,12 @@ things:
 | in the token | ready | — |
 | group exists, account not in it | unavailable, names the account and the group | **the button**: *Add this account to the Siemens TIA Openness group…* |
 | account is a member, sign-in predates the add | unavailable, says to sign out and in | none — the add already happened |
-| no such group | unavailable, says Openness is not installed | none — the Portal setup adds it |
+| no such group | unavailable: deleted or imaged away (Openness installs with Portal since V14 SP1), says how to recreate it | none |
 
 A check that fails (`Unknown`) does not block: Portal is asked as before and the log says why
-the check could not be made. The button is drawn in three places from one neutral
+the check could not be made. The lookup is local only — the machine and then `BUILTIN`, never a
+domain — so a domain-joined laptop off the network does not wait on a domain controller at
+every probe, and the member list is read as SIDs through `NetLocalGroupGetMembers`. The button is drawn in three places from one neutral
 `PlcToolchainStatus.Remedy`: the project card under the facts, the failure pane under the
 toolchain's refusal, and Settings → System information as a *Fix* row. Pressing it runs
 `IPlcToolchain.ApplyRemedyAsync`, which re-checks (a member by now is told so and no helper

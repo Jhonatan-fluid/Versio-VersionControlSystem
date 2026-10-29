@@ -132,6 +132,38 @@ another tool and brought back six items; all six held:
   is in `Users` through a nested group, not directly, so the helper would not have found it
   listed and would have attempted a real add from a test.
 
+**A second review, read-only, of the same commits** found seven; two were the timeout and the
+error-text items above, already fixed, and the rest held:
+
+- **The UAC prompt blocked the UI thread.** `Process.Start` with the `runas` verb returns only
+  once the consent dialog is answered, and the whole chain ran on the dispatcher — the window
+  would have stopped painting under the prompt. The start runs on a worker now.
+- **The group lookup could leave the machine.** `NTAccount("Siemens TIA Openness")` is looked
+  up in the built-in and local databases and then in the primary and trusted domains, so a
+  domain-joined laptop with no local group would have waited on an unreachable domain
+  controller at every probe, and an enterprise with a *domain* group of that name would have
+  resolved to it and read "could not be read" instead of "missing". The lookup names the
+  machine and then `BUILTIN` (the built-in aliases live there, which the first fix missed and
+  the group tests caught), and `NetLocalGroupGetMembers`' own not-found codes (2220, 1376) are
+  *GroupMissing* too.
+- **After a fix that makes a vendor available, Try again still ran the refusing runner** built
+  at open, while the card said installed. The first remedy cannot take effect in this session,
+  but the shape is neutral: when the re-probe flips a vendor to available the sync engine is
+  rebuilt, and the flow test presses Try again afterwards and sees the export go through.
+- **Two fixes could run at once**: the main window's command has its own guard, Settings
+  bypassed it, and the modal could be closed from the title bar mid-action, unblocking the
+  main window and its Fix button under the still-open prompt. One `RemedyInFlight` on the sync
+  model, read by the command and by `ApplyToolchainRemedyAsync` itself; the dialog refuses to
+  close while its action runs and says so under the list.
+- **The exe's join branch had no test**, and it is the dangerous one: deleted, the elevated
+  re-launch would open a full Versio window as administrator and every in-process test would
+  stay green. `ExeJoinBranchTests` starts the built `Versio.exe` the way the helper does, with
+  a SID that is not one, and reads exit code 2 and the result file.
+- **Apply-time standings** other than member-not-in-token fell through to the join when
+  deleted; a theory covers all three now. And the "no group" sentence said the Openness
+  feature was not installed, which has not been a choice since V14 SP1 — a missing group on a
+  Portal machine was deleted or imaged away, and the sentence says how to recreate it.
+
 **Also seen on the way.** The failure pane is reachable only after an export has been
 attempted, and an unavailable toolchain is not asked to export on open — so on a fresh machine
 the card and Settings are where the button is first seen, and the pane only once a commit or a
