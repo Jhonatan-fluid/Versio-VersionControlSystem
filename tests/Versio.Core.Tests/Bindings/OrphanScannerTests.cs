@@ -187,6 +187,40 @@ public class OrphanScannerTests
     }
 
     [Fact]
+    public void A_tracked_project_with_no_export_tree_yet_is_classified_not_flagged()
+    {
+        // Seen 2026-10-28 on the first open of a repository: the project was adopted,
+        // nothing had been exported yet, and the panel's red line read "BrokenBinding: … the
+        // bound export directory no longer exists". Nothing was broken and the directory had
+        // never existed; the row beside it already said "never exported". The scan cannot
+        // tell a deleted mirror from one never written, and the remedy — the next export —
+        // is the same automatic step either way, so neither gets a red line.
+        var config = new RepoConfig { Bindings = [Binding("b-1", "plc/A.project")] };
+
+        var findings = Scanner.Scan(config, new RepoSnapshot { ProjectFiles = ["plc/A.project"] });
+
+        var f = Assert.Single(findings, x => x.BindingId == "b-1");
+        Assert.Equal(BindingHealth.NotExported, f.Health);
+        Assert.False(f.NeedsAttention);
+        Assert.DoesNotContain("no longer", f.Explanation, StringComparison.Ordinal);
+        Assert.Contains("plc/A", f.Explanation, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void A_finding_has_a_title_in_words_not_the_enum_member()
+    {
+        // "BrokenBinding: plc/A — …" was the panel line. The enum member is a name for the
+        // code; the person reading a red line about their project gets words.
+        foreach (var health in Enum.GetValues<BindingHealth>())
+        {
+            var title = new ScanFinding(health, "plc/A", null, "why").Title;
+
+            Assert.DoesNotContain(health.ToString(), title, StringComparison.Ordinal);
+            Assert.False(string.IsNullOrWhiteSpace(title));
+        }
+    }
+
+    [Fact]
     public void A_manifest_claiming_a_different_binding_is_a_mismatch_not_a_guess()
     {
         // Two-way handshake: repo.json points forward, the manifest points back. A

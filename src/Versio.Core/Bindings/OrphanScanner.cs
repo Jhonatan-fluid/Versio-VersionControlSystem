@@ -14,8 +14,20 @@ public enum BindingHealth
     /// <summary>An export tree with no matching project.</summary>
     OrphanedExport,
 
-    /// <summary>repo.json references a path that no longer exists.</summary>
+    /// <summary>repo.json references a project that no longer exists.</summary>
     BrokenBinding,
+
+    /// <summary>Binding and project present; no export tree yet.</summary>
+    /// <remarks>
+    /// Its own verdict, and not one that needs attention. Until 2026-10-28 this was reported
+    /// as <see cref="BrokenBinding"/> with "the bound export directory no longer exists",
+    /// which for a project adopted seconds earlier was false twice over: the directory
+    /// never existed, and nothing was broken. The first export is the sync pipeline's job
+    /// and the panel already says "never exported" on the row; a red line on top of that
+    /// sent the owner asking what had gone wrong. A mirror somebody deleted lands here too,
+    /// and the remedy is the same automatic export, so it is not flagged either.
+    /// </remarks>
+    NotExported,
 
     /// <summary>The manifest's bindingId disagrees with repo.json.</summary>
     ManifestMismatch,
@@ -31,7 +43,25 @@ public sealed record ScanFinding(
     string? BindingId,
     string Explanation)
 {
-    public bool NeedsAttention => Health != BindingHealth.Bound;
+    public bool NeedsAttention =>
+        Health is not (BindingHealth.Bound or BindingHealth.NotExported);
+
+    /// <summary>The verdict in words, for the panel line.</summary>
+    /// <remarks>
+    /// The panel used to print the enum member — "BrokenBinding: plc/A — …" — which is a
+    /// name for the code, not for the person reading a red line about their project.
+    /// </remarks>
+    public string Title => Health switch
+    {
+        BindingHealth.Bound => "Tracked",
+        BindingHealth.OrphanedProject => "Untracked project",
+        BindingHealth.OrphanedExport => "Export tree with no project",
+        BindingHealth.BrokenBinding => "Project missing",
+        BindingHealth.NotExported => "Not exported yet",
+        BindingHealth.ManifestMismatch => "Manifest disagrees with repo.json",
+        BindingHealth.CasingMismatch => "Path casing differs",
+        _ => Health.ToString(),
+    };
 }
 
 /// <summary>What the scanner observes about the repo. Supplied by the caller so the scanner
@@ -68,10 +98,16 @@ public sealed record RepoSnapshot
 /// Classifies everything in the repo so that nothing is silently ignored.
 /// </summary>
 /// <remarks>
+/// <para>
 /// Without this, someone adds a project, nothing happens, and they reasonably conclude the
-/// tool is broken. Detection is always on; <b>adoption is offered rather than performed</b>,
-/// because auto-exporting an unknown project launches a toolchain for 10–60 s unprompted and
-/// the file may be a vendor sample, an archive, or a scratch copy nobody wants tracked.
+/// tool is broken. Detection is always on. Adoption used to be <i>offered</i> here rather
+/// than performed, because auto-exporting an unknown project launches a toolchain for
+/// 10–60 s unprompted; since the panel tracks whatever it finds on its own
+/// (<c>SyncViewModel.AutoAdoptAsync</c>, with the first export still behind every gate a
+/// save goes through), what this scan reports is what is left <i>after</i> adoption: the
+/// things no automatic step resolves. A project that is tracked but has no export tree yet
+/// is classified, not flagged — see <see cref="BindingHealth.NotExported"/>.
+/// </para>
 /// </remarks>
 public sealed class OrphanScanner(Func<string, IPlcProjectFormat?>? formats = null)
 {
@@ -133,8 +169,11 @@ public sealed class OrphanScanner(Func<string, IPlcProjectFormat?>? formats = nu
 
             if (!exportExists)
             {
-                findings.Add(new ScanFinding(BindingHealth.BrokenBinding, exp, b.Id,
-                    "the bound export directory no longer exists; a full export will recreate it"));
+                // Not "no longer exists": the scan cannot tell a mirror that was deleted
+                // from one that was never written, and for a project adopted a moment ago
+                // the second is the truth. Either way the next export writes it.
+                findings.Add(new ScanFinding(BindingHealth.NotExported, exp, b.Id,
+                    $"no export tree at '{exp}' yet; the next export writes it"));
                 continue;
             }
 
