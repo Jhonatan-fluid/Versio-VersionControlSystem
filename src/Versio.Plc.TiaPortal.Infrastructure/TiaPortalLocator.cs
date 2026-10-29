@@ -1,3 +1,4 @@
+using System.Text.RegularExpressions;
 using Versio.Core.Logging;
 using Versio.Plc.TiaPortal;
 
@@ -6,9 +7,9 @@ namespace Versio.Plc.TiaPortal.Infrastructure;
 /// <summary>One TIA Portal installation, as found on disk.</summary>
 /// <remarks>
 /// <para>
-/// Version is the folder name (<c>V21</c>), not a file version: that is what the project
-/// file's extension already claimed, and guessing a newer PublicAPI than the install
-/// ships is how OpenWithUpgrade happens by accident.
+/// Version is the release in the folder name (<c>V21</c>), not a file version: that is what
+/// the project file's extension already claimed, and guessing a newer PublicAPI than the
+/// install ships is how OpenWithUpgrade happens by accident.
 /// </para>
 /// <para>
 /// <see cref="ApiShape"/> is how that release ships Openness. V21 moved to modular
@@ -29,12 +30,22 @@ public sealed record TiaPortalInstall(
 {
     public const string ModularApi = "modular net48 assemblies";
     public const string SingleAssemblyApi = "single Siemens.Engineering.dll";
+
+    /// <summary>The number in <c>V21</c>; -1 for a version that does not read as one.</summary>
+    public int ReleaseNumber => ReleaseNumberOf(Version);
+
+    public static int ReleaseNumberOf(string version) =>
+        version.Length > 1
+        && (version[0] == 'V' || version[0] == 'v')
+        && int.TryParse(version.AsSpan(1), out var n)
+            ? n
+            : -1;
 }
 
 /// <summary>
 /// Finds TIA Portal installations by reading the filesystem.
 /// </summary>
-public sealed class TiaPortalLocator(
+public sealed partial class TiaPortalLocator(
     IEnumerable<string>? searchRoots = null,
     IVersioLogger? logger = null)
 {
@@ -52,6 +63,17 @@ public sealed class TiaPortalLocator(
         .Where(r => !string.IsNullOrWhiteSpace(r))
         .ToArray();
 
+    /// <summary>
+    /// Every usable install, newest release first, one per release.
+    /// </summary>
+    /// <remarks>
+    /// The release is the <c>V\d+</c> in the folder name — <c>Portal V21</c>, and also
+    /// <c>Portal V21 Update 2</c> should Siemens ever name one so — and the folder under
+    /// <c>PublicAPI</c> has to be named after exactly that release; a folder whose name
+    /// carries no release is skipped and said so. Ordered by the number, not the string,
+    /// so a two-digit release never sorts under a one-digit one. A release found under
+    /// both Program Files roots is reported once, from the first root searched, and logged.
+    /// </remarks>
     public IReadOnlyList<TiaPortalInstall> FindInstalls()
     {
         List<TiaPortalInstall> found = [];
@@ -66,9 +88,15 @@ public sealed class TiaPortalLocator(
             foreach (var folder in Directory.EnumerateDirectories(root, "Portal V*"))
             {
                 var name = Path.GetFileName(folder);
-                var version = name.StartsWith("Portal ", StringComparison.OrdinalIgnoreCase)
-                    ? name["Portal ".Length..].Trim()
-                    : name;
+                var release = ReleaseInName().Match(name);
+                if (!release.Success)
+                {
+                    _log.Info(TiaPortalLog.Category,
+                        $"skipped {folder}: no release (V and a number) in the folder name");
+                    continue;
+                }
+
+                var version = "V" + release.Groups[1].Value;
                 var api = FindApiFolder(folder, version);
                 if (api is null)
                 {
@@ -78,6 +106,14 @@ public sealed class TiaPortalLocator(
                     _log.Info(TiaPortalLog.Category,
                         $"skipped {folder}: no Openness API under PublicAPI\\{version} "
                         + "(neither a net48 folder with Siemens.Engineering.Base.dll nor a Siemens.Engineering.dll)");
+                    continue;
+                }
+
+                if (found.FirstOrDefault(i => string.Equals(i.Version, version, StringComparison.OrdinalIgnoreCase))
+                    is { } twin)
+                {
+                    _log.Info(TiaPortalLog.Category,
+                        $"skipped {folder}: Portal {version} was already found at {twin.InstallFolder}");
                     continue;
                 }
 
@@ -96,7 +132,7 @@ public sealed class TiaPortalLocator(
         }
 
         return found
-            .OrderByDescending(i => i.Version, StringComparer.OrdinalIgnoreCase)
+            .OrderByDescending(i => i.ReleaseNumber)
             .ToList();
     }
 
@@ -106,42 +142,35 @@ public sealed class TiaPortalLocator(
     /// <remarks>
     /// An install's <c>PublicAPI</c> also carries the API of earlier releases (Portal V20
     /// ships <c>V17</c> through <c>V20</c>) so that older Openness clients keep working. Only
-    /// the folder named after the install's own release is accepted here: the single-assembly
-    /// lookup never falls back to another release's folder, because the API version is what
-    /// decides how the project is opened. The modular lookup keeps its older fallback to any
-    /// <c>*\net48</c> for the layouts measured before this was understood.
+    /// the folder named after the install's own release is accepted, in either layout: the
+    /// API release is what decides how the project is opened, and an install driven through
+    /// another release's folder is an upgrade or a refusal, never the install. Until
+    /// 2026-10-29 the modular lookup fell back to <i>any</i> <c>*\net48</c> under
+    /// <c>PublicAPI</c>, which would have reported a <c>Portal V22</c> carrying only
+    /// <c>V21\net48</c> as V22 and driven it through V21; found in review, removed.
     /// </remarks>
     private static (string Folder, string Shape)? FindApiFolder(string installFolder, string version)
     {
-        var publicApi = Path.Combine(installFolder, "PublicAPI");
-        if (!Directory.Exists(publicApi))
+        var own = Path.Combine(installFolder, "PublicAPI", version);
+        if (!Directory.Exists(own))
         {
             return null;
         }
 
-        var preferred = Path.Combine(publicApi, version, "net48");
-        if (Directory.Exists(preferred)
-            && File.Exists(Path.Combine(preferred, "Siemens.Engineering.Base.dll")))
+        var modular = Path.Combine(own, "net48");
+        if (File.Exists(Path.Combine(modular, "Siemens.Engineering.Base.dll")))
         {
-            return (preferred, TiaPortalInstall.ModularApi);
+            return (modular, TiaPortalInstall.ModularApi);
         }
 
-        foreach (var candidate in Directory.EnumerateDirectories(publicApi)
-                     .Select(d => Path.Combine(d, "net48"))
-                     .Where(Directory.Exists))
+        if (File.Exists(Path.Combine(own, "Siemens.Engineering.dll")))
         {
-            if (File.Exists(Path.Combine(candidate, "Siemens.Engineering.Base.dll")))
-            {
-                return (candidate, TiaPortalInstall.ModularApi);
-            }
-        }
-
-        var single = Path.Combine(publicApi, version);
-        if (File.Exists(Path.Combine(single, "Siemens.Engineering.dll")))
-        {
-            return (single, TiaPortalInstall.SingleAssemblyApi);
+            return (own, TiaPortalInstall.SingleAssemblyApi);
         }
 
         return null;
     }
+
+    [GeneratedRegex(@"\bV(\d+)\b", RegexOptions.IgnoreCase)]
+    private static partial Regex ReleaseInName();
 }

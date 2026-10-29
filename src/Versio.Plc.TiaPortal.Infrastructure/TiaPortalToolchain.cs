@@ -39,7 +39,7 @@ public sealed class TiaPortalToolchain(
             var status = new PlcToolchainStatus
             {
                 Available = false,
-                Version = installs[0].Version,
+                Version = string.Join(", ", installs.Select(i => i.Version)),
                 Explanation =
                     "TIA Portal is installed but the Versio host executable was not found " +
                     "beside the application. Rebuild Versio.Plc.TiaPortal.Host.",

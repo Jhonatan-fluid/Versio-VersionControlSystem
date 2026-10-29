@@ -92,6 +92,13 @@ public sealed class LocalTiaPortalRunner(
     /// in Portal: Versio never calls <c>OpenWithUpgrade</c>, because an upgrade rewrites every
     /// file in the project and cannot be undone.
     /// </para>
+    /// <para>
+    /// The one path that still "falls to the newest" is a project path with no release in
+    /// its extension and no install matching the profile. The format claims no such path, so
+    /// nothing above the seam can send one here; it is kept for a caller driving the runner
+    /// by hand with a bare path, where the only install is the only answer. It is public and
+    /// tested as such, so that a change to it is a decision rather than an accident.
+    /// </para>
     /// </remarks>
     public static (TiaPortalInstall? Install, string? Refusal) ChooseInstall(
         IReadOnlyList<TiaPortalInstall> installs, string projectPath, string profile)
@@ -118,7 +125,13 @@ public sealed class LocalTiaPortalRunner(
 
         var installed = string.Join(", ", installs.Select(i => i.Version));
         var name = Path.GetFileName(projectPath);
-        var newer = installs.FirstOrDefault(i => ReleaseNumber(i.Version) > ReleaseNumber(release));
+        var wanted = TiaPortalInstall.ReleaseNumberOf(release);
+        // The nearest newer Portal, not the newest: an upgrade is one step the user cannot
+        // take back, so the smallest step is the one to name.
+        var newer = installs
+            .Where(i => i.ReleaseNumber > wanted)
+            .OrderBy(i => i.ReleaseNumber)
+            .FirstOrDefault();
         var wayOut = newer is null
             // Every installed Portal is older than the project: an older Portal cannot open a
             // newer project at all, so "upgrade it" would send the user to a dialog that does
@@ -131,10 +144,6 @@ public sealed class LocalTiaPortalRunner(
             $"{name} is a TIA Portal {release} project and Portal {release} is not installed "
             + $"on this machine (installed: {installed}). {wayOut}");
     }
-
-    /// <summary>The number in <c>V21</c>, or -1 for a folder name that does not read as one.</summary>
-    private static int ReleaseNumber(string version) =>
-        version.Length > 1 && int.TryParse(version.AsSpan(1), out var n) ? n : -1;
 
     public async Task<PlcResult> RunAsync(
         PlcJob job, IProgress<PlcProgress>? progress, CancellationToken cancellationToken)
