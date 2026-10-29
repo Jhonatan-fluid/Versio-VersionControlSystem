@@ -19,6 +19,78 @@ produce a diff touching everything else.
 
 ---
 
+### One rung moved, 1,359 files changed: the export stamp, a refused block deleted from the mirror, and a BOM on every committed ladder
+
+**2026-10-29, `main`, the owner's `controls-design-siemens` (eight CPUs, 2,170 objects).**
+The owner moved one network in a `Main` OB, closed Portal, and the Project panel read *1359
+changed*, with the one block they had been looking at drawn as nine added networks over
+"No committed copy to compare with: every network is new". Three defects, found from one
+screenshot and the sibling repository's `git status`:
+
+```
+ M  … 1,358 files          D  JV_WorkingSpace/LBB101/LBB101/MHC_001/MHC_001/Program blocks/Main.xml
+ git diff --numstat: 1,354 files are 1/1, and the line is
+-    <Created>2026-10-29T20:44:47.5625993Z</Created>
++    <Created>2026-10-29T20:49:45.6025282Z</Created>
+```
+
+**1. Every export rewrote every file, by one line.** Portal stamps `DocumentInfo/Created`
+with the export time, per file. `TiaPortalNativeScrubber` and the host's `HashNormalized`
+strip a list of churn *attributes* (`DateModified`, `Version`, …); this is an *element*, so
+neither dropped it, the hash gate saw a changed file every time, and the committed mirror
+(exported 13:44, committed 13:47) differed from the re-export (13:49) in 1,354 of 1,359
+files. DRIVING §12 had recorded "native XML still churns (G12)" as the cost of the review-only
+XML beside an `.scl`; on a project whose OBs are ladder, the XML is the only file, and the
+churn is the whole tree. **Fix:** the host rewrites each exported file without that one line
+(`StripExportStamp`, keeping Portal's BOM and CRLF), and both normalisers drop the element,
+so an in-session export (which has it) still hashes like the recorded file (which has not) —
+the deletion check depends on that. Rejected: a constant value instead of no line (an import
+of either is equally unmeasured, and a lie is worse than a gap); stripping the whole
+`DocumentInfo` (the product list differs per machine, but churns only when the machine does).
+Open: an import of a file without the line has not been run against Portal — STATUS item 21.
+
+**2. The block the owner edited was gone from the mirror, and nothing said so.** Openness
+refuses to export a block edited and not compiled since:
+
+```
+_manifest.json → skipped: { "path": "Main", "reason": "EXPORT_FAILED",
+  "detail": "…Inconsistent blocks and PLC data types (UDT) cannot be exported." }
+```
+
+`ExportXml` deleted the previous file before calling `Export` (because `Export(…, None)`
+refuses an existing file — the 2026-08-19 fix for 159 failures and zero objects), so when
+Export threw there was nothing left. The refusal went into the manifest's `skipped` and
+`warnings` lists and nowhere else: the runner reads only the stdout protocol, so the log had
+no `WRN`, `_coverage.md` said *Skipped: 4* where it had said 3, the project card said *in
+sync*, and a commit would have recorded the owner's only change as a deletion — the failure
+mode this project exists to prevent. **Fix:** the previous file is set aside
+(`Main.xml.versio-previous`) and put back when Export throws, a partial write discarded; the
+refused object's previous manifest rows come forward (by path, or by identity for the
+`.scl` beside a block) so the mirror still knows it and `LiveMatchesRecorded` can refuse to
+delete a live object that no longer matches; and the refusal is emitted on stdout as a
+warning, which the orchestrator logs and the UI shows. The kept file is the *last* export,
+not the owner's edit: the sentence says so, and compiling the block brings the edit across.
+Pure tests drive the real `ExportXml` against fakes whose `Export` throws, half-writes, or
+writes.
+
+**3. "Nothing committed to compare" over a committed block.** The pane's old side is
+`git show HEAD:./…`, which hands over the file's bytes; Portal writes a UTF-8 BOM, and
+`File.ReadAllText` strips it from the working copy while the XML reader refuses it on the
+committed one — on this machine's .NET, `"﻿<?xml …"` fails with *Data at the root level
+is invalid. Line 1, position 1.* `TiaPortalLadderParser.TryParse` swallowed the
+`XmlException`, returned null, and `LadderDiff` drew every network as added. The log said so
+in plain words every time (`9 networks … with nothing committed to compare; 0 changed, 9
+added`) and nobody read it as wrong, because a first export's ladder reads exactly the same.
+`TiaPortalMemberTableParser` had `TrimStart('﻿')` from its first day, which is why the
+member tables beside it marked correctly. **Fix:** the same trim, and a test that parses a
+specimen with and without the mark to the same shape and line spans.
+
+**What the three had in common:** each was correct at the point it was written, and each
+reported its symptom somewhere a person was not looking — a one-line diff per file, a JSON
+list in the mirror, an `INF` line that reads like the ordinary first-export case.
+
+---
+
 ### "exporting…" an hour after the export: a mid-run save handed the panel the follow-up's NoChange
 
 **2026-10-29, `main`, the owner's `controls-design-siemens`, the screenshot at 14:36.** The

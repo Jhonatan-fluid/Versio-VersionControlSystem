@@ -556,6 +556,27 @@ Textual hashes are UTF-8 **without BOM** so they match `ContentHash.Of`. Siemens
 Out / coverage skip: hardware, HMI, safety (`F_*`), technology objects, know-how-protected
 import, system blocks, VCI, Project Server, compile-after-import.
 
+**The export stamp is stripped (since 2026-10-29).** Portal writes `DocumentInfo/Created`
+— the export time — into every file, so a second export of an untouched project changed
+1,354 of 1,359 files on the owner's project, one line each, and the project card counted
+files rather than edits. The host rewrites each exported file without that line
+(`StripExportStamp`; BOM, CRLF and the product list stay Portal's), and both normalisers
+(`HashNormalized` in the host, `TiaPortalNativeScrubber` in the pure pack) drop the element,
+so an in-session export still hashes like the recorded file and the deletion check holds.
+An import of a file without the line has **not** been measured against Portal; the gate's
+Import Fact applies `.scl`/`.udt`, not native XML (STATUS item 21).
+
+**A refused export keeps the previous file (since 2026-10-29).** `Export(…, None)` refuses
+an existing file, so the host moves the old one aside (`<name>.xml.versio-previous`) for the
+call and deletes it only once the new export exists; if Openness throws — *Inconsistent
+blocks and PLC data types (UDT) cannot be exported*, which is any block edited and not
+compiled since — the old file is put back, its manifest rows come forward (by path, or by
+identity for the `.scl` beside a block), and the refusal is emitted on stdout as a warning
+the app logs and shows. Until then the old file was deleted first, and the refusal lived
+only in `_manifest.json`'s `skipped` list: the one block the owner had edited vanished from
+the mirror with *in sync* on the card. The kept file is the last export, not the edit;
+compiling the block and exporting again brings the edit across. FINDINGS 2026-10-29.
+
 ### Graphical blocks (LAD drawn from 2026-10-05)
 
 LAD and FBD blocks get no `.scl`. `LooksLikeScl` refuses them, so their SimaticML is
@@ -792,4 +813,6 @@ AllowList after every host rebuild (path + hash). Ten tree backups × ~500 MB.
 ~~Several Portal versions on one machine refuse rather than pick one (same reason as
 `OpenWithUpgrade`: a silent upgrade).~~ Since 2026-10-29 the project's extension picks
 the release and a missing release is refused (§2.1b). Identity is name+number until a GUID-shaped
-SimaticML value appears; folders are not recorded objects.
+SimaticML value appears; folders are not recorded objects. ~~Native XML churns on every
+export~~ — the stamp is stripped since 2026-10-29 (§7); what remains is the per-machine
+product list in `DocumentInfo`, which moves only when the exporting machine does.
