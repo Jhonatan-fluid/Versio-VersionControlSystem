@@ -42,6 +42,21 @@ public sealed class TiaPortalFormatTests
         Assert.Equal("TIA Portal", format.ProjectLabelFor("plc/Line"));
     }
 
+    [Theory]
+    [InlineData(@"plc\Station\Station.ap21", "V21")]
+    [InlineData("JV_WorkingSpace/ProjectInitial/ProjectInitial.ap20", "V20")]
+    [InlineData("plc/Line.AL17", "V17")]
+    [InlineData("plc/Line.apx", null)]
+    [InlineData("plc/Line.ap2", null)]
+    [InlineData("plc/Line", null)]
+    public void The_release_a_project_opens_in_is_read_from_its_extension(string path, string? release)
+    {
+        // The runner picks the installed Portal from this and nothing else (2026-10-29): a
+        // V20 project handed to V21 is a compatibility error, and the only way V21 would open
+        // it is the upgrade Versio never performs.
+        Assert.Equal(release, TiaPortalProjectFormat.ReleaseOf(path));
+    }
+
     [Fact]
     public void The_payload_is_the_directory_containing_the_pointer_file()
     {

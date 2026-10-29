@@ -28,15 +28,30 @@ public sealed class TiaPortalProjectFormat : IPlcProjectFormat
     /// says the number rather than only the vendor. Anything that does not read as
     /// <c>.apNN</c> / <c>.alNN</c> falls back to the plain name rather than guessing.
     /// </remarks>
-    public string ProjectLabelFor(string projectPath)
+    public string ProjectLabelFor(string projectPath) =>
+        ReleaseOf(projectPath) is { } release ? $"{DisplayName} {release}" : DisplayName;
+
+    /// <summary>
+    /// The Portal release a project file opens in, from its extension: <c>.ap20</c> is
+    /// <c>V20</c>. Null when the extension does not carry a number.
+    /// </summary>
+    /// <remarks>
+    /// This is the one fact that decides which installed Portal may open the project, and it
+    /// is on the file, not in a setting. Until 2026-10-29 the runner opened every project with
+    /// whichever Portal the toolchain had picked — the newest it could see — and a V20 project
+    /// on a machine with V20 and V21 installed was handed to V21, which refused it as a
+    /// compatibility error (an upgrade is the only way V21 opens it, and Versio never
+    /// upgrades). The runner asks this first now.
+    /// </remarks>
+    public static string? ReleaseOf(string projectPath)
     {
         var ext = System.IO.Path.GetExtension(projectPath);
         return ext.Length == 5
                && (ext.StartsWith(".ap", StringComparison.OrdinalIgnoreCase)
                    || ext.StartsWith(".al", StringComparison.OrdinalIgnoreCase))
                && char.IsAsciiDigit(ext[3]) && char.IsAsciiDigit(ext[4])
-            ? $"{DisplayName} V{ext[3..]}"
-            : DisplayName;
+            ? $"V{ext[3..]}"
+            : null;
     }
 
     /// <remarks>
