@@ -164,6 +164,12 @@ error-text items above, already fixed, and the rest held:
   feature was not installed, which has not been a choice since V14 SP1 — a missing group on a
   Portal machine was deleted or imaged away, and the sentence says how to recreate it.
 
+**And one more from the owner, after that.** The helper's timeout leaves it running on
+purpose, so the account may yet be added — and the shell said *Nothing was changed*, which it
+did not know. `PlcRemedyOutcome` has a third answer, `Uncertain`, the timeout returns it with
+*still running; check the group before pressing again*, and the shell posts it as a warning,
+*Not finished*, neither success nor refusal.
+
 **Also seen on the way.** The failure pane is reachable only after an export has been
 attempted, and an unavailable toolchain is not asked to export on open — so on a fresh machine
 the card and Settings are where the button is first seen, and the pane only once a commit or a
