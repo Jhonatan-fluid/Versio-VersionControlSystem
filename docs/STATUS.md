@@ -669,7 +669,7 @@ Close Versio **and** Portal before a host rebuild. Click **Yes to all** on Openn
     **Owner eyeball:** expand a commit on this repository in both themes — chips, pills, the
     struck deleted row — click an object, confirm Rendered then Raw, and read the
     `history:` lines in the log (zero `ERR`).
-19. **A leftover TIA Portal `.info` marker blocks every export, and the engine cannot tell
+19. ~~**A leftover TIA Portal `.info` marker blocks every export, and the engine cannot tell
     it is a leftover — built around on 2026-10-28, watch item open.** FINDINGS 2026-10-28,
     *First open of a repository*. The marker now says who, since when, and which file to
     delete, and the panel shows the refusal instead of "has changes that have not been
@@ -683,7 +683,20 @@ Close Versio **and** Portal before a host rebuild. Click **Yes to all** on Openn
     project closed in Portal and the leftover `.info` still there — the panel should read
     "cannot be exported yet: … since 2026-10-26 … delete
     JV_WorkingSpace/ProjectInitial/ProjectInitial.info …" with no red "BrokenBinding" line
-    above it; delete the file; the export should run on its own.
+    above it; delete the file; the export should run on its own.~~ — **Declared stale by
+    process name since 2026-10-29** (FINDINGS 2026-10-29, *A TIA marker carried in by a
+    copy*): a marker that names this machine, with no `Siemens.Automation.Portal` process
+    running, is Stale, said in the log, and the export runs; nobody deletes anything. The
+    second leftover in two days had been written by the Portal session that created the
+    project and carried in by a folder copy — never opened in a window at all. **What
+    remains open:** a leftover beside a *running* Portal (the window left on its start page,
+    or on another project) still reads Held with the file named, and the retry on
+    project-close can land while the Portal process is still on its way out. The
+    measurement above would settle that half; so would asking each running Portal which
+    project it holds (Openness `TiaPortalProcess.ProjectPath`) through the host, at a spawn
+    per check. **Owner eyeball:** the next installed build, with `LBB101.info` still beside
+    `LBB101.ap20` and Portal closed — the log should carry *"TIA Portal left its marker
+    behind … treating it as closed"* and the first export should run on its own.
 
 20. ~~**The Openness access list after an update — a decision, not a task yet.** FINDINGS
     2026-10-29, *the Openness group*. The group is detected before Portal and fixed from a

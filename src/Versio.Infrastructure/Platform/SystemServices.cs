@@ -71,6 +71,37 @@ public sealed class ProcessProbe(string expectedProcessName = "Versio") : IProce
         }
     }
 
+    /// <summary>True when any process of this name is running, whoever started it.</summary>
+    /// <remarks>
+    /// By name, deliberately: the caller is asking whether a vendor IDE is running at all,
+    /// for a marker that names no pid. Every handle is disposed — <c>GetProcessesByName</c>
+    /// hands back one per match, and a leak here would be one per occupancy check.
+    /// </remarks>
+    public bool IsAnyProcessRunning(string processName)
+    {
+        Process[] matches;
+        try
+        {
+            matches = Process.GetProcessesByName(processName);
+        }
+        catch (InvalidOperationException)
+        {
+            return true;    // could not look; a marker that cannot be checked is believed
+        }
+
+        try
+        {
+            return matches.Length > 0;
+        }
+        finally
+        {
+            foreach (var match in matches)
+            {
+                match.Dispose();
+            }
+        }
+    }
+
     public bool IsVersioProcessAlive(int processId, string sessionId)
     {
         try

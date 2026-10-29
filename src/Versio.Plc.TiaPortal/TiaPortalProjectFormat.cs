@@ -168,18 +168,39 @@ public sealed class TiaPortalProjectFormat : IPlcProjectFormat
     /// inside the program folder, not the marker the occupancy probe watches.
     /// </summary>
     /// <remarks>
+    /// <para>
     /// <b>It is not always removed.</b> Seen 2026-10-28 on a V20 project in the Portal
     /// window (FINDINGS, same date): a <c>.info</c> written two days earlier was neither
     /// rewritten when the project was opened again nor deleted when it was closed, while
-    /// <c>System/~PEData.3</c> did go on close. So a leftover reads Held for as long as it
-    /// sits there, with no pid for the stale policy to probe. That is why the body is parsed
-    /// (<see cref="ParseOccupancy"/>) and why the refusal names the file: a person has to
-    /// delete it, and they can only do that if they are told which one.
+    /// <c>System/~PEData.3</c> did go on close. And seen again 2026-10-29 on a project that
+    /// had never been opened in a window at all: the session that created it wrote the
+    /// marker, and a folder copy carried it into the repository. So a leftover reads Held
+    /// for as long as it sits there, with no pid for the stale policy to probe. That is why
+    /// the body is parsed (<see cref="ParseOccupancy"/>) and why the refusal names the file.
+    /// </para>
+    /// <para>
+    /// It is also why <see cref="HolderProcessNames"/> names the Portal process: a leftover
+    /// that names this machine, with no Portal running here, is a leftover and nothing else,
+    /// and the probe says so without a person deleting anything. While a Portal <i>is</i>
+    /// running the marker is still believed — it may be that window's — and the refusal
+    /// still names the file.
+    /// </para>
     /// </remarks>
     public string? OccupancyMarkerFor(string projectPath) =>
         string.IsNullOrEmpty(projectPath)
             ? null
             : System.IO.Path.ChangeExtension(projectPath, ".info");
+
+    /// <summary>The one process that can hold a project on this machine.</summary>
+    /// <remarks>
+    /// <c>Siemens.Automation.Portal</c> is the Portal window and the headless Portal alike:
+    /// Openness activates it as a COM server, and the host identifies its own instance by
+    /// watching that name appear (<c>HostApp.CreatePortal</c>), the runner reaps it by that
+    /// name, and the 2026-10-28 finding counted two of them by that name. Measured three
+    /// ways, which is what a name on this list has to be: a wrong one reads "not running" for
+    /// a Portal that is, and that is two writers on one project.
+    /// </remarks>
+    public IReadOnlyList<string> HolderProcessNames => ["Siemens.Automation.Portal"];
 
     public IReadOnlyList<string> TransientPatternsFor(string projectPath)
     {

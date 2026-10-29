@@ -116,6 +116,15 @@ public sealed class TiaPortalFormatTests
     }
 
     [Fact]
+    public void The_format_names_the_one_process_that_can_hold_a_project_here()
+    {
+        // With no pid in the marker, the probe's only remaining question is whether a Portal
+        // is running on this machine at all. The name is the one the host watches appear,
+        // the runner reaps, and the 2026-10-28 finding counted — never a guess.
+        Assert.Equal(["Siemens.Automation.Portal"], TiaPortalProjectFormat.Instance.HolderProcessNames);
+    }
+
+    [Fact]
     public void A_marker_that_is_not_xml_is_still_held_never_free()
     {
         // An unreadable marker is still a marker. Guessing free is how two writers meet.
