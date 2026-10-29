@@ -1,5 +1,6 @@
 using Versio.Core.Logging;
 using Versio.Core.Plc;
+using Versio.Infrastructure.Platform;
 using Versio.Infrastructure.Plc;
 using Versio.Plc.TiaPortal;
 
@@ -8,11 +9,38 @@ namespace Versio.Plc.TiaPortal.Infrastructure;
 /// <summary>
 /// TIA Portal, as something the application can ask for by vendor rather than by name.
 /// </summary>
+/// <remarks>
+/// The probe answers four questions in order, each cheaper than Portal: is a Portal
+/// installed, is the host beside the application, is this account admitted to Openness
+/// (§2.2 of the driving notes), and then which releases. Until 2026-10-29 the third was not
+/// asked at all: the first export launched Portal, Portal refused in three seconds with
+/// <i>"Owner … is not member of the windows group 'Siemens TIA Openness'"</i>, and the owner
+/// read that as a failure card an hour into a new machine, with the fix a command in chat.
+/// The token says the same thing in under a millisecond, before anything is launched, and
+/// the status now carries the fix as a button.
+/// </remarks>
 public sealed class TiaPortalToolchain(
     IVersioLogger? logger = null,
-    IEnumerable<string>? searchRoots = null) : IPlcToolchain
+    IEnumerable<string>? searchRoots = null,
+    ILocalGroups? groups = null) : IPlcToolchain
 {
+    /// <summary>
+    /// The local group Portal's Openness admits. Created by the Portal installer when the
+    /// Openness feature is selected; a machine without it has Portal and no Openness.
+    /// </summary>
+    public const string OpennessGroup = "Siemens TIA Openness";
+
+    /// <summary>What the user does after the add, because the token is built at sign-in.</summary>
+    public const string SignOutAndIn =
+        "Sign out of Windows and back in, then try again: the group joins this account's logon token at the next sign-in.";
+
     private readonly IVersioLogger _log = logger ?? NullLogger.Instance;
+
+    private readonly ILocalGroups _groups = groups ?? (OperatingSystem.IsWindows()
+        ? new LocalGroups(logger)
+        : new NoLocalGroups());
+
+    private LocalGroupCheck? _lastCheck;
 
     public IPlcProjectFormat Format => TiaPortalProjectFormat.Instance;
 
@@ -48,6 +76,12 @@ public sealed class TiaPortalToolchain(
             return Task.FromResult(status);
         }
 
+        if (OpennessRefusal(installs) is { } refused)
+        {
+            _log.Warn(TiaPortalLog.Category, $"toolchain unavailable: {refused.Explanation}");
+            return Task.FromResult(refused);
+        }
+
         // Several releases side by side used to make the toolchain unavailable "so a project
         // is not silently upgraded", with a Candidates list for the user to pick from. Nothing
         // ever offered the pick — the list only reached Settings → System information — and
@@ -74,9 +108,138 @@ public sealed class TiaPortalToolchain(
         return Task.FromResult(ready);
     }
 
+    /// <summary>
+    /// The status for an account Portal would refuse, or null when Openness will admit it.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Three refusals, three sentences, because they have three different fixes: no group
+    /// means the Openness feature is not installed and the Portal setup is where it is added;
+    /// not a member is the one this code can do something about, with the administrator's
+    /// approval, and it is the only state that carries a <see cref="PlcToolchainRemedy"/>;
+    /// a member whose sign-in predates the add has nothing to do but sign out — the add
+    /// already happened, and offering it again would succeed and change nothing, which is
+    /// how a button teaches people that buttons do nothing.
+    /// </para>
+    /// <para>
+    /// A check that could not be made does not block: Portal is asked as before and refuses
+    /// in its own words if it must. The failure is logged, because a check that fails every
+    /// time on some machine is a defect worth hearing about.
+    /// </para>
+    /// </remarks>
+    private PlcToolchainStatus? OpennessRefusal(IReadOnlyList<TiaPortalInstall> installs)
+    {
+        var check = _groups.Check(OpennessGroup);
+        _lastCheck = check;
+        var version = string.Join(", ", installs.Select(i => i.Version));
+
+        switch (check.Standing)
+        {
+            case LocalGroupStanding.InToken:
+                return null;
+
+            case LocalGroupStanding.Unknown:
+                _log.Warn(TiaPortalLog.Category,
+                    $"could not tell whether {check.Account} may use Openness ({check.Detail}); Portal will say");
+                return null;
+
+            case LocalGroupStanding.GroupMissing:
+                return new PlcToolchainStatus
+                {
+                    Available = false,
+                    Version = version,
+                    Explanation =
+                        $"TIA Portal {version} is installed, but the Windows group '{OpennessGroup}' does not " +
+                        "exist on this machine, so the Openness feature is not installed. Run the Portal " +
+                        "setup and add Openness; the group is created with it.",
+                };
+
+            case LocalGroupStanding.MemberNotInToken:
+                return new PlcToolchainStatus
+                {
+                    Available = false,
+                    Version = version,
+                    Explanation =
+                        $"TIA Portal {version} is installed and {check.Account} is in the Windows group " +
+                        $"'{OpennessGroup}', but this Windows session started before it was added, so Portal " +
+                        $"still refuses Openness to it. {SignOutAndIn}",
+                };
+
+            default:
+                return new PlcToolchainStatus
+                {
+                    Available = false,
+                    Version = version,
+                    Explanation =
+                        $"TIA Portal {version} is installed, but {check.Account} is not in the Windows group " +
+                        $"'{OpennessGroup}', and Portal refuses Openness to any account outside it. Add the " +
+                        $"account to the group (administrator rights), then sign out and back in.",
+                    Remedy = new PlcToolchainRemedy
+                    {
+                        Action = $"Add this account to the {OpennessGroup} group…",
+                        Explanation =
+                            $"Adds {check.Account} to the local Windows group '{OpennessGroup}'. Windows asks " +
+                            "for administrator approval first; nothing else on the machine is changed.",
+                        Afterwards = SignOutAndIn,
+                    },
+                };
+        }
+    }
+
     public IPlcRunner CreateRunner(PlcToolchainStatus status) =>
         status is { Available: true, ExecutablePath: { } host, Profile: { } profile }
             ? new LocalTiaPortalRunner(host, profile, _log, searchRoots)
             : new UnavailableToolchainRunner(
                 status.Explanation ?? "the toolchain is not available on this machine");
+
+    /// <inheritdoc />
+    /// <remarks>
+    /// Re-checks before acting rather than trusting the status it was handed: the status may
+    /// be minutes old, and the account the probe saw is the account to add. The elevated
+    /// helper is given the SID, never the name, because the process Windows elevates may be
+    /// somebody else's (a standard user typing an administrator's credentials).
+    /// </remarks>
+    public async Task<PlcRemedyOutcome> ApplyRemedyAsync(PlcToolchainStatus status, CancellationToken ct)
+    {
+        if (status.Remedy is null)
+        {
+            return PlcRemedyOutcome.Refused("this status offers no fix.");
+        }
+
+        var check = _groups.Check(OpennessGroup);
+        _lastCheck = check;
+        switch (check.Standing)
+        {
+            case LocalGroupStanding.InToken:
+                return PlcRemedyOutcome.Done($"{check.Account} is already admitted to Openness; nothing to add.");
+            case LocalGroupStanding.MemberNotInToken:
+                return PlcRemedyOutcome.Done($"{check.Account} is already a member of '{OpennessGroup}'. {SignOutAndIn}");
+            case LocalGroupStanding.GroupMissing:
+                return PlcRemedyOutcome.Refused($"the group '{OpennessGroup}' does not exist; install the Openness feature first.");
+            case LocalGroupStanding.Unknown:
+                return PlcRemedyOutcome.Refused($"the account's standing could not be read: {check.Detail}");
+        }
+
+        _log.Info(TiaPortalLog.Category, $"adding {check.Account} to '{OpennessGroup}' at the user's request");
+        var outcome = await _groups.JoinElevatedAsync(OpennessGroup, check, ct).ConfigureAwait(false);
+        return outcome.Succeeded
+            ? PlcRemedyOutcome.Done($"{Capitalise(outcome.Message)} {SignOutAndIn}")
+            : outcome;
+    }
+
+    /// <summary>The last standing read, for a test or a log line; null before any probe.</summary>
+    public LocalGroupCheck? LastGroupCheck => _lastCheck;
+
+    private static string Capitalise(string sentence) =>
+        sentence.Length == 0 ? sentence : char.ToUpperInvariant(sentence[0]) + sentence[1..];
+
+    /// <summary>Off Windows there are no local groups to ask; the probe goes on to Portal, which is not there either.</summary>
+    private sealed class NoLocalGroups : ILocalGroups
+    {
+        public LocalGroupCheck Check(string groupName) =>
+            new(LocalGroupStanding.Unknown, string.Empty, string.Empty, "not Windows");
+
+        public Task<PlcRemedyOutcome> JoinElevatedAsync(string groupName, LocalGroupCheck account, CancellationToken ct) =>
+            Task.FromResult(PlcRemedyOutcome.Refused("not Windows"));
+    }
 }

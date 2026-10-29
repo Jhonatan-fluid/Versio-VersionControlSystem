@@ -280,7 +280,7 @@ public sealed class PortalReleaseChoiceTests(ITestOutputHelper output) : IDispos
         ModularInstall("V21");
         SingleAssemblyInstall("V20");
 
-        var status = await new TiaPortalToolchain(NullLogger.Instance, [_root])
+        var status = await new TiaPortalToolchain(NullLogger.Instance, [_root], InToken)
             .ProbeAsync(CancellationToken.None);
 
         Assert.True(status.Available, status.Explanation);
@@ -298,7 +298,7 @@ public sealed class PortalReleaseChoiceTests(ITestOutputHelper output) : IDispos
             "TIA Portal host was not copied to the output directory");
         SingleAssemblyInstall("V20");
 
-        var status = await new TiaPortalToolchain(NullLogger.Instance, [_root])
+        var status = await new TiaPortalToolchain(NullLogger.Instance, [_root], InToken)
             .ProbeAsync(CancellationToken.None);
 
         Assert.True(status.Available, status.Explanation);
@@ -306,6 +306,23 @@ public sealed class PortalReleaseChoiceTests(ITestOutputHelper output) : IDispos
         Assert.Equal("V20", status.Version);
         Assert.Empty(status.Candidates);
         Assert.EndsWith("Portal V20 — V20", status.Explanation);
+    }
+
+    /// <summary>
+    /// An account Openness admits, so these tests are about releases and not about the
+    /// group — which is OpennessGroupTests' subject, and which the real reader would answer
+    /// differently on a machine without Portal.
+    /// </summary>
+    private static readonly Versio.Infrastructure.Platform.ILocalGroups InToken = new AdmittedGroups();
+
+    private sealed class AdmittedGroups : Versio.Infrastructure.Platform.ILocalGroups
+    {
+        public Versio.Infrastructure.Platform.LocalGroupCheck Check(string groupName) =>
+            new(Versio.Infrastructure.Platform.LocalGroupStanding.InToken, "tester", "S-1-5-21-0", "fake");
+
+        public Task<PlcRemedyOutcome> JoinElevatedAsync(
+            string groupName, Versio.Infrastructure.Platform.LocalGroupCheck account, CancellationToken ct) =>
+            Task.FromResult(PlcRemedyOutcome.Refused("not offered"));
     }
 
     private void ModularInstall(string version, string? folder = null, string? root = null)
