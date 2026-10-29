@@ -492,6 +492,73 @@ public interface IPlcToolchain
     /// </para>
     /// </remarks>
     IPlcRunner CreateRunner(PlcToolchainStatus status);
+
+    /// <summary>
+    /// Perform the fix a probe offered in <see cref="PlcToolchainStatus.Remedy"/>.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Only ever called by a person pressing the button the remedy describes: the vendor
+    /// decides what the fix is and does it, the application decides when, and the user
+    /// decides whether. The default refuses, which is right for a toolchain whose probe
+    /// offered nothing.
+    /// </para>
+    /// <para>
+    /// A success says what happened and what the user does next (the remedy's
+    /// <see cref="PlcToolchainRemedy.Afterwards"/>), because the fix may not take effect in
+    /// this session — a Windows group joins the logon token at the next sign-in, and no
+    /// re-probe will see it before then.
+    /// </para>
+    /// </remarks>
+    Task<PlcRemedyOutcome> ApplyRemedyAsync(PlcToolchainStatus status, CancellationToken ct) =>
+        Task.FromResult(PlcRemedyOutcome.Refused(
+            $"{Format.DisplayName} offers no fix for this; the explanation says what to do."));
+}
+
+/// <summary>What applying a remedy did, in one sentence either way.</summary>
+/// <remarks>
+/// Not a <see cref="PlcResult"/>: that carries a reason only for failure, and a remedy's
+/// success is the sentence worth reading ("added X to group Y") followed by what to do next.
+/// </remarks>
+public sealed record PlcRemedyOutcome(bool Succeeded, string Message)
+{
+    public static PlcRemedyOutcome Done(string message) => new(true, message);
+
+    public static PlcRemedyOutcome Refused(string message) => new(false, message);
+}
+
+/// <summary>
+/// A fix the vendor can perform for the state its probe found, offered to the user as one
+/// button wherever the state is shown.
+/// </summary>
+/// <remarks>
+/// <para>
+/// <b>Added 2026-10-29 for the first case: the TIA Portal Openness group.</b> Portal refuses
+/// Openness to any process whose account is not in the local group <i>Siemens TIA
+/// Openness</i>; adding the account needs administrator rights and takes effect at the next
+/// sign-in. The owner hit the refusal as a "Security error" failure card an hour into the
+/// first session on a new machine, fixed it from a command in chat, and asked whether the
+/// install could do it. It cannot — the installer is per-user on purpose, and the sign-in is
+/// the user's — so the probe detects it before Portal is ever launched and this is the
+/// button. Neutral by shape: a label, what pressing it does, and what happens afterwards.
+/// What it does is the vendor's (<see cref="IPlcToolchain.ApplyRemedyAsync"/>).
+/// </para>
+/// <para>
+/// It is an offer, never an act. Changing a security group is the user's decision, Windows
+/// asks for approval on top, and the application never applies a remedy on its own — not at
+/// install, not at launch, not on a retry.
+/// </para>
+/// </remarks>
+public sealed record PlcToolchainRemedy
+{
+    /// <summary>The button: an imperative phrase ending in an ellipsis when a prompt follows.</summary>
+    public required string Action { get; init; }
+
+    /// <summary>What pressing it does, in full — the account, the group, the approval.</summary>
+    public required string Explanation { get; init; }
+
+    /// <summary>What the user does once it has succeeded, e.g. sign out and back in.</summary>
+    public required string Afterwards { get; init; }
 }
 
 /// <summary>Whether a toolchain can be used, and why not if it cannot.</summary>
@@ -537,4 +604,16 @@ public sealed record PlcToolchainStatus
     /// </para>
     /// </remarks>
     public IReadOnlyList<string> Candidates { get; init; } = [];
+
+    /// <summary>
+    /// A fix the vendor can perform for this state, or null when there is nothing to offer
+    /// but the explanation.
+    /// </summary>
+    /// <remarks>
+    /// Set only with <see cref="Available"/> false: an available toolchain has nothing to
+    /// fix. Shown as a button beside the explanation in every place the state reaches — the
+    /// project's card, the failure pane, Settings → System information — and performed by
+    /// <see cref="IPlcToolchain.ApplyRemedyAsync"/> when pressed.
+    /// </remarks>
+    public PlcToolchainRemedy? Remedy { get; init; }
 }
