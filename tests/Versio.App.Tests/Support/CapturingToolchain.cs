@@ -33,6 +33,9 @@ internal sealed class CapturingToolchain : IPlcToolchain, IPlcRunner
     /// <summary>When set, every job fails with this reason instead of succeeding.</summary>
     public string? FailWith { get; init; }
 
+    /// <summary>When set, the probe is available with this notice for the next run (a vendor's own dialog ahead).</summary>
+    public string? Notice { get; init; }
+
     public Task<PlcToolchainStatus> ProbeAsync(CancellationToken ct) =>
         Task.FromResult(new PlcToolchainStatus
         {
@@ -40,6 +43,7 @@ internal sealed class CapturingToolchain : IPlcToolchain, IPlcRunner
             Version = "3.5.22.20",
             ExecutablePath = @"C:\nowhere\CODESYS.exe",
             Profile = "CODESYS V3.5 SP22 Patch 2",
+            Notice = Notice,
         });
 
     public IPlcRunner CreateRunner(PlcToolchainStatus status) => this;

@@ -108,4 +108,34 @@ public sealed class ToolchainRowsTests
 
         Assert.Equal(["Status", "Version", "Profile", "Executable", "Projects"], rows.Select(r => r.Label));
     }
+
+    [Fact]
+    public void A_notice_is_a_Next_run_row_under_Status_and_only_while_available()
+    {
+        // 2026-10-29: TIA Portal's Openness access dialog, keyed to the host's hash, comes
+        // back after every update and times out unanswered nine minutes in. The vendor says
+        // so on an available status; the window says it right under "available".
+        const string notice = "Portal V20 will ask for Openness access the first time this host connects.";
+        var rows = SyncViewModel.DescribeToolchain(Format, new PlcToolchainStatus
+        {
+            Available = true,
+            Version = "V21, V20",
+            Profile = "V21",
+            ExecutablePath = @"C:\nowhere\tia\Versio.Plc.TiaPortal.Host.exe",
+            Notice = notice,
+        });
+
+        Assert.Equal(["Status", "Next run", "Version", "Profile", "Executable", "Projects"], rows.Select(r => r.Label));
+        Assert.Equal(notice, rows[1].Value);
+
+        // A refused toolchain has its explanation; a notice on it would be two sentences
+        // about one state, so the row is not drawn.
+        var refused = SyncViewModel.DescribeToolchain(Format, new PlcToolchainStatus
+        {
+            Available = false,
+            Explanation = "not here",
+            Notice = notice,
+        });
+        Assert.DoesNotContain(refused, r => r.Label == "Next run");
+    }
 }

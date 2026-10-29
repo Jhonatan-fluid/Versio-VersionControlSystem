@@ -714,6 +714,13 @@ public sealed class SyncViewModel : ObservableObject
             new("Status", status.Available ? "available" : status.Explanation ?? "unavailable"),
         };
 
+        // Directly under Status, because it qualifies it: available, and the next run will
+        // put up a dialog of the vendor's. The same sentence as the project card's.
+        if (status.Available && status.Notice is { Length: > 0 } notice)
+        {
+            rows.Add(new Views.SystemInfoRow("Next run", notice));
+        }
+
         if (status.Version is { Length: > 0 } version)
         {
             rows.Add(new Views.SystemInfoRow("Version", version));
@@ -3885,9 +3892,18 @@ public sealed class SyncViewModel : ObservableObject
                 : "not probed yet";
         }
 
-        return probed.Status.Available
-            ? "installed — version under Settings → System information"
-            : probed.Status.Explanation ?? $"{format.DisplayName} is not available on this machine";
+        if (!probed.Status.Available)
+        {
+            return probed.Status.Explanation ?? $"{format.DisplayName} is not available on this machine";
+        }
+
+        // The vendor's notice rides on "installed", because it is true of an installed
+        // toolchain: the run will go ahead and something about it will need a person. It is
+        // the card and nowhere later — the failure it forestalls comes nine minutes after
+        // the press, with a message that names nothing the user could have done.
+        return probed.Status.Notice is { Length: > 0 } notice
+            ? $"installed. {notice}"
+            : "installed — version under Settings → System information";
     }
 
     /// <summary>
