@@ -23,7 +23,8 @@ namespace Versio.Plc.TiaPortal.Infrastructure;
 public sealed class TiaPortalToolchain(
     IVersioLogger? logger = null,
     IEnumerable<string>? searchRoots = null,
-    ILocalGroups? groups = null) : IPlcToolchain
+    ILocalGroups? groups = null,
+    IOpennessAccessList? accessList = null) : IPlcToolchain
 {
     /// <summary>
     /// The local group Portal's Openness admits. The Portal setup creates it (Openness has
@@ -41,6 +42,8 @@ public sealed class TiaPortalToolchain(
     private readonly ILocalGroups _groups = groups ?? (OperatingSystem.IsWindows()
         ? new LocalGroups(logger)
         : new NoLocalGroups());
+
+    private readonly IOpennessAccessList _access = accessList ?? new OpennessAccessList(logger);
 
     private LocalGroupCheck? _lastCheck;
 
@@ -94,6 +97,7 @@ public sealed class TiaPortalToolchain(
         // pinned profile is the newest release; it only matters for a path with no number in
         // its extension, which this format does not claim. 2026-10-29.
         var newest = installs[0];
+        var (notice, access) = AccessNotice(installs, host);
         var ready = new PlcToolchainStatus
         {
             Available = true,
@@ -105,9 +109,57 @@ public sealed class TiaPortalToolchain(
                 ? $"{newest.InstallFolder} — {newest.Version}"
                 : string.Join("; ", installs.Select(i => $"{i.InstallFolder} — {i.Version}"))
                   + ". The project file's extension picks which one opens it.",
+            Notice = notice,
         };
-        _log.Info(TiaPortalLog.Category, $"toolchain ready: {ready.Explanation}");
+        _log.Info(TiaPortalLog.Category,
+            $"toolchain ready: {ready.Explanation.TrimEnd('.')}; Openness access list: {access}");
         return Task.FromResult(ready);
+    }
+
+    /// <summary>
+    /// The sentence for the card when a Portal will put up its access dialog before letting
+    /// this host in, and the one-line standing for the log; null and the standing when none will.
+    /// </summary>
+    /// <remarks>
+    /// Per installed release, because each Portal keeps its own list (§2.3 of the driving
+    /// notes): the owner's V21 had the host listed and V20 asked. The sentence names the
+    /// window, the button, and what an unanswered dialog turns into, because the failure it
+    /// prevents arrives nine minutes later with a message that names neither Openness nor
+    /// access. A list that could not be read says nothing on the card: Portal will ask or it
+    /// will not, and the log has the reason.
+    /// </remarks>
+    private (string? Notice, string Standing) AccessNotice(IReadOnlyList<TiaPortalInstall> installs, string host)
+    {
+        var asking = new List<string>();
+        var standing = new List<string>();
+        foreach (var install in installs)
+        {
+            var check = _access.Check(install, host);
+            var word = check.Standing switch
+            {
+                OpennessAccessStanding.Listed => "listed",
+                OpennessAccessStanding.NotListed => "not listed",
+                _ => "unknown",
+            };
+            standing.Add($"{install.Version} {word} ({check.Detail})");
+            if (check.Standing == OpennessAccessStanding.NotListed)
+            {
+                asking.Add(install.Version);
+            }
+        }
+
+        if (asking.Count == 0)
+        {
+            return (null, string.Join("; ", standing));
+        }
+
+        var which = string.Join(" and ", asking);
+        var notice =
+            $"Portal {which} will ask for Openness access the first time this host connects: a window " +
+            $"titled '{OpennessAccessList.DialogTitle}' with Yes, Yes to all and No. Answer Yes to all " +
+            $"within a few minutes; left unanswered, the run fails after about nine minutes with " +
+            $"'{OpennessAccessList.TimeoutText}'. Portal asks once per Versio update that changes the host.";
+        return (notice, string.Join("; ", standing));
     }
 
     /// <summary>
@@ -191,7 +243,7 @@ public sealed class TiaPortalToolchain(
 
     public IPlcRunner CreateRunner(PlcToolchainStatus status) =>
         status is { Available: true, ExecutablePath: { } host, Profile: { } profile }
-            ? new LocalTiaPortalRunner(host, profile, _log, searchRoots)
+            ? new LocalTiaPortalRunner(host, profile, _log, searchRoots, _access)
             : new UnavailableToolchainRunner(
                 status.Explanation ?? "the toolchain is not available on this machine");
 

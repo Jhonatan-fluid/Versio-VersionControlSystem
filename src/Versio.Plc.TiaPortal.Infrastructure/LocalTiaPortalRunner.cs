@@ -20,13 +20,16 @@ public sealed class LocalTiaPortalRunner(
     string hostExecutablePath,
     string profile,
     IVersioLogger? logger = null,
-    IEnumerable<string>? searchRoots = null) : IPlcRunner
+    IEnumerable<string>? searchRoots = null,
+    IOpennessAccessList? accessList = null) : IPlcRunner
 {
     private const string GlobalMutexName = @"Global\Versio.TiaPortal.SingleInstance";
 
     private static readonly TimeSpan MutexWait = TimeSpan.FromMinutes(15);
 
     private readonly IVersioLogger _log = logger ?? NullLogger.Instance;
+
+    private readonly IOpennessAccessList _access = accessList ?? new OpennessAccessList(logger);
 
     /// <summary>
     /// The host beside Versio.exe, beside the infrastructure output, or null.
@@ -197,10 +200,24 @@ public sealed class LocalTiaPortalRunner(
             + $"[Portal {install.Version}, {install.ApiShape}; profile {profile}]");
         _log.Debug(TiaPortalLog.Category, $"job file {jobFile}, timeout {native.TimeoutSeconds}s");
 
+        // Said here, at the moment it is true for THIS Portal and THIS host, as well as on the
+        // card at probe time: the probe may be minutes old and an update in between is exactly
+        // what drops the host off the list. A dialog nobody is looking at is a nine-minute
+        // silence followed by a timeout that names neither Openness nor access (§2.3).
+        var access = _access.Check(install, hostExecutablePath);
+        var dialogExpected = access.Standing == OpennessAccessStanding.NotListed;
+        if (dialogExpected)
+        {
+            _log.Warn(TiaPortalLog.Category,
+                $"Portal {install.Version} will ask for Openness access for this host ({access.Detail}); " +
+                $"answer Yes to all on the '{OpennessAccessList.DialogTitle}' window, or this {job.Operation} " +
+                $"fails after about nine minutes with '{OpennessAccessList.TimeoutText}'");
+        }
+
         try
         {
             return await Task.Factory.StartNew(
-                () => RunGuarded(native, jobFile, progress, cancellationToken),
+                () => RunGuarded(native, jobFile, progress, cancellationToken, dialogExpected),
                 cancellationToken,
                 TaskCreationOptions.LongRunning,
                 TaskScheduler.Default).ConfigureAwait(false);
@@ -213,7 +230,8 @@ public sealed class LocalTiaPortalRunner(
 
     private PlcResult RunGuarded(
         TiaPortalJob job, string jobFile,
-        IProgress<PlcProgress>? progress, CancellationToken cancellationToken)
+        IProgress<PlcProgress>? progress, CancellationToken cancellationToken,
+        bool dialogExpected)
     {
         using var mutex = new Mutex(false, GlobalMutexName);
         var acquired = false;
@@ -251,7 +269,7 @@ public sealed class LocalTiaPortalRunner(
                     $"waited {waited.Elapsed.TotalSeconds:F1}s for the machine-wide TIA Portal lock");
             }
 
-            return Execute(job, jobFile, progress, cancellationToken);
+            return Execute(job, jobFile, progress, cancellationToken, dialogExpected);
         }
         finally
         {
@@ -264,7 +282,8 @@ public sealed class LocalTiaPortalRunner(
 
     private PlcResult Execute(
         TiaPortalJob job, string jobFile,
-        IProgress<PlcProgress>? progress, CancellationToken cancellationToken)
+        IProgress<PlcProgress>? progress, CancellationToken cancellationToken,
+        bool dialogExpected)
     {
         var psi = new ProcessStartInfo
         {
@@ -338,7 +357,8 @@ public sealed class LocalTiaPortalRunner(
             {
                 LogReaped(portalPid, hostStarted);
                 _log.Error(TiaPortalLog.Category, $"timed out after {timeout} — killed the host");
-                return PlcResult.Failure("the TIA Portal host did not finish within the timeout");
+                return PlcResult.Failure(
+                    WithAccessHint("the TIA Portal host did not finish within the timeout", dialogExpected));
             }
         }
         catch (OperationCanceledException)
@@ -370,7 +390,7 @@ public sealed class LocalTiaPortalRunner(
 
         if (output.Fatal is { } fatal)
         {
-            var msg = fatal.String("msg") ?? fatal.Raw;
+            var msg = WithAccessHint(fatal.String("msg") ?? fatal.Raw, dialogExpected);
             _log.Error(TiaPortalLog.Category, msg);
             return new PlcResult
             {
@@ -409,6 +429,27 @@ public sealed class LocalTiaPortalRunner(
 
     private static string Quote(string path) =>
         path.Contains(' ', StringComparison.Ordinal) ? "\"" + path + "\"" : path;
+
+    /// <summary>
+    /// Portal's timeout, with what it was, when this run knew a dialog was coming.
+    /// </summary>
+    /// <remarks>
+    /// <i>"Security error. The operation has timed out."</i> is what an unanswered access
+    /// dialog becomes, and it names neither Openness nor access nor a dialog; the owner's
+    /// first one cost the twenty-minute job timeout and a search. Our own job timeout gets the
+    /// same hint, because a job timeout shorter than Portal's nine minutes ends there instead.
+    /// The hint is added only when the host was not on the list at launch — a security timeout
+    /// on a listed host is some other security timeout, and guessing would send the reader to
+    /// the wrong place.
+    /// </remarks>
+    internal static string WithAccessHint(string failure, bool dialogExpected) =>
+        dialogExpected
+        && (failure.Contains("Security error", StringComparison.OrdinalIgnoreCase)
+            || failure.Contains("did not finish within the timeout", StringComparison.Ordinal))
+            ? failure + " Portal asked for Openness access for this host, which is not on its access list, " +
+              "and nobody answered in time. On the next run answer Yes to all on the " +
+              $"'{OpennessAccessList.DialogTitle}' window."
+            : failure;
 
     private void LogReaped(int? portalPid, DateTime hostStarted)
     {

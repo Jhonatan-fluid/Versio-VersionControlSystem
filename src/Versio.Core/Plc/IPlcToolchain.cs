@@ -613,6 +613,29 @@ public sealed record PlcToolchainStatus
     public IReadOnlyList<string> Candidates { get; init; } = [];
 
     /// <summary>
+    /// Something true about an <i>available</i> toolchain that the user should know before
+    /// its next run, in the vendor's words; null when there is nothing to say.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Not a refusal and not a fix: the run will go ahead, and something about it will need
+    /// a person — a dialog the vendor's tool puts up the first time a binary connects, a
+    /// licence prompt, a first-run wizard. The toolchain cannot answer it and should not
+    /// pre-empt it (that is the vendor's security control, not Versio's), so it says so
+    /// where the user is already looking — the project card, Settings → System information
+    /// — before the run rather than as a failure nine minutes into it.
+    /// </para>
+    /// <para>
+    /// The case that made it: TIA Portal's Openness access dialog, keyed to the host exe's
+    /// hash, which comes back after every Versio update and times out unanswered as
+    /// <i>"Security error. The operation has timed out."</i> (2026-10-29). Set only with
+    /// <see cref="Available"/> true; an unavailable toolchain has its
+    /// <see cref="Explanation"/>.
+    /// </para>
+    /// </remarks>
+    public string? Notice { get; init; }
+
+    /// <summary>
     /// A fix the vendor can perform for this state, or null when there is nothing to offer
     /// but the explanation.
     /// </summary>
