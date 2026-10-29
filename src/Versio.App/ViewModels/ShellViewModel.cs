@@ -593,6 +593,12 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         // carefully open a scope for it. Two objects, both correct, wired to nothing.
         Sync = new SyncViewModel(logger, _clock, Busy, toolchains);
 
+        // After Sync exists: the can-execute reads it.
+        FixToolchainCommand = new AsyncCommand<string?>(
+            path => FixToolchainForProjectAsync(path, CancellationToken.None),
+            path => path is { Length: > 0 } p && Sync.RemedyFor(p) is not null,
+            onError: ex => Notifications.Failure("The fix could not run.", ex.Message));
+
         // Where this branch stands against the remote, and the background watch that keeps it
         // honest. After Sync, because it holds it: a pull and a push both have to tell the PLC
         // engine that git is about to move the tree under it.
@@ -1592,6 +1598,53 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
     /// </remarks>
     public RelayCommand ShowHeldNotificationsCommand { get; }
 
+    /// <summary>
+    /// The button beside a vendor's refusal, on the project card and the failure pane: run
+    /// the fix the vendor offered for the project at this repo-relative path.
+    /// </summary>
+    /// <remarks>
+    /// Parameterised by project path rather than vendor because both places that draw it
+    /// know a project and not a vendor; the format maps one to the other. Settings reaches
+    /// the same <see cref="FixToolchainAsync"/> through the rows it is handed.
+    /// </remarks>
+    public AsyncCommand<string?> FixToolchainCommand { get; }
+
+    private Task FixToolchainForProjectAsync(string? projectPath, CancellationToken ct) =>
+        projectPath is { Length: > 0 } && PlcFormats.ForPath(projectPath) is { } format
+            ? FixToolchainAsync(format.Vendor, ct)
+            : Task.CompletedTask;
+
+    /// <summary>
+    /// Apply a vendor's offered fix and tell the user what happened, in the notification
+    /// center and in every place the state is drawn.
+    /// </summary>
+    /// <remarks>
+    /// The sentence returned is for Settings, which shows it under the button it was pressed
+    /// on; the notification carries the same words for the two places on the main window.
+    /// After it, the selected node is drawn again so a card that offered the button shows
+    /// the new state instead of the old offer.
+    /// </remarks>
+    internal async Task<string> FixToolchainAsync(PlcVendor vendor, CancellationToken ct)
+    {
+        var outcome = await Sync.ApplyToolchainRemedyAsync(vendor, ct).ConfigureAwait(true);
+        if (outcome.Succeeded)
+        {
+            Notifications.Success("Done.", outcome.Message);
+        }
+        else
+        {
+            Notifications.Failure("Nothing was changed.", outcome.Message);
+        }
+
+        if (Sync.SelectedNode is { } node)
+        {
+            ShowNode(node, visualizeOnly: false);
+        }
+
+        FixToolchainCommand.RaiseCanExecuteChanged();
+        return outcome.Message;
+    }
+
     public string StatusSummary
     {
         get => _statusSummary;
@@ -2038,7 +2091,10 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
             new("Logs", FileLogDirectory ?? "not writing to disk"),
         };
 
-        rows.AddRange(await Sync.DescribeToolchainsAsync(ct).ConfigureAwait(true));
+        // The Fix rows run the vendor's remedy through the same path as the main window's
+        // buttons, so the notification and the log read the same whichever one was pressed.
+        rows.AddRange(await Sync.DescribeToolchainsAsync(ct, vendor => FixToolchainAsync(vendor, ct))
+            .ConfigureAwait(true));
 
         rows.Add(Views.SystemInfoRow.Section("GIT"));
         rows.Add(new Views.SystemInfoRow("Version", await GitVersionAsync(ct).ConfigureAwait(true)));
@@ -8637,10 +8693,11 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
 
         // As Cards.Project says it: a project with no manifest is not exported, and its vendor is not guessed.
         facts.Add(new FactRow("Vendor", manifest is { } m ? m.Vendor.ToString() : "not exported yet"));
-        facts.Add(new FactRow("Toolchain",
-            Sync.ToolchainAvailable
-                ? "installed — version under Settings → System information"
-                : "not installed on this machine"));
+        // This vendor's toolchain, in its own words when it refuses — not "any vendor is
+        // installed", which is what this row said until 2026-10-29 while Portal was refusing
+        // the account and the reason sat in the log. The fix, when the vendor offers one, is
+        // the card's Remedy below the facts.
+        facts.Add(new FactRow("Toolchain", Sync.ToolchainFactFor(node.Path)));
 
         // WHICH TOOLCHAIN WROTE THIS MIRROR, which is a different question from whether one
         // is installed here — a colleague's export, a CI machine's, or an older CODESYS on
@@ -8662,7 +8719,7 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         if (manifest is null)
         {
             facts.Add(new FactRow("Mirror", "never exported"));
-            return new ProjectSummaryRender { Name = node.Name, Facts = facts };
+            return new ProjectSummaryRender { Name = node.Name, Facts = facts, ProjectPath = node.Path, Remedy = Sync.RemedyFor(node.Path) };
         }
 
         if (Sync.ManifestPathFor(node.Path) is { } manifestPath
@@ -8713,7 +8770,7 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
             facts.Add(new FactRow("Warnings", $"{manifest.Warnings.Count} — see the log"));
         }
 
-        return new ProjectSummaryRender { Name = node.Name, Facts = facts };
+        return new ProjectSummaryRender { Name = node.Name, Facts = facts, ProjectPath = node.Path, Remedy = Sync.RemedyFor(node.Path) };
     }
 
     /// <summary>The card for a source project: what it is, which vendor wrote it, and what is in it.</summary>

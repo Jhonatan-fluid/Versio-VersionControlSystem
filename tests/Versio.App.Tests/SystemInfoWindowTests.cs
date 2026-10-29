@@ -42,7 +42,54 @@ public sealed class SystemInfoWindowTests
         SystemInfoRow.Section("TOOLCHAIN"),
         new SystemInfoRow("CODESYS", "3.5.22.20"),
         new SystemInfoRow("Profile", "CODESYS V3.5 SP22 Patch 2"),
+        // The third shape, added 2026-10-29: a row with a button under its value, for a
+        // vendor's fix. Measured with the other two so its template branch is applied.
+        new SystemInfoRow("Fix", "Adds X to the local Windows group 'Siemens TIA Openness'.")
+        {
+            Action = new SystemInfoAction("Add this account to the group…", () => Task.FromResult("Added.")),
+        },
     ];
+
+    [Fact]
+    public void A_rows_button_runs_its_action_shows_the_sentence_and_gathers_the_rows_again()
+    {
+        StaHarness.Run(async () =>
+        {
+            var gathered = 0;
+            var window = new SystemInfoWindow(Rows(), () =>
+            {
+                gathered++;
+                return Task.FromResult<IReadOnlyList<SystemInfoRow>>(
+                    [SystemInfoRow.Section("TOOLCHAIN"), new SystemInfoRow("Status", "available")]);
+            });
+
+            await window.RunActionAsync(Rows().Single(r => r.HasAction));
+
+            Assert.Equal("Added.", window.LastOutcome);
+            Assert.Equal(1, gathered);
+            Assert.True(window.IsEnabled);
+            Assert.Contains("Status", window.AsText(), StringComparison.Ordinal);
+            Assert.DoesNotContain("Fix", window.AsText(), StringComparison.Ordinal);
+        });
+    }
+
+    [Fact]
+    public void A_rows_action_that_throws_is_the_outcome_not_a_closed_window()
+    {
+        StaHarness.Run(async () =>
+        {
+            var window = new SystemInfoWindow(Rows());
+            var row = new SystemInfoRow("Fix", "x")
+            {
+                Action = new SystemInfoAction("Try", () => throw new InvalidOperationException("no helper")),
+            };
+
+            await window.RunActionAsync(row);
+
+            Assert.Equal("The action failed: no helper", window.LastOutcome);
+            Assert.True(window.IsEnabled);
+        });
+    }
 
     [Fact]
     public void The_dialog_constructs_against_the_real_stylesheet()

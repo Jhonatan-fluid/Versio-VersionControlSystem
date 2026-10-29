@@ -654,8 +654,10 @@ public sealed class SyncViewModel : ObservableObject
     /// the repository opened would be answering the wrong question.
     /// </para>
     /// </remarks>
+    /// <param name="fix">Runs a vendor's offered fix and returns the sentence to show; null
+    /// for a caller that only reads.</param>
     public async Task<IReadOnlyList<Views.SystemInfoRow>> DescribeToolchainsAsync(
-        CancellationToken ct)
+        CancellationToken ct, Func<PlcVendor, Task<string>>? fix = null)
     {
         var rows = new List<Views.SystemInfoRow>();
 
@@ -687,7 +689,9 @@ public sealed class SyncViewModel : ObservableObject
                 continue;
             }
 
-            rows.AddRange(DescribeToolchain(format, status));
+            var vendor = format.Vendor;
+            rows.AddRange(DescribeToolchain(format, status,
+                fix is null ? null : () => fix(vendor)));
         }
 
         return rows;
@@ -697,8 +701,10 @@ public sealed class SyncViewModel : ObservableObject
     /// The rows for one probed toolchain. Static and separate so the shape can be checked
     /// against a made-up status; the method above probes whatever this machine has.
     /// </summary>
+    /// <param name="fix">What the Fix row's button runs, returning the sentence to show; null
+    /// draws the remedy's words without a button, for a caller that cannot act.</param>
     internal static IReadOnlyList<Views.SystemInfoRow> DescribeToolchain(
-        IPlcProjectFormat format, PlcToolchainStatus status)
+        IPlcProjectFormat format, PlcToolchainStatus status, Func<Task<string>>? fix = null)
     {
         var rows = new List<Views.SystemInfoRow>
         {
@@ -737,6 +743,17 @@ public sealed class SyncViewModel : ObservableObject
             {
                 rows.Add(new Views.SystemInfoRow("Choice", how));
             }
+        }
+
+        // The vendor's fix, as a button with its own words beside it. The window is where
+        // somebody goes when a project card or a failure pane said "not available"; the same
+        // remedy is in all three places so it is found from whichever one they are reading.
+        if (status.Remedy is { } remedy)
+        {
+            rows.Add(new Views.SystemInfoRow("Fix", $"{remedy.Explanation} {remedy.Afterwards}")
+            {
+                Action = fix is null ? null : new Views.SystemInfoAction(remedy.Action, fix),
+            });
         }
 
         rows.Add(new Views.SystemInfoRow("Projects", string.Join(", ", format.ProjectExtensions)));
@@ -3826,6 +3843,100 @@ public sealed class SyncViewModel : ObservableObject
     private static bool IsTemplate(string path) =>
         PlcFormats.ForPath(path)?.IsTemplate(path) == true;
 
+    /// <summary>The probed status of the toolchain that owns this project's vendor, or null.</summary>
+    /// <remarks>
+    /// Null for a path no format claims and for a vendor with no toolchain registered; the
+    /// caller words those two differently, so they are not folded into an "unavailable" here.
+    /// </remarks>
+    public PlcToolchainStatus? ToolchainStatusFor(string projectPath) =>
+        PlcFormats.ForPath(projectPath) is { } format
+        && _probed.TryGetValue(format.Vendor, out var probed)
+            ? probed.Status
+            : null;
+
+    /// <summary>The fix the vendor offers for why this project cannot be exported here, or null.</summary>
+    public PlcToolchainRemedy? RemedyFor(string projectPath) => ToolchainStatusFor(projectPath)?.Remedy;
+
+    /// <summary>
+    /// The project card's "Toolchain" fact: this vendor's state, in its own words when it is
+    /// not available.
+    /// </summary>
+    /// <remarks>
+    /// Per vendor since 2026-10-29. It read <see cref="ToolchainAvailable"/> — any vendor —
+    /// so a TIA project on a machine with CODESYS ready and Portal refusing said "installed",
+    /// and the reason it would not export was in the log alone.
+    /// </remarks>
+    public string ToolchainFactFor(string projectPath)
+    {
+        if (PlcFormats.ForPath(projectPath) is not { } format)
+        {
+            return ToolchainAvailable
+                ? "installed — version under Settings → System information"
+                : "not installed on this machine";
+        }
+
+        if (!_probed.TryGetValue(format.Vendor, out var probed) || probed.Status is null)
+        {
+            return probed.Toolchain is null && _probed.ContainsKey(format.Vendor)
+                ? $"{format.DisplayName} projects can be tracked but not exported yet"
+                : "not probed yet";
+        }
+
+        return probed.Status.Available
+            ? "installed — version under Settings → System information"
+            : probed.Status.Explanation ?? $"{format.DisplayName} is not available on this machine";
+    }
+
+    /// <summary>
+    /// Perform the fix a vendor's probe offered, then look again.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Only ever from a button. Logged on both ends because it changes the machine, not the
+    /// repository, and the log is where somebody asks "what did Versio do to my groups". The
+    /// re-probe afterwards updates every place the state is shown; it does not rebuild the
+    /// runners, because the first remedy (a Windows group) cannot take effect in this session
+    /// — the token is built at sign-in — and a remedy that could would be the moment to add
+    /// that. The shell turns the outcome into a notification; this knows nothing of them.
+    /// </para>
+    /// </remarks>
+    public async Task<PlcRemedyOutcome> ApplyToolchainRemedyAsync(PlcVendor vendor, CancellationToken ct)
+    {
+        if (!_probed.TryGetValue(vendor, out var probed)
+            || probed.Toolchain is not { } toolchain
+            || probed.Status is not { Remedy: { } remedy } status)
+        {
+            return PlcRemedyOutcome.Refused($"{vendor} offers no fix right now.");
+        }
+
+        using var scope = _logger.BeginOperation(out _);
+        _logger.Info(LogCategory.Plc, $"{toolchain.Format.DisplayName}: applying the offered fix — {remedy.Explanation}");
+
+        PlcRemedyOutcome outcome;
+        try
+        {
+            outcome = await toolchain.ApplyRemedyAsync(status, ct).ConfigureAwait(true);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _logger.Error(LogCategory.Plc, $"{toolchain.Format.DisplayName}: the fix threw", ex);
+            outcome = PlcRemedyOutcome.Refused($"the fix failed: {ex.Message}");
+        }
+
+        if (outcome.Succeeded)
+        {
+            _logger.Info(LogCategory.Plc, $"{toolchain.Format.DisplayName}: {outcome.Message}");
+        }
+        else
+        {
+            _logger.Warn(LogCategory.Plc, $"{toolchain.Format.DisplayName}: the fix did not apply — {outcome.Message}");
+        }
+
+        await ProbeToolchainAsync(ct).ConfigureAwait(true);
+        RefreshFailure(_failureQuery);
+        return outcome;
+    }
+
     /// <summary>
     /// The profile to pin on a new binding: the format's word on the project, given what the
     /// vendor's probe reported.
@@ -3884,6 +3995,7 @@ public sealed class SyncViewModel : ObservableObject
     /// </remarks>
     public void RefreshFailure(string? projectPath)
     {
+        _failureQuery = projectPath;
         var row = Projects.FirstOrDefault(p =>
             p.Tracked && string.Equals(p.Path, projectPath, StringComparison.OrdinalIgnoreCase));
 
@@ -3891,6 +4003,12 @@ public sealed class SyncViewModel : ObservableObject
                      _orchestrator.StateOf(row.BindingId!) == SyncDirection.Failed;
 
         FailedProject = failed ? row : null;
+
+        // The fix beside the failure, when the vendor offers one for the state it is in. A
+        // failed export over a refused toolchain says the reason in FailureDetail; the
+        // button under it is the same remedy the project card and Settings show, so the
+        // person reading the failure does not have to go and find it (2026-10-29).
+        FailureRemedy = failed ? RemedyFor(row!.Path) : null;
 
         // What the state means, then what actually happened. The first sentence is the same
         // one the narrative gives everywhere else; the second is the toolchain's own words,
@@ -3907,6 +4025,24 @@ public sealed class SyncViewModel : ObservableObject
 
     /// <summary>True when the failure pane has something to show.</summary>
     public bool HasFailure => FailedProject is not null;
+
+    /// <summary>The vendor's fix for the failed project's toolchain state, or null.</summary>
+    public PlcToolchainRemedy? FailureRemedy
+    {
+        get => _failureRemedy;
+        private set
+        {
+            if (SetProperty(ref _failureRemedy, value))
+            {
+                OnPropertyChanged(nameof(HasFailureRemedy));
+            }
+        }
+    }
+
+    private PlcToolchainRemedy? _failureRemedy;
+    private string? _failureQuery;
+
+    public bool HasFailureRemedy => FailureRemedy is not null;
 
     // ------------------------------------------------------------------ pending imports
 

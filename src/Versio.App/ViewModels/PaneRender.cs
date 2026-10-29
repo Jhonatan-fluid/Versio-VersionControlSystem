@@ -171,6 +171,22 @@ public sealed record ProjectSummaryRender
 {
     public required string Name { get; init; }
     public required IReadOnlyList<FactRow> Facts { get; init; }
+
+    /// <summary>The project's repo-relative path: the fix button's parameter.</summary>
+    public string? ProjectPath { get; init; }
+
+    /// <summary>
+    /// A fix the vendor offers for why this project cannot be exported here, or null.
+    /// </summary>
+    /// <remarks>
+    /// On the card because the card is where somebody looks when a project says "not
+    /// exported" — the owner's first question on 2026-10-28 was asked from exactly here. The
+    /// same remedy is on the failure pane and in Settings; this is the one of the three that
+    /// is visible before anything has failed.
+    /// </remarks>
+    public Versio.Core.Plc.PlcToolchainRemedy? Remedy { get; init; }
+
+    public bool HasRemedy => Remedy is not null;
 }
 
 /// <summary>One task, opened from its row: everything its catalog records about it.</summary>

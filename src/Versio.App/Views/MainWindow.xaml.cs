@@ -540,7 +540,7 @@ public partial class MainWindow : Window
         SettingsPopup.IsOpen = false;
 
         var rows = await _shell.BuildSystemInfoAsync(CancellationToken.None);
-        new SystemInfoWindow(rows) { Owner = this }.ShowDialog();
+        new SystemInfoWindow(rows, () => _shell.BuildSystemInfoAsync(CancellationToken.None)) { Owner = this }.ShowDialog();
     }
 
     /// <summary>

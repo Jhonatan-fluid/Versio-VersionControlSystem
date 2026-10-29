@@ -58,6 +58,43 @@ public sealed class ToolchainRowsTests
     }
 
     [Fact]
+    public async Task A_remedy_is_a_Fix_row_whose_button_runs_the_fix_and_returns_its_sentence()
+    {
+        var ran = 0;
+        var status = new PlcToolchainStatus
+        {
+            Available = false,
+            Version = "V21",
+            Explanation = "TIA Portal V21 is installed, but X is not in the group.",
+            Remedy = new PlcToolchainRemedy
+            {
+                Action = "Add this account to the Siemens TIA Openness group…",
+                Explanation = "Adds X to the local Windows group 'Siemens TIA Openness'.",
+                Afterwards = "Sign out of Windows and back in, then try again.",
+            },
+        };
+
+        var rows = SyncViewModel.DescribeToolchain(Format, status, () =>
+        {
+            ran++;
+            return Task.FromResult("Added X to 'Siemens TIA Openness'.");
+        });
+
+        var fix = rows.Single(r => r.Label == "Fix");
+        Assert.Equal(
+            "Adds X to the local Windows group 'Siemens TIA Openness'. Sign out of Windows and back in, then try again.",
+            fix.Value);
+        Assert.True(fix.HasAction);
+        Assert.Equal("Add this account to the Siemens TIA Openness group…", fix.Action!.Label);
+        Assert.Equal("Added X to 'Siemens TIA Openness'.", await fix.Action.Run());
+        Assert.Equal(1, ran);
+
+        // A caller that cannot act gets the words and no button.
+        var readOnly = SyncViewModel.DescribeToolchain(Format, status);
+        Assert.False(readOnly.Single(r => r.Label == "Fix").HasAction);
+    }
+
+    [Fact]
     public void One_install_has_no_list_at_all()
     {
         var rows = SyncViewModel.DescribeToolchain(Format, new PlcToolchainStatus

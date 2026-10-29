@@ -12,9 +12,20 @@ public sealed record SystemInfoRow(string Label, string Value, bool IsHeader = f
 {
     public bool IsValue => !IsHeader;
 
+    /// <summary>
+    /// A button under the value, for the one kind of row that is not only read: a vendor's
+    /// fix for why its toolchain refused (2026-10-29). Null for every other row.
+    /// </summary>
+    public SystemInfoAction? Action { get; init; }
+
+    public bool HasAction => Action is not null;
+
     /// <summary>A section header.</summary>
     public static SystemInfoRow Section(string label) => new(label, string.Empty, IsHeader: true);
 }
+
+/// <summary>What a row's button says and does; <see cref="Run"/> returns the sentence to show.</summary>
+public sealed record SystemInfoAction(string Label, Func<Task<string>> Run);
 
 /// <summary>
 /// What this machine has: toolchains, profiles, versions and paths.
@@ -33,13 +44,68 @@ public sealed record SystemInfoRow(string Label, string Value, bool IsHeader = f
 /// </remarks>
 public partial class SystemInfoWindow : Window
 {
-    private readonly IReadOnlyList<SystemInfoRow> _rows;
+    private IReadOnlyList<SystemInfoRow> _rows;
+    private readonly Func<Task<IReadOnlyList<SystemInfoRow>>>? _refresh;
 
-    public SystemInfoWindow(IReadOnlyList<SystemInfoRow> rows)
+    /// <param name="rows">What to show.</param>
+    /// <param name="refresh">How to gather the rows again after a row's action ran, so the
+    /// window shows the state the action left rather than the one it was opened on. Null
+    /// leaves the rows as they were, which is right for a caller with nothing to act on.</param>
+    public SystemInfoWindow(
+        IReadOnlyList<SystemInfoRow> rows,
+        Func<Task<IReadOnlyList<SystemInfoRow>>>? refresh = null)
     {
         _rows = rows;
+        _refresh = refresh;
         InitializeComponent();
         Rows.ItemsSource = rows;
+    }
+
+    /// <summary>What the last action said, shown under the list; empty until one has run.</summary>
+    internal string LastOutcome => Outcome.Text;
+
+    /// <summary>
+    /// A row's button: run the action, say what it said, then gather the rows again.
+    /// </summary>
+    /// <remarks>
+    /// The button is disabled while it runs — the first action takes a UAC prompt and a
+    /// helper process, and a second press meanwhile would put up a second prompt. An
+    /// exception is shown as the outcome, not thrown out of a click handler where it would
+    /// close the window with the message unread.
+    /// </remarks>
+    internal async Task RunActionAsync(SystemInfoRow row)
+    {
+        if (row.Action is not { } action)
+        {
+            return;
+        }
+
+        IsEnabled = false;
+        try
+        {
+            Outcome.Text = await action.Run();
+            if (_refresh is not null)
+            {
+                _rows = await _refresh();
+                Rows.ItemsSource = _rows;
+            }
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            Outcome.Text = $"The action failed: {ex.Message}";
+        }
+        finally
+        {
+            IsEnabled = true;
+        }
+    }
+
+    private async void OnRunAction(object sender, RoutedEventArgs e)
+    {
+        if (sender is FrameworkElement { DataContext: SystemInfoRow row })
+        {
+            await RunActionAsync(row);
+        }
     }
 
     /// <summary>Everything on screen, as text worth pasting into a bug report.</summary>

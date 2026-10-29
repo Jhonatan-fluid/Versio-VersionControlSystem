@@ -998,6 +998,28 @@
                                        FontSize="{DynamicResource Font.Size.Caption}"
                                        Foreground="{DynamicResource Brush.Text.Secondary}" />
 
+                            <!-- The vendor's fix for the state its toolchain is in, when it
+                                 offers one: the failure above is that refusal in the
+                                 toolchain's words, and Try again alone would fail the same
+                                 way. One button, the vendor's label, and what to do after.
+                                 Hidden when there is nothing to offer. -->
+                            <StackPanel Margin="0,10,0,0"
+                                        Visibility="{Binding Sync.HasFailureRemedy,
+                                            Converter={StaticResource BoolToVisibility}}">
+                                <TextBlock Text="{Binding Sync.FailureRemedy.Explanation}"
+                                           TextWrapping="Wrap"
+                                           FontFamily="{DynamicResource Font.UI}"
+                                           FontSize="{DynamicResource Font.Size.Caption}"
+                                           Foreground="{DynamicResource Brush.Text.Secondary}" />
+                                <Button Content="{Binding Sync.FailureRemedy.Action}"
+                                        Margin="0,6,0,0" HorizontalAlignment="Left" Padding="16,4"
+                                        Style="{StaticResource AccentButton}"
+                                        Command="{Binding FixToolchainCommand}"
+                                        CommandParameter="{Binding Sync.FailedProject.Path}"
+                                        AutomationProperties.Name="{Binding Sync.FailureRemedy.Action}"
+                                        ToolTip="{Binding Sync.FailureRemedy.Afterwards}" />
+                            </StackPanel>
+
                             <Button Content="Try again" Margin="0,10,0,0"
                                     HorizontalAlignment="Left" Padding="16,4"
                                     Style="{StaticResource AccentButton}"
@@ -1871,6 +1893,39 @@
                                                    Margin="0,0,0,6" />
                                         <ItemsControl ItemsSource="{Binding Facts}"
                                                       ItemTemplate="{StaticResource FactRows}" />
+
+                                        <!-- The vendor's fix for why this project cannot be
+                                             exported here, under the facts that said so. The
+                                             Toolchain row above carries the refusal in the
+                                             vendor's words; this is the button for it, drawn
+                                             only when the vendor offers one. The command is the
+                                             shell's, reached past this template's DataContext. -->
+                                        <Border Margin="0,10,0,0" Padding="12,10"
+                                                Background="{DynamicResource Brush.Surface.Sunken}"
+                                                CornerRadius="{DynamicResource Radius.Control}"
+                                                Visibility="{Binding HasRemedy,
+                                                    Converter={StaticResource BoolToVisibility}}">
+                                            <StackPanel>
+                                                <TextBlock Text="{Binding Remedy.Explanation}"
+                                                           TextWrapping="Wrap"
+                                                           FontFamily="{DynamicResource Font.UI}"
+                                                           FontSize="{DynamicResource Font.Size.Caption}"
+                                                           Foreground="{DynamicResource Brush.Text.Secondary}" />
+                                                <Button Content="{Binding Remedy.Action}"
+                                                        Margin="0,8,0,0" HorizontalAlignment="Left" Padding="16,4"
+                                                        Style="{StaticResource AccentButton}"
+                                                        Command="{Binding DataContext.FixToolchainCommand,
+                                                            RelativeSource={RelativeSource AncestorType=Window}}"
+                                                        CommandParameter="{Binding ProjectPath}"
+                                                        AutomationProperties.Name="{Binding Remedy.Action}"
+                                                        ToolTip="{Binding Remedy.Afterwards}" />
+                                                <TextBlock Text="{Binding Remedy.Afterwards}"
+                                                           TextWrapping="Wrap" Margin="0,8,0,0"
+                                                           FontFamily="{DynamicResource Font.UI}"
+                                                           FontSize="{DynamicResource Font.Size.Caption}"
+                                                           Foreground="{DynamicResource Brush.Text.Secondary}" />
+                                            </StackPanel>
+                                        </Border>
                                     </StackPanel>
                                 </ScrollViewer>
                             </DataTemplate>

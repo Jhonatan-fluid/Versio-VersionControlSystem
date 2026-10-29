@@ -23,6 +23,16 @@
                    Foreground="{DynamicResource Brush.Text.Secondary}"
                    Text="What Versio found on this machine. Copy this into a bug report — every line here is something that changes what the app can do." />
 
+        <!-- What the last row action said: the add that ran, the prompt that was declined.
+             Under the list rather than in a message box, so it stays readable beside the
+             rows it changed and copies out with them. Empty until a button has been pressed. -->
+        <TextBlock x:Name="Outcome" DockPanel.Dock="Bottom" TextWrapping="Wrap"
+                   Margin="0,8,0,0"
+                   AutomationProperties.Name="Outcome of the last action"
+                   FontFamily="{DynamicResource Font.UI}"
+                   FontSize="{DynamicResource Font.Size.Caption}"
+                   Foreground="{DynamicResource Brush.Text.Primary}" />
+
         <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal"
                     HorizontalAlignment="Right" Margin="0,12,0,0">
             <Button Content="Copy all" Style="{StaticResource GhostButton}"
@@ -62,13 +72,27 @@
                                        Visibility="{Binding IsValue,
                                            Converter={StaticResource BoolToVisibility}}" />
 
-                            <TextBlock Grid.Column="1" Text="{Binding Value}"
-                                       TextWrapping="Wrap"
-                                       FontFamily="{DynamicResource Font.Mono}"
-                                       FontSize="{DynamicResource Font.Size.Caption}"
-                                       Foreground="{DynamicResource Brush.Text.Primary}"
-                                       Visibility="{Binding IsValue,
-                                           Converter={StaticResource BoolToVisibility}}" />
+                            <StackPanel Grid.Column="1"
+                                        Visibility="{Binding IsValue,
+                                            Converter={StaticResource BoolToVisibility}}">
+                                <TextBlock Text="{Binding Value}"
+                                           TextWrapping="Wrap"
+                                           FontFamily="{DynamicResource Font.Mono}"
+                                           FontSize="{DynamicResource Font.Size.Caption}"
+                                           Foreground="{DynamicResource Brush.Text.Primary}" />
+
+                                <!-- The one row that acts: a vendor's fix for a toolchain
+                                     it reported as refused. The label is the vendor's; the
+                                     click runs the action and shows its sentence below the
+                                     list. Collapsed on every other row. -->
+                                <Button Content="{Binding Action.Label}"
+                                        HorizontalAlignment="Left" Margin="0,6,0,4" Padding="12,3"
+                                        Style="{StaticResource AccentButton}"
+                                        Click="OnRunAction"
+                                        AutomationProperties.Name="{Binding Action.Label}"
+                                        Visibility="{Binding HasAction,
+                                            Converter={StaticResource BoolToVisibility}}" />
+                            </StackPanel>
                         </Grid>
                     </DataTemplate>
                 </ItemsControl.ItemTemplate>
