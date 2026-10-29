@@ -443,8 +443,8 @@ dotnet test tests/Versio.Core.Tests
 | `Versio.App.Tests` | 893 | Windows (WPF). Builds the real dialogs against the real stylesheet on an STA thread; **no window is ever shown**. One test runs the web viewer too, over every fixture row, and references `Versio.Web.Tests` for its fake GitHub | ~3.6–11 min |
 | `Versio.Plc.Codesys.Pure.Tests` | 405 | nothing — the vendor's planner, codecs, protocol, LD/FBD parser and File-Based Storage layout, pure | under a second |
 | `Versio.Plc.Codesys.Parity.Tests` | 104 | `python` on PATH, no CODESYS — **skips cleanly without python, so check the count** | ~15 s |
-| `Versio.Plc.TiaPortal.Pure.Tests` | 118 | nothing — format, planner, protocol, scrubber, member table, LAD and FBD parser | instant |
-| `Versio.Plc.TiaPortal.Tests` | 41 | **a real TIA Portal** for 5; skips cleanly without Openness membership. The 36 Portal-release-choice, Openness-group and access-list tests use fake install trees, a fake group reader and a fake access list and run everywhere | seconds when skipped |
+| `Versio.Plc.TiaPortal.Pure.Tests` | 143 | nothing — format, planner, protocol, scrubber, member table, LAD and FBD parser, and the host's export walk and re-export baseline against fakes | instant |
+| `Versio.Plc.TiaPortal.Tests` | 42 | **a real TIA Portal** for 6; skips cleanly without Openness membership. The 36 Portal-release-choice, Openness-group and access-list tests use fake install trees, a fake group reader and a fake access list and run everywhere | seconds when skipped |
 | `Versio.Plc.TwinCat.Pure.Tests` | 27 | nothing — the vendor's planner, format and protocol, and the host's text rules compiled in as source | instant |
 | `Versio.Plc.TwinCat.Tests` | 6 | **a real TwinCAT XAE**; skips cleanly without `TcXaeShell.DTE.17.0` | seconds when skipped; ~5 min when XAE runs the import gate |
 | `Versio.Web.Tests` | 508 | nothing — the web viewer against a faked GitHub; one test starts the built server | a few seconds |

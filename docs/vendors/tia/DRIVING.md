@@ -318,6 +318,7 @@ holds the project, `Open` fails and the runner reports it.
 | `PlcSoftware.TypeGroup` / `.Types` / `.Groups` | export; import find (`…/UDT/{name}`) |
 | `PlcSoftware.TagTableGroup` / `.TagTables` / `.Groups` | export; import find (`…/TAG_TABLE/{name}`) |
 | `block.Name`, `Number`, `ProgrammingLanguage`, `IsKnowHowProtected` | export |
+| `block.ModifiedDate`, `type.ModifiedDate` (the CLR property; one value with the attribute) | export, since 2026-10-29: the stamp an unchanged object is kept by (§7.1) |
 | `block.Export(FileInfo, ExportOptions.None)` | SimaticML beside every object |
 | `IGenerateSource.GenerateSource(FileInfo)` on the block | SCL / `.udt` / **DB `.scl`** |
 | `ExternalSourceGroup.GenerateSource(collection, FileInfo)` | fallback when the block has no `IGenerateSource` |
@@ -546,7 +547,8 @@ the selected layer.
 This is not a second review language and does not apply the table back; SCL_REVIEW stays
 export-only. Function blocks and UDTs keep highlighted source.
 
-Namespaced as `ET 200SP station_2/CleaningStation/…`. Manifest schema 9. `_coverage.md`
+Namespaced as `ET 200SP station_2/CleaningStation/…`. Manifest schema 9; **11 since
+2026-10-29** (per-object `stamp`, `toolchainVersion`, §7.1). `_coverage.md`
 names Hardware, HMI, safety, technology.
 
 Textual hashes are UTF-8 **without BOM** so they match `ContentHash.Of`. Siemens
@@ -555,6 +557,86 @@ Textual hashes are UTF-8 **without BOM** so they match `ContentHash.Of`. Siemens
 
 Out / coverage skip: hardware, HMI, safety (`F_*`), technology objects, know-how-protected
 import, system blocks, VCI, Project Server, compile-after-import.
+
+### 7.1 Re-export keeps what Portal says is unchanged (measured 2026-10-29)
+
+**The cost it answers.** A full export of the owner's `LBB101.ap20` (nine PLCs, 1,340
+blocks and types, 15 tag tables, 11 stations) is one `Export(FileInfo, None)` and one
+`GenerateSource` round trip into Portal per block or type, on top of a fixed Portal start
+and project open. Every save re-exported every object. Portal keeps a per-object
+modification stamp, and from 2026-10-29 the export records it (manifest **schema 11**,
+`stamp` on every record, `toolchainVersion` naming the Portal) and the next export keeps
+the files of any block or type whose stamp has not moved. The decision is
+`ExportBaseline` in the host; the log gets one line per PLC.
+
+**The stamp: `ModifiedDate`.** `PlcBlock` and `PlcType` expose it as a read-only attribute
+and as a CLR `DateTime` property carrying one value (the property is what the host reads;
+the hardware probe's attribute reader renders a `DateTime` as its type name, which is how the
+first probe run measured nothing). Beside it: `CodeModifiedDate`, `InterfaceModifiedDate`,
+`StructureModified`, `ParameterModified`, `CompileDate`, `CreationDate`, `IsConsistent` —
+all read-only, none used. `PlcTagTable` has `ModifiedTimeStamp` instead; tag tables are
+always exported (15 on this project, `Export` only, unmeasured and not worth a second rule).
+There is no move API on a block (`Delete` is its only write method), so a move between groups
+was not measured through Openness; it is covered by the path check below.
+
+**What moves it, measured on a copy of LBB101 in one Portal V20 session** (`stampprobe`, a
+tools-only host op: ten full dumps of 1,355 objects, 12 s each, after scripted steps):
+
+| Step | Stamps that moved (of 1,355) |
+|---|---|
+| second dump, nothing done | 0 |
+| SCL edit of `FC_TimeSince` through `GenerateBlocksFromSource` (Versio's import door) | 1 — the edited block. Its four callers went `IsConsistent = False` and did not move |
+| compile the PLC | 1 — `ZoneLinkSupervisor`, the one caller Portal re-wired; the other three went consistent again untouched. `Main` (LAD, pre-existing errors) did not move |
+| compile again, nothing edited | 0 |
+| UDT member added to `UDT_PlantDpControl` through the same door | 1 — the UDT. Its global DB, instance DB and FB went inconsistent and did not move |
+| compile the PLC | 5 — the global DB, the instance DB, the FB and the two FCs Portal rewrote |
+| rename `FC_TimeSince` → `FC_TimeSince_R` | 0 moved; one identity gone, one new with a fresh stamp (the name is in the identity) |
+| rename back | same |
+| `Save()` | 0 |
+| close, reopen in a new host process, dump twice | 0, 0 |
+
+So the stamp moves exactly when Portal rewrites an object's content, including the rewrite a
+compile performs on dependents, and nowhere else. The one state it does not describe is an
+object Portal has marked inconsistent and not yet recompiled: its exportable content is its
+last compiled content, which is what the kept files hold — and what a full export would have
+refused anyway (*"Inconsistent blocks and PLC data types (UDT) cannot be exported"*, the
+warning LBB101's `Main` carries). The owner's own copy carried stamps from 2026-10-15 to
+2026-10-27 through its saves and copies.
+
+**When an object is kept.** All of: the previous `_manifest.json` in the export tree is
+readable, schema ≥ 11, vendor `TiaPortal`, and names this Portal (install folder plus
+Openness assembly version; a V21 manifest against V20 is a full export); the live object
+reports a stamp equal to the one on every record under its identity; every recorded path is
+one the walk would write for the object where it now is (a move exports); every recorded file
+is on disk and still hashes to its record (a mirror file edited by hand exports, so Portal's
+text overwrites the edit). Anything else exports in full and is counted under its reason.
+Deletions, renames and new objects need nothing: the walk records only what it visits.
+
+**Measured on the same copy, V20, this machine** (`measure.py`, the host run directly):
+
+| Run | Portal V20, the host run directly | Wrote |
+|---|---|---|
+| first export, no manifest | **202 s** | 1,362 objects (1,340 blocks and types, 15 tag tables, 11 stations; 4 `EXPORT_FAILED`, inconsistent) |
+| second export, nothing changed | **67.5 s** | 26: the tag tables and stations. Every block and type kept; textual files byte-identical |
+| one block edited through the import door and saved (`StatusReport`) | **54.5 s** | 27: that block's `.scl` and `.xml`, plus the tag tables and stations. The summary line: `MHC_001/MHC_001: 95 blocks and types: 90 kept (unchanged since the last export), 5 exported (1 changed, 4 new or renamed)` — the four are the objects the full export had refused as inconsistent, which have no record and are asked again every time |
+| the same state, manifest deleted (forced full) | **148 s** | 1,360 |
+
+Kept against forced-full on the same state: no textual file differs; the kept records' stamps
+are the forced export's stamps. The raw hash of 1,349 native XML records churned, as every
+re-export's does (G12), which is the churn the skip now spares: on the owner's own mirror an
+export after one moved rung had left 1,355 XML files modified, each by its `<Created>`
+header, with no `.scl` touched. The stamp walk itself — one `ModifiedDate` read per object
+over 1,340 objects — is inside the 30 s the unchanged run spends beyond Portal's start and
+open, most of which is the 26 exports that still run and the 2,134 file hashes that verify
+the kept files.
+
+The gate (`A_second_export_keeps_every_unchanged_block_and_type_and_a_forced_stamp_mismatch_exports_them_again`)
+exports the fixture twice into one tree, asserts the second run wrote no `.scl`, `.udt` or
+block XML and the records are identical, then rewrites every stamp in the manifest and
+asserts the third run writes them all again — the mutation check, made to the file on disk
+so it needs no second host build. The pure suite drives the same walk against fakes that
+count their `Export` calls (`TiaPortalHostExportTests`, nine cases) and pins each refusal of
+`ExportBaseline` on its own (sixteen cases).
 
 ### Graphical blocks (LAD drawn from 2026-10-05)
 

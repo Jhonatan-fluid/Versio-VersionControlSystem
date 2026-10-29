@@ -33,9 +33,9 @@ UX remainder) is built and tested as of 2026-08-25** — UX-6 find boxes, UX-7 `
 Escape, UX-8 copy-a-commit, UX-12 amend-while-unpushed — and its visual half joins the
 eyeball list in item 2. Do not start from `archive/` or a handoff.
 
-**Tests:** 4,586 across twelve projects (plus 216 vitest in `web/`), last counted 2026-10-29
-on `main` after the stale-marker policy for a pid-less IDE marker (Core 2,116, Integration 268, App 893, Arch 45, Web 508, TIA pure 118) — re-derived by summing the table below; the toolchain-gated
-counts (TIA 41, of which 36 run on every machine since 2026-10-29; TwinCAT 6, CODESYS 55) are from their last gate runs, not re-run for the count. **The Rendered view of an ST object reads like the IDE (2026-09-20):** no
+**Tests:** 4,612 across twelve projects (plus 216 vitest in `web/`), last counted 2026-10-29
+after the TIA re-export skip (Core 2,116, Integration 268, App 893, Arch 45, Web 508, TIA pure 143) — re-derived by summing the table below; the toolchain-gated
+counts (TIA 42, of which 36 run on every machine since 2026-10-29; TwinCAT 6, CODESYS 55) are from their last gate runs, not re-run for the count. **The Rendered view of an ST object reads like the IDE (2026-09-20):** no
 `@@` line, one gutter, a Declaration / Implementation divider, and the implementation
 numbered from 1 so a compile error's line number can be found — FINDINGS 2026-09-20. **With TIA Portal open, a commit no longer records a stale mirror**: the
 commit is refused with what to close, a push no longer marks an unexported save as
@@ -79,8 +79,8 @@ marking, duplicate-param keys, and the detail-pane lookup. All of them are in
 | `Versio.Arch.Tests` | 45 | instant | nothing |
 | `Versio.Plc.Codesys.Pure.Tests` | 405 | under a second | nothing |
 | `Versio.Plc.Codesys.Parity.Tests` | 104 | ~15 s | `python` on PATH — skips cleanly without it, so check the count |
-| `Versio.Plc.TiaPortal.Pure.Tests` | 118 | instant | nothing |
-| `Versio.Plc.TiaPortal.Tests` | 41 | seconds when skipped; 3 m 1 s on 2026-10-25 when Portal is there but refuses the host (1 passed, 4 skipped, not an Openness member); 2026-10-29: the 14 release-choice tests and the locator Fact in 446 ms, the env-gated V20 Probe in 2 m 14 s through the installed host, the three V21 fixture Facts not run that day (the Openness access list names the installed host only, DRIVING §2.1b); minutes when Portal runs the import gate | **real TIA Portal** for 5 of them — skips without Openness membership or LFS content; the 14 release-choice tests, the 11 Openness-group tests and the 10 access-list tests use fake install trees, a fake group reader and a fake access list and run everywhere (2026-10-29) |
+| `Versio.Plc.TiaPortal.Pure.Tests` | 143 | instant | nothing — since 2026-10-29 the host's export walk and its re-export baseline run against fakes here |
+| `Versio.Plc.TiaPortal.Tests` | 42 | **2026-10-29 on this machine through Portal V21, the test-built host answered once on the access dialog:** the re-export Fact green in 4 m 20 s (its first run: first export 178.5 s writing 160 files, second 63 s writing 2 — the tag table and the station — then every block and type again after the stamps were rewritten; that run went red only on its own comparison of the tag table's churning raw hash, fixed); `Two_unchanged_textual_exports` green in 7 m 5 s; `Export_writes_a_manifest` **red here, before and after the change**: it looks for `SCL_REVIEW` and this machine's Portal generates no `.scl` for any data block — the installed 0.4.17's own LBB101 mirror has none either, and no `SCL_EXPORT_FAILED` warning, because `GenerateSource` returns false without throwing. A watch item for the owner's machine, where it was green on 2026-08-22; seconds when skipped; 3 m 1 s on 2026-10-25 when Portal is there but refuses the host (1 passed, 4 skipped, not an Openness member); 2026-10-29: the 14 release-choice tests and the locator Fact in 446 ms, the env-gated V20 Probe in 2 m 14 s through the installed host, the three V21 fixture Facts not run that day (the Openness access list names the installed host only, DRIVING §2.1b); minutes when Portal runs the import gate | **real TIA Portal** for 5 of them — skips without Openness membership or LFS content; the 14 release-choice tests, the 11 Openness-group tests and the 10 access-list tests use fake install trees, a fake group reader and a fake access list and run everywhere (2026-10-29) |
 | `Versio.Plc.TwinCat.Pure.Tests` | 27 | instant | nothing — the host's text rules are compiled in as source |
 | `Versio.Plc.TwinCat.Tests` | 6 | seconds when skipped (4 s, 6 skipped, 2026-10-25); ~5 min when XAE runs the import gate | **real TwinCAT XAE** — skips without `TcXaeShell.DTE.17.0` or the fixture |
 | `Versio.Web.Tests` | 508 | ~38 s on 2026-10-27 (~25 s before the object-history tests) | nothing — GitHub is faked |
@@ -143,7 +143,13 @@ when the parent dies, and Stop reaps only the Portal/XAE PID this run created.
   **Rendered table 2026-08-26:** InstanceDB / GlobalDB members parse from the native XML
   into a vendor-neutral `MemberTable` (name, type, start value, external access,
   comment). Raw is still
-  XML or SCL. The table does not write back. This fixture has no port-to-port partners.
+  XML or SCL. The table does not write back. **A re-export keeps what Portal says is
+  unchanged (2026-10-29):** manifest schema 11 records each block's and type's
+  `ModifiedDate`; the next export keeps the files of any whose stamp has not moved and asks
+  Portal only for the rest, one summary line per PLC in the log. On a copy of the owner's
+  nine-PLC LBB101: 202 s for the full export, 67.5 s unchanged, 54.5 s after one block edited
+  (that block alone written). Measured semantics and the forced-mismatch gate: DRIVING §7.1,
+  FINDINGS 2026-10-29. This fixture has no port-to-port partners.
   HMI, safety and technology stay coverage skips. Gate fixture:
   `fixtures/projects/CleaningStation_V20_V21/` (Git LFS). Never the
   OneDrive original. Session notes: [`archive/HANDOFF-Siemens2.md`](archive/HANDOFF-Siemens2.md).

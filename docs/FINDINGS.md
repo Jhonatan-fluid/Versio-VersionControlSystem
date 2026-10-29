@@ -19,6 +19,80 @@ produce a diff touching everything else.
 
 ---
 
+### A TIA re-export asked Portal for every object: 202 s for a save that touched one block, and 1,355 XML files "changed" by their `<Created>` header
+
+**2026-10-29, worktree `recursing-lederberg-c0c5ac`, a copy of the owner's `LBB101.ap20`
+(nine PLCs, 1,340 blocks and types) under Portal V20.** A full export of the copy took
+**202 s** run directly through the host: about 37 s of Portal start and project open, then one
+`Export(FileInfo, None)` and one `GenerateSource` per block or type at roughly 88 ms each.
+Every save paid all of it, because the export had no way to know what had changed. The same
+afternoon the owner moved one rung in a `Main` on the real project; the installed Versio
+exported 1,365 objects in 137.6 s and git showed **1,359 modified files** — 1,355 of them
+XML, no `.scl` among them, each differing in the SimaticML document header's `<Created>`
+timestamp Portal writes on every export (the G12 churn). The one block that had changed had
+a four-line diff under that.
+
+**What Portal knows.** `PlcBlock` and `PlcType` carry a read-only `ModifiedDate`, as an
+attribute and as a CLR `DateTime` property with one value. Measured with a tools-only
+`stampprobe` op in one Portal session — ten dumps of all 1,355 objects, 12 s each, after
+scripted steps — the stamp moves exactly when Portal rewrites an object's content: an SCL
+edit through `GenerateBlocksFromSource` moved the edited block alone (its four callers went
+inconsistent and did not move); a PLC compile moved only the one caller Portal re-wired; a
+second compile with nothing edited moved none; a UDT member added moved the UDT alone, and
+the following compile moved the five dependents it rewrote; a rename is a new identity with a
+new stamp; `Save()` moved none; close and reopen in a new process, none. Tag tables have
+`ModifiedTimeStamp` instead and are always exported (15 on this project). The full table is
+DRIVING §7.1.
+
+**Fix.** Manifest schema 11: every TIA record carries `stamp` (UTC round-trip text) and the
+manifest names its `toolchainVersion` (install release plus Openness assembly version). The
+host reads the previous `_manifest.json` from the export tree before writing anything
+(`ExportBaseline`) and keeps a block or type's files and records when: the manifest is
+readable, schema ≥ 11, this vendor's and this Portal's; the live stamp equals the stamp on
+every record under the identity; every recorded path is one the walk would write where the
+object now is (a move exports — there is no move API to measure one through, so the path is
+the check); and every recorded file is on disk hashing to its record (a hand-edited mirror
+file exports, so Portal's text overwrites it). Anything else exports in full, counted by
+reason, one `summary` line per PLC, which the runner now logs at Info — every `info` event
+the host had ever emitted was parsed and dropped, not even at Debug. Deletions, renames and
+new objects are unchanged: the walk records what it visits.
+
+**Measured, same copy, same Portal.** Unchanged re-export **67.5 s**, wrote 26 files (tag
+tables and stations), every block and type kept, textual files byte-identical. One block
+edited through the import door and saved: **54.5 s**, wrote that block's `.scl` and `.xml`
+and nothing else of the kind. Manifest deleted and the same state exported in full: 148 s,
+and no textual file differs from the kept set; the kept stamps are the forced export's
+stamps. The raw hash of 1,349 native XML records churned between the two, which is the churn
+the skip spares the mirror.
+
+**Pinned.** `ExportBaselineTests` (16) take each refusal on its own; `TiaPortalHostExportTests`
+(9) drive the real walk against fakes that count their `Export` calls — a second export asks
+for nothing, an edit exports one, a deletion drops the record, a rename and a move export, a
+hand-edited mirror file exports, another Portal's manifest and a manifest whose stamps were
+rewritten export everything. The gate Fact exports the fixture twice, asserts nothing of the
+kind was written the second time, rewrites every stamp on disk and asserts the third export
+writes them all — the mutation check, made to the file so it costs no host rebuild (each
+rebuild is a new hash and a new Openness access dialog).
+
+**Seen beside it, not fixed here.** (1) `<Created>` is an element, and the normalised hash
+strips churn *attributes* only, so `nhash` churns on every re-export of a native file; a
+delete of a NATIVE-only object (tag table, LAD block) verifies against it and would be refused
+as "edited in Portal since". (2) `BlockType` reads the CLR type name and `GlobalDB` contains
+`OB`, so a global data block is recorded as type `OB` (LBB101's `DB_PlantDpControl` is
+`MHC_001/MHC_001/OB/DB_PlantDpControl#7`); consistent, so identities pair, but the tree
+shows it under the wrong type. (3) The Rendered pane said *"No committed copy to compare
+with: every network is new"* for a `Main.xml` git had a committed copy of, with a four-line
+diff. (4) The two in-process host test classes swapped `Console.Out` under each other when
+xUnit ran them in parallel — two of nine export tests red on the first full run, green alone;
+they share one collection now. (5) On this machine `GenerateSource` yields no `.scl` for any data block under V20 or V21 — no `SCL_REVIEW` record and no `SCL_EXPORT_FAILED` warning, because the fallback returns false rather than throwing — so the gate's `Export_writes_a_manifest` is red here before and after this change; the installed 0.4.17's own LBB101 mirror shows the same forms. The owner's machine had it green on 2026-08-22.
+
+**Process.** The first probe run measured nothing twice over: a plain background launch hands
+the host a closed stdin and it quits COM before Portal starts (`HostLifetime.WatchStdin`), and
+the hardware probe's attribute reader renders a `DateTime` as the string `DateTime`, so every
+stamp column read "DateTime" and only the property column carried values. A shell under the
+MSIX Claude app sees a virtualised `%LOCALAPPDATA%`, so the project copy, the job files and
+`TEMP` all went to `C:\GIT\versio-scratch`, where Portal and the host see the same files.
+
 ### A TIA marker carried in by a copy: the project had never been opened, and the export refused anyway
 
 **2026-10-29, `main`, the owner's `controls-design-siemens`, `LBB101.ap20` appearing in the
