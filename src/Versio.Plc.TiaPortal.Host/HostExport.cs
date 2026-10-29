@@ -452,13 +452,21 @@ internal static partial class HostApp
     /// block the owner had just changed, and git showed their work as a deletion while the
     /// project card said "in sync". The old file is set aside under
     /// <see cref="SetAsideSuffix"/>, put back if Export throws (a partial write is discarded),
-    /// and deleted only once the new export exists. A set-aside left behind by a host that
-    /// died between the two moves is overwritten by the next run, never read.
+    /// and deleted only once the new export exists. A host that dies between the two moves
+    /// (Portal gone mid-Export, the job timed out) leaves the set-aside with no file beside
+    /// it; the next run puts it back first, because it <i>is</i> the previous export, and
+    /// then proceeds as usual — so a refusal on that run still has something to keep, and
+    /// nothing is left behind as an untracked file the planner would skip as stray.
     /// </para>
     /// </remarks>
     internal static void ExportXml(object item, string dest)
     {
         Directory.CreateDirectory(Path.GetDirectoryName(dest)!);
+        if (!File.Exists(dest) && File.Exists(dest + SetAsideSuffix))
+        {
+            File.Move(dest + SetAsideSuffix, dest);
+        }
+
         var setAside = File.Exists(dest) ? dest + SetAsideSuffix : null;
         if (setAside is not null)
         {
@@ -621,8 +629,25 @@ internal static partial class HostApp
     /// deletion check keeps working. <c>DocumentInfo</c> is export information; an import of a
     /// file without this line has not been measured against Portal — see the vendor notes.
     /// </para>
+    /// <para>
+    /// Only inside <c>DocumentInfo</c>, the same scope as the two hashes. CleaningStation's 159
+    /// files carry one <c>Created</c> each, all in the header, so nothing else matches today;
+    /// the scope is so that a block attribute of that name, should a release add one, is content.
+    /// </para>
     /// </remarks>
-    internal static string StripExportStamp(string xml) => ExportStamp.Replace(xml, string.Empty);
+    internal static string StripExportStamp(string xml)
+    {
+        var start = xml.IndexOf("<DocumentInfo>", StringComparison.Ordinal);
+        var end = start < 0 ? -1 : xml.IndexOf("</DocumentInfo>", start, StringComparison.Ordinal);
+        if (start < 0 || end < 0)
+        {
+            return xml;
+        }
+
+        var header = xml.Substring(start, end - start);
+        var stripped = ExportStamp.Replace(header, string.Empty);
+        return ReferenceEquals(stripped, header) ? xml : xml.Substring(0, start) + stripped + xml.Substring(end);
+    }
 
     /// <summary>Rewrite an exported file without its stamp, keeping its BOM and line endings.</summary>
     internal static void ScrubExportedFile(string path)

@@ -59,6 +59,45 @@ public sealed class TiaPortalHostExportTests
     }
 
     [Fact]
+    public void Only_the_headers_stamp_is_stripped_a_Created_line_in_the_body_is_content()
+    {
+        var withBody = Stamped.Replace(
+            "      <Name>Main</Name>\r\n",
+            "      <Name>Main</Name>\r\n      <Created>2026-01-01T00:00:00Z</Created>\r\n",
+            StringComparison.Ordinal);
+
+        var stripped = HostApp.StripExportStamp(withBody);
+
+        Assert.DoesNotContain("<Created>2026-10-29", stripped, StringComparison.Ordinal);
+        Assert.Contains("      <Created>2026-01-01T00:00:00Z</Created>\r\n", stripped, StringComparison.Ordinal);
+        // No header at all: nothing to do, and the text is handed back as it came.
+        const string headerless = "<Document><SW.Blocks.OB><Created>x</Created></SW.Blocks.OB></Document>";
+        Assert.Same(headerless, HostApp.StripExportStamp(headerless));
+    }
+
+    [Fact]
+    public void A_set_aside_left_by_a_dead_host_is_the_previous_export_and_is_put_back_first()
+    {
+        // The host died between moving Main.xml aside and Openness writing the new one: the
+        // mirror has Main.xml.versio-previous and no Main.xml. On the next run that file is
+        // the previous export, so a refusal still keeps it, and a success leaves no orphan.
+        using var dir = new TempDir();
+        var path = Path.Combine(dir.Path, "Main.xml");
+        File.WriteAllText(path + HostApp.SetAsideSuffix, "the export before the crash");
+
+        Assert.Throws<System.Reflection.TargetInvocationException>(
+            () => HostApp.ExportXml(new RefusingBlock(), path));
+        Assert.Equal("the export before the crash", File.ReadAllText(path));
+        Assert.Single(Directory.GetFiles(dir.Path));
+
+        File.Delete(path);
+        File.WriteAllText(path + HostApp.SetAsideSuffix, "the export before the crash");
+        HostApp.ExportXml(new WritingBlock(), path);
+        Assert.Equal("this export", File.ReadAllText(path));
+        Assert.Single(Directory.GetFiles(dir.Path));
+    }
+
+    [Fact]
     public void Scrubbing_the_file_keeps_its_byte_order_mark_and_its_line_endings()
     {
         using var dir = new TempDir();

@@ -79,7 +79,7 @@ marking, duplicate-param keys, and the detail-pane lookup. All of them are in
 | `Versio.Arch.Tests` | 45 | instant | nothing |
 | `Versio.Plc.Codesys.Pure.Tests` | 405 | under a second | nothing |
 | `Versio.Plc.Codesys.Parity.Tests` | 104 | ~15 s | `python` on PATH — skips cleanly without it, so check the count |
-| `Versio.Plc.TiaPortal.Pure.Tests` | 131 | instant | nothing |
+| `Versio.Plc.TiaPortal.Pure.Tests` | 133 | instant | nothing |
 | `Versio.Plc.TiaPortal.Tests` | 41 | seconds when skipped; 3 m 1 s on 2026-10-25 when Portal is there but refuses the host (1 passed, 4 skipped, not an Openness member); 2026-10-29: the 14 release-choice tests and the locator Fact in 446 ms, the env-gated V20 Probe in 2 m 14 s through the installed host, the three V21 fixture Facts not run that day (the Openness access list names the installed host only, DRIVING §2.1b); minutes when Portal runs the import gate | **real TIA Portal** for 5 of them — skips without Openness membership or LFS content; the 14 release-choice tests, the 11 Openness-group tests and the 10 access-list tests use fake install trees, a fake group reader and a fake access list and run everywhere (2026-10-29) |
 | `Versio.Plc.TwinCat.Pure.Tests` | 27 | instant | nothing — the host's text rules are compiled in as source |
 | `Versio.Plc.TwinCat.Tests` | 6 | seconds when skipped (4 s, 6 skipped, 2026-10-25); ~5 min when XAE runs the import gate | **real TwinCAT XAE** — skips without `TcXaeShell.DTE.17.0` or the fixture |
@@ -721,7 +721,7 @@ Close Versio **and** Portal before a host rebuild. Click **Yes to all** on Openn
 21. **Measure a native import of a stamp-stripped SimaticML file against Portal.** Since
     2026-10-29 the TIA host strips `DocumentInfo/Created` from every exported file (FINDINGS
     2026-10-29, *One rung moved, 1,359 files changed*; DRIVING §7). `DocumentInfo` is export
-    information and the schema marks its children optional, but no import of a file without
+    information (Portal's own product list and the time), but no import of a file without
     the line has been run: the gate's Import Fact applies `.scl`/`.udt`, never native XML. On
     the next run with Portal on the machine, edit a ladder block's XML in the fixture's
     mirror (a network title), import the plan, and record the result here. If Portal
