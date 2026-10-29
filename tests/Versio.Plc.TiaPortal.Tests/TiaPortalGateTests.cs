@@ -7,6 +7,7 @@ using Versio.Plc.TiaPortal;
 using Versio.Plc.TiaPortal.Infrastructure;
 using Versio.TestSupport;
 using Xunit;
+using Xunit.Abstractions;
 
 namespace Versio.Plc.TiaPortal.Tests;
 
@@ -14,18 +15,29 @@ namespace Versio.Plc.TiaPortal.Tests;
 /// Real TIA Portal, when the machine has it. Skip is the success path on every other machine.
 /// </summary>
 [Collection(TiaPortalCollection.Name)]
-public sealed class TiaPortalGateTests
+public sealed class TiaPortalGateTests(ITestOutputHelper output)
 {
     [SkippableFact]
     public void The_locator_finds_the_PublicAPI_folder()
     {
         Skip.IfNot(OperatingSystem.IsWindows(), "TIA Portal is Windows-only");
         var installs = new TiaPortalLocator().FindInstalls();
-        Skip.If(installs.Count == 0, "no TIA Portal install with a PublicAPI net48 folder");
+        Skip.If(installs.Count == 0, "no TIA Portal install with an Openness API folder");
 
-        var install = Assert.Single(installs);
-        Assert.True(Directory.Exists(install.ApiFolder));
-        Assert.True(File.Exists(Path.Combine(install.ApiFolder, "Siemens.Engineering.Base.dll")));
+        // One install per release, each with the Openness entry assembly of its own layout:
+        // Siemens.Engineering.Base.dll from V21 on, Siemens.Engineering.dll before. This
+        // asserted a single install with the modular file until 2026-10-29, when a machine
+        // with V20 beside V21 showed the locator had never seen the older layout.
+        Assert.Equal(installs.Count, installs.Select(i => i.Version).Distinct().Count());
+        foreach (var install in installs)
+        {
+            Assert.True(Directory.Exists(install.ApiFolder), install.ApiFolder);
+            var entry = install.ApiShape == TiaPortalInstall.ModularApi
+                ? "Siemens.Engineering.Base.dll"
+                : "Siemens.Engineering.dll";
+            Assert.True(File.Exists(Path.Combine(install.ApiFolder, entry)),
+                $"{install.Version}: {entry} under {install.ApiFolder}");
+        }
     }
 
     [SkippableFact]
@@ -66,6 +78,93 @@ public sealed class TiaPortalGateTests
                         },
                     ],
                     Timeout = TimeSpan.FromMinutes(5),
+                },
+                progress: null,
+                CancellationToken.None);
+
+            SkipIfMeasuredBlocker(result);
+            Assert.True(result.Succeeded, result.FailureReason);
+            Assert.True(File.Exists(Path.Combine(outDir, "report.json")));
+        }
+        finally
+        {
+            try
+            {
+                Directory.Delete(outDir, recursive: true);
+            }
+            catch (IOException)
+            {
+                // Temp.
+            }
+        }
+    }
+
+    /// <summary>
+    /// Probe a project on this machine, named by <c>VERSIO_TIA_PROBE_PROJECT</c>, with
+    /// whichever installed Portal its extension names. Skips unless the variable is set.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The committed fixture is V21, so the two Facts above can only ever measure the modular
+    /// Openness layout. This is how the single-assembly layout of V20 was measured on
+    /// 2026-10-29, against the owner's own V20 project, without copying a private project into
+    /// the repository: the probe reads and writes nothing into the project's folder beyond
+    /// what Portal itself does on open. Set the variable to the absolute <c>.apNN</c> path.
+    /// </para>
+    /// <para>
+    /// <c>VERSIO_TIA_PROBE_HOST</c> names the host executable to drive, and should be the one
+    /// Portal's Openness access list already names (the installed Versio's
+    /// <c>%LOCALAPPDATA%\Versio\current\tia\Versio.Plc.TiaPortal.Host.exe</c>, DRIVING §2.3).
+    /// The list is keyed by path and hash, so the host this test project builds beside itself
+    /// is a stranger to it and Portal puts up the access dialog — which on 2026-10-29 nobody
+    /// was at the screen to answer, and the first attempt ran into the twenty-minute timeout
+    /// having measured nothing. The host binary knows nothing about install layouts, so the
+    /// installed one is as good a subject as the fresh one.
+    /// </remarks>
+    [SkippableFact]
+    public async Task Probe_opens_the_project_named_by_the_environment_with_its_own_release()
+    {
+        Skip.IfNot(OperatingSystem.IsWindows(), "TIA Portal is Windows-only");
+        var project = Environment.GetEnvironmentVariable("VERSIO_TIA_PROBE_PROJECT");
+        Skip.If(string.IsNullOrWhiteSpace(project), "VERSIO_TIA_PROBE_PROJECT is not set");
+        Skip.If(!File.Exists(project), $"VERSIO_TIA_PROBE_PROJECT does not exist: {project}");
+
+        var log = new TestLogger(output);
+        var toolchain = new TiaPortalToolchain(log);
+        var status = await toolchain.ProbeAsync(CancellationToken.None);
+        Skip.If(!status.Available, status.Explanation);
+
+        var release = TiaPortalProjectFormat.ReleaseOf(project!);
+        var installs = new TiaPortalLocator(logger: log).FindInstalls();
+        Skip.If(installs.All(i => i.Version != release),
+            $"{Path.GetFileName(project)} needs Portal {release}; installed: {string.Join(", ", installs.Select(i => i.Version))}");
+
+        var hostOverride = Environment.GetEnvironmentVariable("VERSIO_TIA_PROBE_HOST");
+        Skip.If(!string.IsNullOrWhiteSpace(hostOverride) && !File.Exists(hostOverride),
+            $"VERSIO_TIA_PROBE_HOST does not exist: {hostOverride}");
+        var runner = string.IsNullOrWhiteSpace(hostOverride)
+            ? toolchain.CreateRunner(status)
+            : new LocalTiaPortalRunner(hostOverride, status.Profile ?? "", log);
+        var outDir = Path.Combine(Path.GetTempPath(), "versio-tia-probe-" + Guid.NewGuid().ToString("N")[..8]);
+        Directory.CreateDirectory(outDir);
+
+        try
+        {
+            var result = await runner.RunAsync(
+                new PlcJob
+                {
+                    Operation = PlcOperation.Probe,
+                    Profile = status.Profile ?? "",
+                    Projects =
+                    [
+                        new PlcProjectJob
+                        {
+                            BindingId = "tia-probe-env",
+                            ProjectPath = project!,
+                            Path = outDir,
+                        },
+                    ],
+                    Timeout = TimeSpan.FromMinutes(10),
                 },
                 progress: null,
                 CancellationToken.None);
