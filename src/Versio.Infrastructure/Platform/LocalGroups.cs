@@ -102,20 +102,41 @@ public sealed partial class LocalGroups(IVersioLogger? logger = null) : ILocalGr
         var account = identity.Name;
         var sid = identity.User?.Value ?? string.Empty;
 
-        SecurityIdentifier groupSid;
+        // Scoped to this machine's accounts. A bare name is looked up in the built-in and
+        // local databases and then in the primary and trusted domains, so a domain-joined
+        // laptop with no local group of that name would wait on an unreachable domain
+        // controller at every probe, and an enterprise that provisions a DOMAIN group of the
+        // same name would resolve to it and read as "could not be read" instead of "missing"
+        // (review, 2026-10-29). The group Portal consults is the local one.
+        // Two local authorities: a group somebody created (MACHINE\Name, the Openness group)
+        // and a built-in alias (BUILTIN\Users). Neither lookup leaves the machine.
+        SecurityIdentifier? groupSid = null;
         try
         {
-            groupSid = (SecurityIdentifier)new NTAccount(groupName).Translate(typeof(SecurityIdentifier));
-        }
-        catch (IdentityNotMappedException)
-        {
-            return new LocalGroupCheck(LocalGroupStanding.GroupMissing, account, sid,
-                $"no local group named '{groupName}' on this machine");
+            foreach (var authority in new[] { Environment.MachineName, "BUILTIN" })
+            {
+                try
+                {
+                    groupSid = (SecurityIdentifier)new NTAccount(authority, groupName)
+                        .Translate(typeof(SecurityIdentifier));
+                    break;
+                }
+                catch (IdentityNotMappedException)
+                {
+                    // Not under this authority; the next one may have it.
+                }
+            }
         }
         catch (SystemException ex)
         {
             return new LocalGroupCheck(LocalGroupStanding.Unknown, account, sid,
                 $"could not resolve the group '{groupName}': {ex.Message}");
+        }
+
+        if (groupSid is null)
+        {
+            return new LocalGroupCheck(LocalGroupStanding.GroupMissing, account, sid,
+                $"no local group named '{groupName}' on this machine");
         }
 
         if (new WindowsPrincipal(identity).IsInRole(groupSid))
@@ -125,9 +146,16 @@ public sealed partial class LocalGroups(IVersioLogger? logger = null) : ILocalGr
         }
 
         // Not in the token. Member and not yet signed in again, or not a member at all?
-        var members = ListMembers(groupName);
+        var members = ReadMembers(groupName, out var failure, out var status);
         if (members is null)
         {
+            if (status is NerrGroupNotFound or ErrorNoSuchAlias)
+            {
+                return new LocalGroupCheck(LocalGroupStanding.GroupMissing, account, sid,
+                    $"no local group named '{groupName}' on this machine (NetLocalGroupGetMembers {status})");
+            }
+
+            _log.Warn(LogCategory.Plc, $"could not list the members of '{groupName}': {failure}");
             return new LocalGroupCheck(LocalGroupStanding.Unknown, account, sid,
                 $"'{groupName}' is not in {account}'s logon token and its member list could not be read");
         }
@@ -152,27 +180,26 @@ public sealed partial class LocalGroups(IVersioLogger? logger = null) : ILocalGr
     /// be wrong on a machine that is not this one. The API hands back SIDs, compares with
     /// the token's own SID exactly, and spawns nothing.
     /// </remarks>
-    private IReadOnlyList<SecurityIdentifier>? ListMembers(string groupName)
-    {
-        var members = ReadMembers(groupName, out var failure);
-        if (members is null)
-        {
-            _log.Warn(LogCategory.Plc, $"could not list the members of '{groupName}': {failure}");
-        }
-
-        return members;
-    }
-
     /// <summary>Whether the SID is a direct member of the group, as the group says now; false when it cannot be read.</summary>
     private static bool IsListed(string groupName, SecurityIdentifier sid) =>
-        ReadMembers(groupName, out _)?.Any(m => m.Equals(sid)) == true;
+        ReadMembers(groupName, out _, out _)?.Any(m => m.Equals(sid)) == true;
 
-    private static IReadOnlyList<SecurityIdentifier>? ReadMembers(string groupName, out string? failure)
+    /// <summary>NERR_GroupNotFound: no local group of that name.</summary>
+    private const int NerrGroupNotFound = 2220;
+
+    /// <summary>ERROR_NO_SUCH_ALIAS: the same answer from the SAM's side.</summary>
+    private const int ErrorNoSuchAlias = 1376;
+
+    /// <summary>
+    /// Direct members only (level 0): an account admitted through a nested group reads as
+    /// not a member here; the token, asked first, already answered for anyone admitted.
+    /// </summary>
+    private static IReadOnlyList<SecurityIdentifier>? ReadMembers(string groupName, out string? failure, out int status)
     {
         var buffer = IntPtr.Zero;
         try
         {
-            var status = NetLocalGroupGetMembers(
+            status = NetLocalGroupGetMembers(
                 null, groupName, 0, out buffer, MaxPreferredLength, out var read, out _, IntPtr.Zero);
             if (status != 0)
             {
@@ -194,6 +221,7 @@ public sealed partial class LocalGroups(IVersioLogger? logger = null) : ILocalGr
         catch (Exception ex) when (ex is ArgumentException or UnauthorizedAccessException)
         {
             failure = ex.Message;
+            status = -1;
             return null;
         }
         finally
@@ -227,21 +255,33 @@ public sealed partial class LocalGroups(IVersioLogger? logger = null) : ILocalGr
             return PlcRemedyOutcome.Refused("the path of the running Versio could not be determined, so no elevated helper can be started.");
         }
 
+        if (string.IsNullOrEmpty(account.Sid))
+        {
+            return PlcRemedyOutcome.Refused($"{account.Account} has no SID to add; nothing was started.");
+        }
+
         var resultFile = Path.Combine(Path.GetTempPath(), $"versio-join-{Guid.NewGuid():N}.txt");
         _log.Info(LogCategory.Plc,
             $"asking Windows for approval to add {account.Account} ({account.Sid}) to the local group '{groupName}' via {exe}");
 
+        var psi = new ProcessStartInfo
+        {
+            FileName = exe,
+            ArgumentList = { JoinArgument, groupName, account.Sid, resultFile },
+            UseShellExecute = true,
+            Verb = "runas",
+            WindowStyle = ProcessWindowStyle.Hidden,
+        };
+
         Process helper;
         try
         {
-            helper = Process.Start(new ProcessStartInfo
-            {
-                FileName = exe,
-                ArgumentList = { JoinArgument, groupName, account.Sid, resultFile },
-                UseShellExecute = true,
-                Verb = "runas",
-                WindowStyle = ProcessWindowStyle.Hidden,
-            }) ?? throw new InvalidOperationException("Process.Start returned null");
+            // Process.Start with the runas verb returns only once the consent prompt has been
+            // answered, and this is called from the UI thread: started inline, the window would
+            // stop painting under the prompt and Windows would ghost it as not responding
+            // (review, 2026-10-29).
+            helper = await Task.Run(() => Process.Start(psi), ct).ConfigureAwait(false)
+                     ?? throw new InvalidOperationException("Process.Start returned null");
         }
         catch (Win32Exception ex) when (ex.NativeErrorCode == 1223)
         {
@@ -341,12 +381,13 @@ public sealed partial class LocalGroups(IVersioLogger? logger = null) : ILocalGr
                 },
                 UseShellExecute = false,
                 CreateNoWindow = true,
-                RedirectStandardOutput = true,
+                // Only stderr is read. Two redirected pipes read one after the other is the
+                // classic deadlock shape; the cmdlet writes nothing to stdout, so it is not
+                // redirected at all.
                 RedirectStandardError = true,
             }) ?? throw new InvalidOperationException("powershell.exe did not start");
 
             var error = ps.StandardError.ReadToEnd().Trim();
-            ps.StandardOutput.ReadToEnd();
             ps.WaitForExit();
 
             if (ps.ExitCode == 0)
