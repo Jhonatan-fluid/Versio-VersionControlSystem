@@ -33,9 +33,12 @@ namespace Versio.Plc.TiaPortal.Tests
     /// plcs[0]</c>, the fifth review's P1). A fake PLC that records what is written to it is
     /// how that is pinned.
     /// </remarks>
+    [Collection(HostStdout.Name)]
     public sealed class TiaPortalHostImportTests
     {
-        // Console.Out is process-wide and the host writes its protocol there.
+        // Console.Out is process-wide and the host writes its protocol there. The gate
+        // serialises this class's own tests; the collection keeps the export tests, which
+        // capture it too, from running beside them (xUnit runs classes in parallel).
         private static readonly object ConsoleGate = new();
 
         [Fact]

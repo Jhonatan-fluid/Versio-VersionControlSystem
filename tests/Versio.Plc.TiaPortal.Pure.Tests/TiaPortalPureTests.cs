@@ -677,4 +677,23 @@ public sealed class TiaPortalNativeScrubberTests
         Assert.Equal("a1b2c3d4-e5f6-7890-abcd-ef1234567890",
             TiaPortalNativeScrubber.TryReadUid("""<Block UId="a1b2c3d4-e5f6-7890-abcd-ef1234567890"/>"""));
     }
+
+    [Fact]
+    public void The_export_stamp_does_not_change_the_comparison_hash()
+    {
+        // DocumentInfo/Created is Portal's export time, an element rather than an attribute.
+        // A mirror exported before the host stripped it (2026-10-29) still carries one, and
+        // must compare equal to a re-export, which has none.
+        // The header keeps its product list either way, as Portal's does; an element emptied
+        // outright would serialise as <DocumentInfo /> and the pair as a pair.
+        const string stamped = """<Document><DocumentInfo><Created>2026-10-29T20:44:47Z</Created><ExportSetting>None</ExportSetting></DocumentInfo><Block/></Document>""";
+        const string later = """<Document><DocumentInfo><Created>2026-10-29T20:49:45Z</Created><ExportSetting>None</ExportSetting></DocumentInfo><Block/></Document>""";
+        const string stripped = """<Document><DocumentInfo><ExportSetting>None</ExportSetting></DocumentInfo><Block/></Document>""";
+        Assert.Equal(TiaPortalNativeScrubber.Hash(stamped), TiaPortalNativeScrubber.Hash(later));
+        Assert.Equal(TiaPortalNativeScrubber.Hash(stamped), TiaPortalNativeScrubber.Hash(stripped));
+        // Only the header's stamp: a Created element elsewhere is content.
+        Assert.NotEqual(
+            TiaPortalNativeScrubber.Hash("""<Document><Block><Created>1</Created></Block></Document>"""),
+            TiaPortalNativeScrubber.Hash("""<Document><Block><Created>2</Created></Block></Document>"""));
+    }
 }
