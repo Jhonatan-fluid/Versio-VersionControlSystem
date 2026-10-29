@@ -19,6 +19,58 @@ produce a diff touching everything else.
 
 ---
 
+### "exporting…" an hour after the export: a mid-run save handed the panel the follow-up's NoChange
+
+**2026-10-29, `main`, the owner's `controls-design-siemens`, the screenshot at 14:36.** The
+project row read *exporting…* with every object under it exported and the diff pane open on
+one of them. The owner: "the main project name says exporting... it finished exporting a long
+time ago". The log, `versio-2026-10-29.log`:
+
+```
+13:49:03.516 DBG [Sync] {b253ab9a} fae2130dee24: Project change (automatic, Project)
+13:51:40.464 DBG [Sync] {b253ab9a} fae2130dee24: finished writing ExportedText; ignored 2808 echo(es) of it
+13:51:40.464 INF [Sync] fae2130dee24: handling the change that arrived while the last run was in flight
+13:51:40.464 DBG [Sync] {cf30c6bd} fae2130dee24: Project change (automatic, Project)
+13:51:40.465 INF [Perf] {b253ab9a} Exporting LBB101 finished in 136.5s
+13:51:41.315 DBG [Sync] {cf30c6bd} fae2130dee24: NoChange — content is identical to the last synced state (hash sha256:a09e4)
+13:51:46.419 DBG [Sync] {d15f61e2} tree: 3 root(s), 1365 object(s), 1359 changed file(s), 1 project(s) hidden as in sync, 0 source project(s), 0 unchanged
+```
+
+and then nothing for that project but the remote poller's quiet lines. No *scanning for PLC
+projects* after the run; the tree rebuild at 13:51:46 is the ordinary status refresh.
+
+**The mechanism, in three parts that were each right alone.** `OnRunStarted` writes
+*exporting…* over the row when the run passes its last gate (the fix for *Twenty seconds of work with
+nothing on screen*, further down this file). `OnRunFinished` cleared `Busy`
+and left the words to "the rescan that follows, which reads it from the lock", so as not to
+blank the row between the run ending and the scan finishing. And the rescan follows an
+outcome that `DidWork` — which the view model gets from `RunLoopAsync`, and the loop
+returned whatever its *last* attempt said. A save that lands while an export runs is
+queued by the coalescer; the export already going captures the file as it is; the queued
+follow-up reaches the hash gate and correctly stops with `NoChange`. So the view model was
+told "nothing happened" over a 136 s export: no summary, no lock sentence, no rescan, and
+nothing put the row's words back. `SyncRunSignallingTests` even describes this follow-up as
+the ordinary case, in the remark that explains why its own queued-save test has to move the
+file a second time to get a second export.
+
+**Two fixes, each enough on its own, checked without the other.** `RunLoopAsync` returns the
+last attempt that ran the toolchain or failed, and only when none did, the last attempt of
+all — a follow-up that itself ran or failed is the fresher fact and wins, a refused one is
+already in the log at the gate that refused it. And `OnRunFinished` tells the row the lock's
+label itself (`SyncNarrative.Label(StateOf(id))`, the words the rescan would have written)
+and refreshes the tree as `OnRunStarted` does, because the row's words live there. The 2×2
+on `RunFinishedRowStateTests`, which makes the mid-run save from inside the fake toolchain's
+run: both off, red; either on, green. The Core test
+`A_follow_up_that_finds_nothing_does_not_hide_the_export_that_ran` is red on the old loop.
+
+**Same session, a UX change rather than a defect:** the count beside every folder and
+project row (changed descendants: *1357* on this project, *91* on Program blocks) is gone
+from the three desktop trees and the web tree. After a first export every object is a
+change, so the numbers read as counts of items; the roll-up colour on the name still says
+that something under a collapsed folder changed, and the facts pane still states the number.
+
+---
+
 ### A TIA marker carried in by a copy: the project had never been opened, and the export refused anyway
 
 **2026-10-29, `main`, the owner's `controls-design-siemens`, `LBB101.ap20` appearing in the

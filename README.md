@@ -115,7 +115,7 @@ Both directions run automatically and deterministically. A per-project **directi
 | **The repository and branch dropdowns are guarded** | ✅ shut while an import runs, and they snap back whenever a switch does not happen — a refused checkout used to leave the control naming a branch you were not on |
 | **Auto-stash on a branch switch** | ✅ uncommitted work is stashed with a marker, recorded in `.versio/local/autostash.json` with the direction locks it released, and offered back — restore, leave, discard — on returning to that branch. The stash is proven to exist by a set difference over `git stash list`, because `git stash push` on a clean tree exits 0 and creates nothing |
 | Branch switching with work in the tree | ✅ the guard asks, the auto-stash saves it with the direction locks it released, and returning to the branch offers it back — restore, leave, or discard. A stash that git did not actually create abandons the switch rather than checking out over unsaved work |
-| **Project tree** — CODESYS structure, roll-up badges, search | ✅ 34 unit tests + built from the export this repository commits |
+| **Project tree** — CODESYS structure, roll-up colour on a folder's name, search | ✅ 34 unit tests + built from the export this repository commits. The count beside a folder went on 2026-10-29: it read as a count of items |
 | **Methods and properties under the object that owns them** | ✅ manifest schema 4 records each member's owner GUID and the tree nests by it — a chain, since a property owns its accessors. Before this a function block's methods were its siblings, and four `InitRoom` methods on four different rooms were four rows in one folder. A mirror exported earlier carries no parents and stays flat until it is re-exported |
 | **Library and task rows, layer chips, context menu** | ✅ one node per library reference, task, device parameter and empty slot; chips in the diff header for ST / native / tasks / libraries / devices; a themed context menu on changed rows. Device YAML is export-only |
 | Packaging | ✅ `Build_Package.bat` produces unsigned `Setup.exe` and an MSI, both **per-user** (so an update needs no administrator). It asks how to bump `VersioVersion` first. PortableGit, .NET 9 and both vendor hosts ship in the payload. CODESYS / Portal / XAE are detected, never bundled. Signing is still open. |
@@ -215,7 +215,7 @@ Versio.sln
 ├─ tests/
 │  ├─ Versio.TestSupport/       not a test project: the three helpers more than one suite
 │  │                            needs (TestPaths, TestLogger, VendorSeamScanner, LadderInvariants)
-│  ├─ Versio.Core.Tests/        2,116 unit tests — pure, no IO, under a second
+│  ├─ Versio.Core.Tests/        2,118 unit tests — pure, no IO, under a second
 │  ├─ Versio.Integration.Tests/ 188 tests against real git and the real filesystem, ~40 s.
 │  │                            NO CODESYS: that is a different project now, so this one
 │  │                            needs no filter and cannot accidentally cost half an hour
@@ -437,10 +437,10 @@ dotnet test tests/Versio.Core.Tests
 
 | Suite | Tests | Needs | Runs in |
 |---|---|---|---|
-| `Versio.Core.Tests` | 2,116 | nothing — pure, no IO, no clock, no UI | ~0.3 s |
+| `Versio.Core.Tests` | 2,118 | nothing — pure, no IO, no clock, no UI | ~0.3 s |
 | `Versio.Integration.Tests` | 268 | a real `git.exe`, the real filesystem, and the real Windows local groups for five | ~55 s |
 | `Versio.Arch.Tests` | 45 | nothing — it reads assembly metadata, IL, and the project files | instant |
-| `Versio.App.Tests` | 893 | Windows (WPF). Builds the real dialogs against the real stylesheet on an STA thread; **no window is ever shown**. One test runs the web viewer too, over every fixture row, and references `Versio.Web.Tests` for its fake GitHub | ~3.6–11 min |
+| `Versio.App.Tests` | 894 | Windows (WPF). Builds the real dialogs against the real stylesheet on an STA thread; **no window is ever shown**. One test runs the web viewer too, over every fixture row, and references `Versio.Web.Tests` for its fake GitHub | ~3.6–11 min |
 | `Versio.Plc.Codesys.Pure.Tests` | 405 | nothing — the vendor's planner, codecs, protocol, LD/FBD parser and File-Based Storage layout, pure | under a second |
 | `Versio.Plc.Codesys.Parity.Tests` | 104 | `python` on PATH, no CODESYS — **skips cleanly without python, so check the count** | ~15 s |
 | `Versio.Plc.TiaPortal.Pure.Tests` | 118 | nothing — format, planner, protocol, scrubber, member table, LAD and FBD parser | instant |
