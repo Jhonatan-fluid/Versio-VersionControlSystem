@@ -69,7 +69,17 @@ public sealed class CommitWhileIdeHoldsProjectTests
         // And it says why, in the export's own words - which name the IDE and what to close.
         Assert.Contains(shell.Notifications.Visible, n =>
             n.ClipboardText.Contains("Nothing was committed", StringComparison.Ordinal)
-            && n.ClipboardText.Contains("open in the IDE", StringComparison.Ordinal));
+            && n.ClipboardText.Contains("open in the IDE", StringComparison.Ordinal)
+            // ... and the file to delete if nobody has it, because this vendor's marker
+            // carries no pid and can outlive the session that wrote it (2026-10-28).
+            && n.ClipboardText.Contains("delete Station/Station.info", StringComparison.Ordinal));
+
+        // The same refusal reaches the project panel, in the orchestrator's words, rather
+        // than the panel saying only that changes have not been exported (2026-10-28). This
+        // is the one test where a real refusal travels from the gate export to the banner;
+        // WaitingOnIdePanelTests drives the banner from a remembered wait directly.
+        Assert.Contains("cannot be exported yet", shell.Sync.StalenessSummary, StringComparison.Ordinal);
+        Assert.Contains("open in the IDE", shell.Sync.StalenessSummary, StringComparison.Ordinal);
 
         // No export was run over a project the IDE holds.
         Assert.Equal(exports, toolchain.Jobs.Count(j => j.Operation == PlcOperation.Export));

@@ -1751,7 +1751,7 @@ public sealed class SyncViewModel : ObservableObject
         Findings.Clear();
         foreach (var finding in findings.Where(f => f.NeedsAttention))
         {
-            Findings.Add($"{finding.Health}: {finding.Path} — {finding.Explanation}");
+            Findings.Add($"{finding.Title}: {finding.Path} — {finding.Explanation}");
         }
 
         // Restore the selection by path, and fall back to something sensible rather than
@@ -1953,7 +1953,14 @@ public sealed class SyncViewModel : ObservableObject
     /// thirty seconds on 2026-08-19, because each run's own close looked like the engineer
     /// shutting the IDE. Remember the refusal, not the file.
     /// </remarks>
-    private readonly HashSet<string> _waitingOnIde = new(StringComparer.OrdinalIgnoreCase);
+    /// <remarks>
+    /// Keyed by binding, holding the refusal's own sentence, because the panel shows it:
+    /// a project waiting on the IDE used to read "not exported" on its row and "has changes
+    /// that have not been exported" in the banner, both true and neither the answer to
+    /// "why is nothing exporting?" — which was the owner's first question on 2026-10-28,
+    /// and was answered by the log alone.
+    /// </remarks>
+    private readonly Dictionary<string, string> _waitingOnIde = new(StringComparer.OrdinalIgnoreCase);
 
     /// <summary>The markers being watched, for the test that proves the watch is wired.</summary>
     /// <remarks>
@@ -1970,14 +1977,15 @@ public sealed class SyncViewModel : ObservableObject
     /// vanishing retries. Tests drive this; production sets it from
     /// <see cref="SyncVerdict.BlockedByOpenProject"/>.
     /// </summary>
-    internal void RememberWaitingOnIde(string bindingId) => _waitingOnIde.Add(bindingId);
+    internal void RememberWaitingOnIde(string bindingId, string? reason = null) =>
+        _waitingOnIde[bindingId] = reason ?? "the project is open in the IDE";
 
     private void RememberIfWaitingOnIde(SyncOutcome outcome)
     {
         if (outcome.Verdict is SyncVerdict.BlockedByOpenProject
             && !string.IsNullOrEmpty(outcome.BindingId))
         {
-            _waitingOnIde.Add(outcome.BindingId);
+            _waitingOnIde[outcome.BindingId] = outcome.Explanation;
         }
     }
 
@@ -2126,8 +2134,11 @@ public sealed class SyncViewModel : ObservableObject
     /// <remarks>
     /// The gate is reused rather than reimplemented so the panel and the thing that will
     /// eventually block a commit can never disagree about which projects need exporting.
+    /// Internal for the test that proves the banner reads a remembered IDE wait back: in
+    /// production the wait is recorded inside the gate export that then calls this, and a
+    /// test cannot make a toolchain refuse without a real IDE holding a real project.
     /// </remarks>
-    private async Task RefreshStalenessAsync()
+    internal async Task RefreshStalenessAsync()
     {
         if (_orchestrator is null)
         {
@@ -2175,11 +2186,22 @@ public sealed class SyncViewModel : ObservableObject
             // as one, and the reason is on the failure card, one click away.
             var failed = new HashSet<string>(gate.FailedBindings, StringComparer.Ordinal);
 
+            // A binding the IDE holds is behind for a reason the panel can state, and the
+            // reason is the useful part: "not exported" and "has changes that have not been
+            // exported" were both true on 2026-10-28 and neither said that the project was
+            // open in TIA Portal, which was the owner's whole question. Only a binding that
+            // is still behind: once the export has run, the remembered refusal is history.
+            var waiting = stale.Where(_waitingOnIde.ContainsKey).ToList();
+
             foreach (var row in Projects.Where(p => p.Tracked && !p.Busy))
             {
                 if (failed.Contains(row.BindingId!))
                 {
                     row.State = SyncNarrative.Label(SyncDirection.Failed);
+                }
+                else if (waiting.Contains(row.BindingId!))
+                {
+                    row.State = "waiting for the IDE";
                 }
                 else if (stale.Contains(row.BindingId!))
                 {
@@ -2189,8 +2211,9 @@ public sealed class SyncViewModel : ObservableObject
 
             // Stated in the panel rather than only in a row, because the whole point is that
             // somebody who has not looked at this project all afternoon still finds out.
-            var behind = gate.UnexportedBindings.Count(id => !failed.Contains(id));
-            HasUnexportedChanges = behind > 0;
+            var behind = gate.UnexportedBindings.Count(id =>
+                !failed.Contains(id) && !waiting.Contains(id));
+            HasUnexportedChanges = behind > 0 || waiting.Count > 0;
             StalenessSummary = string.Join(" ", new[]
             {
                 failed.Count switch
@@ -2198,6 +2221,12 @@ public sealed class SyncViewModel : ObservableObject
                     0 => string.Empty,
                     1 => "1 project failed to sync — select it to see why.",
                     var n => $"{n} projects failed to sync — select one to see why.",
+                },
+                waiting.Count switch
+                {
+                    0 => string.Empty,
+                    1 => $"1 project cannot be exported yet: {_waitingOnIde[waiting[0]]}",
+                    var n => $"{n} projects cannot be exported yet. {_waitingOnIde[waiting[0]]}",
                 },
                 behind switch
                 {
