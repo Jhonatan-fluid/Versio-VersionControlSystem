@@ -468,6 +468,18 @@ would settle an automatic stale verdict: the same exclusive-open probe with the 
 process-level signal with no pid needed; it was not measured, and a policy built on the
 closed half alone is the two-writers defect waiting to happen.
 
+**Declared stale by process name since 2026-10-29** (FINDINGS, same date). A second leftover
+in two days — `LBB101.info`, written by the Portal session that created the project and
+carried into the repository by a folder copy; the project had never been opened in a window
+— settled the half that needs no file probe. `HolderProcessNames` is
+`Siemens.Automation.Portal` (the name the host watches appear, the runner reaps, and the
+2026-10-28 entry counted), and a marker that names this machine with no process of that name
+running is Stale: nothing here can be holding the project. Measured on this machine with the
+real probe against a copy of the repository: `verdict=Stale`, and the dismissal in the log.
+What stays Held: a leftover beside a running Portal, which a name cannot tell from a live
+hold — the measurement above, or Openness `TiaPortalProcess.ProjectPath` through the host,
+is what would close it.
+
 ### Committing and pushing while Portal is open (2026-09-14)
 
 Versio exports by opening the project in its own headless Portal, and `Projects.Open` needs

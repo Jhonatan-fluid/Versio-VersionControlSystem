@@ -1,6 +1,7 @@
 using Versio.Core.Abstractions;
 using Versio.Core.Bindings;
 using Versio.Core.Locking;
+using Versio.Core.Logging;
 
 namespace Versio.Core.Plc;
 
@@ -18,6 +19,9 @@ public enum OccupancyVerdict
     /// Treated as free. The alternative is a crashed IDE blocking every sync until somebody
     /// finds and deletes a file they have never heard of — which is the same reasoning
     /// <see cref="LockRecoveryPolicy"/> applies to Versio's own locks, for the same reason.
+    /// Reached two ways: a marker naming a pid nobody holds, and a marker naming no pid from
+    /// a vendor whose IDE is not running on this machine at all
+    /// (<see cref="IPlcProjectFormat.HolderProcessNames"/>).
     /// </remarks>
     Stale,
 }
@@ -56,11 +60,12 @@ public sealed record ProjectOccupancy
     /// is the only party that knows where it read; the vendor's parser sees contents alone.
     /// </summary>
     /// <remarks>
-    /// Named so the refusal can say which file to delete. The stale policy below only
-    /// rescues a marker that carries a pid; a vendor whose marker carries none leaves the
-    /// person to clear it by hand, and "close it and the export will run" is then advice
-    /// that cannot be followed — the project is already closed. The least the sentence can
-    /// do is name the file.
+    /// Named so the refusal can say which file to delete. The stale policy below rescues a
+    /// marker that carries a pid, and one that carries none only while the vendor's IDE is
+    /// not running here at all; a leftover beside a running IDE that holds some other
+    /// project still leaves the person to clear it by hand, and "close it and the export
+    /// will run" is then advice that cannot be followed — the project is already closed.
+    /// The least the sentence can do is name the file.
     /// </remarks>
     public string? Marker { get; init; }
 
@@ -118,7 +123,8 @@ public sealed class ProjectOccupancyProbe(
     IFileSystem fs,
     IMachineIdentity machine,
     IProcessProbe processes,
-    Func<PlcVendor, IPlcProjectFormat?>? formats = null) : IProjectOccupancyProbe
+    Func<PlcVendor, IPlcProjectFormat?>? formats = null,
+    IVersioLogger? logger = null) : IProjectOccupancyProbe
 {
     private readonly Func<PlcVendor, IPlcProjectFormat?> _formats =
         formats ?? PlcFormats.ForVendor;
@@ -155,12 +161,34 @@ public sealed class ProjectOccupancyProbe(
         // The file is named on the way out, whatever the vendor made of its contents: the
         // parser does not know where it read from, and the refusal downstream needs to.
         var parsed = format.ParseOccupancy(contents) with { Marker = marker };
-        return Resolve(parsed, machine, processes);
+        var resolved = Resolve(parsed, machine, processes, format.HolderProcessNames);
+
+        // A marker disregarded is a decision that has to be in the log: the next question
+        // after "why did it refuse" is "why did it NOT refuse", and an export that ran over a
+        // marker nobody can see being dismissed looks like the two-writers defect it exists
+        // to prevent. Said once per check, which is once per job, not per poll.
+        if (resolved.Verdict == OccupancyVerdict.Stale)
+        {
+            logger?.Info(LogCategory.Sync, parsed.ProcessId is { } pid
+                ? $"{binding.Id}: {format.DisplayName} left its marker behind ({parsed.Holder}) " +
+                  $"naming process {pid}, which is not running; treating the project as " +
+                  $"closed: {marker}"
+                : $"{binding.Id}: {format.DisplayName} left its marker behind ({parsed.Holder}) " +
+                  $"and no {format.DisplayName} process is running on this machine, so nothing " +
+                  $"here can be holding the project; treating it as closed: {marker}");
+        }
+
+        return resolved;
     }
 
     /// <summary>Decide whether a parsed marker still means anything. Pure.</summary>
+    /// <param name="holderProcessNames">
+    /// The vendor's <see cref="IPlcProjectFormat.HolderProcessNames"/>; null or empty means the
+    /// vendor names none, and a pid-less marker is believed as it always was.
+    /// </param>
     public static ProjectOccupancy Resolve(
-        ProjectOccupancy parsed, IMachineIdentity machine, IProcessProbe processes)
+        ProjectOccupancy parsed, IMachineIdentity machine, IProcessProbe processes,
+        IReadOnlyList<string>? holderProcessNames = null)
     {
         if (parsed.Verdict != OccupancyVerdict.Held)
         {
@@ -174,9 +202,22 @@ public sealed class ProjectOccupancyProbe(
             return parsed;
         }
 
-        // No pid recorded, so nothing to check. Believe the marker.
         if (parsed.ProcessId is not { } pid)
         {
+            // No pid recorded. The marker is still believed unless it names THIS machine
+            // outright, the vendor has said which processes can hold a project, and none of
+            // them is running here — then nothing on this machine holds it and the file is a
+            // leftover (TIA Portal, 2026-10-28 and 2026-10-29). A marker naming no machine is
+            // not rescued this way: the format is one Versio did not recognise, and a project
+            // on a share really can be open on a desk this probe cannot see.
+            var namesThisMachine = !string.IsNullOrEmpty(parsed.Machine);
+            var vendorNamesProcesses = holderProcessNames is { Count: > 0 };
+            if (namesThisMachine && vendorNamesProcesses &&
+                !holderProcessNames!.Any(processes.IsAnyProcessRunning))
+            {
+                return parsed with { Verdict = OccupancyVerdict.Stale };
+            }
+
             return parsed;
         }
 

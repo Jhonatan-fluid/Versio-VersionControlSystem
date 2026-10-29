@@ -14,6 +14,24 @@ public interface IProcessProbe
     /// disbelieving one that has not costs two writers on one project.
     /// </remarks>
     bool IsProcessAlive(int processId);
+
+    /// <summary>True when any process of this name (no <c>.exe</c>) is running on this machine.</summary>
+    /// <remarks>
+    /// <para>
+    /// For a vendor whose open-project marker carries no pid. TIA Portal's <c>.info</c> names
+    /// the user, the machine and the time, and nothing else; a dead pid is not a question it
+    /// can be asked. What it <i>can</i> be asked, once it names this machine, is whether the
+    /// IDE that writes it is running here at all — a Portal that is not running holds nothing,
+    /// whatever its leftover says. The process names are the vendor's
+    /// (<see cref="Plc.IPlcProjectFormat.HolderProcessNames"/>); this is only the lookup.
+    /// </para>
+    /// <para>
+    /// The default answers <c>true</c>: a probe that cannot look is a probe that believes the
+    /// marker, which is the safe way to be wrong, and the way every fake in the suite was
+    /// already behaving before the member existed.
+    /// </para>
+    /// </remarks>
+    bool IsAnyProcessRunning(string processName) => true;
 }
 
 /// <summary>Current machine identity. Abstracted so recovery is unit testable.</summary>

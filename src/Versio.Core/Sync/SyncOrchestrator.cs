@@ -1658,8 +1658,10 @@ public sealed class SyncOrchestrator
     /// … close it and the export will run", shown for a project the engineer had just
     /// closed: TIA Portal had left a two-day-old marker behind, nothing in the sentence
     /// said so, and the only cure was deleting a file the sentence did not name. The stale
-    /// policy in <see cref="ProjectOccupancyProbe.Resolve"/> cannot rescue a marker with
-    /// no pid, so the sentence has to carry the alternative.
+    /// policy in <see cref="ProjectOccupancyProbe.Resolve"/> rescues a marker with no pid
+    /// only while the vendor's IDE is not running here at all (since 2026-10-29); a leftover
+    /// beside a Portal window that holds some other project still reads Held, so the
+    /// sentence has to carry the alternative.
     /// </para>
     /// <para>
     /// "Open in the IDE" stays in the wording: three tests and the clipboard text of the

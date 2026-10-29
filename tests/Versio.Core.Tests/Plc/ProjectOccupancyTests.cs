@@ -28,11 +28,57 @@ public sealed class ProjectOccupancyTests
         public DateTimeOffset BootId => DateTimeOffset.UnixEpoch;
     }
 
-    private sealed class Processes(bool alive) : IProcessProbe
+    private sealed class Processes(bool alive, bool ideRunning = false) : IProcessProbe
     {
         public bool IsVersioProcessAlive(int processId, string sessionId) => alive;
         public bool IsProcessAlive(int processId) => alive;
+
+        public List<string> AskedFor { get; } = [];
+
+        public bool IsAnyProcessRunning(string processName)
+        {
+            AskedFor.Add(processName);
+            return ideRunning;
+        }
     }
+
+    /// <summary>
+    /// A vendor whose marker records who and where but no pid, and which names the one
+    /// process that can hold its projects — the TIA Portal shape, without the TIA pack.
+    /// </summary>
+    private sealed class PidlessVendor : IPlcProjectFormat
+    {
+        public PlcVendor Vendor => PlcVendor.TiaPortal;
+        public string DisplayName => "Pidless IDE";
+        public PlcCapabilities Capabilities => new();
+        public IReadOnlyList<string> ProjectExtensions => [".pl"];
+        public bool IsTemplate(string path) => false;
+        public string ConventionalExportPath(string projectPath) => projectPath[..^3];
+        public string? OccupancyMarkerFor(string projectPath) =>
+            System.IO.Path.ChangeExtension(projectPath, ".held");
+        public IReadOnlyList<string> HolderProcessNames => ["Pidless.Ide"];
+        public IReadOnlyList<string> TransientPatternsFor(string projectPath) => [];
+        public ProjectOccupancy ParseOccupancy(string markerContents)
+        {
+            var lines = markerContents.Split('\n');
+            return new()
+            {
+                Verdict = OccupancyVerdict.Held,
+                User = lines[0].Trim(),
+                Machine = lines.Length > 1 ? lines[1].Trim() : string.Empty,
+            };
+        }
+        public bool NeedsTextToPlan(string relativePath) => false;
+        public ImportPlan PlanImport(
+            Versio.Core.Projects.ProjectManifest? manifest,
+            IReadOnlyList<MirrorFile> mirror,
+            IReadOnlyDictionary<string, string> departed) => new() { Files = [] };
+        public Versio.Core.Projects.ObjectTypeName? DisplayNameFor(string type) => null;
+    }
+
+    /// <summary>What a pid-less vendor's marker parses to, before the policy.</summary>
+    private static ProjectOccupancy Pidless(string machine = "ROG-JVM") =>
+        new PidlessVendor().ParseOccupancy($"engineer\n{machine}\n");
 
     private static ProjectOccupancy Resolve(
         string marker, string onMachine = "ROG-JVM", bool pidAlive = true) =>
@@ -111,10 +157,101 @@ public sealed class ProjectOccupancyTests
     public void A_marker_with_no_pid_is_believed_rather_than_dismissed()
     {
         // A future CODESYS writing fewer fields must not turn "somebody has this open" into
-        // "nobody does". That is the one way this could lose work.
+        // "nobody does". That is the one way this could lose work. CODESYS names no holder
+        // processes, so nothing here is asked about its IDE — the marker simply stands.
         var occupancy = Resolve("elli_\nROG-JVM\n", pidAlive: false);
 
         Assert.Equal(OccupancyVerdict.Held, occupancy.Verdict);
+    }
+
+    // --- a vendor whose marker names no pid, but whose IDE has a name ------------------
+
+    [Fact]
+    public void A_pidless_marker_from_this_machine_is_stale_when_the_vendors_IDE_is_not_running()
+    {
+        // 2026-10-29: a TIA Portal .info written by the session that created the project was
+        // copied into the repository with it, and blocked every export of a project nobody
+        // had ever opened in a window. The marker names this machine and no pid; the one
+        // question left is whether a Portal is running here at all, and none was.
+        var processes = new Processes(alive: false, ideRunning: false);
+
+        var occupancy = ProjectOccupancyProbe.Resolve(
+            Pidless(), new Machine("ROG-JVM"), processes, ["Pidless.Ide"]);
+
+        Assert.Equal(OccupancyVerdict.Stale, occupancy.Verdict);
+        Assert.False(occupancy.IsHeld);
+        Assert.Equal(["Pidless.Ide"], processes.AskedFor);
+    }
+
+    [Fact]
+    public void A_pidless_marker_is_believed_while_the_vendors_IDE_runs_here()
+    {
+        // The running Portal may be the one holding this project. Held, and the refusal
+        // downstream still names the file for the case where it is not.
+        var occupancy = ProjectOccupancyProbe.Resolve(
+            Pidless(), new Machine("ROG-JVM"),
+            new Processes(alive: false, ideRunning: true), ["Pidless.Ide"]);
+
+        Assert.Equal(OccupancyVerdict.Held, occupancy.Verdict);
+    }
+
+    [Fact]
+    public void A_pidless_marker_from_another_machine_is_believed_whatever_runs_here()
+    {
+        // A project on a share, open on somebody else's desk: no Portal here says nothing
+        // about theirs. The same rule as the pid, for the same reason.
+        var processes = new Processes(alive: false, ideRunning: false);
+
+        var occupancy = ProjectOccupancyProbe.Resolve(
+            Pidless(machine: "SOME-OTHER-PC"), new Machine("ROG-JVM"), processes, ["Pidless.Ide"]);
+
+        Assert.Equal(OccupancyVerdict.Held, occupancy.Verdict);
+        Assert.Empty(processes.AskedFor);
+    }
+
+    [Fact]
+    public void A_pidless_marker_naming_no_machine_is_believed_rather_than_rescued()
+    {
+        // No machine means a marker in a shape Versio did not recognise. It could be from
+        // anywhere, so "no IDE running here" settles nothing, and guessing free is the
+        // two-writers defect.
+        var unrecognised = new ProjectOccupancy { Verdict = OccupancyVerdict.Held };
+
+        var occupancy = ProjectOccupancyProbe.Resolve(
+            unrecognised, new Machine("ROG-JVM"),
+            new Processes(alive: false, ideRunning: false), ["Pidless.Ide"]);
+
+        Assert.Equal(OccupancyVerdict.Held, occupancy.Verdict);
+    }
+
+    [Fact]
+    public async Task The_probe_asks_the_vendor_which_processes_to_look_for_and_logs_a_marker_it_dismisses()
+    {
+        // End to end through CheckAsync: the format's HolderProcessNames reach the process
+        // probe, and a dismissed marker is said out loud — an export that runs over a marker
+        // with nothing in the log looks like the defect the marker exists to prevent.
+        var fs = new Fakes.FakeFileSystem();
+        fs.Write(@"C:\work\plc\Line.held", "engineer\nROG-JVM\n");
+        var processes = new Processes(alive: false, ideRunning: false);
+        var sink = new Versio.Core.Logging.InMemoryLogSink();
+        var probe = new ProjectOccupancyProbe(
+            fs, new Machine("ROG-JVM"), processes, _ => new PidlessVendor(),
+            new Versio.Core.Logging.VersioLogger(new Versio.Core.Abstractions.FakeClock(DateTimeOffset.UnixEpoch)).AddSink(sink));
+
+        var occupancy = await probe.CheckAsync(
+            new Versio.Core.Bindings.ProjectBinding
+            {
+                Id = "b", ProjectPath = "plc/Line.pl", ExportPath = "plc/Line",
+                Vendor = PlcVendor.TiaPortal,
+            },
+            @"C:\work\plc\Line.pl", CancellationToken.None);
+
+        Assert.Equal(OccupancyVerdict.Stale, occupancy.Verdict);
+        Assert.Equal(["Pidless.Ide"], processes.AskedFor);
+        var line = Assert.Single(sink.Snapshot(), e => e.Message.Contains("left its marker behind", StringComparison.Ordinal));
+        Assert.Contains("Pidless IDE", line.Message, StringComparison.Ordinal);
+        Assert.Contains("engineer on ROG-JVM", line.Message, StringComparison.Ordinal);
+        Assert.Contains(@"C:\work\plc\Line.held", line.Message, StringComparison.Ordinal);
     }
 
     [Fact]

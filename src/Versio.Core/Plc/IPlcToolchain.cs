@@ -215,6 +215,36 @@ public interface IPlcProjectFormat
     string? OccupancyMarkerFor(string projectPath);
 
     /// <summary>
+    /// Process names (no <c>.exe</c>) of this toolchain's IDE: the only processes that can hold
+    /// one of its projects open on a machine. Empty when the marker carries a pid, or when
+    /// the vendor has not been measured.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// For a marker that records no pid. <see cref="ProjectOccupancyProbe.Resolve"/> rescues a
+    /// marker naming a dead pid as <see cref="OccupancyVerdict.Stale"/>; a marker naming no pid
+    /// had nothing to be rescued by, and on 2026-10-28 and again on 2026-10-29 a TIA Portal
+    /// <c>.info</c> left behind by a closed session blocked every export of a project nobody
+    /// held, until a person deleted a file the panel had to name for them. The second time the
+    /// project had never been opened in the Portal window at all: the <c>.info</c> had been
+    /// written by the session that created it and was carried into the repository by a copy.
+    /// </para>
+    /// <para>
+    /// So the policy asks a different question of such a marker: not "is that pid alive" but
+    /// "is this IDE running here at all". A marker that names this machine, from a vendor that
+    /// names its processes, is Stale when none of them is running — because then nothing on
+    /// this machine can be holding the project, whatever the file says. A marker from another
+    /// machine is believed as before; the processes there are not ours to look at.
+    /// </para>
+    /// <para>
+    /// Names only, measured, never guessed: a name that is wrong reads "not running" for an
+    /// IDE that is, and that is the two-writers defect. Default empty, which keeps a vendor's
+    /// pid-less marker believed until somebody measures what to look for.
+    /// </para>
+    /// </remarks>
+    IReadOnlyList<string> HolderProcessNames => [];
+
+    /// <summary>
     /// Globs for files this toolchain writes beside a project that git should not keep.
     /// </summary>
     /// <remarks>
@@ -251,8 +281,9 @@ public interface IPlcProjectFormat
     /// <summary>Read a marker's contents. Never throws; unreadable means held.</summary>
     /// <remarks>
     /// Returns <see cref="OccupancyVerdict.Held"/> or <see cref="OccupancyVerdict.Free"/> only.
-    /// Whether a marker naming a dead process is <i>stale</i> is not a vendor question, and is
-    /// decided by <see cref="ProjectOccupancyProbe.Resolve"/>.
+    /// Whether a marker naming a dead process — or, for a marker naming none, one whose IDE
+    /// is not running here (<see cref="HolderProcessNames"/>) — is <i>stale</i> is not a vendor
+    /// question, and is decided by <see cref="ProjectOccupancyProbe.Resolve"/>.
     /// </remarks>
     ProjectOccupancy ParseOccupancy(string markerContents);
 

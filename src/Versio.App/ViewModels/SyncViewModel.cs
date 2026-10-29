@@ -1055,7 +1055,7 @@ public sealed class SyncViewModel : ObservableObject
             // Lets the engine find out that CODESYS has the project open before it spends
             // 17-31 s being told so - and, for an export, work around it by reading a copy.
             occupancy: new ProjectOccupancyProbe(
-                new WindowsFileSystem(), _machine, new ProcessProbe()),
+                new WindowsFileSystem(), _machine, new ProcessProbe(), logger: _logger),
 
             // And whether the tree is mid-merge. Without this the engine cannot tell, and
             // an import would write conflict markers into a project that then stops

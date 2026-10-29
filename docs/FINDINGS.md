@@ -19,6 +19,132 @@ produce a diff touching everything else.
 
 ---
 
+### A TIA marker carried in by a copy: the project had never been opened, and the export refused anyway
+
+**2026-10-29, `main`, the owner's `controls-design-siemens`, `LBB101.ap20` appearing in the
+working tree at 12:39.** The panel read, in red, *"1 project cannot be exported yet: LBB101.ap20
+is open in the IDE (TIA Portal: JhonatanVillarreal on FS-1872526918, since 2026-10-29
+00:53:39Z), so it cannot be exported until it is closed. Close it and the export will run. If
+nobody has it open, TIA Portal left its marker behind: delete JV_WorkingSpace/LBB101/LBB101.info
+and the export will run."* The owner's words: "this keeps being a false positive, the project is
+not open, in fact it has never been opened directly".
+
+**What had happened, from the file times.** The `.info` beside the `.ap20` was dated 28 Oct
+17:53 local — the minute the `Time` inside it names in UTC; the `.ap20` itself 14:43 that day;
+every folder in the project 29 Oct 12:39, the minute Versio saw the project appear. A folder
+copy keeps file times and stamps the folders with the copy. So the project had been created
+and saved by a Portal session the day before, that session left its marker behind exactly as
+the 2026-10-28 session did, and the copy brought the marker into the repository with it. No
+Portal window had ever opened *this* copy. `Get-Process` at the time: no
+`Siemens.Automation.Portal` on the machine at all — the ObjectFrame, Help and Telemetry
+services, which are not Portal, and nothing else.
+
+**The defect.** The 2026-10-28 fix made the refusal name the file, and that still left a person
+to delete it — the second time in two days, for a leftover the engine held every fact it needed
+to dismiss: the marker names *this* machine, carries no pid, and the one process that can hold
+a Portal project on this machine was not running. The previous entry withheld an automatic
+verdict, on purpose, until the exclusive-open probe had been measured on the open side. That
+measurement is still not made, and this case does not need it: a process that does not exist
+holds nothing, which is the same reasoning a dead pid already gets for CODESYS, asked by name
+instead of by pid.
+
+**Fix.** `IPlcProjectFormat.HolderProcessNames`, default empty; the TIA pack names
+`Siemens.Automation.Portal` — the name the host watches appear in `CreatePortal`, the runner
+reaps in `LogReaped`, and the 2026-10-28 entry counted two of. `IProcessProbe.IsAnyProcessRunning`,
+default `true` so that a probe which cannot look believes the marker. `ProjectOccupancyProbe.Resolve`
+takes the names: a Held marker with no pid is Stale when it names this machine outright, the
+vendor names processes, and none of them is running; a marker that names no machine (a shape
+Versio did not parse) is still believed, and so is one from another machine, with nothing asked
+about processes here. The probe logs the dismissal once per check, naming the vendor, the
+holder and the file, because an export that runs over a marker in silence looks like the
+two-writers defect the marker exists to prevent. Measured on this machine with the real probe
+against a copy of the owner's repository, before the commit: `portal running=False`,
+`verdict=Stale`, and the line *"fae2130dee24: TIA Portal left its marker behind
+(JhonatanVillarreal on FS-1872526918, since 2026-10-29 00:53:39Z) and no TIA Portal process is
+running on this machine, so nothing here can be holding the project; treating it as closed:
+…/LBB101.info"*.
+
+**What is still Held, on purpose.** A leftover beside a *running* Portal — the window left open
+on its start page after the project was closed, or holding another project. A process name
+cannot tell those from a live hold, so the refusal keeps naming the file. And Portal outlived a
+project close by minutes on 2026-08-19 (DRIVING §5), so the retry that runs when the program
+store saves on close can land while the process is still on its way out; the next retry is the
+next change to the tree. What would close that gap: asking each running Portal which project it
+holds (Openness `TiaPortalProcess.ProjectPath`) through the host — a spawn per check, with the
+access list in the way. STATUS item 19 narrows to that.
+
+**Mutation check:** with the names ignored in `Resolve`, the two new policy tests go red and the
+fifteen beside them stay green; restored, 17/17.
+
+**Tests:** `ProjectOccupancyTests` (Stale when the IDE is absent; believed while it runs;
+believed from another machine with nothing asked; an unparsed marker is not rescued; the probe
+passes the vendor's names through and logs the dismissal), `TiaPortalPureTests` (the name),
+`ProcessProbeTests` in Integration (the real lookup, both answers — the interface default would
+keep every leftover believed with no unit test noticing).
+
+### A TIA marker carried in by a copy: the project had never been opened, and the export refused anyway
+
+**2026-10-29, `main`, the owner's `controls-design-siemens`, `LBB101.ap20` appearing in the
+working tree at 12:39.** The panel read, in red, *"1 project cannot be exported yet: LBB101.ap20
+is open in the IDE (TIA Portal: JhonatanVillarreal on FS-1872526918, since 2026-10-29
+00:53:39Z), so it cannot be exported until it is closed. Close it and the export will run. If
+nobody has it open, TIA Portal left its marker behind: delete JV_WorkingSpace/LBB101/LBB101.info
+and the export will run."* The owner's words: "this keeps being a false positive, the project is
+not open, in fact it has never been opened directly".
+
+**What had happened, from the file times.** The `.info` beside the `.ap20` was dated 28 Oct
+17:53 local — the minute the `Time` inside it names in UTC; the `.ap20` itself 14:43 that day;
+every folder in the project 29 Oct 12:39, the minute Versio saw the project appear. A folder
+copy keeps file times and stamps the folders with the copy. So the project had been created
+and saved by a Portal session the day before, that session left its marker behind exactly as
+the 2026-10-28 session did, and the copy brought the marker into the repository with it. No
+Portal window had ever opened *this* copy. `Get-Process` at the time: no
+`Siemens.Automation.Portal` on the machine at all — the ObjectFrame, Help and Telemetry
+services, which are not Portal, and nothing else.
+
+**The defect.** The 2026-10-28 fix made the refusal name the file, and that still left a person
+to delete it — the second time in two days, for a leftover the engine held every fact it needed
+to dismiss: the marker names *this* machine, carries no pid, and the one process that can hold
+a Portal project on this machine was not running. The previous entry withheld an automatic
+verdict, on purpose, until the exclusive-open probe had been measured on the open side. That
+measurement is still not made, and this case does not need it: a process that does not exist
+holds nothing, which is the same reasoning a dead pid already gets for CODESYS, asked by name
+instead of by pid.
+
+**Fix.** `IPlcProjectFormat.HolderProcessNames`, default empty; the TIA pack names
+`Siemens.Automation.Portal` — the name the host watches appear in `CreatePortal`, the runner
+reaps in `LogReaped`, and the 2026-10-28 entry counted two of. `IProcessProbe.IsAnyProcessRunning`,
+default `true` so that a probe which cannot look believes the marker. `ProjectOccupancyProbe.Resolve`
+takes the names: a Held marker with no pid is Stale when it names this machine outright, the
+vendor names processes, and none of them is running; a marker that names no machine (a shape
+Versio did not parse) is still believed, and so is one from another machine, with nothing asked
+about processes here. The probe logs the dismissal once per check, naming the vendor, the
+holder and the file, because an export that runs over a marker in silence looks like the
+two-writers defect the marker exists to prevent. Measured on this machine with the real probe
+against a copy of the owner's repository, before the commit: `portal running=False`,
+`verdict=Stale`, and the line *"fae2130dee24: TIA Portal left its marker behind
+(JhonatanVillarreal on FS-1872526918, since 2026-10-29 00:53:39Z) and no TIA Portal process is
+running on this machine, so nothing here can be holding the project; treating it as closed:
+…/LBB101.info"*.
+
+**What is still Held, on purpose.** A leftover beside a *running* Portal — the window left open
+on its start page after the project was closed, or holding another project. A process name
+cannot tell those from a live hold, so the refusal keeps naming the file. And Portal outlived a
+project close by minutes on 2026-08-19 (DRIVING §5), so the retry that runs when the program
+store saves on close can land while the process is still on its way out; the next retry is the
+next change to the tree. What would close that gap: asking each running Portal which project it
+holds (Openness `TiaPortalProcess.ProjectPath`) through the host — a spawn per check, with the
+access list in the way. STATUS item 19 narrows to that.
+
+**Mutation check:** with the names ignored in `Resolve`, the two new policy tests go red and the
+fifteen beside them stay green; restored, 17/17.
+
+**Tests:** `ProjectOccupancyTests` (Stale when the IDE is absent; believed while it runs;
+believed from another machine with nothing asked; an unparsed marker is not rescued; the probe
+passes the vendor's names through and logs the dismissal), `TiaPortalPureTests` (the name),
+`ProcessProbeTests` in Integration (the real lookup, both answers — the interface default would
+keep every leftover believed with no unit test noticing).
+
 ### The Openness access list: read before launch, never written, and said on the card
 
 **2026-10-29, `main`, the owner's `controls-design-siemens`, the afternoon after the two
