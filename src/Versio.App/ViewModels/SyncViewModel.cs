@@ -687,34 +687,59 @@ public sealed class SyncViewModel : ObservableObject
                 continue;
             }
 
-            rows.Add(new Views.SystemInfoRow("Status",
-                status.Available ? "available" : status.Explanation ?? "unavailable"));
-
-            if (status.Version is { Length: > 0 } version)
-            {
-                rows.Add(new Views.SystemInfoRow("Version", version));
-            }
-
-            if (status.Profile is { Length: > 0 } profile)
-            {
-                rows.Add(new Views.SystemInfoRow("Profile", profile));
-            }
-
-            if (status.ExecutablePath is { Length: > 0 } exe)
-            {
-                rows.Add(new Views.SystemInfoRow("Executable", exe));
-            }
-
-            // Several usable installations and no safe way to choose. Shown in full, because
-            // the fix is for a person to pick one and the list is what they pick from.
-            foreach (var candidate in status.Candidates)
-            {
-                rows.Add(new Views.SystemInfoRow("Also found", candidate));
-            }
-
-            rows.Add(new Views.SystemInfoRow("Projects", string.Join(", ", format.ProjectExtensions)));
+            rows.AddRange(DescribeToolchain(format, status));
         }
 
+        return rows;
+    }
+
+    /// <summary>
+    /// The rows for one probed toolchain. Static and separate so the shape can be checked
+    /// against a made-up status; the method above probes whatever this machine has.
+    /// </summary>
+    internal static IReadOnlyList<Views.SystemInfoRow> DescribeToolchain(
+        IPlcProjectFormat format, PlcToolchainStatus status)
+    {
+        var rows = new List<Views.SystemInfoRow>
+        {
+            new("Status", status.Available ? "available" : status.Explanation ?? "unavailable"),
+        };
+
+        if (status.Version is { Length: > 0 } version)
+        {
+            rows.Add(new Views.SystemInfoRow("Version", version));
+        }
+
+        if (status.Profile is { Length: > 0 } profile)
+        {
+            rows.Add(new Views.SystemInfoRow("Profile", profile));
+        }
+
+        if (status.ExecutablePath is { Length: > 0 } exe)
+        {
+            rows.Add(new Views.SystemInfoRow("Executable", exe));
+        }
+
+        // Several installations. Unavailable: no safe way to choose, shown in full because
+        // the fix is for a person to pick one and the list is what they pick from.
+        // Available: the vendor chooses per project (a TIA Portal project's extension is
+        // its release) and the list is what is on the machine — labelled so, and with
+        // the vendor's sentence on how the choice is made, which until 2026-10-29 only
+        // ever reached the log because Explanation was shown for a refusal alone.
+        if (status.Candidates.Count > 0)
+        {
+            foreach (var candidate in status.Candidates)
+            {
+                rows.Add(new Views.SystemInfoRow(status.Available ? "Installed" : "Also found", candidate));
+            }
+
+            if (status.Available && status.Explanation is { Length: > 0 } how)
+            {
+                rows.Add(new Views.SystemInfoRow("Choice", how));
+            }
+        }
+
+        rows.Add(new Views.SystemInfoRow("Projects", string.Join(", ", format.ProjectExtensions)));
         return rows;
     }
 
@@ -3801,13 +3826,22 @@ public sealed class SyncViewModel : ObservableObject
     private static bool IsTemplate(string path) =>
         PlcFormats.ForPath(path)?.IsTemplate(path) == true;
 
+    /// <summary>
+    /// The profile to pin on a new binding: the format's word on the project, given what the
+    /// vendor's probe reported.
+    /// </summary>
+    /// <remarks>
+    /// This returned the probe's profile outright until 2026-10-29, which pinned "V21" on a V20
+    /// project when the machine had both Portals. The format knows whether the path carries
+    /// its own release; this code must not.
+    /// </remarks>
     private string? ProfileFor(string projectPath)
     {
         var format = PlcFormats.ForPath(projectPath);
         if (format is not null
             && _probed.TryGetValue(format.Vendor, out var probed))
         {
-            return probed.Status?.Profile;
+            return format.ProfileFor(projectPath, probed.Status?.Profile);
         }
 
         return null;
