@@ -15,6 +15,19 @@ internal static class Program
     [STAThread]
     public static void Main(string[] args)
     {
+        // The elevated helper: this same exe, re-launched with the runas verb by
+        // LocalGroups.JoinElevatedAsync to add the account to a Windows group a vendor gates
+        // its API behind. One job, one result file, exit — before Velopack, which would read
+        // the arguments as its own, and before WPF, which would paint a window under the UAC
+        // prompt. The parent logs the outcome; this process has no logger of its own because
+        // it may be running as a different account than the one whose log it would write.
+        if (args.Length > 0
+            && args[0] == Versio.Infrastructure.Platform.LocalGroups.JoinArgument
+            && OperatingSystem.IsWindows())
+        {
+            Environment.Exit(Versio.Infrastructure.Platform.LocalGroups.RunJoin(args));
+        }
+
         VelopackApp.Build().Run();
 
         var app = new App();
