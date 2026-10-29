@@ -23,6 +23,9 @@ internal sealed class RemedyToolchain : IPlcToolchain
     /// <summary>When set, the fix fails with this sentence and the state stays refused.</summary>
     public string? Refuse { get; init; }
 
+    /// <summary>When set, the fix answers uncertain with this sentence: still running, outcome unknown.</summary>
+    public string? Unsure { get; init; }
+
     public bool Fixed { get; private set; }
 
     public static readonly PlcToolchainRemedy Remedy = new()
@@ -76,6 +79,11 @@ internal sealed class RemedyToolchain : IPlcToolchain
         if (Refuse is { } why)
         {
             return Task.FromResult(PlcRemedyOutcome.Refused(why));
+        }
+
+        if (Unsure is { } still)
+        {
+            return Task.FromResult(PlcRemedyOutcome.Unknown(still));
         }
 
         Fixed = true;

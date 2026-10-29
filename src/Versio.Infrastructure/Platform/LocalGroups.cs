@@ -309,8 +309,12 @@ public sealed partial class LocalGroups(IVersioLogger? logger = null) : ILocalGr
             }
             catch (OperationCanceledException) when (timeout.IsCancellationRequested)
             {
+                // Not "nothing was changed": the helper is still running and may yet add the
+                // account. Said as uncertain, with what to do before pressing again.
                 _log.Warn(LogCategory.Plc, $"the elevated helper did not finish within {HelperTimeout.TotalMinutes:0} minutes; left running");
-                return PlcRemedyOutcome.Refused($"the elevated helper did not finish within {HelperTimeout.TotalMinutes:0} minutes.");
+                return PlcRemedyOutcome.Unknown(
+                    $"the elevated helper has not finished after {HelperTimeout.TotalMinutes:0} minutes and is still running; "
+                    + $"it may still add the account to '{groupName}'. Check the group, or probe again, before pressing again.");
             }
 
             var message = ReadResult(resultFile) ?? $"the elevated helper exited {helper.ExitCode} and left no result";

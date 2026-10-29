@@ -133,6 +133,27 @@ public sealed class ToolchainRemedyFlowTests
     }
 
     [Fact]
+    public async Task A_fix_that_has_not_finished_is_said_as_uncertain_not_as_nothing_changed()
+    {
+        // The helper's timeout leaves it running, so the account may yet be added; "Nothing
+        // was changed" would have been a claim the shell cannot make (review, 2026-10-29).
+        using var repo = RepositoryWithOneProject();
+        var toolchain = new RemedyToolchain { Unsure = "the elevated helper has not finished after 5 minutes and is still running; check the group before pressing again." };
+        using var shell = TestShell.Build(out var sink, toolchain: toolchain);
+        await shell.OpenAsync(repo.Path);
+        await Row(shell, "Machine.project");
+
+        var message = await shell.FixToolchainAsync(PlcVendor.Codesys, CancellationToken.None);
+
+        Assert.StartsWith("the elevated helper has not finished", message);
+        Assert.Contains(shell.Notifications.Visible, n =>
+            n.Headline == "Not finished." && n.Detail.Contains("still running", StringComparison.Ordinal));
+        Assert.DoesNotContain(shell.Notifications.Visible, n => n.Headline is "Nothing was changed." or "Done.");
+        Assert.Contains(sink.Snapshot(), e =>
+            e.Level == Versio.Core.Logging.LogLevel.Warning && e.Message.Contains("has not finished", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public async Task Settings_fix_acts_on_the_status_it_was_handed_even_with_no_repository_open()
     {
         // Settings probes afresh when it opens, repository or not. Its button acted on the

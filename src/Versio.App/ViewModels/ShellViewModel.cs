@@ -1637,6 +1637,12 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         {
             Notifications.Success("Done.", outcome.Message);
         }
+        else if (outcome.Uncertain)
+        {
+            // The helper is still running, or its result could not be read: neither "done"
+            // nor "nothing was changed" is known. A warning, in the outcome's own words.
+            Notifications.Warning("Not finished.", outcome.Message);
+        }
         else
         {
             Notifications.Failure("Nothing was changed.", outcome.Message);

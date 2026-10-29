@@ -159,6 +159,24 @@ public sealed class OpennessGroupTests(ITestOutputHelper output) : IDisposable
         Assert.Equal("the administrator prompt was declined, so nothing was changed.", outcome.Message);
     }
 
+    [SkippableFact]
+    public async Task A_helper_still_running_at_the_timeout_is_passed_through_as_uncertain()
+    {
+        Skip.If(LocalTiaPortalRunner.FindHost() is null, "TIA Portal host was not copied to the output directory");
+        var groups = new FakeGroups(LocalGroupStanding.NotMember)
+        {
+            JoinAnswer = PlcRemedyOutcome.Unknown("the elevated helper has not finished after 5 minutes and is still running."),
+        };
+        var toolchain = Toolchain(groups);
+        var status = await toolchain.ProbeAsync(CancellationToken.None);
+
+        var outcome = await toolchain.ApplyRemedyAsync(status, CancellationToken.None);
+
+        Assert.False(outcome.Succeeded);
+        Assert.True(outcome.Uncertain);
+        Assert.Contains("still running", outcome.Message);
+    }
+
     [SkippableTheory]
     [InlineData(LocalGroupStanding.InToken, true, "already admitted")]
     [InlineData(LocalGroupStanding.GroupMissing, false, "recreate it first")]

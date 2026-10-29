@@ -3983,6 +3983,10 @@ public sealed class SyncViewModel : ObservableObject
         {
             _logger.Info(LogCategory.Plc, $"{toolchain.Format.DisplayName}: {outcome.Message}");
         }
+        else if (outcome.Uncertain)
+        {
+            _logger.Warn(LogCategory.Plc, $"{toolchain.Format.DisplayName}: the fix has not finished — {outcome.Message}");
+        }
         else
         {
             _logger.Warn(LogCategory.Plc, $"{toolchain.Format.DisplayName}: the fix did not apply — {outcome.Message}");

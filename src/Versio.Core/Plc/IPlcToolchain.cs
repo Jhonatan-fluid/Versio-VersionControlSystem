@@ -520,11 +520,18 @@ public interface IPlcToolchain
 /// Not a <see cref="PlcResult"/>: that carries a reason only for failure, and a remedy's
 /// success is the sentence worth reading ("added X to group Y") followed by what to do next.
 /// </remarks>
-public sealed record PlcRemedyOutcome(bool Succeeded, string Message)
+/// <param name="Succeeded">The fix was applied.</param>
+/// <param name="Message">What happened, and what to do next.</param>
+/// <param name="Uncertain">Neither applied nor refused: the fix is still running, or its
+/// result could not be read, so the state may yet change. The application says so rather than
+/// "nothing was changed", which it does not know (review, 2026-10-29).</param>
+public sealed record PlcRemedyOutcome(bool Succeeded, string Message, bool Uncertain = false)
 {
     public static PlcRemedyOutcome Done(string message) => new(true, message);
 
     public static PlcRemedyOutcome Refused(string message) => new(false, message);
+
+    public static PlcRemedyOutcome Unknown(string message) => new(false, message, Uncertain: true);
 }
 
 /// <summary>
