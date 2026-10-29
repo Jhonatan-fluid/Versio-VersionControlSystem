@@ -19,6 +19,82 @@ produce a diff touching everything else.
 
 ---
 
+### Two Portal releases on one machine: the locator saw one, and a V20 project went to V21
+
+**2026-10-29, `main`, the owner's `controls-design-siemens`, the first export after the
+Openness group was fixed.** The failure card read *"export failed — Error when calling method
+'Open' of type 'Siemens.Engineering.ProjectComposition'. Unable to open the project under path
+'…\ProjectInitial.ap20'. Compatibility error. Project '…' with version 'V20' can only be opened
+with a software product of the same version. The current product version is 'V21'."* The
+machine has Portal V20 and Portal V21 installed side by side, and the project is V20.
+
+**What the log said.** `skipped C:\Program Files\Siemens\Automation\Portal V20: no PublicAPI
+net48 folder` — at **debug** level — and then `toolchain ready: …\Portal V21 — V21`. The panel
+said *Toolchain: installed*. Nothing anywhere said a release had been passed over.
+
+**Three defects, one path.**
+
+1. **The locator knew one Openness layout.** V21 ships Openness as modular assemblies under
+   `PublicAPI\V21\net48\` (`Siemens.Engineering.Base.dll`, `…Step7.dll`, …) and the locator
+   was written against that install on 2026-08-19. Every release before V21 ships **one
+   `Siemens.Engineering.dll` directly under `PublicAPI\VNN\`** — Portal V20 has
+   `PublicAPI\V17`, `V18`, `V19` and `V20`, each with that one file and `…Hmi.dll` beside it,
+   and no `net48` anywhere. So V20 was invisible, and a machine with two releases was, to
+   Versio, a machine with one. The host never cared: `OpennessLoader` loads every
+   `Siemens.Engineering*.dll` in the folder it is given and finds `Siemens.Engineering.TiaPortal`
+   by name. Fixed: `FindApiFolder` accepts the single-assembly layout for the install's own
+   release — and only its own, because the older API folders an install carries for
+   compatibility are not the install — and `TiaPortalInstall.ApiShape` says which was found.
+   The skip line is Info now.
+
+2. **The runner fell to the newest install.** `LocalTiaPortalRunner` took the install matching
+   the pinned profile, *else the first* — the newest. With V21 the only install in view, that
+   was V21 for a `.ap20`, and Portal refused. But the fallback was wrong on its own terms: the
+   newest install is exactly the accidental-upgrade path the toolchain refuses several installs
+   over, and it had been reachable from the runner all along. Fixed:
+   `LocalTiaPortalRunner.ChooseInstall` reads the release from the project's extension
+   (`TiaPortalProjectFormat.ReleaseOf`, the same fact the explorer pill has shown since
+   2026-08) and picks that install; a release that is not installed is refused in a sentence
+   that names the project's release, the installed ones, and that upgrading is the user's act
+   in Portal. The profile is consulted only for a path with no number in its extension.
+
+3. **The toolchain refused several releases over a choice nobody could make.** *"2 TIA Portal
+   versions installed — pick the one this repository targets before exporting"* with a
+   `Candidates` list; the list reached Settings → System information as *Also found* rows and
+   no dialog ever offered the pick. Had the locator seen both releases, the owner would have
+   been stuck one step earlier with no way through. The guard was aimed at the wrong place: the
+   upgrade risk is in which Portal *opens a given project*, and the file says. Fixed: the
+   toolchain is available with every installed release (`Version` = `V21, V20`, `Candidates`
+   informational, `Profile` the newest), and the per-project choice is the runner's. The
+   `Candidates` remark on `PlcToolchainStatus` now says both meanings; the first vendor's
+   refusal — where nothing on a `.project` names its profile — is unchanged.
+
+**Measurement.** `PortalReleaseChoiceTests` (8, fake install trees laid out like the real ones,
+run on every machine): both layouts found with the right shape; an install whose own API
+folder is missing is not driven through an older one; `.ap20` → V20 and `.ap21` → V21 with the
+profile pointing the other way; `.ap20` with only V21 installed is the refusal sentence; two
+releases leave the toolchain available. The real V20 path, through the env-gated Probe in
+`TiaPortalGateTests` against the owner's `ProjectInitial.ap20`: the first attempt drove the
+host this test project builds beside itself, which Portal's Openness access list does not
+name (the list is keyed by path and hash, and its one entry is the installed Versio's host,
+added 09:04 that morning when the V21 attempt asked), and ran into the twenty-minute timeout
+having measured nothing; the second, with `VERSIO_TIA_PROBE_HOST` pointed at the installed
+host, **passed in 2 m 14 s** — *`Probe of …ProjectInitial.ap20 via
+…\current\tia\Versio.Plc.TiaPortal.Host.exe [Portal V20, single Siemens.Engineering.dll;
+profile V21]`*, `report.json` written. The host binary is unchanged by this work, so the
+installed one is as good a subject as the fresh one. The toolchain line now reads
+*`toolchain ready: …\Portal V21 — V21; …\Portal V20 — V20. The project file's extension picks
+which one opens it.`*
+
+**Also seen on the way.** The Openness group error from the hour before this one
+(*"Owner 'AzureAD\…' of this process is not member of the windows group 'Siemens TIA
+Openness'"*) is DRIVING §2.2 and was fixed by `net localgroup … /add` plus a sign-out; it is
+in the panel's failure card verbatim, which was enough to act on. The leftover `.info` marker
+from 2026-10-28 was deleted by hand and the export ran on its own, as the previous entry
+predicted.
+
+---
+
 ### First open of a repository: "BrokenBinding", a refusal that named nothing, and a TIA marker that never left
 
 **2026-10-28, `main`, the owner's `controls-design-siemens`, opened in Versio for the first

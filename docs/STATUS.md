@@ -33,9 +33,9 @@ UX remainder) is built and tested as of 2026-08-25** — UX-6 find boxes, UX-7 `
 Escape, UX-8 copy-a-commit, UX-12 amend-while-unpushed — and its visual half joins the
 eyeball list in item 2. Do not start from `archive/` or a handoff.
 
-**Tests:** 4,507 across twelve projects (plus 216 vitest in `web/`), last counted 2026-10-28
-on `ModifierChips` merged over the PortableGit trim and `UpdateApplying` (Core 2,111, Integration 261, App 877, Arch 45, Web 508) — re-derived by summing the table below; the toolchain-gated
-counts (TIA 5, TwinCAT 6, CODESYS 55) are from their last gate runs, not re-run for the count. **The Rendered view of an ST object reads like the IDE (2026-09-20):** no
+**Tests:** 4,521 across twelve projects (plus 216 vitest in `web/`), last counted 2026-10-29
+on `main` after the Portal-release choice (Core 2,111, Integration 261, App 877, Arch 45, Web 508, TIA pure 116) — re-derived by summing the table below; the toolchain-gated
+counts (TIA 13, of which 8 run on every machine since 2026-10-29; TwinCAT 6, CODESYS 55) are from their last gate runs, not re-run for the count. **The Rendered view of an ST object reads like the IDE (2026-09-20):** no
 `@@` line, one gutter, a Declaration / Implementation divider, and the implementation
 numbered from 1 so a compile error's line number can be found — FINDINGS 2026-09-20. **With TIA Portal open, a commit no longer records a stale mirror**: the
 commit is refused with what to close, a push no longer marks an unexported save as
@@ -79,8 +79,8 @@ marking, duplicate-param keys, and the detail-pane lookup. All of them are in
 | `Versio.Arch.Tests` | 45 | instant | nothing |
 | `Versio.Plc.Codesys.Pure.Tests` | 405 | under a second | nothing |
 | `Versio.Plc.Codesys.Parity.Tests` | 104 | ~15 s | `python` on PATH — skips cleanly without it, so check the count |
-| `Versio.Plc.TiaPortal.Pure.Tests` | 110 | instant | nothing |
-| `Versio.Plc.TiaPortal.Tests` | 5 | seconds when skipped; 3 m 1 s on 2026-10-25 when Portal is there but refuses the host (1 passed, 4 skipped, not an Openness member); minutes when Portal runs the import gate | **real TIA Portal** — skips without Openness membership or LFS content |
+| `Versio.Plc.TiaPortal.Pure.Tests` | 116 | instant | nothing |
+| `Versio.Plc.TiaPortal.Tests` | 13 | seconds when skipped; 3 m 1 s on 2026-10-25 when Portal is there but refuses the host (1 passed, 4 skipped, not an Openness member); minutes when Portal runs the import gate | **real TIA Portal** for 5 of them — skips without Openness membership or LFS content; the 8 release-choice tests use fake install trees and run everywhere (2026-10-29) |
 | `Versio.Plc.TwinCat.Pure.Tests` | 27 | instant | nothing — the host's text rules are compiled in as source |
 | `Versio.Plc.TwinCat.Tests` | 6 | seconds when skipped (4 s, 6 skipped, 2026-10-25); ~5 min when XAE runs the import gate | **real TwinCAT XAE** — skips without `TcXaeShell.DTE.17.0` or the fixture |
 | `Versio.Web.Tests` | 508 | ~38 s on 2026-10-27 (~25 s before the object-history tests) | nothing — GitHub is faked |

@@ -35,7 +35,7 @@ and technology objects are coverage skips.
 | Project | Role |
 |---|---|
 | `Versio.Plc.TiaPortal` | Pure. Format (`.ap17`–`.ap21`, `.alXX` as template), directory payload, occupancy, transients, import planner, SCL header, SimaticML scrubber, data-block member-table parser, `TiaPortalJob` / `TiaPortalProtocol` |
-| `Versio.Plc.TiaPortal.Infrastructure` | Driven. Locator, toolchain (refuses if several Portal versions are installed), `LocalTiaPortalRunner`, `TiaPortalPack.Register()` |
+| `Versio.Plc.TiaPortal.Infrastructure` | Driven. Locator (both Openness layouts, §2.1), toolchain (every installed release is usable; the project's extension picks one, §2.1b), `LocalTiaPortalRunner`, `TiaPortalPack.Register()` |
 | `Versio.Plc.TiaPortal.Host` | net48 x64 exe. Reflection / `dynamic` against Openness. `[STAThread]`. `OpennessLoader` installs `AssemblyResolve` **before** any Openness type is touched. Split: `HostApp` (session), `HostExport`, `HostImport`, `HostReflection` |
 
 `Versio.App` has a second `ProjectReference` and calls `TiaPortalPack.Register()` **after**
@@ -58,18 +58,55 @@ and the real-TIA tests, because a `ProjectReference` cannot carry a net48 output
 |---|---|
 | Portal | `C:\Program Files\Siemens\Automation\Portal V21` |
 | Openness API | `…\PublicAPI\V21\net48\` |
-| Shape | **Modular DLLs**, not the historical single `Siemens.Engineering.dll` |
-| Required | `Siemens.Engineering.Base.dll`, `Siemens.Engineering.Step7.dll` |
+| Shape | **Modular DLLs** from V21 on (`Siemens.Engineering.Base.dll`, `Siemens.Engineering.Step7.dll`, …); **one `Siemens.Engineering.dll`** directly under `PublicAPI\VNN\` for every release before — Portal V20 measured 2026-10-29 |
+| Required | `Siemens.Engineering.Base.dll`, `Siemens.Engineering.Step7.dll` (V21); `Siemens.Engineering.dll` (V20 and earlier) |
 | Host TFM | net48 x64 |
 
-`TiaPortalLocator` walks `Program Files\Siemens\Automation\Portal V*` and takes the `PublicAPI\<version>\net48` folder that contains `Siemens.Engineering.Base.dll`. Version is the folder name (`V21`), not a file version — guessing a newer PublicAPI is how `OpenWithUpgrade` happens by accident.
+`TiaPortalLocator` walks `Program Files\Siemens\Automation\Portal V*` and takes, for each
+install, the `PublicAPI\<version>\net48` folder that contains `Siemens.Engineering.Base.dll`
+or, failing that, the `PublicAPI\<version>` folder that contains `Siemens.Engineering.dll`.
+Version is the folder name (`V21`), not a file version — guessing a newer PublicAPI is how
+`OpenWithUpgrade` happens by accident. An install's `PublicAPI` also carries the API of the
+releases before it (Portal V20 ships `V17` through `V20`) for older clients; only the folder
+named after the install's own release is accepted. **Until 2026-10-29 the locator knew the
+modular layout only**, so Portal V20 beside V21 was skipped — at debug level — and the
+machine read as V21-only; see §2.1b and FINDINGS 2026-10-29. The host does not care which
+layout it gets: `OpennessLoader` loads every `Siemens.Engineering*.dll` in the folder and the
+types are found by name.
 
 **Do not call `OpenWithUpgrade`.** That silently upgrades a project, the same class of mistake
 `ProfileResolver` refuses when several CODESYS profiles exist. The host looks up
 `Projects.Open(FileInfo)` and refuses if that overload is missing.
 
-Several Portal versions on one machine make the toolchain **unavailable** until one is picked.
-A project opened against the wrong PublicAPI is an upgrade.
+### 2.1b Two releases on one machine (2026-10-29)
+
+~~Several Portal versions on one machine make the toolchain **unavailable** until one is
+picked.~~ Nothing ever offered the pick — `Candidates` reached Settings → System information
+and no dialog — and the refusal guarded the wrong place. The upgrade risk is in which Portal
+*opens a given project*, and the project file already says: `.ap20` opens in V20 and in
+nothing else without an upgrade. So:
+
+- the toolchain is **available** with every installed release, `Version` lists them
+  (`V21, V20`), `Candidates` carries the list as information, `Profile` is the newest;
+- `LocalTiaPortalRunner.ChooseInstall` picks the install whose version equals
+  `TiaPortalProjectFormat.ReleaseOf(projectPath)`; the pinned profile is consulted only for
+  a path with no number in its extension, which this format does not claim;
+- a release that is **not installed is a refusal**, in a sentence that names the project's
+  release, the installed ones, and that upgrading is the user's act in Portal. It never
+  falls to the newest install — which is what the runner did until 2026-10-29, and which is
+  the accidental-upgrade path by another name: on the owner's machine a V20 project went to
+  V21 and Portal answered *"Project … with version 'V20' can only be opened with a software
+  product of the same version. The current product version is 'V21'."*
+
+A project opened against the wrong PublicAPI is an upgrade. `PortalReleaseChoiceTests` holds
+both layouts and the choice against fake install trees and runs on every machine; the
+env-gated Probe in `TiaPortalGateTests` (`VERSIO_TIA_PROBE_PROJECT`) is how the V20 path was
+measured against a real project the repository does not carry: **2 m 14 s, passed**, on
+2026-10-29, Portal V20's single `Siemens.Engineering.dll` driven by the unchanged host. Drive
+it with `VERSIO_TIA_PROBE_HOST` set to the installed Versio's host — the Openness access list
+(§2.3) is keyed by path and hash, the host this test project builds beside itself is a
+stranger to it, and the first attempt without the override sat behind the access dialog
+until the twenty-minute timeout.
 
 ### 2.2 Windows group `Siemens TIA Openness`
 
@@ -644,6 +681,7 @@ instance DBs.
 ### Friction that remains after the loop works
 
 AllowList after every host rebuild (path + hash). Ten tree backups × ~500 MB.
-Several Portal versions on one machine refuse rather than pick one (same reason as
-`OpenWithUpgrade`: a silent upgrade). Identity is name+number until a GUID-shaped
+~~Several Portal versions on one machine refuse rather than pick one (same reason as
+`OpenWithUpgrade`: a silent upgrade).~~ Since 2026-10-29 the project's extension picks
+the release and a missing release is refused (§2.1b). Identity is name+number until a GUID-shaped
 SimaticML value appears; folders are not recorded objects.
