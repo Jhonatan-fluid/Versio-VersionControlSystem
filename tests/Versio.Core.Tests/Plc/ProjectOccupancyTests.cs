@@ -62,6 +62,28 @@ public sealed class ProjectOccupancyTests
     }
 
     [Fact]
+    public async Task The_probe_names_the_file_it_read_so_a_refusal_can_say_what_to_delete()
+    {
+        // The parser sees contents alone; only the probe knows the path. A vendor whose
+        // marker carries no pid (TIA Portal, 2026-10-28) leaves the person to delete the
+        // leftover by hand, which they can only do if the sentence names it.
+        var fs = new Fakes.FakeFileSystem();
+        fs.Write(@"C:\work\plc\Machine.~u", RealMarker);
+        var probe = new ProjectOccupancyProbe(
+            fs, new Machine("ROG-JVM"), new Processes(alive: true), _ => Codesys);
+
+        var occupancy = await probe.CheckAsync(
+            new Versio.Core.Bindings.ProjectBinding
+            {
+                Id = "b", ProjectPath = "plc/Machine.project", ExportPath = "plc/Machine",
+            },
+            @"C:\work\plc\Machine.project", CancellationToken.None);
+
+        Assert.True(occupancy.IsHeld);
+        Assert.Equal(@"C:\work\plc\Machine.~u", occupancy.Marker);
+    }
+
+    [Fact]
     public void A_marker_naming_a_dead_process_on_this_machine_is_stale()
     {
         // A crashed IDE must not block sync forever. This is the same reasoning

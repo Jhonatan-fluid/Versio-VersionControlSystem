@@ -42,6 +42,28 @@ public sealed record ProjectOccupancy
     /// <summary>Process holding it, when the marker records one.</summary>
     public int? ProcessId { get; init; }
 
+    /// <summary>When the marker was written, when the vendor records that.</summary>
+    /// <remarks>
+    /// The one fact that lets a person tell a live hold from a leftover. On 2026-10-28 a
+    /// TIA Portal marker two days old blocked every export of a project the engineer had
+    /// just closed, and the sentence said only "another session" — nothing in it hinted
+    /// that the session in question had ended on the 26th.
+    /// </remarks>
+    public DateTimeOffset? Since { get; init; }
+
+    /// <summary>
+    /// Absolute path of the marker that said Held, when a file did. Set by the probe, which
+    /// is the only party that knows where it read; the vendor's parser sees contents alone.
+    /// </summary>
+    /// <remarks>
+    /// Named so the refusal can say which file to delete. The stale policy below only
+    /// rescues a marker that carries a pid; a vendor whose marker carries none leaves the
+    /// person to clear it by hand, and "close it and the export will run" is then advice
+    /// that cannot be followed — the project is already closed. The least the sentence can
+    /// do is name the file.
+    /// </remarks>
+    public string? Marker { get; init; }
+
     /// <summary>True when neither direction can run right now.</summary>
     public bool IsHeld => Verdict == OccupancyVerdict.Held;
 
@@ -54,6 +76,12 @@ public sealed record ProjectOccupancy
             ("", var m) => m,
             var (u, m) => $"{u} on {m}",
         };
+
+    /// <summary><see cref="Owner"/>, and since when where the marker says.</summary>
+    public string Holder =>
+        Since is { } since
+            ? $"{Owner}, since {since.ToUniversalTime():u}"
+            : Owner;
 }
 
 /// <summary>Asks whether a project is open in its vendor's IDE.</summary>
@@ -121,10 +149,12 @@ public sealed class ProjectOccupancyProbe(
         {
             // Being written or deleted as we read it — which means an IDE is doing something
             // with this project right now. Held is the safe reading.
-            return new ProjectOccupancy { Verdict = OccupancyVerdict.Held };
+            return new ProjectOccupancy { Verdict = OccupancyVerdict.Held, Marker = marker };
         }
 
-        var parsed = format.ParseOccupancy(contents);
+        // The file is named on the way out, whatever the vendor made of its contents: the
+        // parser does not know where it read from, and the refusal downstream needs to.
+        var parsed = format.ParseOccupancy(contents) with { Marker = marker };
         return Resolve(parsed, machine, processes);
     }
 

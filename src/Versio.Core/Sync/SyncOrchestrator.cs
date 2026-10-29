@@ -1616,8 +1616,8 @@ public sealed class SyncOrchestrator
         {
             return (Refuse(LogLevel.Information, SyncVerdict.BlockedByOpenProject,
                 attempt.Job.BindingId,
-                $"{ProjectName(binding)} is open in the IDE ({occupancy.Owner}), so the " +
-                "edited text cannot be imported yet. Close it and the import will run.",
+                HeldSentence(binding, occupancy,
+                    "the edited text cannot be imported yet", "the import will run"),
                 attempt.State), null);
         }
 
@@ -1629,8 +1629,8 @@ public sealed class SyncOrchestrator
         {
             return (Refuse(LogLevel.Information, SyncVerdict.BlockedByOpenProject,
                 attempt.Job.BindingId,
-                $"{ProjectName(binding)} is open in the IDE ({occupancy.Owner}), so it " +
-                "cannot be exported until it is closed. Close it and the export will run.",
+                HeldSentence(binding, occupancy,
+                    "it cannot be exported until it is closed", "the export will run"),
                 attempt.State), null);
         }
 
@@ -1640,12 +1640,47 @@ public sealed class SyncOrchestrator
         {
             return (Refuse(LogLevel.Warning, SyncVerdict.BlockedByOpenProject,
                 attempt.Job.BindingId,
-                $"{ProjectName(binding)} is open in the IDE ({occupancy.Owner}) and could " +
+                $"{ProjectName(binding)} is open in the IDE ({occupancy.Holder}) and could " +
                 "not be copied aside, so the export was not attempted.",
                 attempt.State), null);
         }
 
         return (null, scratchProject);
+    }
+
+    /// <summary>
+    /// The refusal for a project the IDE holds, carrying everything a person needs to act on it.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Names the vendor, who holds it and since when, and — when the probe read a file —
+    /// the file itself. On 2026-10-28 the sentence was "open in the IDE (another session)
+    /// … close it and the export will run", shown for a project the engineer had just
+    /// closed: TIA Portal had left a two-day-old marker behind, nothing in the sentence
+    /// said so, and the only cure was deleting a file the sentence did not name. The stale
+    /// policy in <see cref="ProjectOccupancyProbe.Resolve"/> cannot rescue a marker with
+    /// no pid, so the sentence has to carry the alternative.
+    /// </para>
+    /// <para>
+    /// "Open in the IDE" stays in the wording: three tests and the clipboard text of the
+    /// commit refusal look for it, and it is still true as far as Versio can tell. The
+    /// vendor's name goes in the parenthetical rather than replacing it.
+    /// </para>
+    /// </remarks>
+    /// <param name="consequence">What cannot happen, as a clause: "it cannot be exported until it is closed".</param>
+    /// <param name="onRelease">What happens once it can: "the export will run".</param>
+    private string HeldSentence(
+        ProjectBinding binding, ProjectOccupancy occupancy, string consequence, string onRelease)
+    {
+        var ide = _formats(binding.ProjectPath)?.DisplayName;
+        var holder = ide is null ? occupancy.Holder : $"{ide}: {occupancy.Holder}";
+        var leftover = occupancy.Marker is null
+            ? string.Empty
+            : $" If nobody has it open, {ide ?? "the IDE"} left its marker behind: " +
+              $"delete {Relative(occupancy.Marker)} and {onRelease}.";
+
+        return $"{ProjectName(binding)} is open in the IDE ({holder}), so {consequence}. " +
+               $"Close it and {onRelease}.{leftover}";
     }
 
     /// <summary>
@@ -2578,8 +2613,7 @@ public sealed class SyncOrchestrator
             // The same reasoning as an import: the IDE holds its own copy in memory and the
             // next save would silently revert whatever was written underneath it.
             return Refuse(LogLevel.Information, SyncVerdict.BlockedByOpenProject, bindingId,
-                $"{ProjectName(binding)} is open in the IDE ({occupancy.Owner}), so it cannot " +
-                "be replaced. Close it and try again.");
+                HeldSentence(binding, occupancy, "it cannot be replaced", "try again"));
         }
 
         // The state being left, kept before it is overwritten. This is what makes a restore

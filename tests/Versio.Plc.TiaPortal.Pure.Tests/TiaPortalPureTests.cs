@@ -62,6 +62,42 @@ public sealed class TiaPortalFormatTests
     }
 
     [Fact]
+    public void The_info_marker_yields_who_holds_the_project_and_since_when()
+    {
+        // The shape of a real one, read 2026-10-28 (FINDINGS, same date): the file TIA
+        // Portal left beside ProjectInitial.ap20, two days after the session that wrote it.
+        // User and machine changed; everything else is as Portal writes it, CRLF included.
+        const string real =
+            "<?xml version=\"1.0\"?>\r\n" +
+            "<InfoFile xmlns:xsd=\"http://www.w3.org/2001/XMLSchema\" " +
+            "xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\">\r\n" +
+            "  <User>engineer</User>\r\n" +
+            "  <Computer>FS-WORKSTATION</Computer>\r\n" +
+            "  <Time>2026-10-26T16:21:45.6226894Z</Time>\r\n" +
+            "</InfoFile>";
+
+        var parsed = TiaPortalProjectFormat.Instance.ParseOccupancy(real);
+
+        Assert.Equal(OccupancyVerdict.Held, parsed.Verdict);
+        Assert.Equal("engineer", parsed.User);
+        Assert.Equal("FS-WORKSTATION", parsed.Machine);
+        // No pid: the stale policy has nothing to probe, which is exactly why the time has
+        // to reach the sentence — it is the only clue that the session is over.
+        Assert.Null(parsed.ProcessId);
+        Assert.Equal("engineer on FS-WORKSTATION, since 2026-10-26 16:21:45Z", parsed.Holder);
+    }
+
+    [Fact]
+    public void A_marker_that_is_not_xml_is_still_held_never_free()
+    {
+        // An unreadable marker is still a marker. Guessing free is how two writers meet.
+        var parsed = TiaPortalProjectFormat.Instance.ParseOccupancy("not xml at all");
+
+        Assert.Equal(OccupancyVerdict.Held, parsed.Verdict);
+        Assert.Equal("another session", parsed.Holder);
+    }
+
+    [Fact]
     public void Conventional_export_is_the_pointer_stem_not_a_hardcoded_project_suffix()
     {
         Assert.Equal("plc/Station",

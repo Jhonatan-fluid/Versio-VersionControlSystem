@@ -143,6 +143,15 @@ public sealed class TiaPortalProjectFormat : IPlcProjectFormat
     /// when the host exited. <c>System/~PEData.1</c> appears too; that is a transient
     /// inside the program folder, not the marker the occupancy probe watches.
     /// </summary>
+    /// <remarks>
+    /// <b>It is not always removed.</b> Seen 2026-10-28 on a V20 project in the Portal
+    /// window (FINDINGS, same date): a <c>.info</c> written two days earlier was neither
+    /// rewritten when the project was opened again nor deleted when it was closed, while
+    /// <c>System/~PEData.3</c> did go on close. So a leftover reads Held for as long as it
+    /// sits there, with no pid for the stale policy to probe. That is why the body is parsed
+    /// (<see cref="ParseOccupancy"/>) and why the refusal names the file: a person has to
+    /// delete it, and they can only do that if they are told which one.
+    /// </remarks>
     public string? OccupancyMarkerFor(string projectPath) =>
         string.IsNullOrEmpty(projectPath)
             ? null
@@ -221,10 +230,61 @@ public sealed class TiaPortalProjectFormat : IPlcProjectFormat
     /// format is how two writers would share a project. Stale recovery needs a pid,
     /// which this marker has not been shown to carry.
     /// </remarks>
+    /// <inheritdoc />
+    /// <remarks>
+    /// <para>
+    /// The marker is a small XML document: <c>&lt;InfoFile&gt;</c> holding <c>User</c>,
+    /// <c>Computer</c> and <c>Time</c> (ISO 8601, UTC), and no pid. Read from a real one on
+    /// 2026-10-28. Until then the body was not parsed, on the reasoning that stale recovery
+    /// needs a pid and this file carries none. True, and beside the point: the user, the
+    /// machine and above all the time are what let a person tell a live hold from a
+    /// leftover — and a leftover is what this vendor produced that day (see
+    /// <see cref="OccupancyMarkerFor"/>). A refusal that says "another session" when the
+    /// marker says "you, two days ago" is withholding the one fact that would resolve it.
+    /// </para>
+    /// <para>
+    /// Anything that does not parse is Held with no fields, never Free: an unreadable
+    /// marker is still a marker, and guessing free is how two writers meet on one project.
+    /// </para>
+    /// </remarks>
     public ProjectOccupancy ParseOccupancy(string markerContents)
     {
-        _ = markerContents;
-        return new() { Verdict = OccupancyVerdict.Held };
+        System.Xml.Linq.XElement? root;
+        try
+        {
+            // Through SafeXml like every other document this vendor reads: no DTD, capped
+            // size and depth. A marker is a file the IDE writes, not one Versio trusts.
+            root = Versio.Core.Text.SafeXml.Parse((markerContents ?? string.Empty).TrimStart('\uFEFF')).Root;
+        }
+        catch (System.Xml.XmlException)
+        {
+            return new() { Verdict = OccupancyVerdict.Held };
+        }
+
+        if (root is null)
+        {
+            return new() { Verdict = OccupancyVerdict.Held };
+        }
+
+        var since = DateTimeOffset.TryParse(
+            Field(root, "Time"),
+            System.Globalization.CultureInfo.InvariantCulture,
+            System.Globalization.DateTimeStyles.AssumeUniversal
+                | System.Globalization.DateTimeStyles.AdjustToUniversal,
+            out var time)
+            ? time
+            : (DateTimeOffset?)null;
+
+        return new ProjectOccupancy
+        {
+            Verdict = OccupancyVerdict.Held,
+            User = Field(root, "User"),
+            Machine = Field(root, "Computer"),
+            Since = since,
+        };
+
+        static string Field(System.Xml.Linq.XElement root, string name) =>
+            root.Element(name)?.Value.Trim() ?? string.Empty;
     }
 
     public bool NeedsTextToPlan(string relativePath) =>

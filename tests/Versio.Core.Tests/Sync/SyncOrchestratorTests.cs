@@ -1576,6 +1576,39 @@ public class SyncOrchestratorTests
     }
 
     [Fact]
+    public async Task A_held_refusal_names_the_vendor_the_time_and_the_marker_to_delete()
+    {
+        // 2026-10-28: "open in the IDE (another session) … close it and the export will
+        // run", shown for a project the engineer had just closed. TIA Portal had left a
+        // two-day-old marker behind; the sentence named neither its age nor the file, and
+        // the stale policy cannot rescue a marker with no pid. So the sentence carries the
+        // alternative: who, since when, and which file to delete if nobody has it.
+        var h = new Harness();
+        h.Occupancy.Answer = new ProjectOccupancy
+        {
+            Verdict = OccupancyVerdict.Held,
+            User = "engineer",
+            Machine = "FS-WORKSTATION",
+            Since = new DateTimeOffset(2026, 10, 26, 16, 21, 45, TimeSpan.Zero),
+            Marker = @"C:\repo\plc\A.info",
+        };
+        h.SetExportedText("edited by hand");
+
+        var outcome = await h.Orchestrator.HandleChangeAsync(
+            new SyncJob { BindingId = BindingId, Source = ChangeSource.ExportedText,
+                          Confirmed = true, Synchronous = true },
+            CancellationToken.None);
+
+        Assert.Equal(SyncVerdict.BlockedByOpenProject, outcome.Verdict);
+        var sentence = SyncNarrative.Describe(outcome);
+        Assert.Contains("open in the IDE", sentence, StringComparison.Ordinal);
+        Assert.Contains("engineer on FS-WORKSTATION, since 2026-10-26 16:21:45Z", sentence,
+            StringComparison.Ordinal);
+        Assert.Contains("delete plc/A.info and the import will run", sentence,
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task A_save_during_a_copy_export_is_not_recorded_as_exported()
     {
         // The IDE holds the project, so the export reads a copy. The hash recorded as
