@@ -122,6 +122,23 @@ public sealed class ToolchainRemedyFlowTests
     }
 
     [Fact]
+    public async Task Settings_fix_acts_on_the_status_it_was_handed_even_with_no_repository_open()
+    {
+        // Settings probes afresh when it opens, repository or not. Its button acted on the
+        // repository's cached probe until review on 2026-10-29 — absent before a repository is
+        // opened — and answered "offers no fix right now" to a row that plainly offered one.
+        var toolchain = new RemedyToolchain();
+        using var shell = TestShell.Build(out _, toolchain: toolchain);
+        var status = await toolchain.ProbeAsync(CancellationToken.None);
+
+        var message = await shell.FixToolchainAsync(toolchain, status, CancellationToken.None);
+
+        Assert.Equal(1, toolchain.Applied);
+        Assert.StartsWith("added the account to 'Fake'", message);
+        Assert.Contains(shell.Notifications.Visible, n => n.Headline == "Done.");
+    }
+
+    [Fact]
     public async Task A_vendor_with_nothing_to_offer_is_refused_without_a_notification_of_success()
     {
         using var repo = RepositoryWithOneProject();

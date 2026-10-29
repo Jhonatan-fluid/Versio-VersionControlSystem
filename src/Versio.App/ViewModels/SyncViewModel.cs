@@ -654,10 +654,10 @@ public sealed class SyncViewModel : ObservableObject
     /// the repository opened would be answering the wrong question.
     /// </para>
     /// </remarks>
-    /// <param name="fix">Runs a vendor's offered fix and returns the sentence to show; null
-    /// for a caller that only reads.</param>
+    /// <param name="fix">Runs a vendor's offered fix on the toolchain and status this probe
+    /// produced, and returns the sentence to show; null for a caller that only reads.</param>
     public async Task<IReadOnlyList<Views.SystemInfoRow>> DescribeToolchainsAsync(
-        CancellationToken ct, Func<PlcVendor, Task<string>>? fix = null)
+        CancellationToken ct, Func<IPlcToolchain, PlcToolchainStatus, Task<string>>? fix = null)
     {
         var rows = new List<Views.SystemInfoRow>();
 
@@ -689,9 +689,12 @@ public sealed class SyncViewModel : ObservableObject
                 continue;
             }
 
-            var vendor = format.Vendor;
+            // The row's button acts on THIS probe's toolchain and status, which is what the
+            // window shows; the repository's cached probe may be older or absent.
+            var probedToolchain = toolchain;
+            var probedStatus = status;
             rows.AddRange(DescribeToolchain(format, status,
-                fix is null ? null : () => fix(vendor)));
+                fix is null ? null : () => fix(probedToolchain, probedStatus)));
         }
 
         return rows;
@@ -3900,13 +3903,35 @@ public sealed class SyncViewModel : ObservableObject
     /// that. The shell turns the outcome into a notification; this knows nothing of them.
     /// </para>
     /// </remarks>
-    public async Task<PlcRemedyOutcome> ApplyToolchainRemedyAsync(PlcVendor vendor, CancellationToken ct)
+    public Task<PlcRemedyOutcome> ApplyToolchainRemedyAsync(PlcVendor vendor, CancellationToken ct)
     {
         if (!_probed.TryGetValue(vendor, out var probed)
             || probed.Toolchain is not { } toolchain
-            || probed.Status is not { Remedy: { } remedy } status)
+            || probed.Status is not { Remedy: not null } status)
         {
-            return PlcRemedyOutcome.Refused($"{vendor} offers no fix right now.");
+            return Task.FromResult(PlcRemedyOutcome.Refused($"{vendor} offers no fix right now."));
+        }
+
+        return ApplyToolchainRemedyAsync(toolchain, status, ct);
+    }
+
+    /// <summary>
+    /// Perform the fix on the status that offered it — the one the caller is looking at.
+    /// </summary>
+    /// <remarks>
+    /// Settings → System information probes afresh when it opens, with or without a
+    /// repository; its Fix row must act on that probe, not on the repository's cached one,
+    /// which may be older, or absent before a repository is opened, and then answered "offers
+    /// no fix right now" to a button that plainly offered one (found in review, 2026-10-29).
+    /// Afterwards the repository's probe is refreshed when there is one, so the card and the
+    /// failure pane follow.
+    /// </remarks>
+    public async Task<PlcRemedyOutcome> ApplyToolchainRemedyAsync(
+        IPlcToolchain toolchain, PlcToolchainStatus status, CancellationToken ct)
+    {
+        if (status.Remedy is not { } remedy)
+        {
+            return PlcRemedyOutcome.Refused($"{toolchain.Format.DisplayName} offers no fix right now.");
         }
 
         using var scope = _logger.BeginOperation(out _);
@@ -3932,8 +3957,12 @@ public sealed class SyncViewModel : ObservableObject
             _logger.Warn(LogCategory.Plc, $"{toolchain.Format.DisplayName}: the fix did not apply — {outcome.Message}");
         }
 
-        await ProbeToolchainAsync(ct).ConfigureAwait(true);
-        RefreshFailure(_failureQuery);
+        if (HasRepository)
+        {
+            await ProbeToolchainAsync(ct).ConfigureAwait(true);
+            RefreshFailure(_failureQuery);
+        }
+
         return outcome;
     }
 

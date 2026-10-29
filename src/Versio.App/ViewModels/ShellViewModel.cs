@@ -1624,9 +1624,15 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
     /// After it, the selected node is drawn again so a card that offered the button shows
     /// the new state instead of the old offer.
     /// </remarks>
-    internal async Task<string> FixToolchainAsync(PlcVendor vendor, CancellationToken ct)
+    internal async Task<string> FixToolchainAsync(PlcVendor vendor, CancellationToken ct) =>
+        Announce(await Sync.ApplyToolchainRemedyAsync(vendor, ct).ConfigureAwait(true));
+
+    /// <summary>Settings' Fix row: the fix on the toolchain and status that window probed.</summary>
+    internal async Task<string> FixToolchainAsync(IPlcToolchain toolchain, PlcToolchainStatus status, CancellationToken ct) =>
+        Announce(await Sync.ApplyToolchainRemedyAsync(toolchain, status, ct).ConfigureAwait(true));
+
+    private string Announce(PlcRemedyOutcome outcome)
     {
-        var outcome = await Sync.ApplyToolchainRemedyAsync(vendor, ct).ConfigureAwait(true);
         if (outcome.Succeeded)
         {
             Notifications.Success("Done.", outcome.Message);
@@ -2093,7 +2099,7 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
 
         // The Fix rows run the vendor's remedy through the same path as the main window's
         // buttons, so the notification and the log read the same whichever one was pressed.
-        rows.AddRange(await Sync.DescribeToolchainsAsync(ct, vendor => FixToolchainAsync(vendor, ct))
+        rows.AddRange(await Sync.DescribeToolchainsAsync(ct, (toolchain, status) => FixToolchainAsync(toolchain, status, ct))
             .ConfigureAwait(true));
 
         rows.Add(Views.SystemInfoRow.Section("GIT"));
