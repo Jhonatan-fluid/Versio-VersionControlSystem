@@ -49,6 +49,7 @@ public sealed class TiaPortalGateTests(ITestOutputHelper output)
 
         var fixture = TestPaths.TiaPortalProject();
         Skip.If(fixture is null, "committed TIA fixture is missing or is an LFS pointer — git lfs pull");
+        SkipUnlessFixtureReleaseInstalled(fixture!);
 
         var host = LocalTiaPortalRunner.FindHost();
         Skip.If(host is null, "TIA Portal host was not copied to the output directory");
@@ -195,6 +196,7 @@ public sealed class TiaPortalGateTests(ITestOutputHelper output)
 
         var fixture = TestPaths.TiaPortalProject();
         Skip.If(fixture is null, "committed TIA fixture is missing or is an LFS pointer — git lfs pull");
+        SkipUnlessFixtureReleaseInstalled(fixture!);
 
         var toolchain = new TiaPortalToolchain(NullLogger.Instance);
         var status = await toolchain.ProbeAsync(CancellationToken.None);
@@ -266,6 +268,7 @@ public sealed class TiaPortalGateTests(ITestOutputHelper output)
 
         var fixture = TestPaths.TiaPortalProject();
         Skip.If(fixture is null, "committed TIA fixture is missing or is an LFS pointer — git lfs pull");
+        SkipUnlessFixtureReleaseInstalled(fixture!);
 
         var toolchain = new TiaPortalToolchain(NullLogger.Instance);
         var status = await toolchain.ProbeAsync(CancellationToken.None);
@@ -336,6 +339,7 @@ public sealed class TiaPortalGateTests(ITestOutputHelper output)
 
         var fixture = TestPaths.TiaPortalProject();
         Skip.If(fixture is null, "committed TIA fixture is missing or is an LFS pointer — git lfs pull");
+        SkipUnlessFixtureReleaseInstalled(fixture!);
 
         var toolchain = new TiaPortalToolchain(NullLogger.Instance);
         var status = await toolchain.ProbeAsync(CancellationToken.None);
@@ -521,6 +525,21 @@ public sealed class TiaPortalGateTests(ITestOutputHelper output)
     /// "Security error. The operation has timed out." names neither Access nor
     /// Openness — the first probe of this machine went red until that phrase was added.
     /// </summary>
+    /// <summary>
+    /// The committed fixture is a V21 project and opens in V21 alone; on a machine with Portal
+    /// V20 only — supported since 2026-10-29 — the runner refuses it rather than upgrading,
+    /// which is correct and would read here as four red tests. Skip with the reason instead,
+    /// the same prerequisite the environment-driven Probe applies.
+    /// </summary>
+    private static void SkipUnlessFixtureReleaseInstalled(string fixture)
+    {
+        var release = TiaPortalProjectFormat.ReleaseOf(fixture);
+        var installs = new TiaPortalLocator().FindInstalls();
+        Skip.If(
+            release is not null && installs.All(i => !string.Equals(i.Version, release, StringComparison.OrdinalIgnoreCase)),
+            $"{Path.GetFileName(fixture)} needs Portal {release}; installed: {string.Join(", ", installs.Select(i => i.Version))}");
+    }
+
     private static void SkipIfMeasuredBlocker(PlcResult result)
     {
         if (result.Succeeded)
