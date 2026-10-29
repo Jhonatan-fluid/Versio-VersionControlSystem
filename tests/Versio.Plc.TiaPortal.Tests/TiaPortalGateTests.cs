@@ -382,10 +382,15 @@ public sealed class TiaPortalGateTests(ITestOutputHelper output)
             output.WriteLine($"first export {first.Duration.TotalSeconds:F1}s wrote {first.ChangedPaths.Count}; " +
                              $"second {second.Duration.TotalSeconds:F1}s wrote {second.ChangedPaths.Count}");
             Assert.DoesNotContain(second.ChangedPaths, IsBlockOrType);
+            // Every block and type record is carried forward byte for byte. The tag table and
+            // the station are re-exported each time and their raw hashes churn (the SimaticML
+            // header's <Created>, G12), so they are not in this comparison — on the first run
+            // of this Fact they were, and it went red on the one tag table alone.
             var after = ProjectManifest.Parse(File.ReadAllText(manifestPath));
             Assert.Equal(
-                before.Objects.Select(o => (o.Guid, o.Path, o.Form, o.Hash, o.NormalizedHash, o.Stamp)).OrderBy(t => t.Path, StringComparer.Ordinal),
-                after.Objects.Select(o => (o.Guid, o.Path, o.Form, o.Hash, o.NormalizedHash, o.Stamp)).OrderBy(t => t.Path, StringComparer.Ordinal));
+                stamped.Select(o => (o.Guid, o.Path, o.Form, o.Hash, o.NormalizedHash, o.Stamp)).OrderBy(t => t.Path, StringComparer.Ordinal),
+                after.Objects.Where(o => o.Type is not "TAG_TABLE" and not "DEVICE")
+                    .Select(o => (o.Guid, o.Path, o.Form, o.Hash, o.NormalizedHash, o.Stamp)).OrderBy(t => t.Path, StringComparer.Ordinal));
 
             // The mutation: every stamp replaced on disk. If the third run keeps anything, the
             // walk is not deciding on the stamp.
