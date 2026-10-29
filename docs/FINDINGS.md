@@ -104,6 +104,34 @@ the UAC path on a machine where the account is not in the group** — this machi
 since the morning. The next machine that is not is the measurement; the log will show
 *asking Windows for approval to add …* and the helper's one line.
 
+**Review, the same day.** The owner had the fourteen commits reviewed by three agents of
+another tool and brought back six items; all six held:
+
+- **The elevated helper launched a bare `powershell.exe`** (P1). Windows looks in the
+  application and current directories before `PATH`, so a planted executable could have run
+  as administrator the moment the user approved the fix. The helper names
+  `%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe` by absolute path now.
+- **Settings' Fix button acted on the repository's cached probe**, not the probe the window
+  had just made — absent before a repository is opened, older after a change — and answered
+  "offers no fix right now" to a row that plainly offered one. The row's action carries that
+  probe's toolchain and status to `ApplyToolchainRemedyAsync(toolchain, status)`; the
+  repository's probe is refreshed afterwards when there is one.
+- **The helper's timeout killed.** `ChildProcess.WaitForExitOrKillAsync` tries to kill on
+  timeout and then waits without one; an unelevated parent cannot kill an elevated child, so
+  a hung helper would have thrown and then hung the fix. A plain timed wait now, and the
+  helper is left to finish on its own.
+- **The four fixture gate tests accepted any Portal**, and the fixture is V21: a V20-only
+  machine — supported since the morning — would have read four red. They skip with the
+  reason, the same prerequisite as the environment-driven Probe.
+- **The group tests named `Users`, `Guests` and `Administrators` in English.** They resolve
+  the local names from the well-known SIDs now, so a German *Benutzer* is the same group.
+- **"Already a member" was read from the cmdlet's English error text.** The helper reads the
+  group itself, before and after the add, with the same `NetLocalGroupGetMembers` the probe
+  uses; the cmdlet's words are only ever shown, never interpreted. A test that would have
+  proven the pre-check against `Users` was written and then removed: an interactive account
+  is in `Users` through a nested group, not directly, so the helper would not have found it
+  listed and would have attempted a real add from a test.
+
 **Also seen on the way.** The failure pane is reachable only after an export has been
 attempted, and an unavailable toolchain is not asked to export on open — so on a fresh machine
 the card and Settings are where the button is first seen, and the pane only once a commit or a

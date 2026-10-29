@@ -153,8 +153,10 @@ toolchain's refusal, and Settings → System information as a *Fix* row. Pressin
 `IPlcToolchain.ApplyRemedyAsync`, which re-checks (a member by now is told so and no helper
 starts), then `LocalGroups.JoinElevatedAsync` re-launches `Versio.exe --join-local-group
 <group> <SID> <result file>` with the `runas` verb: Windows shows the UAC prompt, the helper
-runs `Add-LocalGroupMember -Group … -Member <SID>` and writes one line, the parent reads it
-and logs it. The SID, never the name, because the elevated process may be a different account
+runs `Add-LocalGroupMember -Group … -Member <SID>` (Windows PowerShell by its absolute path
+under System32 — an elevated process must not search for its tools) and writes one line, the
+parent reads it and logs it. "Already a member" is read from the group, before and after the
+add, never from the cmdlet's error text. The SID, never the name, because the elevated process may be a different account
 (a standard user typing an administrator's credentials). A declined prompt (`ERROR_CANCELLED`)
 is a refusal in those words. Nothing is ever applied without the press: not at install (the
 installer is per-user and has no rights), not at launch, not on a retry. After a success the
