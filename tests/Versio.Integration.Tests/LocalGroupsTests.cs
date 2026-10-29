@@ -1,4 +1,5 @@
 using System.Runtime.Versioning;
+using System.Security.Principal;
 using Versio.Infrastructure.Platform;
 using Xunit;
 
@@ -8,19 +9,34 @@ namespace Versio.Integration.Tests;
 /// The real Windows group reader, against groups every Windows machine has.
 /// </summary>
 /// <remarks>
+/// <para>
 /// The join itself is not driven here: it needs a UAC prompt and would change the machine.
 /// What can be proven without either is the reading — the token, the missing group, and the
 /// helper's refusal of a malformed command line — which is what the TIA probe decides on.
+/// </para>
+/// <para>
+/// The built-in groups are named by their well-known SIDs, not as "Users" and "Guests": a
+/// German Windows calls them <i>Benutzer</i> and <i>Gäste</i>, and a renamed group is still
+/// the same SID (review, 2026-10-29).
+/// </para>
 /// </remarks>
 [SupportedOSPlatform("windows")]
 public sealed class LocalGroupsTests
 {
+    /// <summary>The local name of a built-in group, from its SID: <c>BUILTIN\Users</c> → <c>Users</c>.</summary>
+    private static string LocalName(WellKnownSidType group)
+    {
+        var account = (NTAccount)new SecurityIdentifier(group, null).Translate(typeof(NTAccount));
+        return account.Value[(account.Value.IndexOf('\\') + 1)..];
+    }
+
     [SkippableFact]
     public void Every_interactive_account_has_Users_in_its_token()
     {
         Skip.IfNot(OperatingSystem.IsWindows(), "Windows local groups");
+        var users = LocalName(WellKnownSidType.BuiltinUsersSid);
 
-        var check = new LocalGroups().Check("Users");
+        var check = new LocalGroups().Check(users);
 
         Assert.Equal(LocalGroupStanding.InToken, check.Standing);
         Assert.False(string.IsNullOrEmpty(check.Account));
@@ -46,11 +62,12 @@ public sealed class LocalGroupsTests
         // The standing the TIA probe offers its button for, read from a real group with
         // real members (or none): the member list came back and the account is not on it.
         Skip.IfNot(OperatingSystem.IsWindows(), "Windows local groups");
+        var guests = LocalName(WellKnownSidType.BuiltinGuestsSid);
 
-        var check = new LocalGroups().Check("Guests");
+        var check = new LocalGroups().Check(guests);
 
         Assert.Equal(LocalGroupStanding.NotMember, check.Standing);
-        Assert.Contains("is not a member of 'Guests'", check.Detail);
+        Assert.Contains($"is not a member of '{guests}'", check.Detail);
     }
 
     [SkippableFact]
@@ -64,7 +81,7 @@ public sealed class LocalGroupsTests
         // where the token already answers, and that is InToken.
         Skip.IfNot(OperatingSystem.IsWindows(), "Windows local groups");
 
-        var check = new LocalGroups().Check("Administrators");
+        var check = new LocalGroups().Check(LocalName(WellKnownSidType.BuiltinAdministratorsSid));
 
         Assert.True(
             check.Standing is LocalGroupStanding.MemberNotInToken
@@ -78,6 +95,7 @@ public sealed class LocalGroupsTests
     public void The_elevated_helper_refuses_a_malformed_command_line_and_an_unshaped_SID()
     {
         Skip.IfNot(OperatingSystem.IsWindows(), "Windows local groups");
+        var users = LocalName(WellKnownSidType.BuiltinUsersSid);
 
         Assert.Equal(2, LocalGroups.RunJoin([]));
         Assert.Equal(2, LocalGroups.RunJoin(["--something-else", "g", "sid", "file"]));
@@ -88,9 +106,9 @@ public sealed class LocalGroupsTests
         var result = Path.Combine(Path.GetTempPath(), $"versio-join-test-{Guid.NewGuid():N}.txt");
         try
         {
-            Assert.Equal(2, LocalGroups.RunJoin([LocalGroups.JoinArgument, "Users", "'; Remove-Item x; '", result]));
+            Assert.Equal(2, LocalGroups.RunJoin([LocalGroups.JoinArgument, users, "'; Remove-Item x; '", result]));
             Assert.Contains("is not a SID", File.ReadAllText(result));
-            Assert.Equal(2, LocalGroups.RunJoin([LocalGroups.JoinArgument, "Users' -Member 'S-1-1-0", "S-1-5-21-1-2-3-1001", result]));
+            Assert.Equal(2, LocalGroups.RunJoin([LocalGroups.JoinArgument, users + "' -Member 'S-1-1-0", "S-1-5-21-1-2-3-1001", result]));
             Assert.Contains("not a plain group name", File.ReadAllText(result));
         }
         finally

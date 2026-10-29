@@ -65,8 +65,8 @@ public interface ILocalGroups
 }
 
 /// <summary>
-/// The real thing: the process token, <c>net localgroup</c> for the member list, and a
-/// re-launch of this executable with the <c>runas</c> verb for the add.
+/// The real thing: the process token, <c>NetLocalGroupGetMembers</c> for the member list,
+/// and a re-launch of this executable with the <c>runas</c> verb for the add.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -154,6 +154,21 @@ public sealed partial class LocalGroups(IVersioLogger? logger = null) : ILocalGr
     /// </remarks>
     private IReadOnlyList<SecurityIdentifier>? ListMembers(string groupName)
     {
+        var members = ReadMembers(groupName, out var failure);
+        if (members is null)
+        {
+            _log.Warn(LogCategory.Plc, $"could not list the members of '{groupName}': {failure}");
+        }
+
+        return members;
+    }
+
+    /// <summary>Whether the SID is a direct member of the group, as the group says now; false when it cannot be read.</summary>
+    private static bool IsListed(string groupName, SecurityIdentifier sid) =>
+        ReadMembers(groupName, out _)?.Any(m => m.Equals(sid)) == true;
+
+    private static IReadOnlyList<SecurityIdentifier>? ReadMembers(string groupName, out string? failure)
+    {
         var buffer = IntPtr.Zero;
         try
         {
@@ -161,7 +176,7 @@ public sealed partial class LocalGroups(IVersioLogger? logger = null) : ILocalGr
                 null, groupName, 0, out buffer, MaxPreferredLength, out var read, out _, IntPtr.Zero);
             if (status != 0)
             {
-                _log.Warn(LogCategory.Plc, $"NetLocalGroupGetMembers('{groupName}') returned {status}");
+                failure = $"NetLocalGroupGetMembers returned {status}";
                 return null;
             }
 
@@ -173,11 +188,12 @@ public sealed partial class LocalGroups(IVersioLogger? logger = null) : ILocalGr
                 members.Add(new SecurityIdentifier(sidPointer));
             }
 
+            failure = null;
             return members;
         }
         catch (Exception ex) when (ex is ArgumentException or UnauthorizedAccessException)
         {
-            _log.Warn(LogCategory.Plc, $"could not list the members of '{groupName}': {ex.Message}");
+            failure = ex.Message;
             return null;
         }
         finally
@@ -190,6 +206,10 @@ public sealed partial class LocalGroups(IVersioLogger? logger = null) : ILocalGr
     }
 
     private const uint MaxPreferredLength = unchecked((uint)-1);
+
+    /// <summary>Windows PowerShell 5.1, by its absolute path under the system directory.</summary>
+    private static string PowerShellPath =>
+        Path.Combine(Environment.SystemDirectory, "WindowsPowerShell", "v1.0", "powershell.exe");
 
     [DllImport("netapi32.dll", CharSet = CharSet.Unicode, ExactSpelling = true)]
     private static extern int NetLocalGroupGetMembers(
@@ -237,9 +257,19 @@ public sealed partial class LocalGroups(IVersioLogger? logger = null) : ILocalGr
 
         using (helper)
         {
-            var exited = await ChildProcess.WaitForExitOrKillAsync(helper, HelperTimeout, ct).ConfigureAwait(false);
-            if (!exited)
+            // A timed wait and no kill: an unelevated parent cannot kill an elevated child
+            // (Kill throws access denied), and ChildProcess.WaitForExitOrKillAsync would try
+            // and then wait on it without a timeout. The helper runs one cmdlet and exits on
+            // its own; if it has not within the timeout, say so and leave it to finish.
+            using var timeout = new CancellationTokenSource(HelperTimeout);
+            using var linked = CancellationTokenSource.CreateLinkedTokenSource(ct, timeout.Token);
+            try
             {
+                await helper.WaitForExitAsync(linked.Token).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (timeout.IsCancellationRequested)
+            {
+                _log.Warn(LogCategory.Plc, $"the elevated helper did not finish within {HelperTimeout.TotalMinutes:0} minutes; left running");
                 return PlcRemedyOutcome.Refused($"the elevated helper did not finish within {HelperTimeout.TotalMinutes:0} minutes.");
             }
 
@@ -287,15 +317,27 @@ public sealed partial class LocalGroups(IVersioLogger? logger = null) : ILocalGr
             return 2;
         }
 
+        // Already a member — the user pressed twice, or somebody else added them meanwhile —
+        // is the state they wanted, read from the group itself and not from the cmdlet's
+        // error text, which is in the display language. Checked before and after the add.
+        var me = new SecurityIdentifier(sid);
+        if (IsListed(group, me))
+        {
+            WriteResult(resultFile, $"{sid} was already a member of the local group '{group}'.");
+            return 0;
+        }
+
         try
         {
             using var ps = Process.Start(new ProcessStartInfo
             {
-                FileName = "powershell.exe",
+                // The absolute path: this process is elevated, and a bare "powershell.exe"
+                // is looked for in the application and current directories before PATH.
+                FileName = PowerShellPath,
                 ArgumentList =
                 {
                     "-NoProfile", "-NonInteractive", "-Command",
-                    $"Add-LocalGroupMember -Group '{group.Replace("'", "''")}' -Member '{sid}'",
+                    $"Add-LocalGroupMember -Group '{group}' -Member '{sid}'",
                 },
                 UseShellExecute = false,
                 CreateNoWindow = true,
@@ -312,7 +354,7 @@ public sealed partial class LocalGroups(IVersioLogger? logger = null) : ILocalGr
                 code = 0;
                 message = $"added {sid} to the local group '{group}'.";
             }
-            else if (error.Contains("already a member", StringComparison.OrdinalIgnoreCase))
+            else if (IsListed(group, me))
             {
                 code = 0;
                 message = $"{sid} was already a member of the local group '{group}'.";
