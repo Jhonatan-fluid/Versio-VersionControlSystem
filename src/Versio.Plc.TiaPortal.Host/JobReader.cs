@@ -16,6 +16,10 @@ internal sealed class JobModel
     public bool WriteTest { get; set; }
     public int TimeoutSeconds { get; set; } = 1200;
     public JsonElement Plan { get; set; }
+
+    // Tools-only (stampprobe): the scripted steps, and which PLC they act on.
+    public List<string>? Steps { get; set; }
+    public string? Plc { get; set; }
 }
 
 internal static class JobReader
