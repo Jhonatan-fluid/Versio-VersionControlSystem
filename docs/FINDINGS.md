@@ -19,6 +19,105 @@ produce a diff touching everything else.
 
 ---
 
+### The Openness group: detected before Portal is launched, and fixed from a button
+
+**2026-10-29, `main`, the owner's `controls-design-siemens`, the hour before the two-releases
+finding below.** The first export after the leftover marker was deleted failed with *"export
+failed — Security error. Can't access this process to acquire needed information. Security
+error. Owner 'AzureAD\JhonatanVillarreal' of this process is not member of the windows group
+'Siemens TIA Openness'. Please contact your administrator."* — Portal's own words, three
+seconds into a launch, on the failure card with *Try again*. The owner's words: "how do I fix
+this? security error". The fix was a command in chat (`net localgroup "Siemens TIA Openness"
+"AzureAD\JhonatanVillarreal" /add`, elevated) and a sign-out, after which `whoami /groups` showed
+the group and Portal admitted the host. Then the owner asked whether the install could do
+that, and asked for the fix on the project card and the failure pane as well as in Settings.
+
+**What was wrong.** Nothing had asked the question before Portal was launched. The toolchain
+probe checked the install and the host and said *ready*; the panel's project card said
+*Toolchain: installed* for any vendor; the refusal arrived as a failure an export later, and
+the sentence it arrived in named a Windows group and nothing to press. Everything true, nothing
+actionable, an hour in.
+
+**Why not the installer.** It is per-user by design — `%LOCALAPPDATA%`, no administrator, so
+updates apply themselves — and adding a local-group member needs elevation. Membership also
+only enters the logon token at the next sign-in, so even a perfect install step ends in "now
+sign out", which an installer cannot do for anybody. The group may not exist (Portal without
+the Openness feature). And the account form varies — `AzureAD\Name`, `DOMAIN\name`, local,
+Microsoft account — so a typed name is the wrong key. Built instead: detect early, explain
+exactly, offer the fix as one consented click, and leave the installer alone.
+
+**What was built.**
+
+1. **A neutral remedy on the toolchain status.** `PlcToolchainStatus.Remedy`
+   (`PlcToolchainRemedy`: the button's label, what pressing it does, what to do afterwards)
+   and `IPlcToolchain.ApplyRemedyAsync` returning a `PlcRemedyOutcome` with a sentence either
+   way. The default refuses. Nothing above the seam knows what a fix is; it knows there is one.
+2. **`Versio.Infrastructure.Platform.LocalGroups`**, Windows and neutral. `Check(group)` reads
+   the process token (`WindowsPrincipal.IsInRole`) and, when the group is not in it, the member
+   list through `NetLocalGroupGetMembers` as SIDs — not `net localgroup`, whose output is in the
+   display language, closes with a localised line an English-only parser would count as a
+   member, and prints an unresolvable account as its SID. Four standings: in the token; a
+   member whose sign-in predates the add; not a member; no such group. `JoinElevatedAsync`
+   re-launches `Versio.exe --join-local-group <group> <SID> <result file>` with the `runas`
+   verb — the UAC prompt is the only honest way to rights the app does not have — and
+   `Program.Main` runs `LocalGroups.RunJoin` before Velopack or WPF: `Add-LocalGroupMember
+   -Group … -Member <SID>`, one line in the result file, exit 0; "already a member" is a success.
+   The SID, never the name, because the process Windows elevates may be a different account (a
+   standard user typing an administrator's credentials). The helper validates both arguments
+   against the one shape each legitimately has before they reach a PowerShell command line;
+   whoever can start the exe elevated is an administrator already, so this is hygiene, not a
+   boundary. A declined prompt (`ERROR_CANCELLED`, 1223) is a refusal in those words.
+3. **The TIA probe asks first.** After the install and host checks, `TiaPortalToolchain`
+   checks `Siemens TIA Openness` (~20 ms in the dev build's log) and reports: not a member →
+   unavailable, naming the account and the group, **with the remedy**; member not in the token
+   → unavailable, *sign out and back in*, no remedy, because the add already happened and a
+   button that succeeds and changes nothing teaches people that buttons do nothing; no group →
+   unavailable, *the Openness feature is not installed*, no remedy; a check that failed → Portal
+   is asked as before and the log says why the check could not be made. `ApplyRemedyAsync`
+   re-checks before acting — the status may be minutes old — and a member by now is told so
+   with no helper started.
+4. **Three places, one offer.** The project card (`ProjectSummaryRender.Remedy`, under the
+   facts; and its *Toolchain* row is per vendor now, the vendor's own sentence instead of
+   "installed" for any vendor), the failure pane (`SyncViewModel.FailureRemedy`, under the
+   toolchain's refusal, beside *Try again*), and Settings → System information (a *Fix* row
+   with a button, the window re-gathering its rows afterwards and showing the sentence under
+   the list). All three run `ShellViewModel.FixToolchainAsync` → `ApplyToolchainRemedyAsync`,
+   which logs both ends, probes again, and refreshes the failure pane; the shell posts the
+   outcome as a notification. The runners are not rebuilt afterwards, on purpose: the first
+   remedy cannot take effect in this session, and a remedy that could would be the moment.
+
+**Measurement.** `OpennessGroupTests` (7, fake group reader, fake install tree): the four
+standings' sentences and which carries the remedy; the fix joins by SID and ends with what to
+do next; a declined prompt passes through; a re-check finds a member and starts no helper.
+`LocalGroupsTests` (5, the real reader): *Users* is in every interactive token (an Azure AD
+account's SID is `S-1-12-…`, which the first assertion did not expect); a made-up group is
+*GroupMissing*, not an exception; *Guests* is *NotMember* from a real member list;
+*Administrators* is read from the list when a non-elevated token filters it; the helper refuses
+a malformed command line and a SID or group name that is not one. `ToolchainRemedyFlowTests`
+(3, the shell with a refusing toolchain): the card's Toolchain row and remedy, the failure
+pane's remedy after a gate export, one press → one apply, the notification, the re-probe, every
+offer gone; a refused fix leaves the offer up and warns; a vendor with nothing to offer is
+refused without a success. `ToolchainRowsTests` and `SystemInfoWindowTests` cover the Fix row
+and the window's button, including an action that throws. The dev build on `C:/GIT/Versio`
+started with zero `ERR` lines and the probe reporting both Portals ready. **Not measured here:
+the UAC path on a machine where the account is not in the group** — this machine's account is,
+since the morning. The next machine that is not is the measurement; the log will show
+*asking Windows for approval to add …* and the helper's one line.
+
+**Also seen on the way.** The failure pane is reachable only after an export has been
+attempted, and an unavailable toolchain is not asked to export on open — so on a fresh machine
+the card and Settings are where the button is first seen, and the pane only once a commit or a
+retry has asked. The flow test drives a commit for that reason. The flow test's first version
+waited thirty seconds for a catch-up export that, correctly, never came.
+
+**Left for a decision, not forgotten.** The Openness access list (DRIVING §2.3) is keyed by
+host path and hash, so every Versio update brings the *Openness access* dialog back on the
+first connect. The same elevated helper could pre-register the new host. That is a security
+control saying "trust this binary", and an auto-updater quietly trusting its own next build is
+a reviewer's decision, not a side effect of a group fix. STATUS *What is next* has it.
+
+---
+
 ### Two Portal releases on one machine: the locator saw one, and a V20 project went to V21
 
 **2026-10-29, `main`, the owner's `controls-design-siemens`, the first export after the

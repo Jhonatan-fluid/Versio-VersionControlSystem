@@ -96,7 +96,7 @@ Both directions run automatically and deterministically. A per-project **directi
 | **Library references exported** (`<manager>.libraries.yaml`) | ✅ **the gap is closed.** One file per library manager, beside the object that owns it — 21 references on the fixture's application, 13 on its project, **all 34 placeholders**. Hand-written YAML on both sides, no third-party dependency. Export-only: change libraries in the IDE. A **fixed-version** reference records its version, company and title parsed from its own name, which is project state — reading them off `managed_library` reports what the exporting machine has *installed*, and answers nothing at all for a library it does not have |
 | **Device tree exported** (`<device>.devices.yaml`) | ✅ **the collision is closed.** One YAML inside each device directory: connectors, parameters, empty IO-Link slots keyed by index. Eight `<Empty>` children used to share one `%3CEmpty%3E.xml`. Export-only: change devices in the IDE. Parameter import and IEC mapping are not this pass |
 | Template generation | ⛔ needs a new operation and script — not assembly |
-| A second vendor — TIA Portal | ✅ the second pack; probe, export and SCL generate overwrite are gated. Data blocks emit `*.scl` for review (`SCL_REVIEW`). **Rendered tables InstanceDB / GlobalDB members from the native XML** (read-only bordered grid, including external access). Hardware / HMI / safety stay coverage skips — see [`docs/STATUS.md`](docs/STATUS.md) and [`docs/vendors/tia/DRIVING.md`](docs/vendors/tia/DRIVING.md) |
+| A second vendor — TIA Portal | ✅ the second pack; probe, export and SCL generate overwrite are gated. Data blocks emit `*.scl` for review (`SCL_REVIEW`). **Portal V20 and V21 side by side** are both found and each project opens in the release its extension names (2026-10-29); **the Openness group is checked before Portal is launched**, and an account outside it gets the fix as a button on the project card, the failure pane and Settings → System information, behind the UAC prompt. **Rendered tables InstanceDB / GlobalDB members from the native XML** (read-only bordered grid, including external access). Hardware / HMI / safety stay coverage skips — see [`docs/STATUS.md`](docs/STATUS.md) and [`docs/vendors/tia/DRIVING.md`](docs/vendors/tia/DRIVING.md) |
 | A third vendor — TwinCAT 3 | ✅ the third pack; probe, export, ST overwrite and I/O catalog export are gated. Comment does not persist through Save. NC / safety / C++ stay coverage skips — see [`docs/vendors/twincat/DRIVING.md`](docs/vendors/twincat/DRIVING.md). Studio 5000 is not started |
 | **Git side panel** — one changes list, commit message, fetch/pull/push | ✅ checkboxes pick what the next commit or discard applies to; staging happens in the background. One operation at a time across every button |
 | **Changed files named as objects** — `FB_Motor · POU`, not `src/…/POU/FB_Motor.st` | ✅ resolved through the export manifest, so it costs no extra read. A file the manifest does not describe stays a path and is **never** guessed at. A library-reference file carries a lock: editing it does not reach the project |
@@ -230,9 +230,10 @@ Versio.sln
 │  │                            before a commit, and the only suite that needs that toolchain
 │  ├─ Versio.Plc.TiaPortal.Pure.Tests/ 117 pure vendor tests — format, planner, protocol,
 │  │                            data-block member table, LAD and FBD parser and approved drawings
-│  ├─ Versio.Plc.TiaPortal.Tests/ 20 tests: 5 against real TIA Portal, which skip with a count
-│  │                            when Openness membership or the install is missing, and 15 on
-│  │                            which Portal release opens which project, against fake installs
+│  ├─ Versio.Plc.TiaPortal.Tests/ 27 tests: 5 against real TIA Portal, which skip with a count
+│  │                            when Openness membership or the install is missing, and 22 on
+│  │                            which Portal release opens which project and what the Openness
+│  │                            group check says, against fake installs and a fake group reader
 │  ├─ Versio.Plc.TwinCat.Pure.Tests/ 27 pure vendor tests — format, planner, protocol
 │  ├─ Versio.Plc.TwinCat.Tests/ 6 tests against real TwinCAT XAE; skip with a count when
 │  │                            TcXaeShell.DTE.17.0 or the fixture is missing
@@ -437,13 +438,13 @@ dotnet test tests/Versio.Core.Tests
 | Suite | Tests | Needs | Runs in |
 |---|---|---|---|
 | `Versio.Core.Tests` | 2,111 | nothing — pure, no IO, no clock, no UI | ~0.3 s |
-| `Versio.Integration.Tests` | 261 | a real `git.exe` and the real filesystem | ~55 s |
+| `Versio.Integration.Tests` | 266 | a real `git.exe`, the real filesystem, and the real Windows local groups for five | ~55 s |
 | `Versio.Arch.Tests` | 45 | nothing — it reads assembly metadata, IL, and the project files | instant |
-| `Versio.App.Tests` | 881 | Windows (WPF). Builds the real dialogs against the real stylesheet on an STA thread; **no window is ever shown**. One test runs the web viewer too, over every fixture row, and references `Versio.Web.Tests` for its fake GitHub | ~3.6–11 min |
+| `Versio.App.Tests` | 887 | Windows (WPF). Builds the real dialogs against the real stylesheet on an STA thread; **no window is ever shown**. One test runs the web viewer too, over every fixture row, and references `Versio.Web.Tests` for its fake GitHub | ~3.6–11 min |
 | `Versio.Plc.Codesys.Pure.Tests` | 405 | nothing — the vendor's planner, codecs, protocol, LD/FBD parser and File-Based Storage layout, pure | under a second |
 | `Versio.Plc.Codesys.Parity.Tests` | 104 | `python` on PATH, no CODESYS — **skips cleanly without python, so check the count** | ~15 s |
 | `Versio.Plc.TiaPortal.Pure.Tests` | 117 | nothing — format, planner, protocol, scrubber, member table, LAD and FBD parser | instant |
-| `Versio.Plc.TiaPortal.Tests` | 20 | **a real TIA Portal** for 5; skips cleanly without Openness membership. The 15 Portal-release-choice tests use fake install trees and run everywhere | seconds when skipped |
+| `Versio.Plc.TiaPortal.Tests` | 27 | **a real TIA Portal** for 5; skips cleanly without Openness membership. The 22 Portal-release-choice and Openness-group tests use fake install trees and run everywhere | seconds when skipped |
 | `Versio.Plc.TwinCat.Pure.Tests` | 27 | nothing — the vendor's planner, format and protocol, and the host's text rules compiled in as source | instant |
 | `Versio.Plc.TwinCat.Tests` | 6 | **a real TwinCAT XAE**; skips cleanly without `TcXaeShell.DTE.17.0` | seconds when skipped; ~5 min when XAE runs the import gate |
 | `Versio.Web.Tests` | 508 | nothing — the web viewer against a faked GitHub; one test starts the built server | a few seconds |

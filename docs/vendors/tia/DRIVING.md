@@ -132,6 +132,40 @@ Portal.
 On this machine: group existed empty; `net localgroup … /add` needed elevation; after
 `elli_` was added and a new logon, the token carried the group.
 
+**Detected before Portal, and fixed from a button, since 2026-10-29.** The owner met the
+refusal as a failure card an hour into a new machine and fixed it from a command in chat
+(FINDINGS 2026-10-29, *the Openness group*). `TiaPortalToolchain.ProbeAsync` now asks the
+process token (`Versio.Infrastructure.Platform.LocalGroups`, ~20 ms in the dev build's log)
+after the install and host checks and before anything is launched, and reports one of four
+things:
+
+| Standing | Status | Offer |
+|---|---|---|
+| in the token | ready | — |
+| group exists, account not in it | unavailable, names the account and the group | **the button**: *Add this account to the Siemens TIA Openness group…* |
+| account is a member, sign-in predates the add | unavailable, says to sign out and in | none — the add already happened |
+| no such group | unavailable, says Openness is not installed | none — the Portal setup adds it |
+
+A check that fails (`Unknown`) does not block: Portal is asked as before and the log says why
+the check could not be made. The button is drawn in three places from one neutral
+`PlcToolchainStatus.Remedy`: the project card under the facts, the failure pane under the
+toolchain's refusal, and Settings → System information as a *Fix* row. Pressing it runs
+`IPlcToolchain.ApplyRemedyAsync`, which re-checks (a member by now is told so and no helper
+starts), then `LocalGroups.JoinElevatedAsync` re-launches `Versio.exe --join-local-group
+<group> <SID> <result file>` with the `runas` verb: Windows shows the UAC prompt, the helper
+runs `Add-LocalGroupMember -Group … -Member <SID>` and writes one line, the parent reads it
+and logs it. The SID, never the name, because the elevated process may be a different account
+(a standard user typing an administrator's credentials). A declined prompt (`ERROR_CANCELLED`)
+is a refusal in those words. Nothing is ever applied without the press: not at install (the
+installer is per-user and has no rights), not at launch, not on a retry. After a success the
+user still has to sign out and in; the sentence says so, and the probe then reports the third
+row until they do.
+
+Not done, on purpose: the AllowList (§2.3) could be pre-registered by the same elevated helper
+and would spare the access dialog after every update. That is a security control saying
+"trust this binary", and an auto-updater quietly trusting its own next build is a decision for
+a reviewer, not a side effect of a group fix. STATUS *What is next* carries it.
+
 ### 2.3 Firewall AllowList
 
 The first successful connect also needs **Yes to all** on the Openness access dialog
