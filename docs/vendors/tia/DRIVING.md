@@ -91,14 +91,25 @@ nothing else without an upgrade. So:
 - `LocalTiaPortalRunner.ChooseInstall` picks the install whose version equals
   `TiaPortalProjectFormat.ReleaseOf(projectPath)`; the pinned profile is consulted only for
   a path with no number in its extension, which this format does not claim;
+- the profile pinned on a new binding is the project's own release, not the probe's newest:
+  `IPlcProjectFormat.ProfileFor(path, probeProfile)` defaults to the probe's word and this
+  format answers with `ReleaseOf`. Until review on 2026-10-29 a `.ap20` adopted beside V21
+  was committed as a V21 binding;
+- the locator takes the release from the `V\d+` in the install folder's name, accepts only
+  the `PublicAPI\<that release>` folder in either layout (the modular lookup's fallback to
+  any `*\net48` is gone — it would have driven a `Portal V22` carrying only `V21\net48`
+  through V21), orders by release number, and reports a release found under both Program
+  Files roots once. Settings → System information lists the releases as *Installed* with a
+  *Choice* row carrying the sentence above; *Also found* is kept for a vendor that refused;
 - a release that is **not installed is a refusal**, in a sentence that names the project's
-  release, the installed ones, and that upgrading is the user's act in Portal. It never
+  release, the installed ones, and that upgrading is the user's act in Portal — in the
+  *nearest* newer release, since an upgrade is one step nobody takes back. It never
   falls to the newest install — which is what the runner did until 2026-10-29, and which is
   the accidental-upgrade path by another name: on the owner's machine a V20 project went to
   V21 and Portal answered *"Project … with version 'V20' can only be opened with a software
   product of the same version. The current product version is 'V21'."*
 
-A project opened against the wrong PublicAPI is an upgrade. `PortalReleaseChoiceTests` holds
+A project opened against the wrong PublicAPI is an upgrade. `PortalReleaseChoiceTests` (14, plus the locator Fact) holds
 both layouts and the choice against fake install trees and runs on every machine; the
 env-gated Probe in `TiaPortalGateTests` (`VERSIO_TIA_PROBE_PROJECT`) is how the V20 path was
 measured against a real project the repository does not carry: **2 m 14 s, passed**, on

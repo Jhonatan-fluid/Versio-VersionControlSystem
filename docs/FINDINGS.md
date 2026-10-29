@@ -86,6 +86,40 @@ installed one is as good a subject as the fresh one. The toolchain line now read
 *`toolchain ready: …\Portal V21 — V21; …\Portal V20 — V20. The project file's extension picks
 which one opens it.`*
 
+**Review, the same day.** A reviewer given the five commits and not the reasoning found
+seven things; three were real and two of those it proved by mutation:
+
+- **The wiring was untested.** Swapping the project path out of the `RunAsync` →
+  `ChooseInstall` call — which turns every job back into "profile, else newest", the defect
+  itself — left every test green, because nothing in the fast suites called `RunAsync`. The
+  same shape as *moved a subscription? delete it and run the suite*. Now
+  `RunAsync_refuses_from_the_project_path_before_any_host_is_started` drives the real
+  method with a host path that does not exist: the refusal has to come before a process is
+  spawned, or the test fails on the missing executable instead.
+- **A V20 project was pinned as V21 in the committed `repo.json`.** Adoption wrote the
+  probe's profile — now the newest Portal — on every new binding. Nothing read it as the
+  release yet, the log said `[V21]` on every export of the V20 project, and the first guard
+  to trust `binding.Profile` would have acted on a falsehood in a shared file. Fixed through
+  the seam: `IPlcProjectFormat.ProfileFor(path, probeProfile)` defaults to the probe's word
+  and the TIA format answers with the extension's release; `TiaBindingProfileTests` adopts a
+  `.ap20` under a probe that says something else and reads `"profile": "V20"` back.
+- **Settings → System information called the installed releases "Also found"** under a
+  comment saying the list was a problem to pick from, and the vendor's sentence on how the
+  choice is made never reached the window. The rows say *Installed* and *Choice* when the
+  toolchain is available, *Also found* when it refused; the builder is a static method now
+  so `ToolchainRowsTests` can check it without probing the machine.
+
+And four hardening items, each with a test: the release is the `V\d+` in the install folder's
+name rather than everything after `Portal ` (so `Portal V21 Update 2`, should one ever exist,
+is V21 and not a version no project can match); the modular lookup's fallback to *any*
+`*\net48` under `PublicAPI` is gone, because it would have reported a `Portal V22` carrying
+only `V21\net48` as V22 driven through V21 — the exact thing the single-assembly path refused
+and the remark above it claimed for both; installs are ordered by release number and a
+release found under both Program Files roots is reported once; and the refusal names the
+*nearest* newer Portal to upgrade in, not the newest, since an upgrade is one step nobody
+takes back. The locator's *skipped* line is pinned at Information with its folder and reason,
+because the commit raised it from Debug for a stated reason and nothing held it there.
+
 **Also seen on the way.** The Openness group error from the hour before this one
 (*"Owner 'AzureAD\…' of this process is not member of the windows group 'Siemens TIA
 Openness'"*) is DRIVING §2.2 and was fixed by `net localgroup … /add` plus a sign-out; it is
