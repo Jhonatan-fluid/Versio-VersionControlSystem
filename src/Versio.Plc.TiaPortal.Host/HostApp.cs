@@ -62,7 +62,7 @@ internal static partial class HostApp
                     return 5;
                 }
 
-                Export(project, job.Out!);
+                Export(project, job.Out!, DescribeToolchain(job.Install));
             }
             else if (op == "import")
             {
@@ -83,6 +83,16 @@ internal static partial class HostApp
                 }
 
                 HardwareProbe(project, job.Out!, job.WriteTest);
+            }
+            else if (op == "stampprobe")
+            {
+                if (string.IsNullOrWhiteSpace(job.Out))
+                {
+                    EmitFatal("stampprobe job has no out directory");
+                    return 5;
+                }
+
+                StampProbe(project, job.Out!, job.Steps ?? [], job.Plc);
             }
             else
             {

@@ -11,7 +11,45 @@ internal static partial class HostApp
 {
     private static string _outDir = "";
 
-    private static void Export(object project, string outDir)
+    /// <summary>
+    /// The previous export of this tree, when there is one this run may compare against;
+    /// null means every object is asked of Portal (see <see cref="ExportBaseline"/>).
+    /// </summary>
+    private static ExportBaseline? _baseline;
+
+    /// <summary>Which toolchain is doing this export, in the words the manifest records.</summary>
+    /// <remarks>
+    /// The install folder's release and the Openness assembly's own version, because a
+    /// stamp that did not move says nothing about what a <i>different</i> Portal would
+    /// generate for the same object: the baseline refuses a manifest another release wrote.
+    /// Read once per run; the same install always describes itself the same way, which is
+    /// what makes the comparison mean anything.
+    /// </remarks>
+    private static string DescribeToolchain(string installFolder)
+    {
+        var release = Path.GetFileName(installFolder.TrimEnd('\\', '/'));
+        var portal = FindType("Siemens.Engineering.TiaPortal");
+        var assembly = portal?.Assembly;
+        var version = assembly?.GetName().Version?.ToString() ?? "?";
+        var file = "";
+        try
+        {
+            if (assembly is not null && !string.IsNullOrEmpty(assembly.Location))
+            {
+                file = System.Diagnostics.FileVersionInfo.GetVersionInfo(assembly.Location).FileVersion ?? "";
+            }
+        }
+        catch (Exception)
+        {
+            // The assembly version alone still names the release.
+        }
+
+        return "TIA " + release + "; " + (assembly?.GetName().Name ?? "Siemens.Engineering") + " " + version
+               + (file.Length == 0 ? "" : " (file " + file + ")");
+    }
+
+    // Internal, like Import: the pure suite drives it against fakes shaped like Openness.
+    internal static void Export(object project, string outDir, string toolchainVersion)
     {
         _outDir = Path.GetFullPath(outDir);
         Directory.CreateDirectory(outDir);
@@ -22,17 +60,35 @@ internal static partial class HostApp
         // and log "manifest not fully readable" once per row.
         var warnings = new List<Dictionary<string, string>>();
 
+        // The previous manifest is read BEFORE anything is written: this export overwrites
+        // the tree in place, and the manifest at the end of it is this run's. A manifest
+        // this build cannot vouch for means a full export, said once, with why — the first
+        // export, a mirror from before stamps existed, another Portal — so a mirror that
+        // took two minutes when thirty seconds were expected explains itself in the log.
+        _baseline = ExportBaseline.Load(
+            TryReadText(Path.Combine(_outDir, "_manifest.json")), toolchainVersion, out var fullBecause);
+        Emit("summary", "msg", _baseline is null
+            ? "full export: " + fullBecause
+            : "re-export against the previous manifest (" + _baseline.ObjectCount
+              + " identities): a block or type whose ModifiedDate Portal reports unchanged keeps "
+              + "its files; tag tables and hardware are always exported");
+
         foreach (var plc in WalkPlcSoftware(project))
         {
             Emit("progress", "phase", "export", "detail", plc.DeviceName + "/" + plc.PlcName);
             var root = Path.Combine(outDir, Sanitize(plc.DeviceName), Sanitize(plc.PlcName));
             Directory.CreateDirectory(root);
 
-            WalkBlocks(plc, root, objects, skipped, warnings);
+            var tally = new ExportTally();
+            WalkBlocks(plc, root, objects, skipped, warnings, tally);
             Emit("progress", "phase", "types", "detail", plc.PlcName);
-            WalkTypes(plc, root, objects, skipped, warnings);
+            WalkTypes(plc, root, objects, skipped, warnings, tally);
             Emit("progress", "phase", "tags", "detail", plc.PlcName);
             WalkTags(plc, root, objects, skipped, warnings);
+
+            // One line per PLC, not per object: the log's job is to say that 1,300
+            // objects were kept and 3 exported, and why those 3, not to list 1,300 names.
+            Emit("summary", "msg", plc.DeviceName + "/" + plc.PlcName + ": " + tally.Describe());
         }
 
         // Comment SetAttribute has been measured (hwprobe 2026-08-20). PlugNew has
@@ -52,10 +108,14 @@ internal static partial class HostApp
         skipped.Add(Skip("Safety", "SERVICE_OBJECT", "F-programs are a coverage skip"));
         skipped.Add(Skip("Technology", "SERVICE_OBJECT", "technology objects are a coverage skip"));
 
+        // Schema 11: each record carries the object's stamp (ExportBaseline.StampSchema),
+        // and the toolchain that wrote the mirror is named so the next run can tell whether
+        // it is comparing against its own Portal. Both are what the baseline reads back.
         var manifest = new Dictionary<string, object?>
         {
-            ["schema"] = 9,
+            ["schema"] = ExportBaseline.StampSchema,
             ["vendor"] = "TiaPortal",
+            ["toolchainVersion"] = toolchainVersion,
             ["objects"] = objects,
             ["skipped"] = skipped,
             ["warnings"] = warnings,
@@ -80,17 +140,19 @@ internal static partial class HostApp
         PlcRef plc, string root,
         List<Dictionary<string, object?>> objects,
         List<Dictionary<string, string>> skipped,
-        List<Dictionary<string, string>> warnings)
+        List<Dictionary<string, string>> warnings,
+        ExportTally tally)
     {
         var group = GetProp(plc.Software, "BlockGroup");
-        WalkBlockGroup(plc, group, Path.Combine(root, "Program blocks"), objects, skipped, warnings);
+        WalkBlockGroup(plc, group, Path.Combine(root, "Program blocks"), objects, skipped, warnings, tally);
     }
 
     private static void WalkBlockGroup(
         PlcRef plc, object? group, string dir,
         List<Dictionary<string, object?>> objects,
         List<Dictionary<string, string>> skipped,
-        List<Dictionary<string, string>> warnings)
+        List<Dictionary<string, string>> warnings,
+        ExportTally tally)
     {
         if (group is null)
         {
@@ -100,13 +162,13 @@ internal static partial class HostApp
         Directory.CreateDirectory(dir);
         foreach (var block in Enumerate(GetProp(group, "Blocks")))
         {
-            ExportBlock(plc, block, dir, objects, skipped, warnings);
+            ExportBlock(plc, block, dir, objects, skipped, warnings, tally);
         }
 
         foreach (var child in Enumerate(GetProp(group, "Groups")))
         {
             var name = Str(child, "Name") ?? "Group";
-            WalkBlockGroup(plc, child, Path.Combine(dir, Sanitize(name)), objects, skipped, warnings);
+            WalkBlockGroup(plc, child, Path.Combine(dir, Sanitize(name)), objects, skipped, warnings, tally);
         }
     }
 
@@ -114,7 +176,8 @@ internal static partial class HostApp
         PlcRef plc, object block, string dir,
         List<Dictionary<string, object?>> objects,
         List<Dictionary<string, string>> skipped,
-        List<Dictionary<string, string>> warnings)
+        List<Dictionary<string, string>> warnings,
+        ExportTally tally)
     {
         var name = Str(block, "Name") ?? "Block";
         var number = Str(block, "Number") ?? "0";
@@ -135,6 +198,21 @@ internal static partial class HostApp
         }
 
         var xmlPath = Path.Combine(dir, Sanitize(name) + ".xml");
+        var sclPath = Path.Combine(dir, Sanitize(name) + ".scl");
+        // SimaticML UId is a document-local integer (CleaningStation: 26,661 of them,
+        // most common "35"). The first export keyed every object as "0"; skipping 0
+        // keyed them as "1". A rename is paired by content hash, not by this key.
+        var guid = $"{plc.DeviceName}/{plc.PlcName}/{typeName}/{name}#{number}";
+
+        // Unchanged since the last export, by Portal's own stamp: keep the files and the
+        // records, and do not ask Portal for them. Decided before Export because Export is
+        // the cost — ~88 ms here plus as much again for GenerateSource (LBB101, 2026-10-29).
+        var stamp = StampOf(block);
+        if (TryKeep(guid, stamp, [RelTo(xmlPath), RelTo(sclPath)], objects, tally))
+        {
+            return;
+        }
+
         try
         {
             ExportXml(block, xmlPath);
@@ -147,10 +225,6 @@ internal static partial class HostApp
         }
 
         var xml = File.Exists(xmlPath) ? File.ReadAllText(xmlPath) : "";
-        // SimaticML UId is a document-local integer (CleaningStation: 26,661 of them,
-        // most common "35"). The first export keyed every object as "0"; skipping 0
-        // keyed them as "1". A rename is paired by content hash, not by this key.
-        var guid = $"{plc.DeviceName}/{plc.PlcName}/{typeName}/{name}#{number}";
         // Exact "SCL" missed the block after generate on the import gate: the in-session
         // GenerateSource still worked, the next export keyed off ProgrammingLanguage
         // and wrote no .scl. Treat any language that names SCL / Structured Text the
@@ -162,7 +236,6 @@ internal static partial class HostApp
         // table. Try it for DBs too. The .scl is SCL_REVIEW (export-only): instance-DB
         // GenerateBlocksFromSource is unmeasured, and making property text importable
         // first emptied every accessor. Literal must match ExportCoverage.SclReviewForm.
-        var sclPath = Path.Combine(dir, Sanitize(name) + ".scl");
         var wroteScl = false;
         var dataBlock = IsDataBlock(typeName, language);
         if (LooksLikeScl(language) || language.Length == 0 || dataBlock)
@@ -181,15 +254,15 @@ internal static partial class HostApp
         {
             if (dataBlock)
             {
-                Record(objects, guid, name, typeName, "SCL_REVIEW", RelTo(sclPath), HashTextFile(sclPath));
+                Record(objects, guid, name, typeName, "SCL_REVIEW", RelTo(sclPath), HashTextFile(sclPath), stamp: stamp);
                 Record(objects, guid, name, typeName, "NATIVE", RelTo(xmlPath), HashFile(xmlPath),
-                    nhash: HashNormalized(xml));
+                    nhash: HashNormalized(xml), stamp: stamp);
             }
             else
             {
-                Record(objects, guid, name, typeName, "SCL", RelTo(sclPath), HashTextFile(sclPath));
+                Record(objects, guid, name, typeName, "SCL", RelTo(sclPath), HashTextFile(sclPath), stamp: stamp);
                 Record(objects, guid, name, typeName, "XML_REVIEW", RelTo(xmlPath), HashFile(xmlPath),
-                    nhash: HashNormalized(xml));
+                    nhash: HashNormalized(xml), stamp: stamp);
             }
 
             Emit("object", "path", RelTo(sclPath), "guid", guid);
@@ -197,8 +270,157 @@ internal static partial class HostApp
         else
         {
             Record(objects, guid, name, typeName, "NATIVE", RelTo(xmlPath), HashFile(xmlPath),
-                nhash: HashNormalized(xml));
+                nhash: HashNormalized(xml), stamp: stamp);
             Emit("object", "path", RelTo(xmlPath), "guid", guid);
+        }
+    }
+
+    /// <summary>
+    /// Portal's modification stamp for a block or type, as the manifest records it; empty
+    /// when the object has none, which the baseline reads as "export it".
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <c>ModifiedDate</c>, read as the CLR property Openness exposes beside the attribute
+    /// (the two carry one value; the attribute reader in the hardware probe renders a
+    /// <c>DateTime</c> as its type name, which is how the first probe run measured nothing).
+    /// Measured on LBB101, 2026-10-29, DRIVING §7.1: it moves when Portal rewrites the
+    /// object's content — an SCL edit moves the edited block alone; a compile moves only
+    /// the dependents it actually re-wired; a recompile with nothing edited, and a save,
+    /// move nothing; two reads in one session and a read after close-and-reopen agree.
+    /// </para>
+    /// <para>
+    /// UTC and round-trip format, so the string is the same whatever the machine's zone or
+    /// culture: the next run compares it as text.
+    /// </para>
+    /// </remarks>
+    private static string StampOf(object item)
+    {
+        object? value = null;
+        try
+        {
+            value = GetProp(item, "ModifiedDate");
+            if (value is null)
+            {
+                var getAttribute = item.GetType().GetMethods(BindingFlags.Public | BindingFlags.Instance)
+                    .FirstOrDefault(m => m.Name == "GetAttribute" && m.GetParameters().Length == 1);
+                value = getAttribute?.Invoke(item, ["ModifiedDate"]);
+            }
+        }
+        catch (Exception)
+        {
+            // An object Openness will not describe exports in full; nothing to decide here.
+        }
+
+        return value switch
+        {
+            DateTime dt => dt.ToUniversalTime().ToString("o", System.Globalization.CultureInfo.InvariantCulture),
+            null => "",
+            _ => value.ToString() ?? "",
+        };
+    }
+
+    /// <summary>
+    /// Keep an object's previous files and records when the baseline says it may, counting
+    /// the decision either way; false means export it.
+    /// </summary>
+    private static bool TryKeep(
+        string guid, string stamp, IReadOnlyCollection<string> expectedPaths,
+        List<Dictionary<string, object?>> objects, ExportTally tally)
+    {
+        if (_baseline is null)
+        {
+            tally.Add(ExportBaseline.ExportReason.New);
+            return false;
+        }
+
+        var kept = _baseline.Keep(guid, stamp, expectedPaths, HashOnDisk, out var reason);
+        tally.Add(reason);
+        if (kept is null)
+        {
+            return false;
+        }
+
+        foreach (var r in kept)
+        {
+            Record(objects, r.Guid, r.Name, r.Type, r.Form, r.Path, r.Hash, nhash: r.NHash, stamp: r.Stamp);
+        }
+
+        return true;
+    }
+
+    /// <summary>The hash the export would record for a file as it is on disk now, or null when it is missing.</summary>
+    private static string? HashOnDisk(ExportBaseline.Record record)
+    {
+        var path = Path.Combine(_outDir, record.Path.Replace('/', Path.DirectorySeparatorChar));
+        if (!File.Exists(path))
+        {
+            return null;
+        }
+
+        try
+        {
+            return record.IsTextual ? HashTextFile(path) : HashFile(path);
+        }
+        catch (IOException)
+        {
+            return null;
+        }
+    }
+
+    private static string? TryReadText(string path)
+    {
+        try
+        {
+            return File.Exists(path) ? File.ReadAllText(path) : null;
+        }
+        catch (IOException)
+        {
+            return null;
+        }
+    }
+
+    /// <summary>What one PLC's walk decided, for the one summary line it gets.</summary>
+    private sealed class ExportTally
+    {
+        private readonly Dictionary<ExportBaseline.ExportReason, int> _counts = new();
+
+        public void Add(ExportBaseline.ExportReason reason)
+        {
+            _counts.TryGetValue(reason, out var n);
+            _counts[reason] = n + 1;
+        }
+
+        private int Of(ExportBaseline.ExportReason reason) =>
+            _counts.TryGetValue(reason, out var n) ? n : 0;
+
+        public string Describe()
+        {
+            var total = _counts.Values.Sum();
+            var kept = Of(ExportBaseline.ExportReason.Kept);
+            var exported = total - kept;
+            if (_baseline is null)
+            {
+                return total + " blocks and types exported (full export)";
+            }
+
+            var why = new List<string>();
+            void Name(ExportBaseline.ExportReason reason, string label)
+            {
+                var n = Of(reason);
+                if (n > 0)
+                {
+                    why.Add(n + " " + label);
+                }
+            }
+
+            Name(ExportBaseline.ExportReason.Changed, "changed");
+            Name(ExportBaseline.ExportReason.New, "new or renamed");
+            Name(ExportBaseline.ExportReason.Moved, "moved");
+            Name(ExportBaseline.ExportReason.Unverifiable, "with a mirror file missing or edited");
+            Name(ExportBaseline.ExportReason.NoStamp, "without a stamp");
+            return total + " blocks and types: " + kept + " kept (unchanged since the last export), "
+                   + exported + " exported" + (why.Count == 0 ? "" : " (" + string.Join(", ", why) + ")");
         }
     }
 
@@ -206,17 +428,19 @@ internal static partial class HostApp
         PlcRef plc, string root,
         List<Dictionary<string, object?>> objects,
         List<Dictionary<string, string>> skipped,
-        List<Dictionary<string, string>> warnings)
+        List<Dictionary<string, string>> warnings,
+        ExportTally tally)
     {
         _ = skipped;
         var group = GetProp(plc.Software, "TypeGroup");
-        WalkTypeGroup(plc, group, Path.Combine(root, "PLC data types"), objects, warnings);
+        WalkTypeGroup(plc, group, Path.Combine(root, "PLC data types"), objects, warnings, tally);
     }
 
     private static void WalkTypeGroup(
         PlcRef plc, object? group, string dir,
         List<Dictionary<string, object?>> objects,
-        List<Dictionary<string, string>> warnings)
+        List<Dictionary<string, string>> warnings,
+        ExportTally tally)
     {
         if (group is null)
         {
@@ -229,11 +453,17 @@ internal static partial class HostApp
             var name = Str(type, "Name") ?? "Type";
             var xmlPath = Path.Combine(dir, Sanitize(name) + ".xml");
             var udtPath = Path.Combine(dir, Sanitize(name) + ".udt");
+            var guid = $"{plc.DeviceName}/{plc.PlcName}/UDT/{name}";
+            var stamp = StampOf(type);
+            if (TryKeep(guid, stamp, [RelTo(xmlPath), RelTo(udtPath)], objects, tally))
+            {
+                continue;
+            }
+
             try
             {
                 ExportXml(type, xmlPath);
                 var xml = File.ReadAllText(xmlPath);
-                var guid = $"{plc.DeviceName}/{plc.PlcName}/UDT/{name}";
                 var wrote = false;
                 try
                 {
@@ -246,15 +476,15 @@ internal static partial class HostApp
 
                 if (wrote)
                 {
-                    Record(objects, guid, name, "UDT", "SCL", RelTo(udtPath), HashTextFile(udtPath));
+                    Record(objects, guid, name, "UDT", "SCL", RelTo(udtPath), HashTextFile(udtPath), stamp: stamp);
                     Record(objects, guid, name, "UDT", "XML_REVIEW", RelTo(xmlPath), HashFile(xmlPath),
-                        nhash: HashNormalized(xml));
+                        nhash: HashNormalized(xml), stamp: stamp);
                     Emit("object", "path", RelTo(udtPath), "guid", guid);
                 }
                 else
                 {
                     Record(objects, guid, name, "UDT", "NATIVE", RelTo(xmlPath), HashFile(xmlPath),
-                        nhash: HashNormalized(xml));
+                        nhash: HashNormalized(xml), stamp: stamp);
                     Emit("object", "path", RelTo(xmlPath), "guid", guid);
                 }
             }
@@ -267,7 +497,7 @@ internal static partial class HostApp
         foreach (var child in Enumerate(GetProp(group, "Groups")))
         {
             var name = Str(child, "Name") ?? "Group";
-            WalkTypeGroup(plc, child, Path.Combine(dir, Sanitize(name)), objects, warnings);
+            WalkTypeGroup(plc, child, Path.Combine(dir, Sanitize(name)), objects, warnings, tally);
         }
     }
 
@@ -469,7 +699,7 @@ internal static partial class HostApp
     private static void Record(
         List<Dictionary<string, object?>> objects,
         string guid, string name, string type, string form, string path, string hash,
-        string nhash = "")
+        string nhash = "", string stamp = "")
     {
         objects.Add(new Dictionary<string, object?>
         {
@@ -481,6 +711,8 @@ internal static partial class HostApp
             ["hash"] = hash,
             ["nhash"] = nhash,
             ["parent"] = "",
+            // Empty for a tag table and for hardware, which are always exported.
+            ["stamp"] = stamp,
         });
     }
 
