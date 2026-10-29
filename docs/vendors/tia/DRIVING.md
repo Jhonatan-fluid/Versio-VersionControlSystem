@@ -296,9 +296,13 @@ No CODESYS-style `.~u` sidecar. While `Projects.Open` holds the project:
 | `System/~PEData.1` | Appeared two seconds later, **gone** on close |
 | `Logs/` size | Churns (already excluded from the hash) |
 
-`OccupancyMarkerFor` is `ChangeExtension(projectPath, ".info")`. Existence is Held. The
+`OccupancyMarkerFor` is `ChangeExtension(projectPath, ".info")`. Existence is Held. ~~The
 body is not parsed — a leftover after a crash stays Held rather than guessed Free. Stale
-recovery needs a pid, which this marker has not been shown to carry.
+recovery needs a pid, which this marker has not been shown to carry.~~ **Parsed since
+2026-10-28**: the body is `<InfoFile>` with `User`, `Computer` and `Time` (ISO 8601, UTC) and
+no pid, so a leftover still reads Held — but the refusal now says who, since when, and which
+file to delete if nobody has it (FINDINGS 2026-10-28, first open of a repository). A leftover
+is not hypothetical: see the 2026-10-28 note under *GUI occupancy* below.
 
 `System/~PEData.*` is a transient inside the program folder, not the marker the probe watches.
 
@@ -317,6 +321,19 @@ honesty note: Portal treated that `taskkill` as an abnormal end (its "uncritical
 reporter appeared afterwards) — yet it still deleted the marker on the way out. A hard
 kill (`/F`) is the case that would leave the marker behind, and a leftover reads Held
 until cleared, which is the safe side.
+
+**The marker is not always removed — measured 2026-10-28, Portal V20 window on the owner's
+machine, no Openness (FINDINGS, same date).** `ProjectInitial.info` dated 26 Oct 09:21,
+written 23 s after the second of two `Siemens.Automation.Portal` processes started; both
+were still running two days later. Opening the project again on the 28th did not rewrite it,
+closing the project did not remove it; `System/~PEData.3` *did* go on close, and an exclusive
+open of the `.apXX`, `PEData.plf`, `PEData.idx` and the `.info` itself succeeded afterwards —
+nothing held the project. So the two measurements disagree on what "close" does to the
+marker, and the engine keeps the safe reading (Held) while the refusal names the file. What
+would settle an automatic stale verdict: the same exclusive-open probe with the project
+*open* in the window. If Portal holds `PEData.plf` exclusively while open, that is a
+process-level signal with no pid needed; it was not measured, and a policy built on the
+closed half alone is the two-writers defect waiting to happen.
 
 ### Committing and pushing while Portal is open (2026-09-14)
 

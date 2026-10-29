@@ -19,6 +19,78 @@ produce a diff touching everything else.
 
 ---
 
+### First open of a repository: "BrokenBinding", a refusal that named nothing, and a TIA marker that never left
+
+**2026-10-28, `main`, the owner's `controls-design-siemens`, opened in Versio for the first
+time with a V20 project.** The project panel read, in red, *"BrokenBinding:
+JV_WorkingSpace/ProjectInitial/ProjectInitial — the bound export directory no longer exists; a
+full export will recreate it"* over *"1 project has changes that have not been exported."*, and
+the row said *never exported*. The owner's words: "why am I seeing this?", then "messages should
+be a lot clearer on the versio ide", then "I also closed my tia and this did not run
+automatically". Three defects, one screen.
+
+**What had happened, from the log.** The open found `ProjectInitial.ap20`, adopted it
+automatically (binding `0b92565a9b10`, V21 profile; `.versio/repo.json`, `.gitattributes` and
+`.gitignore` written, the three changed files the panel listed), and tried the first export,
+which the orchestrator refused: *"open in the IDE (another session), so it cannot be exported
+until it is closed. Close it and the export will run."* The owner closed the project in TIA
+Portal at 16:52:07 — the watcher saw `System/~PEData.3` go and the program store saved — and
+the retry ran, and was refused with the same sentence.
+
+**Defect 1 — a never-exported binding was "broken".** `OrphanScanner` reported any binding
+whose export directory was absent as `BrokenBinding` with *"no longer exists"*. For a project
+adopted seconds earlier the directory never existed, nothing was broken, and the row already
+said *never exported*: one fact, stated three times, once falsely and once in red. The scanner's
+own class remark still said adoption was "offered rather than performed", which stopped being
+true when `AutoAdoptAsync` landed. **Fix:** `BindingHealth.NotExported`, not needing attention,
+with *"no export tree at '…' yet; the next export writes it"*; `ScanFinding.Title` gives every
+verdict words, so the panel no longer prints enum members. A deleted mirror lands in the same
+verdict, deliberately: the scan cannot tell the two apart and the remedy is the same automatic
+export.
+
+**Defect 2 — the refusal was in the log and nowhere else.** The panel said "has changes that
+have not been exported" and the row said "not exported", both true, neither the answer to the
+owner's question. `SyncViewModel` already remembered which bindings had returned
+`BlockedByOpenProject` (for the retry when the marker vanishes) but kept only the ids.
+**Fix:** it keeps the refusal's sentence, the row reads *waiting for the IDE*, and the banner
+reads *"1 project cannot be exported yet: <the orchestrator's sentence>"*, with that project no
+longer also counted under "changes not exported". `WaitingOnIdePanelTests` proves the banner
+reads it back; `RefreshStalenessAsync` became internal for it, because a top-bar refresh does
+not recompute the banner and no test can make a toolchain refuse without a real IDE.
+
+**Defect 3 — the marker TIA Portal left behind, and a sentence that could not be acted on.**
+`ProjectInitial.info` beside the `.ap20` was dated **26 Oct 09:21**, 23 s after the second of
+two `Siemens.Automation.Portal` processes started (09:21:22; both were still running on the
+28th). Today's session neither rewrote it on open nor removed it on close, while
+`System/~PEData.3` did go on close; afterwards an exclusive open of the `.ap20`, `PEData.plf`,
+`PEData.idx` and the `.info` itself all succeeded — nothing held the project. The marker's
+body, never parsed until now, is `<InfoFile>` with `User`, `Computer` and `Time`, and no pid, so
+`ProjectOccupancyProbe.Resolve` had nothing to declare it stale by, and "close it and the
+export will run" was advice about a project that was already closed, with no mention of the
+file that had to be deleted. This contradicts the 2026-08-19 GUI measurement in
+`docs/vendors/tia/DRIVING.md` §5 (V21 window, graceful `taskkill`: the marker went on close);
+that measurement stands for what it measured, and this one shows a case it did not cover.
+**Fix:** `TiaPortalProjectFormat.ParseOccupancy` reads user, machine and time (through
+`SafeXml`, as the arch rule requires — the first draft used `XDocument.Parse` and
+`PurityRuleTests` caught it); `ProjectOccupancy` gained `Since` and `Marker`, the probe fills
+`Marker` with the path it read; the orchestrator's refusal now reads *"open in the IDE (TIA
+Portal: <user> on <machine>, since 2026-10-26 16:21:45Z), so it cannot be exported until it
+is closed. Close it and the export will run. If nobody has it open, TIA Portal left its marker
+behind: delete JV_WorkingSpace/ProjectInitial/ProjectInitial.info and the export will run."*
+"Open in the IDE" stays in the wording; three tests and the commit refusal's clipboard text
+look for it.
+
+**Not done, on purpose.** Declaring the `.info` stale automatically. The only process-level
+signal measured is the exclusive-open probe above, and it was measured on the *closed* side
+only; whether Portal holds `PEData.plf` exclusively while the project is open was not
+measured, and a stale policy built on one half of a measurement is the two-writers defect
+waiting to happen. STATUS carries it as a watch item with the measurement that would settle
+it.
+
+**Tests:** `OrphanScannerTests` (two), `ProjectOccupancyTests` (the probe names the file),
+`SyncOrchestratorTests` (the sentence names vendor, time and file), `TiaPortalPureTests`
+(the real marker shape, and non-XML is still Held), `WaitingOnIdePanelTests`.
+
 ### A method header that gained PUBLIC showed nowhere on the Rendered tab, by decision
 
 **2026-10-28, `main`, the owner's `CodesysStandardLibrary`, commit `5780206` in the History
