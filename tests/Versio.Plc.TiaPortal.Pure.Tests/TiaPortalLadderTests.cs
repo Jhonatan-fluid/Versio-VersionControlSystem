@@ -76,6 +76,25 @@ public sealed class TiaPortalLadderTests
     }
 
     [Fact]
+    public void A_committed_copy_that_starts_with_a_byte_order_mark_parses_like_the_working_one()
+    {
+        // The pane's old side comes from `git show`, which hands over the file's bytes, and
+        // Portal writes a BOM. File.ReadAllText strips it from the working copy; the XML
+        // reader refuses it ("Data at the root level is invalid"). Until 2026-10-29 that made
+        // every committed ladder unparseable, and the pane drew every network of a committed
+        // block as added over "nothing committed to compare".
+        var text = File.ReadAllText(Path.Combine(Specimens, "Series.xml"));
+        var plain = TiaPortalProjectFormat.Instance.TryParseLadder("Program blocks/Series.xml", text);
+        var marked = TiaPortalProjectFormat.Instance.TryParseLadder("Program blocks/Series.xml", "\uFEFF" + text);
+
+        Assert.NotNull(plain);
+        Assert.NotNull(marked);
+        Assert.Equal(Shape(plain.Body.Networks[0]), Shape(marked.Body.Networks[0]));
+        // Line info is unchanged by the trim: the mark is not a line.
+        Assert.Equal(plain.Body.Networks[0].Lines, marked.Body.Networks[0].Lines);
+    }
+
+    [Fact]
     public void Branches_join_by_a_shared_wire_or_through_an_or_junction_that_is_not_drawn()
     {
         var networks = Parse("Parallel").Body.Networks;

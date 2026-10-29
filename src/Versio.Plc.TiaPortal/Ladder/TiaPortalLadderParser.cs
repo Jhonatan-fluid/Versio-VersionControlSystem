@@ -102,7 +102,13 @@ public static class TiaPortalLadderParser
         try
         {
             // Line info kept: each network names the file lines it came from (docs/web/PLAN.md, C3).
-            doc = Versio.Core.Text.SafeXml.Parse(content, LoadOptions.SetLineInfo);
+            //
+            // The byte-order mark goes first. Portal writes one, File.ReadAllText drops it, and
+            // `git show` does not — so the working copy parsed and every committed copy did
+            // not, the exception landed in the catch below, and the pane drew every network
+            // of a committed block as added over "nothing committed to compare" (2026-10-29).
+            // The member-table parser had the same trim since its first day.
+            doc = Versio.Core.Text.SafeXml.Parse(content.TrimStart('\uFEFF'), LoadOptions.SetLineInfo);
         }
         catch (System.Xml.XmlException)
         {
