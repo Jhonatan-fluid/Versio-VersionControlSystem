@@ -78,9 +78,11 @@ public sealed class ToolchainRemedyFlowTests
         Assert.True(shell.FixToolchainCommand.CanExecute("plc/Machine.project"));
         Assert.False(shell.FixToolchainCommand.CanExecute(null));
 
-        // Press it.
+        // Press it — through the command, the way the two buttons on the main window do.
         var probesBefore = toolchain.Probes;
-        var message = await shell.FixToolchainAsync(PlcVendor.Codesys, CancellationToken.None);
+        shell.FixToolchainCommand.Execute("plc/Machine.project");
+        await Eventually.Until(() => toolchain.Applied == 1 && !shell.Sync.RemedyInFlight, "the fix ran once", State);
+        var message = shell.Notifications.Visible.Single(n => n.Headline == "Done.").Detail;
 
         Assert.Equal(1, toolchain.Applied);
         Assert.StartsWith("added the account to 'Fake'", message);
@@ -99,6 +101,15 @@ public sealed class ToolchainRemedyFlowTests
         // In the log, both ends.
         Assert.Contains(sink.Snapshot(), e => e.Message.Contains("applying the offered fix", StringComparison.Ordinal));
         Assert.Contains(sink.Snapshot(), e => e.Message.Contains("added the account to 'Fake'", StringComparison.Ordinal));
+
+        // And Try again runs on the rebuilt runner, not the refusing one built at open
+        // (review, 2026-10-29): the export goes through and the failure is gone.
+        Assert.Contains(sink.Snapshot(), e => e.Message.Contains("rebuilding the sync engine", StringComparison.Ordinal));
+        shell.Sync.RefreshFailure("plc/Machine.project");
+        Assert.True(shell.Sync.HasFailure);
+        await shell.Sync.RetryAsync();
+        Assert.Single(toolchain.Jobs, j => j.Operation == PlcOperation.Export);
+        Assert.False(shell.Sync.HasFailure);
     }
 
     [Fact]

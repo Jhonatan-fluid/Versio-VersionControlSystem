@@ -74,6 +74,35 @@ public sealed class SystemInfoWindowTests
     }
 
     [Fact]
+    public void The_window_refuses_to_close_while_an_action_runs()
+    {
+        // IsEnabled disables the client area only; the title bar's close still worked, and
+        // closing the modal mid-action unblocked the main window — and its Fix button — while
+        // the UAC prompt was still up (review, 2026-10-29).
+        StaHarness.Run(async () =>
+        {
+            var gate = new TaskCompletionSource<string>();
+            var window = new SystemInfoWindow(Rows());
+            var running = window.RunActionAsync(new SystemInfoRow("Fix", "x")
+            {
+                Action = new SystemInfoAction("Wait", () => gate.Task),
+            });
+
+            Assert.True(window.ActionRunning);
+            window.Close();
+            Assert.True(window.ActionRunning);
+            Assert.Equal("Wait for the running action to finish before closing.", window.LastOutcome);
+
+            gate.SetResult("Done.");
+            await running;
+
+            Assert.False(window.ActionRunning);
+            Assert.Equal("Done.", window.LastOutcome);
+            window.Close();
+        });
+    }
+
+    [Fact]
     public void A_rows_action_that_throws_is_the_outcome_not_a_closed_window()
     {
         StaHarness.Run(async () =>

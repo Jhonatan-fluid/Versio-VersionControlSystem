@@ -16,8 +16,9 @@ namespace Versio.Plc.TiaPortal.Infrastructure;
 /// asked at all: the first export launched Portal, Portal refused in three seconds with
 /// <i>"Owner … is not member of the windows group 'Siemens TIA Openness'"</i>, and the owner
 /// read that as a failure card an hour into a new machine, with the fix a command in chat.
-/// The token says the same thing in under a millisecond, before anything is launched, and
-/// the status now carries the fix as a button.
+/// The token says the same thing in about twenty milliseconds (a member list is read when
+/// the token says no), before anything is launched, and the status now carries the fix as a
+/// button.
 /// </remarks>
 public sealed class TiaPortalToolchain(
     IVersioLogger? logger = null,
@@ -25,8 +26,9 @@ public sealed class TiaPortalToolchain(
     ILocalGroups? groups = null) : IPlcToolchain
 {
     /// <summary>
-    /// The local group Portal's Openness admits. Created by the Portal installer when the
-    /// Openness feature is selected; a machine without it has Portal and no Openness.
+    /// The local group Portal's Openness admits. The Portal setup creates it (Openness has
+    /// installed with Portal since V14 SP1), so a Portal machine without it has had the group
+    /// deleted or was imaged without it.
     /// </summary>
     public const string OpennessGroup = "Siemens TIA Openness";
 
@@ -150,8 +152,9 @@ public sealed class TiaPortalToolchain(
                     Version = version,
                     Explanation =
                         $"TIA Portal {version} is installed, but the Windows group '{OpennessGroup}' does not " +
-                        "exist on this machine, so the Openness feature is not installed. Run the Portal " +
-                        "setup and add Openness; the group is created with it.",
+                        "exist on this machine. The Portal setup creates it, so it has been deleted or the " +
+                        "machine was imaged without it: an administrator can recreate it (net localgroup " +
+                        $"\"{OpennessGroup}\" /add) or repair the Portal installation.",
                 };
 
             case LocalGroupStanding.MemberNotInToken:
@@ -215,7 +218,7 @@ public sealed class TiaPortalToolchain(
             case LocalGroupStanding.MemberNotInToken:
                 return PlcRemedyOutcome.Done($"{check.Account} is already a member of '{OpennessGroup}'. {SignOutAndIn}");
             case LocalGroupStanding.GroupMissing:
-                return PlcRemedyOutcome.Refused($"the group '{OpennessGroup}' does not exist; install the Openness feature first.");
+                return PlcRemedyOutcome.Refused($"the group '{OpennessGroup}' does not exist on this machine; an administrator has to recreate it first.");
             case LocalGroupStanding.Unknown:
                 return PlcRemedyOutcome.Refused($"the account's standing could not be read: {check.Detail}");
         }

@@ -68,18 +68,21 @@ public partial class SystemInfoWindow : Window
     /// A row's button: run the action, say what it said, then gather the rows again.
     /// </summary>
     /// <remarks>
-    /// The button is disabled while it runs — the first action takes a UAC prompt and a
-    /// helper process, and a second press meanwhile would put up a second prompt. An
-    /// exception is shown as the outcome, not thrown out of a click handler where it would
-    /// close the window with the message unread.
+    /// The window's client area is disabled while it runs, and the window refuses to close —
+    /// the first action takes a UAC prompt and a helper process, and a second press meanwhile,
+    /// or the main window unblocked by closing this one, would put up a second prompt
+    /// (review, 2026-10-29: IsEnabled does not cover the title bar's close). An exception is
+    /// shown as the outcome, not thrown out of a click handler where it would close the window
+    /// with the message unread.
     /// </remarks>
     internal async Task RunActionAsync(SystemInfoRow row)
     {
-        if (row.Action is not { } action)
+        if (row.Action is not { } action || _actionRunning)
         {
             return;
         }
 
+        _actionRunning = true;
         IsEnabled = false;
         try
         {
@@ -97,7 +100,24 @@ public partial class SystemInfoWindow : Window
         finally
         {
             IsEnabled = true;
+            _actionRunning = false;
         }
+    }
+
+    private bool _actionRunning;
+
+    /// <summary>True while a row's action runs; the window cannot be closed meanwhile.</summary>
+    internal bool ActionRunning => _actionRunning;
+
+    protected override void OnClosing(System.ComponentModel.CancelEventArgs e)
+    {
+        if (_actionRunning)
+        {
+            e.Cancel = true;
+            Outcome.Text = "Wait for the running action to finish before closing.";
+        }
+
+        base.OnClosing(e);
     }
 
     private async void OnRunAction(object sender, RoutedEventArgs e)

@@ -596,7 +596,7 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         // After Sync exists: the can-execute reads it.
         FixToolchainCommand = new AsyncCommand<string?>(
             path => FixToolchainForProjectAsync(path, CancellationToken.None),
-            path => path is { Length: > 0 } p && Sync.RemedyFor(p) is not null,
+            path => path is { Length: > 0 } p && !Sync.RemedyInFlight && Sync.RemedyFor(p) is not null,
             onError: ex => Notifications.Failure("The fix could not run.", ex.Message));
 
         // Where this branch stands against the remote, and the background watch that keeps it

@@ -53,8 +53,22 @@ internal sealed class RemedyToolchain : IPlcToolchain
             });
     }
 
+    /// <summary>Jobs run once the fix has made the toolchain available; empty before.</summary>
+    public List<PlcJob> Jobs { get; } = [];
+
     public IPlcRunner CreateRunner(PlcToolchainStatus status) =>
-        new Versio.Infrastructure.Plc.UnavailableToolchainRunner(status.Explanation ?? "unavailable");
+        status.Available
+            ? new Runner(this)
+            : new Versio.Infrastructure.Plc.UnavailableToolchainRunner(status.Explanation ?? "unavailable");
+
+    private sealed class Runner(RemedyToolchain owner) : IPlcRunner
+    {
+        public Task<PlcResult> RunAsync(PlcJob job, IProgress<PlcProgress>? progress, CancellationToken ct)
+        {
+            owner.Jobs.Add(job);
+            return Task.FromResult(new PlcResult { Succeeded = true, Duration = TimeSpan.FromSeconds(1) });
+        }
+    }
 
     public Task<PlcRemedyOutcome> ApplyRemedyAsync(PlcToolchainStatus status, CancellationToken ct)
     {

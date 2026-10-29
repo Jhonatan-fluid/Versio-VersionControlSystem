@@ -97,7 +97,7 @@ public sealed class OpennessGroupTests(ITestOutputHelper output) : IDisposable
     }
 
     [SkippableFact]
-    public async Task No_group_means_no_Openness_feature_and_names_the_Portal_setup()
+    public async Task No_group_means_it_was_deleted_or_never_imaged_and_names_how_to_recreate_it()
     {
         Skip.If(LocalTiaPortalRunner.FindHost() is null, "TIA Portal host was not copied to the output directory");
         var groups = new FakeGroups(LocalGroupStanding.GroupMissing);
@@ -106,7 +106,8 @@ public sealed class OpennessGroupTests(ITestOutputHelper output) : IDisposable
 
         Assert.False(status.Available);
         Assert.Contains("the Windows group 'Siemens TIA Openness' does not exist", status.Explanation);
-        Assert.Contains("Run the Portal setup and add Openness", status.Explanation);
+        Assert.Contains("The Portal setup creates it, so it has been deleted or the machine was imaged without it", status.Explanation);
+        Assert.Contains("net localgroup", status.Explanation);
         Assert.Null(status.Remedy);
     }
 
@@ -156,6 +157,28 @@ public sealed class OpennessGroupTests(ITestOutputHelper output) : IDisposable
 
         Assert.False(outcome.Succeeded);
         Assert.Equal("the administrator prompt was declined, so nothing was changed.", outcome.Message);
+    }
+
+    [SkippableTheory]
+    [InlineData(LocalGroupStanding.InToken, true, "already admitted")]
+    [InlineData(LocalGroupStanding.GroupMissing, false, "recreate it first")]
+    [InlineData(LocalGroupStanding.Unknown, false, "could not be read")]
+    public async Task The_fix_answers_each_standing_the_re_check_can_find_and_starts_no_helper(
+        LocalGroupStanding atApply, bool succeeded, string words)
+    {
+        // Review, 2026-10-29: only the member-not-in-token re-check was covered; deleting the
+        // other three cases fell through to the join.
+        Skip.If(LocalTiaPortalRunner.FindHost() is null, "TIA Portal host was not copied to the output directory");
+        var groups = new FakeGroups(LocalGroupStanding.NotMember);
+        var toolchain = Toolchain(groups);
+        var status = await toolchain.ProbeAsync(CancellationToken.None);
+        groups.Standing = atApply;
+
+        var outcome = await toolchain.ApplyRemedyAsync(status, CancellationToken.None);
+
+        Assert.Equal(succeeded, outcome.Succeeded);
+        Assert.Contains(words, outcome.Message);
+        Assert.Empty(groups.Joins);
     }
 
     [SkippableFact]

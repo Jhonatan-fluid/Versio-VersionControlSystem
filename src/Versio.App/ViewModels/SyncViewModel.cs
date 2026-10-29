@@ -3934,6 +3934,37 @@ public sealed class SyncViewModel : ObservableObject
             return PlcRemedyOutcome.Refused($"{toolchain.Format.DisplayName} offers no fix right now.");
         }
 
+        // One at a time, across every button that offers it. The main window's command has
+        // its own IsRunning, but Settings reaches this directly, and the first fix puts up a
+        // UAC prompt — two in flight would mean two prompts (review, 2026-10-29).
+        if (RemedyInFlight)
+        {
+            return PlcRemedyOutcome.Refused("a fix is already running; wait for it to finish.");
+        }
+
+        RemedyInFlight = true;
+        try
+        {
+            return await ApplyRemedyCoreAsync(toolchain, status, remedy, ct).ConfigureAwait(true);
+        }
+        finally
+        {
+            RemedyInFlight = false;
+        }
+    }
+
+    /// <summary>True while a vendor's fix is running; every button that offers one reads it.</summary>
+    public bool RemedyInFlight
+    {
+        get => _remedyInFlight;
+        private set => SetProperty(ref _remedyInFlight, value);
+    }
+
+    private bool _remedyInFlight;
+
+    private async Task<PlcRemedyOutcome> ApplyRemedyCoreAsync(
+        IPlcToolchain toolchain, PlcToolchainStatus status, PlcToolchainRemedy remedy, CancellationToken ct)
+    {
         using var scope = _logger.BeginOperation(out _);
         _logger.Info(LogCategory.Plc, $"{toolchain.Format.DisplayName}: applying the offered fix — {remedy.Explanation}");
 
@@ -3959,7 +3990,23 @@ public sealed class SyncViewModel : ObservableObject
 
         if (HasRepository)
         {
+            var vendor = toolchain.Format.Vendor;
+            var wasAvailable = _probed.TryGetValue(vendor, out var before) && before.Status?.Available == true;
             await ProbeToolchainAsync(ct).ConfigureAwait(true);
+            var isAvailable = _probed.TryGetValue(vendor, out var after) && after.Status?.Available == true;
+
+            // The runners live in the orchestrator and were built from the probe at open. A
+            // fix that makes a vendor available in this session — not the first one, whose
+            // group joins the token at the next sign-in, but the shape is neutral — would
+            // otherwise leave Try again on the refusing runner while the card says installed
+            // (review, 2026-10-29). Rebuilt only on that flip: construction runs lock
+            // recovery, which is not for every press.
+            if (isAvailable && !wasAvailable)
+            {
+                _logger.Info(LogCategory.Plc, $"{toolchain.Format.DisplayName} is available now; rebuilding the sync engine");
+                await BuildOrchestratorAsync(ct).ConfigureAwait(true);
+            }
+
             RefreshFailure(_failureQuery);
         }
 
