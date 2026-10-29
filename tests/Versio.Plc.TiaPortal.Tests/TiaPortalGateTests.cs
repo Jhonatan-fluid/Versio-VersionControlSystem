@@ -2,6 +2,7 @@ using System.Text;
 using System.Text.RegularExpressions;
 using Versio.Core.Logging;
 using Versio.Core.Plc;
+using Versio.Core.Projects;
 using Versio.Infrastructure.FileSystem;
 using Versio.Plc.TiaPortal;
 using Versio.Plc.TiaPortal.Infrastructure;
@@ -318,6 +319,105 @@ public sealed class TiaPortalGateTests(ITestOutputHelper output)
             TryDeleteTree(exportDir);
         }
     }
+
+    /// <summary>
+    /// Export twice into one tree: the second run must ask Portal for no block or type
+    /// (every one is kept by its unchanged <c>ModifiedDate</c>), then force every recorded
+    /// stamp to mismatch and prove the third run exports them all again.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The second half is the mutation check the skip owes: a skip that silently stopped
+    /// firing would pass the first half of every other Fact (they compare files, and a full
+    /// export writes the same files), and a skip that fired on a bad comparison would pass
+    /// the first half of this one. Only "mismatch forces a full export" pins that the stamp
+    /// is what decides. The edit is to the manifest on disk, the same edit a person could
+    /// make, so no second host build is needed for it.
+    /// </para>
+    /// <para>
+    /// What is written is read from <see cref="PlcResult.ChangedPaths"/>: the host emits an
+    /// <c>object</c> event for a file it wrote and none for one it kept, which is also what
+    /// the sync log counts. Tag tables and hardware are always exported, so the second run's
+    /// list is not empty — it is the list without a single <c>.scl</c>, <c>.udt</c> or block
+    /// XML in it. Durations go to the test output; they are not asserted, because Portal's
+    /// start dominates on a fixture this size (159 identities at ~88 ms is 14 s of a 37 s run).
+    /// </para>
+    /// </remarks>
+    [SkippableFact(Timeout = 1_200_000)]
+    public async Task A_second_export_keeps_every_unchanged_block_and_type_and_a_forced_stamp_mismatch_exports_them_again()
+    {
+        Skip.IfNot(OperatingSystem.IsWindows(), "TIA Portal is Windows-only");
+        var installs = new TiaPortalLocator().FindInstalls();
+        Skip.If(installs.Count == 0, "no TIA Portal install");
+
+        var fixture = TestPaths.TiaPortalProject();
+        Skip.If(fixture is null, "committed TIA fixture is missing or is an LFS pointer — git lfs pull");
+        SkipUnlessFixtureReleaseInstalled(fixture!);
+
+        var toolchain = new TiaPortalToolchain(NullLogger.Instance);
+        var status = await toolchain.ProbeAsync(CancellationToken.None);
+        Skip.If(!status.Available, status.Explanation);
+        Skip.If(LocalTiaPortalRunner.FindHost() is null, "TIA Portal host was not copied to the output directory");
+
+        var exportDir = Path.Combine(Path.GetTempPath(), "versio-tia-keep-" + Guid.NewGuid().ToString("N")[..8]);
+        Directory.CreateDirectory(exportDir);
+        try
+        {
+            var runner = toolchain.CreateRunner(status);
+            var first = await runner.RunAsync(Job(PlcOperation.Export, status.Profile ?? "", fixture!, exportDir), null, CancellationToken.None);
+            SkipIfMeasuredBlocker(first);
+            Assert.True(first.Succeeded, first.FailureReason);
+            var manifestPath = Path.Combine(exportDir, "_manifest.json");
+            var before = ProjectManifest.Parse(File.ReadAllText(manifestPath));
+            Assert.Equal(ExportBaselineStampSchema, before.Schema);
+            var stamped = before.Objects.Where(o => o.Type is not "TAG_TABLE" and not "DEVICE").ToList();
+            Assert.NotEmpty(stamped);
+            Assert.All(stamped, o => Assert.NotEqual("", o.Stamp));
+            var writtenFirst = first.ChangedPaths.Count(IsBlockOrType);
+            Assert.True(writtenFirst > 0, "the first export wrote no block or type");
+
+            var second = await runner.RunAsync(Job(PlcOperation.Export, status.Profile ?? "", fixture!, exportDir), null, CancellationToken.None);
+            SkipIfMeasuredBlocker(second);
+            Assert.True(second.Succeeded, second.FailureReason);
+            output.WriteLine($"first export {first.Duration.TotalSeconds:F1}s wrote {first.ChangedPaths.Count}; " +
+                             $"second {second.Duration.TotalSeconds:F1}s wrote {second.ChangedPaths.Count}");
+            Assert.DoesNotContain(second.ChangedPaths, IsBlockOrType);
+            var after = ProjectManifest.Parse(File.ReadAllText(manifestPath));
+            Assert.Equal(
+                before.Objects.Select(o => (o.Guid, o.Path, o.Form, o.Hash, o.NormalizedHash, o.Stamp)).OrderBy(t => t.Path, StringComparer.Ordinal),
+                after.Objects.Select(o => (o.Guid, o.Path, o.Form, o.Hash, o.NormalizedHash, o.Stamp)).OrderBy(t => t.Path, StringComparer.Ordinal));
+
+            // The mutation: every stamp replaced on disk. If the third run keeps anything, the
+            // walk is not deciding on the stamp.
+            var json = File.ReadAllText(manifestPath);
+            var mutated = Regex.Replace(json, "\"stamp\": \"[^\"]+\"", "\"stamp\": \"1999-01-01T00:00:00.0000000Z\"");
+            Assert.NotEqual(json, mutated);
+            File.WriteAllText(manifestPath, mutated, new UTF8Encoding(false));
+
+            var third = await runner.RunAsync(Job(PlcOperation.Export, status.Profile ?? "", fixture!, exportDir), null, CancellationToken.None);
+            SkipIfMeasuredBlocker(third);
+            Assert.True(third.Succeeded, third.FailureReason);
+            output.WriteLine($"third (stamps forced to mismatch) {third.Duration.TotalSeconds:F1}s wrote {third.ChangedPaths.Count}");
+            Assert.Equal(writtenFirst, third.ChangedPaths.Count(IsBlockOrType));
+            var recovered = ProjectManifest.Parse(File.ReadAllText(manifestPath));
+            Assert.All(recovered.Objects.Where(o => o.Type is not "TAG_TABLE" and not "DEVICE"),
+                o => Assert.NotEqual("1999-01-01T00:00:00.0000000Z", o.Stamp));
+        }
+        finally
+        {
+            TryDeleteTree(exportDir);
+        }
+    }
+
+    /// <summary>The host's <c>ExportBaseline.StampSchema</c>; the host is net48 and not referenced here.</summary>
+    private const int ExportBaselineStampSchema = 11;
+
+    private static bool IsBlockOrType(string path) =>
+        path.EndsWith(".scl", StringComparison.OrdinalIgnoreCase)
+        || path.EndsWith(".udt", StringComparison.OrdinalIgnoreCase)
+        || (path.EndsWith(".xml", StringComparison.OrdinalIgnoreCase)
+            && (path.Contains("/Program blocks/", StringComparison.Ordinal)
+                || path.Contains("/PLC data types/", StringComparison.Ordinal)));
 
     /// <summary>
     /// Export, mutate one <c>.scl</c> and one <c>.udt</c>, import the planner's plan,
