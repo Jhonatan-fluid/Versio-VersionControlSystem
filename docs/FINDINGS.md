@@ -19,6 +19,57 @@ produce a diff touching everything else.
 
 ---
 
+### The Openness access list: read before launch, never written, and said on the card
+
+**2026-10-29, `main`, the owner's `controls-design-siemens`, the afternoon after the two
+findings below.** The installed Versio (0.4.17, with the V20 support and the group fix of the
+morning) exported the V20 project for the first time, and Portal put up *Openness access
+(0033:000666)* — *"The application 'Versio.Plc.TiaPortal.Host.exe' … is attempting to access
+the TIA Portal … Do you want to grant access?"* — over the failure pane. The owner's words:
+"am I going to get this message every time?", and then, on the alternative of Versio writing
+the entry itself: "whats the downside of trusting its own next build?"
+
+**What the registry said.** Under `HKLM\SOFTWARE\Siemens\Automation\Openness` there were three
+entries for the one exe name, in two lists:
+
+| Key | `Path` | `FileHash` | `DateModified` |
+|---|---|---|---|
+| `20.0\Whitelist\…\Entry` | `…\Packages\Claude_…\LocalCache\Local\Versio\current\tia\…Host.exe` | `uNMGyQ4q…` | `2026/10/28 20:55:24.056` |
+| `AllowList\…\Entry` | `…\AppData\Local\Versio\current\tia\…Host.exe` | `yuBvRtGV…` | `2026/10/29 16:04:33.956` |
+| `20.0\Whitelist\…\Entry (1)` | `…\AppData\Local\Versio\current\tia\…Host.exe` | `/3sK8enX…` | `2026/10/29 19:31:13.153` |
+
+`uNMGyQ4q…` is the base64 SHA-256 of the 2026-10-28 host, and `20:55:24.056` is that file's
+last write in UTC to the millisecond; `/3sK8enX…` is the SHA-256 of the Release host built at
+12:25 local and installed at 12:31:13, five seconds before the log's *Versio 0.4.17 starting*.
+So the entry is path + file hash + file write time, V21 keeps it at the root `AllowList` and
+V20 under `20.0\Whitelist`, each release keeps its own, and "once per update per release" is
+what the three rows are. The first row's path is the Claude app's virtualised
+`%LOCALAPPDATA%`: a Versio started from that app's shell saw the install through MSIX
+redirection, and Portal recorded the path the process reported. The same redirection made the
+shell's hash of the installed host the 2026-10-28 one while Portal was hashing the 0.4.17 file
+— ten minutes of "three hashes for one file" until the Release build's hash matched the third.
+
+**The decision.** Pre-registering the host from the elevated helper was rejected, with the
+owner: it moves the trust decision from a person at the screen to the release channel, it
+still needs an administrator because the list is under HKLM (so a UAC prompt per update
+instead of Siemens's dialog per update), and it depends on an undocumented format. What had
+actually cost the morning was the surprise and the nine-minute silence of an unanswered dialog,
+whose timeout — *"Security error. The operation has timed out."* — names neither Openness nor
+access.
+
+**What was built.** `OpennessAccessList` in the TIA Infrastructure pack reads the list for a
+release and a host (path and hash; the date is not compared, and an entry for the path with
+another hash is said to be the post-update state); `PlcToolchainStatus.Notice`, neutral, is a
+sentence true of an *available* toolchain for its next run; the TIA probe fills it per release
+that will ask, the project card reads *installed. Portal V20 will ask for Openness access…*,
+Settings → System information has a *Next run* row, the runner re-checks at launch and warns,
+and the security timeout on a run that knew a dialog was coming carries what to press next
+time. Ten tests in `OpennessAccessListTests` (the key rename between V20 and V21, the hash and
+stamp formats against an independent SHA-256, the match rule, a never-granted file against the
+real registry, an unhashable host as Unknown, the hint rule, and the notice and runner warning
+against a fake list), one `ToolchainRowsTests` row and `ToolchainNoticeTests` in the App suite.
+DRIVING §2.3 has the shape; STATUS item 20 is struck through.
+
 ### The Openness group: detected before Portal is launched, and fixed from a button
 
 **2026-10-29, `main`, the owner's `controls-design-siemens`, the hour before the two-releases

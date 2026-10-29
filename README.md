@@ -215,7 +215,7 @@ Versio.sln
 ├─ tests/
 │  ├─ Versio.TestSupport/       not a test project: the three helpers more than one suite
 │  │                            needs (TestPaths, TestLogger, VendorSeamScanner, LadderInvariants)
-│  ├─ Versio.Core.Tests/        1,951 unit tests — pure, no IO, under a second
+│  ├─ Versio.Core.Tests/        2,116 unit tests — pure, no IO, under a second
 │  ├─ Versio.Integration.Tests/ 188 tests against real git and the real filesystem, ~40 s.
 │  │                            NO CODESYS: that is a different project now, so this one
 │  │                            needs no filter and cannot accidentally cost half an hour
@@ -230,7 +230,7 @@ Versio.sln
 │  │                            before a commit, and the only suite that needs that toolchain
 │  ├─ Versio.Plc.TiaPortal.Pure.Tests/ 117 pure vendor tests — format, planner, protocol,
 │  │                            data-block member table, LAD and FBD parser and approved drawings
-│  ├─ Versio.Plc.TiaPortal.Tests/ 31 tests: 5 against real TIA Portal, which skip with a count
+│  ├─ Versio.Plc.TiaPortal.Tests/ 41 tests: 5 against real TIA Portal, which skip with a count
 │  │                            when Openness membership or the install is missing, and 26 on
 │  │                            which Portal release opens which project and what the Openness
 │  │                            group check says, against fake installs and a fake group reader
@@ -437,14 +437,14 @@ dotnet test tests/Versio.Core.Tests
 
 | Suite | Tests | Needs | Runs in |
 |---|---|---|---|
-| `Versio.Core.Tests` | 2,111 | nothing — pure, no IO, no clock, no UI | ~0.3 s |
-| `Versio.Integration.Tests` | 266 | a real `git.exe`, the real filesystem, and the real Windows local groups for five | ~55 s |
+| `Versio.Core.Tests` | 2,116 | nothing — pure, no IO, no clock, no UI | ~0.3 s |
+| `Versio.Integration.Tests` | 268 | a real `git.exe`, the real filesystem, and the real Windows local groups for five | ~55 s |
 | `Versio.Arch.Tests` | 45 | nothing — it reads assembly metadata, IL, and the project files | instant |
-| `Versio.App.Tests` | 891 | Windows (WPF). Builds the real dialogs against the real stylesheet on an STA thread; **no window is ever shown**. One test runs the web viewer too, over every fixture row, and references `Versio.Web.Tests` for its fake GitHub | ~3.6–11 min |
+| `Versio.App.Tests` | 893 | Windows (WPF). Builds the real dialogs against the real stylesheet on an STA thread; **no window is ever shown**. One test runs the web viewer too, over every fixture row, and references `Versio.Web.Tests` for its fake GitHub | ~3.6–11 min |
 | `Versio.Plc.Codesys.Pure.Tests` | 405 | nothing — the vendor's planner, codecs, protocol, LD/FBD parser and File-Based Storage layout, pure | under a second |
 | `Versio.Plc.Codesys.Parity.Tests` | 104 | `python` on PATH, no CODESYS — **skips cleanly without python, so check the count** | ~15 s |
-| `Versio.Plc.TiaPortal.Pure.Tests` | 117 | nothing — format, planner, protocol, scrubber, member table, LAD and FBD parser | instant |
-| `Versio.Plc.TiaPortal.Tests` | 31 | **a real TIA Portal** for 5; skips cleanly without Openness membership. The 26 Portal-release-choice and Openness-group tests use fake install trees and run everywhere | seconds when skipped |
+| `Versio.Plc.TiaPortal.Pure.Tests` | 118 | nothing — format, planner, protocol, scrubber, member table, LAD and FBD parser | instant |
+| `Versio.Plc.TiaPortal.Tests` | 41 | **a real TIA Portal** for 5; skips cleanly without Openness membership. The 36 Portal-release-choice, Openness-group and access-list tests use fake install trees, a fake group reader and a fake access list and run everywhere | seconds when skipped |
 | `Versio.Plc.TwinCat.Pure.Tests` | 27 | nothing — the vendor's planner, format and protocol, and the host's text rules compiled in as source | instant |
 | `Versio.Plc.TwinCat.Tests` | 6 | **a real TwinCAT XAE**; skips cleanly without `TcXaeShell.DTE.17.0` | seconds when skipped; ~5 min when XAE runs the import gate |
 | `Versio.Web.Tests` | 508 | nothing — the web viewer against a faked GitHub; one test starts the built server | a few seconds |

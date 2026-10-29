@@ -165,17 +165,22 @@ installer is per-user and has no rights), not at launch, not on a retry. After a
 user still has to sign out and in; the sentence says so, and the probe then reports the third
 row until they do.
 
-Not done, on purpose: the AllowList (§2.3) could be pre-registered by the same elevated helper
+Not done, on purpose: the access list (§2.3) could be pre-registered by the same elevated helper
 and would spare the access dialog after every update. That is a security control saying
 "trust this binary", and an auto-updater quietly trusting its own next build is a decision for
-a reviewer, not a side effect of a group fix. STATUS *What is next* carries it.
+a reviewer, not a side effect of a group fix. **Decided with the owner on 2026-10-29: read,
+never written** — §2.3 has the reasoning and what is done instead.
 
-### 2.3 Firewall AllowList
+### 2.3 The Openness access list
 
 The first successful connect also needs **Yes to all** on the Openness access dialog
 (path + hash + timestamp of the host exe). Window title: `Openness access (0033:000666)`.
+**Yes** admits this one process; **Yes to all** writes the entry below and Portal stops asking
+for that exact file.
 
-A debug rebuild of the host changes the hash and drops off the list. An unanswered dialog is:
+A debug rebuild of the host changes the hash and drops off the list — and so does every Versio
+update, which is why the owner asked on 2026-10-29 whether the dialog would come back every
+time. An unanswered dialog is:
 
 ```
 Security error. The operation has timed out.
@@ -183,6 +188,48 @@ Security error. The operation has timed out.
 
 Measured at **8 min 53 s**. That string names neither `Access` nor `Openness`, so the gate
 used to go red instead of skip until those words were added to the skip matcher.
+
+**Where it lives (observed 2026-10-29 with V20 and V21 side by side; Siemens documents none of
+it).** Under `HKLM\SOFTWARE\Siemens\Automation\Openness`:
+
+| Release | Key | Entries |
+|---|---|---|
+| V21 | `AllowList\<exe name>\Entry`, `Entry (1)`, … | `Path`, `FileHash`, `DateModified` |
+| V20 | `20.0\Whitelist\<exe name>\Entry`, … | the same three values |
+
+`FileHash` is base64 of the file's SHA-256 (matched byte for byte against the installed host);
+`DateModified` is the file's last write in UTC, `yyyy/MM/dd HH:mm:ss.fff` (matched to the
+millisecond); `Path` is the process image as Portal saw it. The owner's machine had three
+entries for one exe name with three hashes: the host of 2026-10-28, the morning update's and
+the afternoon's. Each Portal release keeps its own list, so a host listed for V21 is asked
+again by V20.
+
+**What Versio does: reads it, never writes it.** `OpennessAccessList` (the Infrastructure
+pack) hashes the host it is about to launch and looks for an entry with that path and hash
+under the release's keys — both spellings under `<N>.0\`, and the root `AllowList` for V21 on,
+because the name moved between those two releases. The date is not compared. Then:
+
+- the probe puts a sentence on an *available* status (`PlcToolchainStatus.Notice`) naming the
+  release(s) that will ask, the window, *Yes to all*, and the nine-minute timeout; the project
+  card reads *installed. Portal V20 will ask for Openness access…* and Settings → System
+  information has it as a *Next run* row; the `toolchain ready` log line carries each
+  release's standing;
+- the runner asks again at launch, because the probe may be minutes old and an update in
+  between is what drops the host off the list, and warns in the log;
+- the timeout above, on a run that knew a dialog was coming, is reported with what it was and
+  what to press next time.
+
+Why not write the entry from the elevated helper: it moves the trust decision from the person
+at the screen to whoever can publish a release; it still needs an administrator (HKLM), so the
+dialog would become a UAC prompt rather than disappear; and it depends on a format Siemens can
+change in any release with nothing to tell us but a broken export. What cost the morning was the
+surprise and the silence, and a sentence before the run removes both.
+
+**A trap for whoever tests this from a shell:** a process under a packaged (MSIX) application —
+the Claude desktop app's shell, for one — sees a virtualised `%LOCALAPPDATA%`, and the copy of
+the installed host it reads there can be days older than the file Portal and the real Versio
+see (on 2026-10-29: a 2026-10-28 host in the shell, the 0.4.17 host for Portal). The hash from
+such a shell is not the hash in the list.
 
 ### 2.4 Closing before a rebuild
 
