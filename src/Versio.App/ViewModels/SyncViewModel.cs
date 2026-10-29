@@ -1302,12 +1302,31 @@ public sealed class SyncViewModel : ObservableObject
         if (Projects.FirstOrDefault(p => p.BindingId == notice.BindingId) is { } row)
         {
             row.Busy = false;
+
+            // Put back by the hand that took it. OnRunStarted wrote "exporting…" over the
+            // row, and this used to leave the words there for "the rescan that follows" to
+            // replace from the lock, on the argument that clearing them here would blank
+            // the row between the run ending and the scan finishing. The rescan is not
+            // guaranteed: the caller runs it on an outcome that did work, and a save
+            // landing mid-run handed the caller the follow-up's NoChange instead
+            // (RunLoopAsync's remark), so LBB101.ap20 said "exporting…" an hour after a
+            // 136 s export (2026-10-29). The lock already holds the state the run left,
+            // which is exactly what the rescan would read — so the row is not blanked, it
+            // is told, and a rescan that does follow writes the same words over it.
+            if (_orchestrator is not null)
+            {
+                row.State = SyncNarrative.Label(_orchestrator.StateOf(notice.BindingId));
+            }
         }
 
-        // The row's state is left to the rescan that follows, which reads it from the lock
-        // rather than guessing. Clearing it here would blank the row for the moment between
-        // the run ending and the scan finishing.
         Activity = string.Empty;
+
+        // As in OnRunStarted: the row's words live in the tree, which rebuilds only when
+        // its signature moves, and the state just moved.
+        if (_lastStatus is { } status)
+        {
+            _ = RefreshTreeAsync(status);
+        }
     });
 
     /// <summary>

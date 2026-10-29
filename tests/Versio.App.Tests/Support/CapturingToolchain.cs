@@ -48,16 +48,28 @@ internal sealed class CapturingToolchain : IPlcToolchain, IPlcRunner
 
     public IPlcRunner CreateRunner(PlcToolchainStatus status) => this;
 
-    public Task<PlcResult> RunAsync(
+    /// <summary>
+    /// Runs inside each job, after it is recorded and before it completes — the moment a
+    /// save lands "while the last run was in flight". The same hook the Core fake has, for
+    /// the same reason: nothing else can put the view model into that moment.
+    /// </summary>
+    public Func<PlcJob, Task>? BeforeRun { get; set; }
+
+    public async Task<PlcResult> RunAsync(
         PlcJob job, IProgress<PlcProgress>? progress, CancellationToken ct)
     {
         Jobs.Add(job);
 
-        return Task.FromResult(new PlcResult
+        if (BeforeRun is not null)
+        {
+            await BeforeRun(job).ConfigureAwait(false);
+        }
+
+        return new PlcResult
         {
             Succeeded = FailWith is null,
             FailureReason = FailWith,
             Duration = TimeSpan.FromSeconds(18),
-        });
+        };
     }
 }
