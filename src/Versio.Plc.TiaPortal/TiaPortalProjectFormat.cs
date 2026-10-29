@@ -31,6 +31,15 @@ public sealed class TiaPortalProjectFormat : IPlcProjectFormat
     public string ProjectLabelFor(string projectPath) =>
         ReleaseOf(projectPath) is { } release ? $"{DisplayName} {release}" : DisplayName;
 
+    /// <inheritdoc />
+    /// <remarks>
+    /// The release in the extension, and the probe's profile only for a path that carries
+    /// none — which this format does not claim, so in practice the binding records the
+    /// project's own release and never the newest Portal the machine happens to have.
+    /// </remarks>
+    public string? ProfileFor(string projectPath, string? toolchainProfile) =>
+        ReleaseOf(projectPath) ?? toolchainProfile;
+
     /// <summary>
     /// The Portal release a project file opens in, from its extension: <c>.ap20</c> is
     /// <c>V20</c>. Null when the extension does not carry a number.

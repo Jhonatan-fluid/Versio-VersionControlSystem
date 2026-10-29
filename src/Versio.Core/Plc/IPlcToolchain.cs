@@ -65,6 +65,30 @@ public interface IPlcProjectFormat
     string ProjectLabelFor(string projectPath) => DisplayName;
 
     /// <summary>
+    /// The toolchain profile to pin on a binding for this project, given what the probe
+    /// reported for the vendor as a whole.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Default is the probe's <see cref="PlcToolchainStatus.Profile"/>: for a vendor whose
+    /// project file does not say which toolchain version wrote it, the machine's one usable
+    /// install is the best fact there is. A format whose path carries its release overrides
+    /// this, the same way it overrides <see cref="ProjectLabelFor"/>: a TIA Portal
+    /// <c>.ap20</c> is a V20 project whatever Portal the probe called newest.
+    /// </para>
+    /// <para>
+    /// Asked here because the binding's profile is written by code above the seam
+    /// (<c>SyncViewModel</c> at adoption) that cannot read a vendor's extension, and the
+    /// binding is committed and shared. Until 2026-10-29 that code pinned the probe's
+    /// profile on every binding, and a V20 project adopted on a machine with V20 and V21
+    /// was recorded in <c>.versio/repo.json</c> as a V21 binding — a falsehood nothing
+    /// acted on yet, logged on every export, and waiting for the first guard that reads
+    /// <c>binding.Profile</c> as the release. Found in review the same day.
+    /// </para>
+    /// </remarks>
+    string? ProfileFor(string projectPath, string? toolchainProfile) => toolchainProfile;
+
+    /// <summary>
     /// How this vendor's runner labels its own log lines.
     /// </summary>
     /// <remarks>

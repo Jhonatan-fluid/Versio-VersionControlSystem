@@ -58,6 +58,19 @@ public sealed class TiaPortalFormatTests
     }
 
     [Fact]
+    public void The_profile_pinned_on_a_binding_is_the_projects_release_not_the_probes_newest()
+    {
+        // Review, 2026-10-29: adoption pinned the probe's profile — the newest Portal — on
+        // every binding, so a V20 project on a V20 + V21 machine was committed as "V21".
+        var format = TiaPortalProjectFormat.Instance;
+        Assert.Equal("V20", format.ProfileFor("plc/ProjectInitial.ap20", "V21"));
+        Assert.Equal("V21", format.ProfileFor(@"plc\Station.ap21", "V20"));
+        // No release on the path: the probe's word stands, as for any other vendor.
+        Assert.Equal("V21", format.ProfileFor("plc/Line.apx", "V21"));
+        Assert.Null(format.ProfileFor("plc/Line.apx", null));
+    }
+
+    [Fact]
     public void The_payload_is_the_directory_containing_the_pointer_file()
     {
         var payload = TiaPortalProjectFormat.Instance.PayloadPathFor(@"C:\plc\Station\Station.ap21");
