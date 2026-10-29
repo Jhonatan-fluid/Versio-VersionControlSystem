@@ -143,6 +143,32 @@ public sealed record ProjectObject
     /// </para>
     /// </remarks>
     [JsonPropertyName("shash")] public string LineSketch { get; init; } = string.Empty;
+
+    /// <summary>
+    /// The toolchain's own modification stamp for the object this file belongs to, verbatim,
+    /// when the toolchain keeps one. Empty before schema 11, and empty for every object whose
+    /// toolchain reports none.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>It exists so a re-export can leave an unchanged object alone.</b> A TIA Portal export
+    /// is one <c>Export</c> and one <c>GenerateSource</c> round trip into Portal per object,
+    /// about 88 ms each, and a save that touched one block re-exported all 1,366 of the owner's
+    /// (2026-10-29). Portal maintains a per-object <c>ModifiedDate</c>; recording it beside each
+    /// file is what lets the next export compare and keep the file instead of regenerating it.
+    /// The rules for keeping, and what moves the stamp, are the vendor's (<c>ExportBaseline</c>
+    /// in the TIA host, DRIVING §7.1); this is only where the value is kept.
+    /// </para>
+    /// <para>
+    /// <b>Opaque here, on purpose.</b> It is compared for equality by the vendor that wrote it
+    /// and never parsed by anything neutral — a date for one vendor, a revision counter for
+    /// another, nothing at all for CODESYS, which records none. <b>Empty is "nothing recorded",
+    /// not "unchanged"</b>: the same reading <see cref="NormalizedHash"/> needed at schema 5,
+    /// and for the same reason — treating absence as agreement would keep stale files on every
+    /// mirror exported before the stamp existed.
+    /// </para>
+    /// </remarks>
+    [JsonPropertyName("stamp")] public string Stamp { get; init; } = string.Empty;
     [JsonPropertyName("bytes")] public long Bytes { get; init; }
 }
 
@@ -204,7 +230,9 @@ public sealed record ProjectManifest
     /// Manifest format version. 2 added <see cref="Skipped"/>; 3 exports library references;
     /// 4 records each member's owner in <see cref="ProjectObject.Parent"/>; 8 names the
     /// <see cref="Vendor"/> that wrote it; 9 makes a recorded path the whole chain of names
-    /// to the object; 10 records the <see cref="ToolchainVersion"/> that produced it.
+    /// to the object; 10 records the <see cref="ToolchainVersion"/> that produced it; 11
+    /// records each object's <see cref="ProjectObject.Stamp"/>, the toolchain's own
+    /// modification stamp, so a re-export can keep what has not moved.
     /// </summary>
     /// <remarks>
     /// <para>
