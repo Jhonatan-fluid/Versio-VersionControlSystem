@@ -37,34 +37,37 @@ public sealed class TiaPortalHostExportFileTests
         + "</Document>\r\n";
 
     [Fact]
-    public void Stripping_the_stamp_removes_that_line_and_nothing_else()
+    public void An_export_that_changed_nothing_but_its_stamp_leaves_the_previous_file_untouched()
     {
-        var stripped = HostApp.StripExportStamp(Stamped);
+        // The previous export, as Portal wrote it: BOM, CRLF, stamp. Portal writes it again
+        // with a later stamp and nothing else different; the mirror must not move.
+        using var dir = new TempDir();
+        var path = Path.Combine(dir.Path, "Main.xml");
+        byte[] previous = [0xEF, 0xBB, 0xBF, .. Encoding.UTF8.GetBytes(Stamped)];
+        File.WriteAllBytes(path, previous);
+        var written = File.GetLastWriteTimeUtc(path);
 
-        Assert.DoesNotContain("<Created>", stripped, StringComparison.Ordinal);
-        Assert.Equal(Stamped.Replace("    <Created>2026-10-29T20:49:45.6025282Z</Created>\r\n", "", StringComparison.Ordinal), stripped);
-        // Portal's line endings survive: the file stays Portal's bytes but for the one line.
-        Assert.Contains("</DocumentInfo>\r\n", stripped, StringComparison.Ordinal);
-        Assert.DoesNotContain("\n\n", stripped, StringComparison.Ordinal);
-        // A file without the stamp is left alone.
-        Assert.Equal(stripped, HostApp.StripExportStamp(stripped));
+        HostApp.ExportXml(new RestampingBlock(), path);
+
+        Assert.Equal(previous, File.ReadAllBytes(path));
+        Assert.Equal(written, File.GetLastWriteTimeUtc(path));
+        Assert.Single(Directory.GetFiles(dir.Path));
     }
 
     [Fact]
-    public void Only_the_headers_stamp_is_stripped_a_Created_line_in_the_body_is_content()
+    public void An_export_that_changed_the_object_replaces_the_previous_file_stamp_and_all()
     {
-        var withBody = Stamped.Replace(
-            "      <Name>Main</Name>\r\n",
-            "      <Name>Main</Name>\r\n      <Created>2026-01-01T00:00:00Z</Created>\r\n",
-            StringComparison.Ordinal);
+        using var dir = new TempDir();
+        var path = Path.Combine(dir.Path, "Main.xml");
+        File.WriteAllBytes(path, [0xEF, 0xBB, 0xBF, .. Encoding.UTF8.GetBytes(Stamped)]);
 
-        var stripped = HostApp.StripExportStamp(withBody);
+        HostApp.ExportXml(new RenamingBlock(), path);
 
-        Assert.DoesNotContain("<Created>2026-10-29", stripped, StringComparison.Ordinal);
-        Assert.Contains("      <Created>2026-01-01T00:00:00Z</Created>\r\n", stripped, StringComparison.Ordinal);
-        // No header at all: nothing to do, and the text is handed back as it came.
-        const string headerless = "<Document><SW.Blocks.OB><Created>x</Created></SW.Blocks.OB></Document>";
-        Assert.Same(headerless, HostApp.StripExportStamp(headerless));
+        var text = File.ReadAllText(path);
+        Assert.Contains("<Name>Main_1</Name>", text, StringComparison.Ordinal);
+        // Portal's bytes, untouched: the later stamp is in the file, as Portal wrote it.
+        Assert.Contains("<Created>2026-10-29T21:03:12.0000000Z</Created>", text, StringComparison.Ordinal);
+        Assert.Single(Directory.GetFiles(dir.Path));
     }
 
     [Fact]
@@ -90,30 +93,12 @@ public sealed class TiaPortalHostExportFileTests
     }
 
     [Fact]
-    public void Scrubbing_the_file_keeps_its_byte_order_mark_and_its_line_endings()
-    {
-        using var dir = new TempDir();
-        var path = Path.Combine(dir.Path, "Main.xml");
-        File.WriteAllBytes(path, [0xEF, 0xBB, 0xBF, .. Encoding.UTF8.GetBytes(Stamped)]);
-
-        HostApp.ScrubExportedFile(path);
-
-        var bytes = File.ReadAllBytes(path);
-        Assert.Equal([0xEF, 0xBB, 0xBF], bytes.Take(3));
-        var text = Encoding.UTF8.GetString(bytes, 3, bytes.Length - 3);
-        Assert.DoesNotContain("<Created>", text, StringComparison.Ordinal);
-        Assert.Contains("\r\n", text, StringComparison.Ordinal);
-        Assert.DoesNotContain("\uFEFF", text, StringComparison.Ordinal);
-    }
-
-    [Fact]
     public void Two_exports_that_differ_only_by_their_stamp_hash_alike()
     {
-        // The written file has no stamp and an in-session export has one; the deletion
-        // check compares the two through this hash, so the stamp must not be in it.
+        // Two exports of one unchanged object differ by this line alone; the deletion check
+        // and the keep in ExportXml both compare through this hash, so it must not be in it.
         var later = Stamped.Replace("20:49:45.6025282Z", "21:03:12.0000000Z", StringComparison.Ordinal);
         Assert.Equal(HostApp.HashNormalized(Stamped), HostApp.HashNormalized(later));
-        Assert.Equal(HostApp.HashNormalized(Stamped), HostApp.HashNormalized(HostApp.StripExportStamp(Stamped)));
         Assert.NotEqual(
             HostApp.HashNormalized(Stamped),
             HostApp.HashNormalized(Stamped.Replace("<Name>Main</Name>", "<Name>Main_1</Name>", StringComparison.Ordinal)));
@@ -262,7 +247,7 @@ public sealed class TiaPortalHostExportFileTests
     }
 
     [Fact]
-    public void A_block_Portal_exports_lands_without_its_stamp_and_its_row_hashes_as_if_it_had_one()
+    public void A_block_Portal_exports_lands_as_Portal_wrote_it_and_its_row_hashes_without_the_stamp()
     {
         using var dir = new TempDir();
         var project = new FakeProject(new FakeDevice("Dev", new PlcSoftware("PLC", new FakeBlockGroup(new WritingOB()))));
@@ -271,21 +256,44 @@ public sealed class TiaPortalHostExportFileTests
 
         var mainPath = Path.Combine(dir.Path, "Dev", "PLC", "Program blocks", "Main.xml");
         var bytes = File.ReadAllBytes(mainPath);
-        Assert.Equal([0xEF, 0xBB, 0xBF], bytes.Take(3));
-        var text = Encoding.UTF8.GetString(bytes, 3, bytes.Length - 3);
-        Assert.DoesNotContain("<Created>", text, StringComparison.Ordinal);
-        Assert.Contains("<ExportSetting>None</ExportSetting>\r\n", text, StringComparison.Ordinal);
+        Assert.Equal([0xEF, 0xBB, 0xBF, .. Encoding.UTF8.GetBytes(Stamped)], bytes);
 
         using var manifest = JsonDocument.Parse(File.ReadAllText(Path.Combine(dir.Path, "_manifest.json")));
         var row = Assert.Single(manifest.RootElement.GetProperty("objects").EnumerateArray(),
             o => o.GetProperty("path").GetString() == "Dev/PLC/Program blocks/Main.xml");
         Assert.Equal("NATIVE", row.GetProperty("form").GetString());
-        // hash is the file as written (no stamp); nhash is what an in-session export (with
-        // the stamp) will hash to, which is how the deletion check compares the two.
+        // hash is the file as written; nhash is what a later export of the same object will
+        // hash to whatever its stamp says, which is how the deletion check compares the two.
         Assert.Equal("sha256:" + Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant(), row.GetProperty("hash").GetString());
         Assert.Equal(HostApp.HashNormalized(Stamped), row.GetProperty("nhash").GetString());
         Assert.Contains(stdout, l => l.Contains("\"t\":\"object\"", StringComparison.Ordinal)
                                   && l.Contains("Dev/PLC/Program blocks/Main.xml", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void A_full_export_over_an_unchanged_mirror_rewrites_no_file_and_records_the_bytes_on_disk()
+    {
+        // The owner's case after the upgrade: a schema-9 manifest, so the baseline keeps
+        // nothing and Portal is asked for every object; Portal writes the same block with a
+        // new stamp; the mirror's file stays, and the row hashes the file that stayed.
+        using var dir = new TempDir();
+        var mainPath = Path.Combine(dir.Path, "Dev", "PLC", "Program blocks", "Main.xml");
+        Directory.CreateDirectory(Path.GetDirectoryName(mainPath)!);
+        byte[] previous = [0xEF, 0xBB, 0xBF, .. Encoding.UTF8.GetBytes(Stamped)];
+        File.WriteAllBytes(mainPath, previous);
+        File.WriteAllText(Path.Combine(dir.Path, "_manifest.json"), PreviousManifest);
+        var project = new FakeProject(new FakeDevice("Dev", new PlcSoftware("PLC", new FakeBlockGroup(new RestampingOB()))));
+
+        var stdout = RunExport(project, dir.Path);
+
+        Assert.Equal(previous, File.ReadAllBytes(mainPath));
+        Assert.Empty(Directory.GetFiles(dir.Path, "*" + HostApp.SetAsideSuffix, SearchOption.AllDirectories));
+        using var manifest = JsonDocument.Parse(File.ReadAllText(Path.Combine(dir.Path, "_manifest.json")));
+        var row = Assert.Single(manifest.RootElement.GetProperty("objects").EnumerateArray(),
+            o => o.GetProperty("path").GetString() == "Dev/PLC/Program blocks/Main.xml");
+        Assert.Equal("sha256:" + Convert.ToHexString(SHA256.HashData(previous)).ToLowerInvariant(), row.GetProperty("hash").GetString());
+        Assert.Contains(stdout, l => l.Contains("\"t\":\"summary\"", StringComparison.Ordinal)
+                                  && l.Contains("full export", StringComparison.Ordinal));
     }
 
     /// <summary>Run the host's export with its protocol captured, one line per entry.</summary>
@@ -377,6 +385,20 @@ public sealed class TiaPortalHostExportFileTests
         public void Export(FileInfo file, FakeExportOptions options) => new RefusingBlock().Export(file, options);
     }
 
+    /// <summary>A ladder OB Portal exports again unchanged: the same text, a later stamp.</summary>
+    private sealed class RestampingOB
+    {
+        public string Name => "Main";
+
+        public int Number => 1;
+
+        public string ProgrammingLanguage => "LAD";
+
+        public bool IsKnowHowProtected => false;
+
+        public void Export(FileInfo file, FakeExportOptions options) => new RestampingBlock().Export(file, options);
+    }
+
     /// <summary>A ladder OB Portal exports, stamp and BOM and all.</summary>
     private sealed class WritingOB
     {
@@ -417,6 +439,30 @@ public sealed class TiaPortalHostExportFileTests
             throw new InvalidOperationException(
                 "Error when calling method 'Export' of type 'Siemens.Engineering.SW.Blocks.OB'.\r\n\r\n"
                 + "Inconsistent blocks and PLC data types (UDT) cannot be exported.");
+        }
+    }
+
+    /// <summary>Portal exporting an unchanged object: the same text under a later stamp.</summary>
+    private sealed class RestampingBlock
+    {
+        public void Export(FileInfo file, FakeExportOptions options)
+        {
+            _ = options;
+            var later = Stamped.Replace("20:49:45.6025282Z", "21:03:12.0000000Z", StringComparison.Ordinal);
+            File.WriteAllBytes(file.FullName, [0xEF, 0xBB, 0xBF, .. Encoding.UTF8.GetBytes(later)]);
+        }
+    }
+
+    /// <summary>Portal exporting a changed object: a later stamp and a different name.</summary>
+    private sealed class RenamingBlock
+    {
+        public void Export(FileInfo file, FakeExportOptions options)
+        {
+            _ = options;
+            var changed = Stamped
+                .Replace("20:49:45.6025282Z", "21:03:12.0000000Z", StringComparison.Ordinal)
+                .Replace("<Name>Main</Name>", "<Name>Main_1</Name>", StringComparison.Ordinal);
+            File.WriteAllBytes(file.FullName, [0xEF, 0xBB, 0xBF, .. Encoding.UTF8.GetBytes(changed)]);
         }
     }
 

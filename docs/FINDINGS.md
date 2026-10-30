@@ -41,13 +41,26 @@ neither dropped it, the hash gate saw a changed file every time, and the committ
 (exported 13:44, committed 13:47) differed from the re-export (13:49) in 1,354 of 1,359
 files. DRIVING §12 had recorded "native XML still churns (G12)" as the cost of the review-only
 XML beside an `.scl`; on a project whose OBs are ladder, the XML is the only file, and the
-churn is the whole tree. **Fix:** the host rewrites each exported file without that one line
-(`StripExportStamp`, keeping Portal's BOM and CRLF), and both normalisers drop the element,
-so an in-session export (which has it) still hashes like the recorded file (which has not) —
-the deletion check depends on that. Rejected: a constant value instead of no line (an import
-of either is equally unmeasured, and a lie is worse than a gap); stripping the whole
-`DocumentInfo` (the product list differs per machine, but churns only when the machine does).
-Open: an import of a file without the line has not been run against Portal — STATUS item 21.
+churn is the whole tree. **Fix, in two parts.** Most objects are no longer asked of Portal
+at all: the re-export skip (two entries down, merged the same evening) keeps a block or type
+whose `ModifiedDate` has not moved. For the objects that are asked — a full export after an
+upgrade or over a manifest from before stamps, every tag table, a dependent a compile
+re-wired without changing its text — `ExportXml` compares what Portal wrote with the file it
+had set aside, through `HashNormalized`, which drops the element; when nothing else differs
+the previous file stays, bytes and all, and the new one is discarded. The mirror holds
+Portal's bytes from the last export that changed the object, so a diff between two exports
+is what changed in the project. **For one day the fix was a strip** (d83a23c): the host
+rewrote each exported file without the line. Replaced in the commit after the merge, because
+the first export of the new build would have changed every committed file once, by the line
+it removed — the symptom itself, one more time — and because an import of a file Versio had
+edited was never measured against Portal (the gate's Import Fact applies `.scl`/`.udt`,
+never native XML). Also rejected: a constant value instead of no line (the same unmeasured
+import, and a lie besides); stripping the whole `DocumentInfo` (the product list differs per
+machine, but churns only when the machine does). The pure suite drives `ExportXml` with a
+fake that writes the same text under a later stamp (the file does not move, nor its write
+time) and one that renames the block (the file is replaced, stamp and all), and the walk
+over a schema-9 manifest, which is the owner's mirror after the upgrade: Portal is asked for
+everything, and nothing on disk changes.
 
 **2. The block the owner edited was gone from the mirror, and nothing said so.** Openness
 refuses to export a block edited and not compiled since:
@@ -207,7 +220,7 @@ shows it under the wrong type. (3) The Rendered pane said *"No committed copy to
 with: every network is new"* for a `Main.xml` git had a committed copy of, with a four-line
 diff. (4) The two in-process host test classes swapped `Console.Out` under each other when
 xUnit ran them in parallel — two of nine export tests red on the first full run, green alone;
-they share one collection now. (5) On this machine `GenerateSource` yields no `.scl` for any data block under V20 or V21 — no `SCL_REVIEW` record and no `SCL_EXPORT_FAILED` warning, because the fallback returns false rather than throwing — so the gate's `Export_writes_a_manifest` is red here before and after this change; the installed 0.4.17's own LBB101 mirror shows the same forms. The owner's machine had it green on 2026-08-22.
+they share one collection now. (5) On this machine `GenerateSource` yields no `.scl` for any data block under V20 or V21 — no `SCL_REVIEW` record and no `SCL_EXPORT_FAILED` warning, because the fallback returns false rather than throwing — so the gate's `Export_writes_a_manifest` is red here before and after this change; the installed 0.4.17's own LBB101 mirror shows the same forms. The owner's machine had it green on 2026-08-22. — (1) and (3) are the first and third defects of *One rung moved, 1,359 files changed*, two entries up, fixed there; the two branches were merged that evening.
 
 **Process.** The first probe run measured nothing twice over: a plain background launch hands
 the host a closed stdin and it quits COM before Portal starts (`HostLifetime.WatchStdin`), and

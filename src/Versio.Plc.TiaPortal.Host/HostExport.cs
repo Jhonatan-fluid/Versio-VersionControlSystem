@@ -14,6 +14,12 @@ internal static partial class HostApp
 
     /// <summary>What the last export recorded, so an object Portal refuses this time keeps its
     /// entry as well as its file (<see cref="KeepPrevious"/>). Read before anything is written.</summary>
+    /// <remarks>
+    /// Beside <see cref="_baseline"/>, not instead of it: the baseline refuses a manifest it
+    /// cannot vouch for (an older schema, another Portal) because keeping an object on its say
+    /// is the risky direction, while a refused object keeps its rows from whatever manifest is
+    /// there, because the file it keeps is the one those rows describe.
+    /// </remarks>
     private static List<Dictionary<string, object?>> _previous = [];
 
     /// <summary>
@@ -231,7 +237,6 @@ internal static partial class HostApp
             return;
         }
 
-        ScrubExportedFile(xmlPath);
         var xml = File.Exists(xmlPath) ? File.ReadAllText(xmlPath) : "";
         // Exact "SCL" missed the block after generate on the import gate: the in-session
         // GenerateSource still worked, the next export keyed off ProgrammingLanguage
@@ -483,7 +488,6 @@ internal static partial class HostApp
 
             try
             {
-                ScrubExportedFile(xmlPath);
                 var xml = File.ReadAllText(xmlPath);
                 var wrote = false;
                 try
@@ -562,7 +566,6 @@ internal static partial class HostApp
 
             try
             {
-                ScrubExportedFile(xmlPath);
                 var xml = File.ReadAllText(xmlPath);
                 Record(objects, guid, name, "TAG_TABLE", "NATIVE", RelTo(xmlPath), HashFile(xmlPath),
                     nhash: HashNormalized(xml));
@@ -688,6 +691,21 @@ internal static partial class HostApp
     /// then proceeds as usual — so a refusal on that run still has something to keep, and
     /// nothing is left behind as an untracked file the planner would skip as stray.
     /// </para>
+    /// <para>
+    /// <b>A rewrite that changed nothing keeps the previous bytes.</b> Portal stamps
+    /// <c>DocumentInfo/Created</c> with the export time in every file, so every export of an
+    /// unchanged object is a one-line diff — 1,354 of them on the owner's project after one
+    /// moved rung (2026-10-29). The re-export skip (<see cref="ExportBaseline"/>) spares most
+    /// objects the call; for the ones it cannot — a full export after an upgrade or on a
+    /// manifest from before stamps, a tag table, a dependent a compile re-wired without
+    /// changing its text — the new file is compared with the old through
+    /// <see cref="HashNormalized"/>, and when nothing the hash keeps has changed, the old file
+    /// stays and the new one is discarded. The mirror is then Portal's bytes from the last
+    /// export that changed the object, which is the diff a reader wants. Rejected: stripping
+    /// the line from the written file (done for one day, 2026-10-29): it would have changed
+    /// every committed file once, by the line it removed, and an import of a file Versio had
+    /// edited was never measured against Portal.
+    /// </para>
     /// </remarks>
     internal static void ExportXml(object item, string dest)
     {
@@ -728,9 +746,39 @@ internal static partial class HostApp
             throw;
         }
 
-        if (setAside is not null)
+        if (setAside is null)
+        {
+            return;
+        }
+
+        if (SameButForTheStamp(setAside, dest))
+        {
+            File.Delete(dest);
+            File.Move(setAside, dest);
+        }
+        else
         {
             File.Delete(setAside);
+        }
+    }
+
+    /// <summary>
+    /// True when two exports of an object differ by nothing <see cref="HashNormalized"/>
+    /// keeps — the stamp, the churn attributes — so the earlier one may stand for the later.
+    /// </summary>
+    internal static bool SameButForTheStamp(string previous, string current)
+    {
+        try
+        {
+            return string.Equals(
+                HashNormalized(File.ReadAllText(previous)),
+                HashNormalized(File.ReadAllText(current)),
+                StringComparison.Ordinal);
+        }
+        catch (Exception ex) when (ex is IOException || ex is UnauthorizedAccessException)
+        {
+            // Unreadable either side: the new export stands, as it always did.
+            return false;
         }
     }
 
@@ -835,68 +883,6 @@ internal static partial class HostApp
         }
 
         return entries;
-    }
-
-    private static readonly Regex ExportStamp = new(
-        @"^[ \t]*<Created>[^<]*</Created>[ \t]*\r?\n",
-        RegexOptions.Multiline | RegexOptions.CultureInvariant);
-
-    /// <summary>
-    /// The export without Portal's <c>&lt;Created&gt;</c> line: the time of the export, in
-    /// every file, every time.
-    /// </summary>
-    /// <remarks>
-    /// <para>
-    /// Nothing else in the mirror says when it was made, and this line is why a second export
-    /// of an untouched project changed 1,354 of 1,359 files on 2026-10-29 — one line each — and
-    /// why the Changed count on the project card counted files rather than edits. The line
-    /// goes, and only the line: the rest of the file stays Portal's bytes (CRLF, the BOM, the
-    /// product list), so a diff between two exports is what changed in the project.
-    /// </para>
-    /// <para>
-    /// <see cref="HashNormalized"/> drops the same element, so a live object's in-session export
-    /// (which has the line) still compares with what was recorded (which has not), and the
-    /// deletion check keeps working. <c>DocumentInfo</c> is export information; an import of a
-    /// file without this line has not been measured against Portal — see the vendor notes.
-    /// </para>
-    /// <para>
-    /// Only inside <c>DocumentInfo</c>, the same scope as the two hashes. CleaningStation's 159
-    /// files carry one <c>Created</c> each, all in the header, so nothing else matches today;
-    /// the scope is so that a block attribute of that name, should a release add one, is content.
-    /// </para>
-    /// </remarks>
-    internal static string StripExportStamp(string xml)
-    {
-        var start = xml.IndexOf("<DocumentInfo>", StringComparison.Ordinal);
-        var end = start < 0 ? -1 : xml.IndexOf("</DocumentInfo>", start, StringComparison.Ordinal);
-        if (start < 0 || end < 0)
-        {
-            return xml;
-        }
-
-        var header = xml.Substring(start, end - start);
-        var stripped = ExportStamp.Replace(header, string.Empty);
-        return ReferenceEquals(stripped, header) ? xml : xml.Substring(0, start) + stripped + xml.Substring(end);
-    }
-
-    /// <summary>Rewrite an exported file without its stamp, keeping its BOM and line endings.</summary>
-    internal static void ScrubExportedFile(string path)
-    {
-        if (!File.Exists(path))
-        {
-            return;
-        }
-
-        var bytes = File.ReadAllBytes(path);
-        var bom = bytes.Length >= 3 && bytes[0] == 0xEF && bytes[1] == 0xBB && bytes[2] == 0xBF;
-        var text = Encoding.UTF8.GetString(bytes, bom ? 3 : 0, bytes.Length - (bom ? 3 : 0));
-        var stripped = StripExportStamp(text);
-        if (string.Equals(stripped, text, StringComparison.Ordinal))
-        {
-            return;
-        }
-
-        File.WriteAllText(path, stripped, new UTF8Encoding(bom));
     }
 
     private static IEnumerable<PlcRef> WalkPlcSoftware(object project)
@@ -1024,8 +1010,10 @@ internal static partial class HostApp
                 }
             }
 
-            // The export stamp is an element, not an attribute. The written file has it
-            // stripped (StripExportStamp); an in-session export has it; both must hash alike.
+            // The export stamp is an element, not an attribute: DocumentInfo/Created, the
+            // export time, in every file on every export. Dropping it is what lets ExportXml
+            // tell a rewrite that changed nothing from a change, and the deletion check
+            // compare an in-session export with the recorded file.
             foreach (var created in doc.Descendants()
                          .Where(e => e.Name.LocalName == "Created" && e.Parent?.Name.LocalName == "DocumentInfo")
                          .ToList())

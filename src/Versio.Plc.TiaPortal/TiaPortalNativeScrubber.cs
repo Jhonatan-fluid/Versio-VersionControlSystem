@@ -49,9 +49,9 @@ public static class TiaPortalNativeScrubber
             }
 
             // Portal's export stamp is an element, not an attribute: DocumentInfo/Created, the
-            // time of the export, in every file, every time. The host strips the line from
-            // the written file (since 2026-10-29) and drops the element from its own hash; a
-            // mirror exported before that still carries it, and must compare the same.
+            // time of the export, in every file, every time. The host drops the element from
+            // its own hash and keeps the previous file when that is all that moved (since
+            // 2026-10-29); a changed object's file carries a new one, and must compare the same.
             foreach (var created in doc.Descendants()
                          .Where(e => e.Name.LocalName == "Created" && e.Parent?.Name.LocalName == "DocumentInfo")
                          .ToList())

@@ -558,15 +558,17 @@ Textual hashes are UTF-8 **without BOM** so they match `ContentHash.Of`. Siemens
 Out / coverage skip: hardware, HMI, safety (`F_*`), technology objects, know-how-protected
 import, system blocks, VCI, Project Server, compile-after-import.
 
-**The export stamp is stripped (since 2026-10-29).** Portal writes `DocumentInfo/Created`
-— the export time — into every file, so a second export of an untouched project changed
-1,354 of 1,359 files on the owner's project, one line each, and the project card counted
-files rather than edits. The host rewrites each exported file without that line
-(`StripExportStamp`; BOM, CRLF and the product list stay Portal's), and both normalisers
-(`HashNormalized` in the host, `TiaPortalNativeScrubber` in the pure pack) drop the element,
-so an in-session export still hashes like the recorded file and the deletion check holds.
-An import of a file without the line has **not** been measured against Portal; the gate's
-Import Fact applies `.scl`/`.udt`, not native XML (STATUS item 21).
+**A rewrite that changed nothing keeps the previous file (since 2026-10-29).** Portal
+writes `DocumentInfo/Created` — the export time — into every file, so a second export of an
+untouched project changed 1,354 of 1,359 files on the owner's project, one line each, and
+the project card counted files rather than edits. §7.1 spares most objects the export; for
+the rest, `ExportXml` compares what Portal wrote with the file it set aside, through
+`HashNormalized`, which drops that element (as `TiaPortalNativeScrubber` does for the diff
+pane and the deletion check), and when nothing else differs the previous file stays and the
+new one is discarded. The mirror is Portal's bytes, untouched, from the last export that
+changed the object. For one day the host stripped the line from the written file instead;
+replaced because the next export would have rewritten every committed file once, and an
+import of a file Versio had edited was never measured against Portal. FINDINGS 2026-10-29.
 
 **A refused export keeps the previous file (since 2026-10-29).** `Export(…, None)` refuses
 an existing file, so the host moves the old one aside (`<name>.xml.versio-previous`) for the
@@ -641,6 +643,13 @@ Deletions, renames and new objects need nothing: the walk records only what it v
 | second export, nothing changed | **67.5 s** | 26: the tag tables and stations. Every block and type kept; textual files byte-identical |
 | one block edited through the import door and saved (`StatusReport`) | **54.5 s** | 27: that block's `.scl` and `.xml`, plus the tag tables and stations. The summary line: `MHC_001/MHC_001: 95 blocks and types: 90 kept (unchanged since the last export), 5 exported (1 changed, 4 new or renamed)` — the four are the objects the full export had refused as inconsistent, which have no record and are asked again every time |
 | the same state, manifest deleted (forced full) | **148 s** | 1,360 |
+
+Since the merge with the refused-export fix the same evening, a refused object carries its
+previous rows forward, so on the next run it counts as *changed* (its stamp moved when it was
+edited) rather than *new or renamed*; it is asked of Portal again either way, and refused
+again until it compiles. And a forced full export over an unchanged mirror no longer rewrites
+it: `ExportXml` keeps the previous file when Portal's new one differs by the stamp alone
+(§7), so the 1,349 raw-hash churns above are now zero file changes.
 
 Kept against forced-full on the same state: no textual file differs; the kept records' stamps
 are the forced export's stamps. The raw hash of 1,349 native XML records churned, as every
@@ -896,5 +905,7 @@ AllowList after every host rebuild (path + hash). Ten tree backups × ~500 MB.
 `OpenWithUpgrade`: a silent upgrade).~~ Since 2026-10-29 the project's extension picks
 the release and a missing release is refused (§2.1b). Identity is name+number until a GUID-shaped
 SimaticML value appears; folders are not recorded objects. ~~Native XML churns on every
-export~~ — the stamp is stripped since 2026-10-29 (§7); what remains is the per-machine
-product list in `DocumentInfo`, which moves only when the exporting machine does.
+export~~ — since 2026-10-29 an unchanged object is not asked of Portal (§7.1), and a file
+Portal rewrote with nothing but its stamp changed keeps its previous bytes (§7); what
+remains is the per-machine product list in `DocumentInfo`, which moves only when the
+exporting machine does.

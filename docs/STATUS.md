@@ -724,18 +724,25 @@ Close Versio **and** Portal before a host rebuild. Click **Yes to all** on Openn
     account to the Siemens TIA Openness group…* button under the facts, Settings → System
     information should show the same as a *Fix* row, pressing either should raise the UAC
     prompt and then say to sign out; after the sign-in the card should read *installed*.
-21. **Measure a native import of a stamp-stripped SimaticML file against Portal.** Since
-    2026-10-29 the TIA host strips `DocumentInfo/Created` from every exported file (FINDINGS
-    2026-10-29, *One rung moved, 1,359 files changed*; DRIVING §7). `DocumentInfo` is export
-    information (Portal's own product list and the time), but no import of a file without
-    the line has been run: the gate's Import Fact applies `.scl`/`.udt`, never native XML. On
-    the next run with Portal on the machine, edit a ladder block's XML in the fixture's
-    mirror (a network title), import the plan, and record the result here. If Portal
-    refuses, the fallback is a constant value in the line rather than no line.
-    **Owner eyeball** on `controls-design-siemens`: compile MHC_001 in Portal and let the
-    export run — the mirror's `Program blocks/Main.xml` under that CPU should come back with
-    the moved network, the project card should show the moved rung alone, and a second
-    export with nothing changed should show *0 changed*.
+21. ~~**Measure a native import of a stamp-stripped SimaticML file against Portal.**~~ Not
+    needed: the strip lasted one day (d83a23c, replaced in the commit after the merge with the
+    re-export branch, 2026-10-29). The host no longer edits what Portal wrote: an unchanged
+    object is not asked of Portal (DRIVING §7.1), and a file Portal rewrote with nothing but
+    its stamp changed keeps its previous bytes (§7; FINDINGS 2026-10-29, *One rung moved*).
+    **Owner eyeball** on `controls-design-siemens`, with a release that carries both (the
+    installed 0.4.18 has neither): first, with Versio closed, put the working tree's 1,354
+    stamp-only changes back to HEAD (`git checkout -- JV_WorkingSpace/LBB101/LBB101`, which
+    also restores the deleted `MHC_001/…/Program blocks/Main.xml`) — closed, because the
+    binding is project-authoritative and a text-side change under it is refused with a banner
+    (`SyncStateMachine`), noise rather than harm, but noise. The keep rule compares with the
+    file on disk, not with HEAD, so a first export over the 13:49 stamps would keep the 13:49
+    stamps. With HEAD on disk, the first export of the new build — a full one, the mirror's
+    manifest being schema 9 — should leave *0 changed* in the mirror, with only the project
+    file's two LFS pointers and the manifest differing; compile MHC_001 in Portal and let the
+    export run — that `Main.xml`
+    should come back with the moved network and the project card should show the moved rung
+    alone; a second export with nothing changed should show *0 changed* and take about a third
+    of the time, with one `kept` summary line per PLC in the log.
 
 ---
 
