@@ -199,8 +199,9 @@ code, kbd, pre { font-family: var(--font-mono); }
    type or detail beside the name, the change glyph at the end, and a struck deleted name. The
    count of changes below a folder went with the desktop's on 2026-10-29 (it read as a count of
    items), and the roll-up colour on a folder's name went on 2026-10-30 (every parent of one edit
-   was orange). What remains for a parent is the dot: drawn only while the row is collapsed and
-   hiding a change, in the strongest hidden state's colour, and matched on the desktop. */
+   was orange). What remains for a parent is the dot: on every row with a change below it, open
+   or shut, in the strongest state's colour below, nine pixels (seven was easy to miss), and
+   matched on the desktop. */
 .tree-filter-row { display: flex; gap: 4px; align-items: center; }
 .tree-pill { font: 600 10px/16px var(--font-ui); border: 1px solid var(--color-accent-fg); color: var(--color-accent-fg); border-radius: 999px; padding: 0 6px; flex: none; }
 .tree-annotation { font-size: 11px; color: var(--color-fg-muted); overflow: hidden; text-overflow: ellipsis; flex: none; max-width: 40%; }
@@ -209,7 +210,7 @@ code, kbd, pre { font-family: var(--font-mono); }
 .tree-row.tone-added .tree-name { color: var(--color-success-fg); }
 .tree-row.tone-modified .tree-name { color: var(--color-attention-fg); }
 .tree-row.tone-deleted .tree-name { color: var(--color-danger-fg); }
-.tree-dot { width: 7px; height: 7px; border-radius: 50%; flex: none; background: var(--color-attention-fg); }
+.tree-dot { width: 9px; height: 9px; margin-left: 2px; border-radius: 50%; flex: none; background: var(--color-attention-fg); }
 .tree-dot.tone-added { background: var(--color-success-fg); }
 .tree-dot.tone-deleted { background: var(--color-danger-fg); }
 .tree-dot.tone-renamed { background: var(--color-accent-fg); }

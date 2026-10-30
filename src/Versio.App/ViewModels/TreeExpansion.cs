@@ -118,17 +118,23 @@ public sealed class TreeExpansion
     /// What a node does when nobody has touched it.
     /// </summary>
     /// <remarks>
+    /// <para>
     /// A project opens, because it is what the panel is about and a closed one shows nothing.
-    /// Anything else with children opens only when there is a change under it: with the full
-    /// tree rendered rather than the changed-only filter, opening everything would bury the
-    /// four objects somebody edited under the four thousand they did not. Tested on
-    /// <see cref="ProjectTreeNode.Children"/> rather than <see cref="ProjectTreeNode.IsFolder"/>
-    /// — the same correction <c>PruneUnchanged</c> already carries — because an object owns
-    /// rows now: a function block owns its methods and a library manager its references, and
-    /// the folder-only rule left an edited method and a bumped library version behind a
-    /// closed chevron with only the badge to hint at them.
+    /// Everything under it stays shut until somebody opens it.
+    /// </para>
+    /// <para>
+    /// Until 2026-10-30 anything with children opened when there was a change under it, so
+    /// the four objects somebody edited were on screen without burying them under the four
+    /// thousand they did not. On a real project that rule opened the whole tree: after a
+    /// first export every object is a change, and after one save on LBB101 the Program blocks
+    /// of every CPU unfolded to the block. The owner asked for the project row alone, with
+    /// the rest by hand — and the dot on every row with a change below it
+    /// (<see cref="TreeRow.HasChangesBelow"/>) is what now says where to open, at every level,
+    /// so an edited method behind a closed block or a bumped library behind its manager is
+    /// still pointed at, just not unfolded. Selecting an object from elsewhere (a type link,
+    /// a changed file) still opens the way to it: that is the shell's reveal, not this default.
+    /// </para>
     /// </remarks>
     private static bool DefaultFor(ProjectTreeNode node) =>
-        node.Kind == ProjectNodeKind.Project ||
-        (node.Children.Count > 0 && node.HasChanges);
+        node.Kind == ProjectNodeKind.Project;
 }

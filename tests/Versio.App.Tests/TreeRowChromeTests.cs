@@ -151,36 +151,35 @@ public sealed class TreeRowChromeTests
         }, depth: 0) { IsExpanded = false };
 
     [Fact]
-    public void A_row_hides_changes_only_while_it_is_collapsed_with_changes_below()
+    public void A_row_says_it_has_changes_below_whether_open_or_shut()
     {
-        // The row's half of the dot rule the owner chose on 2026-10-30 (TreeRow.HidesChanges):
-        // shut with a change below, true; open, false; shut with nothing below, false. And the
-        // flip has to be announced, or the template only hears about it at the next rebuild.
-        var hiding = ShutFolderHidingAChange("Library");
+        // The row's half of the dot rule (TreeRow.HasChangesBelow), as the owner settled it on
+        // 2026-10-30: a change somewhere under the row, true, open or shut; nothing changed
+        // under it, false. Opening the row changes nothing, because the tree no longer opens
+        // the way to a change and the dot is what says where to open at every level.
+        var marked = ShutFolderHidingAChange("Library");
         var empty = new TreeRow(new ProjectTreeNode
         {
             Name = "Idle", Path = "plc/Idle", Kind = ProjectNodeKind.Folder,
             Children = [new ProjectTreeNode { Name = "Nop", Path = "plc/Idle/Nop", Kind = ProjectNodeKind.Object }],
         }, depth: 0) { IsExpanded = false };
 
-        Assert.True(hiding.HidesChanges);
-        Assert.Equal("Brush.Status.Modified", hiding.HiddenChangeBrushKey);
-        Assert.False(empty.HidesChanges);
+        Assert.True(marked.HasChangesBelow);
+        Assert.Equal("Brush.Status.Modified", marked.ChangesBelowBrushKey);
+        Assert.False(empty.HasChangesBelow);
 
-        var announced = new List<string?>();
-        hiding.PropertyChanged += (_, e) => announced.Add(e.PropertyName);
-        hiding.IsExpanded = true;
+        marked.IsExpanded = true;
 
-        Assert.False(hiding.HidesChanges);
-        Assert.Contains(nameof(TreeRow.HidesChanges), announced);
+        Assert.True(marked.HasChangesBelow);
     }
 
     [Fact]
-    public void Both_trees_draw_a_dot_on_a_shut_folder_hiding_a_change_and_nothing_once_it_opens()
+    public void Both_trees_draw_a_dot_on_every_folder_with_a_change_below_and_not_on_a_quiet_one()
     {
         // The template's half: the flag is nothing without an element bound to it. Through the
         // real Project and Explorer rows, as the glyph test above. Three rows each time — shut
-        // and hiding, shut and empty, open and hiding — and exactly one dot may show.
+        // with a change below, shut and quiet, open with a change below — and the two with a
+        // change below show their dot; the quiet one and the open one's child do not.
         StaHarness.Run(() =>
         {
             using var shell = TestShell.Build();
@@ -191,10 +190,10 @@ public sealed class TreeRowChromeTests
 
             void Check(FrameworkElement panel, System.Collections.ObjectModel.ObservableCollection<TreeRow> tree)
             {
-                var hiding = ShutFolderHidingAChange("Library");
+                var shut = ShutFolderHidingAChange("Library");
                 var open = ShutFolderHidingAChange("Application");
                 open.IsExpanded = true;
-                tree.Add(hiding);
+                tree.Add(shut);
                 tree.Add(new TreeRow(new ProjectTreeNode
                 {
                     Name = "Idle", Path = "plc/Idle", Kind = ProjectNodeKind.Folder,
@@ -204,20 +203,28 @@ public sealed class TreeRowChromeTests
                 Lay(content);
 
                 // Every realised row carries the ellipse, collapsed — the open folder's child
-                // among them — so the count is not the assertion; which one shows is.
+                // among them — so the count is not the assertion; which ones show is.
                 var dots = Descendants(panel).OfType<System.Windows.Shapes.Ellipse>()
                     .Where(e => e.ToolTip is "Changes below").ToList();
-                Assert.True(dots.Count >= 3, $"{dots.Count} dot(s) realised");
-                var shown = Assert.Single(dots, d => d.Visibility == Visibility.Visible);
-                Assert.Same(modified, shown.Fill);
-                var besideName = (DependencyObject)System.Windows.Media.VisualTreeHelper.GetParent(shown);
-                Assert.Contains(Descendants(besideName).OfType<TextBlock>(), t => t.Text == "Library");
+                Assert.True(dots.Count >= 4, $"{dots.Count} dot(s) realised");
+                var shown = dots.Where(d => d.Visibility == Visibility.Visible).ToList();
+                Assert.Equal(2, shown.Count);
+                Assert.All(shown, d => Assert.Same(modified, d.Fill));
+                Assert.All(shown, d => Assert.Equal(9, d.Width));
+                var names = shown
+                    .Select(d => (DependencyObject)System.Windows.Media.VisualTreeHelper.GetParent(d))
+                    .SelectMany(p => Descendants(p).OfType<TextBlock>())
+                    .Select(t => t.Text).ToList();
+                Assert.Contains("Library", names);
+                Assert.Contains("Application", names);
+                Assert.DoesNotContain("Idle", names);
+                Assert.DoesNotContain("Application_PRG", names);
 
-                // Opening the folder takes the dot away without a rebuild: the change it
-                // stood for is now on screen under it.
-                hiding.IsExpanded = true;
+                // Opening the shut folder keeps its dot: the mark is about what is under the
+                // row, not about whether the row is hiding it.
+                shut.IsExpanded = true;
                 Lay(content);
-                Assert.DoesNotContain(dots, d => d.Visibility == Visibility.Visible);
+                Assert.Equal(2, dots.Count(d => d.Visibility == Visibility.Visible));
             }
 
             Check((FrameworkElement)window.FindName("ProjectPanel"), shell.Sync.Tree);

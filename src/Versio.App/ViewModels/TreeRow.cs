@@ -45,17 +45,15 @@ public sealed class TreeRow : ObservableObject
         _expansion = expansion;
         Context = context;
 
-        // Anything on the path to a change opens itself, and so does a project. Somebody who
-        // had to expand five levels by hand to find the object they just edited would
-        // reasonably wonder what the dot on the folder was for.
-        //
-        // Written as "has changed descendants" rather than "is a folder with changes",
-        // because a function block owns its methods now: an edited method sat behind a
-        // collapsed block, which is the same complaint one level down. The two are equivalent
-        // for a folder - a folder has no state of its own to change - so this is the same
-        // rule stated in the terms that now cover both.
+        // Only a project opens itself; everything under it is opened by hand. The path to
+        // each change used to open too, and on a real project that was the whole tree:
+        // after a first export every object is a change, and after a save Program blocks
+        // under every CPU unfolded down to the block (the owner's LBB101, 2026-10-30). The
+        // dot on every row with a change below it is what says where to open now, and it
+        // says so at every level, so nothing is lost by leaving the folders shut. The same
+        // default as TreeExpansion.DefaultFor, for a row built without one.
         _isExpanded = expansion?.ShouldExpand(node, depth)
-                      ?? (node.Kind == ProjectNodeKind.Project || node.ChangedDescendants > 0);
+                      ?? node.Kind == ProjectNodeKind.Project;
     }
 
     public ProjectTreeNode Node => _node;
@@ -326,11 +324,6 @@ public sealed class TreeRow : ObservableObject
                 // Recorded so the next rebuild - one per git status refresh - puts the tree
                 // back the way the user left it rather than the way the defaults want it.
                 _expansion?.Record(_node, value);
-
-                // The dot is a function of this flag, and WPF only re-reads what it is told
-                // changed: without this line a folder shut by a click kept no dot until the
-                // next status refresh happened to rebuild the row.
-                OnPropertyChanged(nameof(HidesChanges));
             }
         }
     }
@@ -366,12 +359,12 @@ public sealed class TreeRow : ObservableObject
     /// <remarks>
     /// Own change only. It fell back to the roll-up until 2026-10-30, which was dead once the
     /// count went: the only thing painted with it is <see cref="Glyph"/>, and a folder's glyph
-    /// is blank. What a parent says about the changes below it is <see cref="HidesChanges"/>.
+    /// is blank. What a parent says about the changes below it is <see cref="HasChangesBelow"/>.
     /// </remarks>
     public string BrushKey => BrushFor(Node.Status);
 
     /// <summary>
-    /// True while this row is collapsed with changes under it: the one case a parent marks.
+    /// True when a change sits somewhere under this row: the dot beside its name.
     /// </summary>
     /// <remarks>
     /// <para>
@@ -380,21 +373,22 @@ public sealed class TreeRow : ObservableObject
     /// numbers as counts of items and had them removed on every vendor (2026-10-29). The web
     /// tree then coloured every folder's name on the way down to an edit, and the desktop
     /// coloured nothing a folder actually draws, so a shut folder with a change under it looked
-    /// like one without. Shown three treatments on 2026-10-30, the owner picked this one: an
-    /// open folder shows nothing, because its changes are on screen under it; a collapsed one
-    /// hiding a change gets a dot in the strongest hidden state's colour
-    /// (<see cref="HiddenChangeBrushKey"/>); a collapsed one with nothing changed below gets
-    /// nothing, which is what tells two shut projects apart. The web tree draws the same rule.
+    /// like one without. Shown three treatments on 2026-10-30, the owner first picked a dot on
+    /// a collapsed row only, then, with the tree no longer opening the way to each change,
+    /// asked for the dot on every level that has a change below it, open or shut: it is the
+    /// one mark a parent carries, in the strongest state's colour below
+    /// (<see cref="ChangesBelowBrushKey"/>), and a shut folder with nothing changed under it
+    /// carries nothing. The web tree draws the same rule.
     /// </para>
     /// <para>
     /// On the descendants' count, not on the roll-up, so that a deleted folder whose children
-    /// all went with it still says so when shut. The facts pane still states the number.
+    /// all went with it still says so. The facts pane still states the number.
     /// </para>
     /// </remarks>
-    public bool HidesChanges => !IsExpanded && Node.ChangedDescendants > 0;
+    public bool HasChangesBelow => Node.ChangedDescendants > 0;
 
     /// <summary>The dot's brush: the strongest change below this node.</summary>
-    public string HiddenChangeBrushKey => BrushFor(Node.RollUp);
+    public string ChangesBelowBrushKey => BrushFor(Node.RollUp);
 
     /// <summary>The file the diff pane opens for this node, or null when it opens none.</summary>
     /// <remarks>

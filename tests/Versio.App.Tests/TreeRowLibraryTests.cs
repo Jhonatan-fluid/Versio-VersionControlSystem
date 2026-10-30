@@ -56,15 +56,16 @@ public sealed class TreeRowLibraryTests
     }
 
     [Fact]
-    public void A_manager_with_a_bumped_library_opens_itself()
+    public void A_manager_with_a_bumped_library_stays_closed_and_wears_the_dot()
     {
-        // The version bump is the change under review; behind a closed chevron only the
-        // badge hints at it. Same rule the folders already follow, extended to any node
-        // with children now that objects own rows.
+        // It opened itself until 2026-10-30, as every node on the way to a change did, and on
+        // a real project that unfolded the whole tree. Now only the project row opens, and the
+        // dot on the manager is what says the bump is under it (TreeExpansion.DefaultFor).
         var expansion = new TreeExpansion();
         var row = new TreeRow(Manager(Library(ChangeKind.Modified)), depth: 2, expansion);
 
-        Assert.True(row.IsExpanded);
+        Assert.False(row.IsExpanded);
+        Assert.True(row.HasChangesBelow);
     }
 
     [Fact]

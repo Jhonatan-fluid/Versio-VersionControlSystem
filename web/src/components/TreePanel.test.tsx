@@ -5,8 +5,8 @@ import type { Tree, TreeNode } from '../api';
 import { TreePanel } from './TreePanel';
 
 // The desktop's tree row on the web (docs/web/FINISH.md, Step 8): the vendor's pill, the object's
-// type, the change glyph, a struck deleted name, and on a collapsed folder hiding a change a dot in
-// the strongest hidden state's colour (the count went 2026-10-29, the roll-up colour on the name
+// type, the change glyph, a struck deleted name, and on every folder with a change below it a dot
+// in the strongest state's colour below (the count went 2026-10-29, the roll-up colour on the name
 // 2026-10-30).
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -50,12 +50,11 @@ describe('TreePanel', () => {
 
     expect(row('Plant.project').querySelector('.tree-pill')?.textContent).toBe('CODESYS V3.5 SP19');
     expect(row('Plant.project').querySelector('.tree-annotation')?.textContent).toBe('in sync');
-    // Two changed descendants in the fixture, and nothing drawn for them while the project is
-    // open: no number (2026-10-29), no colour on the name (2026-10-30), and no dot, because the
-    // changes themselves are on screen under it. The dot is the collapsed case, tested below.
+    // Two changed descendants in the fixture: no number for them (2026-10-29), no colour on the
+    // name (2026-10-30), a dot in the strongest state's colour below, open or shut (tested below).
     expect(row('Plant.project').querySelector('.tree-badge')).toBeNull();
     expect(row('Plant.project').className).not.toContain('tone-');
-    expect(row('Plant.project').querySelector('.tree-dot')).toBeNull();
+    expect(row('Plant.project').querySelector('.tree-dot')?.className).toContain('tone-deleted');
     expect(row('Pump').className).toContain('tone-modified');
     expect(row('Pump').querySelector('.tree-annotation')?.textContent).toBe('Function block');
     expect(row('Pump').querySelector('.change')?.textContent).toBe('M');
@@ -66,11 +65,11 @@ describe('TreePanel', () => {
     act(() => root.unmount());
   });
 
-  it('draws a dot on a collapsed row only while it hides a change', async () => {
-    // Option 1 of three the owner was shown on 2026-10-30: a parent carries a mark only while
-    // it is hiding something. Collapsed with changes below, a dot in the strongest hidden
-    // state's colour; open, nothing; collapsed with nothing changed below, nothing either, which
-    // is what tells two shut projects apart.
+  it('draws a dot on every row with a change below it, open or shut, and none on a quiet one', async () => {
+    // The owner's rule of 2026-10-30, after the tree stopped opening the way to each change:
+    // a parent carries one small mark on every level with a change under it. Open or shut
+    // makes no difference; a shut project with nothing changed below carries nothing, which is
+    // what tells two shut projects apart.
     const two: Tree = {
       ...tree,
       nodes: [
@@ -84,19 +83,43 @@ describe('TreePanel', () => {
     const row = (name: string) =>
       Array.from(host.querySelectorAll<HTMLElement>('.tree-row')).find((r) => r.querySelector('.tree-name')?.textContent === name)!;
 
-    expect(row('Plant.project').querySelector('.tree-dot')).toBeNull();
-    await act(async () => { row('Plant.project').click(); });
-    await act(async () => { row('Idle.project').click(); });
-
-    const dot = row('Plant.project').querySelector<HTMLElement>('.tree-dot');
-    expect(dot).not.toBeNull();
-    expect(dot!.className).toContain('tone-deleted');
-    expect(dot!.getAttribute('aria-label')).toBe('Changes below');
+    const dot = () => row('Plant.project').querySelector<HTMLElement>('.tree-dot');
+    expect(dot()).not.toBeNull();
+    expect(dot()!.className).toContain('tone-deleted');
+    expect(dot()!.getAttribute('aria-label')).toBe('Changes below');
     expect(row('Plant.project').className).not.toContain('tone-');
     expect(row('Idle.project').querySelector('.tree-dot')).toBeNull();
 
     await act(async () => { row('Plant.project').click(); });
-    expect(row('Plant.project').querySelector('.tree-dot')).toBeNull();
+    await act(async () => { row('Idle.project').click(); });
+    expect(row('Plant.project').closest('li')?.getAttribute('aria-expanded')).toBe('false');
+    expect(dot()).not.toBeNull();
+    expect(row('Idle.project').querySelector('.tree-dot')).toBeNull();
+    act(() => root.unmount());
+  });
+
+  it('opens the roots and the project rows by default, and nothing under them', async () => {
+    // The desktop's default since 2026-10-30: the project row alone opens; the folders under
+    // it, changes or not, wait for a click, and the dot says which ones are worth it.
+    const nested: Tree = {
+      ...tree,
+      nodes: [
+        node({ name: 'plc', path: 'plc', kind: 'folder', files: [], children: [
+          tree.nodes[0]!,
+          node({ name: 'docs', path: 'plc/docs', kind: 'folder', files: [], rollUp: 'modified', changedDescendants: 1, children: [
+            node({ name: 'Notes.md', path: 'plc/docs/Notes.md', kind: 'file', status: 'modified' }),
+          ] }),
+        ] }),
+      ],
+    };
+    const { host, root } = await render(nested);
+    const expanded = (name: string) =>
+      Array.from(host.querySelectorAll<HTMLElement>('.tree-row')).find((r) => r.querySelector('.tree-name')?.textContent === name)!
+        .closest('li')!.getAttribute('aria-expanded');
+
+    expect(expanded('plc')).toBe('true');
+    expect(expanded('Plant.project')).toBe('true');
+    expect(expanded('docs')).toBe('false');
     act(() => root.unmount());
   });
 

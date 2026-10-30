@@ -91,9 +91,12 @@ export function TreePanel({ tree, selected, onSelect, placeholder = 'Go to objec
 function Node({ node, depth, filter, selected, onSelect, openAll }: { node: TreeNode; depth: number; filter: string; selected: string | null; onSelect: (n: TreeNode) => void; openAll: boolean }) {
   const branch = node.children.length > 0;
   const holdsSelection = useMemo(() => contains(node, selected), [node, selected]);
-  // A comparison lists only what changed, which is short: every folder opens, as the Project
-  // panel opens the way to each change. The code view's whole tree opens one level, as before.
-  const [open, setOpen] = useState(depth < 1 || holdsSelection || openAll);
+  // A comparison lists only what changed, which is short: every folder opens. The code view's
+  // whole tree opens its roots and its project rows, nothing else: the desktop's Project panel
+  // opens the project row alone since 2026-10-30 (it used to open the way to each change, which
+  // on a real project unfolded everything), and the dot on every row with a change below it is
+  // what says where to open.
+  const [open, setOpen] = useState(depth < 1 || node.kind === 'project' || holdsSelection || openAll);
   const row = useRef<HTMLButtonElement>(null);
   // A branch that opens something (a block with methods under it) is selected like a leaf; the
   // first version lit no branch, so an open block with members was never shown as the current
@@ -133,13 +136,13 @@ function Node({ node, depth, filter, selected, onSelect, openAll }: { node: Tree
     : node.typeName ?? '';
   // The name takes a colour only for the row's OWN change. It used to take the roll-up too, so
   // every folder on the way down to one edited block was orange, and the owner asked for a
-  // tree where a parent carries a mark only while it is hiding something (2026-10-30). So: a
-  // collapsed branch with changes below it draws a dot in the strongest hidden state's colour,
-  // and an open one draws nothing, because its changes are on screen under it. The dot goes
-  // on the project row too, which is the row most often folded shut.
+  // tree where a parent carries one small mark instead (2026-10-30): a dot on every row with
+  // a change somewhere below it, open or shut, in the strongest state's colour below. It was
+  // drawn on a collapsed row only for a few hours; once the tree stopped opening the way to
+  // each change, the owner wanted it at every level, so the dot is what says where to open.
   const tone = status !== 'unmodified' ? status : '';
-  const hides = branch && !shown && (node.changedDescendants ?? 0) > 0;
-  const hiddenTone = node.rollUp && node.rollUp !== 'unmodified' ? node.rollUp : 'modified';
+  const below = branch && (node.changedDescendants ?? 0) > 0;
+  const belowTone = node.rollUp && node.rollUp !== 'unmodified' ? node.rollUp : 'modified';
 
   return (
     <li role="treeitem" aria-expanded={branch ? shown : undefined} aria-selected={isSelected}>
@@ -164,7 +167,7 @@ function Node({ node, depth, filter, selected, onSelect, openAll }: { node: Tree
         <span className="tree-caret" aria-hidden="true">{branch ? <Icon name={shown ? 'chevron-down' : 'chevron-right'} size={12} /> : ''}</span>
         <Icon name={glyphOf.name} className={glyphOf.className} label={glyphOf.title} />
         <span className="tree-name">{node.name}</span>
-        {hides && <span className={`tree-dot tone-${hiddenTone}`} role="img" aria-label="Changes below" title="Changes below" />}
+        {below && <span className={`tree-dot tone-${belowTone}`} role="img" aria-label="Changes below" title="Changes below" />}
         {node.toolchain && <span className="tree-pill" title="The toolchain that opens this project">{node.toolchain}</span>}
         {annotation && <span className="tree-annotation">{annotation}</span>}
         {mark && <span className={`change change-${status}`} aria-label={status}>{mark}</span>}
