@@ -19,6 +19,90 @@ produce a diff touching everything else.
 
 ---
 
+### A moved network never reached the mirror: Portal refuses an uncompiled block, and the refusal was a log line
+
+**2026-10-30, `main`, the owner's `controls-design-siemens` (nine CPUs, 1,366 objects),
+Versio 0.4.20.** With the three fixes of the day before installed, the owner moved one network
+in MHC_100's `Main`, saved, and the Project panel showed no change at all: *4 changed* (the
+manifest, the coverage note, the project's two LFS pointers), the block's page "No changes
+since the last commit", the card "Warnings 1 — see the log". The export itself had worked —
+1,338 of 1,366 objects kept by stamp, 26 asked of Portal, 49.6 s against 170.5 s the evening
+before — and the log, and nothing but the log, said why the rung was missing:
+
+```
+08:16:32.431 INF [TiaPortal] {d0b5b5cd} MHC_100/MHC_100: 141 blocks and types: 140 kept (unchanged since the last export), 1 exported (1 changed)
+08:16:34.562 WRN [Plc] {d0b5b5cd} fae2130dee24: MHC_100/MHC_100/Program blocks/Main.xml: Portal refused to export it (Error when calling method 'Export' of type 'Siemens.Engineering.SW.Blocks.OB'. Inconsistent blocks and PLC data types (UDT) cannot be exported.); its earlier export is kept as it was
+```
+
+**Two defects.** *(1)* Portal refuses to export any block or type edited and not compiled
+since — which is every block an engineer edits and saves without pressing compile — and the
+host took no for an answer. The refusal-keeps-the-file fix of 2026-10-29 had made that honest
+(the previous file stays, a warning is logged) and no more useful. **Fix:** the host compiles
+the refused object in its own Openness session — `ICompilable.Compile()` on the block or type
+alone, through the reflection the import already used — and exports again
+(`ExportXmlCompilingIfRefused`). The export session is never saved, so the project on disk
+does not change. Measured first on the scratch copy of LBB101 with the installed host's
+`stampprobe` (`compileblock:FC_TimeSince`, `compileblock:Main`, no save): both compiled with
+zero errors, in 8.0 s and 1.4 s, went `IsConsistent = True`, their `ModifiedDate` moved to the
+compile time inside the session, and a SHA-256 of every file under the project before and
+after the run differed only by Portal's `.info` marker and a `~PEData.2` temp file — not by
+the project. The stamp the manifest records is the one read *before* the compile, because the
+object on disk still carries it: recording the moved one would have the next run ask Portal,
+be refused and compile again on every export until the engineer compiles and saves (the
+method's remarks carry the rest of the reasoning, including the bounded case of a dependent
+the compile re-wires). A block still refused after the compile — one with errors — is kept as
+before, and its warning now says the compile ran and what it reported, so the reader is sent
+to the block in Portal rather than told to compile it. Two pure tests drive the walk with a
+fake that refuses until compiled, and ignoring the compile's outcome turns exactly those two
+red. *(2)* The refusal reached no surface a reader looks at: the row drew the kept file like
+any other, the pane said "No changes right now", the card said a number. **Fix:**
+`ProjectTreeNode.ExportWarning`, from the manifest's warnings whose code ends in `_FAILED`
+(`ExportWarning.IsRefusal`: one rule for the tree and the card, stated beside the codes); the
+row says *export refused* beside its type in the conflict colour, the pane says "Export
+refused: … Showing the previous export." above the file — keyed by the file, so the git
+panel's next click does not inherit it — and the card's Warnings row names the refused paths.
+**Rejected:** compiling the whole PLC before the walk (about a minute per CPU on nine, and it
+moves the stamp of every dependent Portal re-wires, which the skip would then export);
+recording the post-compile stamp (above); treating every manifest warning as a refusal (an
+unknown type GUID is a note on a file that is this export's); asking the owner to compile
+(they had, and the block they edited next was refused all the same — the rule is Portal's,
+and it is the host's job to meet it).
+
+---
+
+### A shut folder with a change under it looked like one without: the desktop's roll-up colour was on a blank glyph
+
+**2026-10-30, `main`, after the tree counts went (the entry below).** The owner asked how
+changes would show now that the numbers were gone. The honest answer differed by side. The
+web tree coloured a folder's name by the strongest change below it, so every parent on the
+way down to one edited block was orange. The desktop coloured nothing a folder draws: the
+only element painted with `TreeRow.BrushKey` was the one-letter glyph column, and a folder's
+glyph is a blank — so with the count gone, a collapsed desktop folder hiding a change was
+indistinguishable from one hiding nothing. The 2026-10-29 commit and comment claimed "the
+roll-up colour on the name" carried the fact; that was true of the web and not of the desktop.
+
+**Not a defect of either tree alone, a mismatch the count had been papering over.** Three
+treatments were drawn for the owner, on the same tree with one folder shut: a dot on a
+collapsed row only; a coloured indent rail along the path; colour on the nearest folder only.
+The owner's objection to the first proposal — "don't colour every single parent folder" —
+ruled out the roll-up colour, and the question "what if RefrigeratorControl was collapsed?"
+settled that the project row is a row like any other. **Picked: the dot.** A row carries a mark
+only while it is collapsed with changes under it (`TreeRow.HidesChanges`, the same expression
+in `TreePanel.tsx`): a dot in the strongest hidden state's colour, beside the name. Open, nothing,
+because the changes are on screen under it. Collapsed with nothing changed below, nothing, which
+is what tells two shut projects apart. Names take a colour only for the row's own change.
+
+**Two halves each, each broken on purpose.** The desktop's flag is nothing without the flip
+being announced — `IsExpanded`'s setter raises `HidesChanges`, and deleting that line turned both
+new `TreeRowChromeTests` red — and nothing without an element bound to it, so the Project and
+Explorer rows are checked through the real templates (the History tree carries the same ellipse,
+unchecked: its rows need a commit context the chrome test does not build). On the web, dropping
+`!shown` from the dot's condition and restoring the roll-up tone each turned both tree tests red.
+`BrushKey` lost its roll-up fallback in the same change: dead since the count went, and the
+comment on it was the false claim above.
+
+---
+
 ### One rung moved, 1,359 files changed: the export stamp, a refused block deleted from the mirror, and a BOM on every committed ladder
 
 **2026-10-29, `main`, the owner's `controls-design-siemens` (eight CPUs, 2,170 objects).**
@@ -163,6 +247,8 @@ project row (changed descendants: *1357* on this project, *91* on Program blocks
 from the three desktop trees and the web tree. After a first export every object is a
 change, so the numbers read as counts of items; the roll-up colour on the name still says
 that something under a collapsed folder changed, and the facts pane still states the number.
+*(The roll-up colour was the web's alone — the desktop's sat on a blank glyph — and it went
+the next day for the dot on a collapsed row: the 2026-10-30 entry above.)*
 
 ---
 ### A TIA re-export asked Portal for every object: 202 s for a save that touched one block, and 1,355 XML files "changed" by their `<Created>` header

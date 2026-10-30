@@ -584,6 +584,22 @@ only in `_manifest.json`'s `skipped` list: the one block the owner had edited va
 the mirror with *in sync* on the card. The kept file is the last export, not the edit;
 compiling the block and exporting again brings the edit across. FINDINGS 2026-10-29.
 
+**A refused block is compiled where it stands (since 2026-10-30).** The refusal above is
+Portal's answer for *every* block or type edited and not compiled since, which is every
+block an engineer edits and saves — the owner moved a network, saved, and the mirror did not
+move. So before keeping the previous file the host compiles the object itself, in its own
+session (`ICompilable.Compile()` on that block or type alone, the call the import makes after
+`GenerateBlocksFromSource`), and asks `Export` again. The session is never saved: measured on
+the LBB101 copy with `stampprobe` (`compileblock:FC_TimeSince`, `compileblock:Main`, no
+`save`), both compiled clean in 8.0 s and 1.4 s and went consistent, their `ModifiedDate`
+moved to the compile time in session, and every file under the project hashed the same
+before and after bar Portal's `.info` marker and a `~PEData.2` temp. The manifest records the
+stamp read *before* the compile — the one the project on disk still carries — so the next
+run keeps the file instead of asking, being refused and compiling again every time. An object
+still refused after the compile (errors) is kept as above, and the warning says the compile
+ran and what it reported; the app's row, pane and card say *export refused* for it. The log
+gets one Info line per object compiled this way. FINDINGS 2026-10-30.
+
 ### 7.1 Re-export keeps what Portal says is unchanged (measured 2026-10-29)
 
 **The cost it answers.** A full export of the owner's `LBB101.ap20` (nine PLCs, 1,340
@@ -649,8 +665,9 @@ Deletions, renames and new objects need nothing: the walk records only what it v
 
 Since the merge with the refused-export fix the same evening, a refused object carries its
 previous rows forward, so on the next run it counts as *changed* (its stamp moved when it was
-edited) rather than *new or renamed*; it is asked of Portal again either way, and refused
-again until it compiles. And a forced full export over an unchanged mirror no longer rewrites
+edited) rather than *new or renamed*; it is asked of Portal again either way, and since
+2026-10-30 the host compiles it in session when Portal refuses it (§7), so it is refused
+only while it has errors. And a forced full export over an unchanged mirror no longer rewrites
 it: `ExportXml` keeps the previous file when Portal's new one differs by the stamp alone
 (§7), so the 1,349 raw-hash churns above are now zero file changes.
 
