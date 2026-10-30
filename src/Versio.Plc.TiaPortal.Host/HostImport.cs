@@ -546,6 +546,32 @@ internal static partial class HostApp
 
     private static void TryCompile(object obj)
     {
+        try
+        {
+            if (Compile(obj) is { } result
+                && (!string.IsNullOrEmpty(result.State) || !string.IsNullOrEmpty(result.Errors)))
+            {
+                Emit("info", "msg", "compile " + result.State + " errors=" + result.Errors);
+            }
+        }
+        catch (TargetInvocationException ex)
+        {
+            Emit("warning", "msg", "compile: " + Innermost(ex));
+        }
+    }
+
+    /// <summary>
+    /// Portal's compiler on one object — a block, a type, or a PLC's software — through
+    /// <c>ICompilable</c>, as the import, the export and the stamp probe all call it.
+    /// </summary>
+    /// <returns>
+    /// The compiler's <c>State</c> and <c>ErrorCount</c> as Portal reports them (either may
+    /// be empty), or null when the object offers no <c>Compile()</c>. A compile that throws
+    /// propagates as the <see cref="TargetInvocationException"/> reflection raised, so each
+    /// caller words the failure for its own reader.
+    /// </returns>
+    private static (string State, string Errors)? Compile(object obj)
+    {
         object? compilable = obj;
         var viaService = GetService(obj, "Siemens.Engineering.Compiler.ICompilable");
         if (viaService is not null)
@@ -566,23 +592,12 @@ internal static partial class HostApp
         compile ??= compilable.GetType().GetMethod("Compile", Type.EmptyTypes);
         if (compile is null)
         {
-            return;
+            return null;
         }
 
-        try
-        {
-            var result = compile.Invoke(compilable, null);
-            var state = result is null ? "" : Str(result, "State") ?? "";
-            var errors = result is null ? "" : Str(result, "ErrorCount") ?? "";
-            if (!string.IsNullOrEmpty(state) || !string.IsNullOrEmpty(errors))
-            {
-                Emit("info", "msg", "compile " + state + " errors=" + errors);
-            }
-        }
-        catch (TargetInvocationException ex)
-        {
-            Emit("warning", "msg", "compile: " + Innermost(ex));
-        }
+        var result = compile.Invoke(compilable, null);
+        return (result is null ? "" : Str(result, "State") ?? "",
+                result is null ? "" : Str(result, "ErrorCount") ?? "");
     }
 
     private static readonly Regex SclHeader = new(

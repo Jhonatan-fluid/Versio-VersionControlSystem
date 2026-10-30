@@ -227,7 +227,7 @@ internal static partial class HostApp
 
         try
         {
-            ExportXml(block, xmlPath);
+            ExportXmlCompilingIfRefused(block, xmlPath);
         }
         catch (Exception ex)
         {
@@ -475,7 +475,7 @@ internal static partial class HostApp
 
             try
             {
-                ExportXml(type, xmlPath);
+                ExportXmlCompilingIfRefused(type, xmlPath);
             }
             catch (Exception ex)
             {
@@ -780,6 +780,93 @@ internal static partial class HostApp
             // Unreadable either side: the new export stands, as it always did.
             return false;
         }
+    }
+
+    /// <summary>
+    /// Export an object's native XML; when Portal refuses it, compile the object in this
+    /// session and ask once more.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Portal refuses to export any block or type that has been edited and not compiled
+    /// since ("Inconsistent blocks and PLC data types (UDT) cannot be exported"), and an
+    /// engineer who moves a network and saves has done exactly that. Until 2026-10-30 the
+    /// refusal kept the previous file and said so in the log, which on the owner's project
+    /// read as: one rung moved, Versio shows no change at all. The compile is the one thing
+    /// that makes the object exportable, so the host does it here, on the object alone
+    /// (<c>ICompilable.Compile()</c> through the same reflection the import uses), and
+    /// exports again. Measured on a copy of LBB101 in Portal V20 on 2026-10-30: two refused
+    /// blocks (a LAD OB and an SCL FC) compiled in 8 s and 1.4 s with zero errors and went
+    /// <c>IsConsistent</c>; the project on disk did not change by a byte, because the export
+    /// session is never saved (<c>HostApp</c> disposes the project; Openness closes it
+    /// without a prompt). The compile is Portal's own — the same thing the engineer's F7
+    /// does — so the exported text is what Portal would have exported had they pressed it.
+    /// </para>
+    /// <para>
+    /// <b>The stamp recorded is the one read before the compile.</b> An in-session compile
+    /// moves the object's <c>ModifiedDate</c> (measured: both blocks moved to the compile
+    /// time), and that stamp dies with the session; the project on disk still carries the
+    /// edit's stamp, which is what the next run reads. Recording the pre-compile stamp means
+    /// the next run keeps the file — correct, since the source has not changed — instead
+    /// of asking Portal, being refused and compiling again on every export until the
+    /// engineer compiles and saves. A dependent Portal re-wires during the compile reads
+    /// the moved stamp if the walk reaches it afterwards; the following run exports it
+    /// once more against the disk's stamp and <see cref="ExportXml"/>'s keep rule decides
+    /// whether the file moves. Bounded, and rare: an OB has no callers.
+    /// </para>
+    /// <para>
+    /// An object that is still refused after a clean compile, or whose compile reports
+    /// errors, is refused with a message that says the compile ran and what it reported,
+    /// so the warning the app shows tells the engineer to look at the block in Portal
+    /// rather than to compile it. An object Openness cannot compile (no
+    /// <c>Compile()</c> on it) is refused with Portal's own words, as before.
+    /// </para>
+    /// </remarks>
+    private static void ExportXmlCompilingIfRefused(object item, string dest)
+    {
+        string refusal;
+        try
+        {
+            ExportXml(item, dest);
+            return;
+        }
+        catch (Exception ex)
+        {
+            refusal = Innermost(ex);
+        }
+
+        string compiled;
+        try
+        {
+            if (Compile(item) is not { } result)
+            {
+                throw new InvalidOperationException(refusal);
+            }
+
+            compiled = (result.State.Length == 0 ? "no state reported" : result.State)
+                       + ", " + (result.Errors.Length == 0 ? "?" : result.Errors) + " error(s)";
+        }
+        catch (TargetInvocationException ex)
+        {
+            compiled = "the compile itself failed: " + Innermost(ex);
+        }
+
+        try
+        {
+            ExportXml(item, dest);
+        }
+        catch (Exception ex)
+        {
+            // No inner exception: Innermost() would walk past this message to Portal's.
+            throw new InvalidOperationException(
+                $"{Innermost(ex)} — compiled in Versio's own session ({compiled}) and refused again");
+        }
+
+        // A summary, not an info: the runner logs summaries at Info, and an object that was
+        // exportable only because this host compiled it is a fact the log must carry.
+        Emit("summary", "msg",
+            $"{RelTo(dest)}: Portal refused to export it ({Regex.Replace(refusal, @"\s+", " ").Trim()}); "
+            + $"compiled it in this session ({compiled}) and exported it. The compile is not saved to the project.");
     }
 
     /// <summary>

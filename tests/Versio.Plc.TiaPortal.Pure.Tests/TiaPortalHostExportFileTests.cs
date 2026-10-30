@@ -211,6 +211,86 @@ public sealed class TiaPortalHostExportFileTests
     }
 
     [Fact]
+    public void A_block_Portal_refuses_as_uncompiled_is_compiled_in_this_session_and_exported()
+    {
+        // The owner's case, 2026-10-30: one network moved, saved, not compiled. Portal refuses
+        // the OB; the host compiles it where it stands and asks again, and the mirror gets
+        // the edit instead of a warning in the log and "no changes" on screen.
+        using var dir = new TempDir();
+        var mainPath = Path.Combine(dir.Path, "Dev", "PLC", "Program blocks", "Main.xml");
+        Directory.CreateDirectory(Path.GetDirectoryName(mainPath)!);
+        File.WriteAllText(mainPath, "the last export");
+        File.WriteAllText(Path.Combine(dir.Path, "_manifest.json"), PreviousManifest);
+        var block = new UncompiledOB(errors: 0);
+        var project = new FakeProject(new FakeDevice("Dev", new PlcSoftware("PLC", new FakeBlockGroup(block))));
+
+        var stdout = RunExport(project, dir.Path);
+
+        Assert.True(block.Compiled);
+        Assert.Equal("the new export", File.ReadAllText(mainPath));
+        Assert.Empty(Directory.GetFiles(dir.Path, "*" + HostApp.SetAsideSuffix, SearchOption.AllDirectories));
+
+        using var manifest = JsonDocument.Parse(File.ReadAllText(Path.Combine(dir.Path, "_manifest.json")));
+        var row = Assert.Single(manifest.RootElement.GetProperty("objects").EnumerateArray(),
+            o => o.GetProperty("path").GetString() == "Dev/PLC/Program blocks/Main.xml");
+        Assert.Equal("sha256:" + Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes("the new export"))).ToLowerInvariant(),
+            row.GetProperty("hash").GetString());
+        // The stamp the disk still carries, not the one the unsaved compile gave the object.
+        Assert.Equal("2026-10-29T20:48:47.0000000Z", row.GetProperty("stamp").GetString());
+        Assert.DoesNotContain(manifest.RootElement.GetProperty("skipped").EnumerateArray(),
+            s => s.GetProperty("reason").GetString() == "EXPORT_FAILED");
+        Assert.Empty(manifest.RootElement.GetProperty("warnings").EnumerateArray());
+
+        // Said at summary level, where the runner logs at Info; no warning, and the object emitted.
+        var summary = Assert.Single(stdout, l => l.Contains("\"t\":\"summary\"", StringComparison.Ordinal)
+                                              && l.Contains("Main.xml", StringComparison.Ordinal));
+        Assert.Contains("compiled it in this session (Success, 0 error(s)) and exported it", summary, StringComparison.Ordinal);
+        Assert.Contains("not saved", summary, StringComparison.Ordinal);
+        Assert.DoesNotContain(stdout, l => l.Contains("\"t\":\"warning\"", StringComparison.Ordinal));
+        Assert.Contains(stdout, l => l.Contains("\"t\":\"object\"", StringComparison.Ordinal)
+                                  && l.Contains("Main.xml", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void A_block_still_refused_after_the_compile_is_kept_and_the_warning_says_the_compile_ran()
+    {
+        // A block with errors compiles to errors and stays inconsistent: Portal refuses it
+        // again. Kept as before, and the warning names the compile and its count, so the
+        // reader is sent to the block in Portal rather than told to compile it.
+        using var dir = new TempDir();
+        var mainPath = Path.Combine(dir.Path, "Dev", "PLC", "Program blocks", "Main.xml");
+        Directory.CreateDirectory(Path.GetDirectoryName(mainPath)!);
+        File.WriteAllText(mainPath, "the last export");
+        File.WriteAllText(Path.Combine(dir.Path, "_manifest.json"), PreviousManifest);
+        var block = new UncompiledOB(errors: 2);
+        var project = new FakeProject(new FakeDevice("Dev", new PlcSoftware("PLC", new FakeBlockGroup(block))));
+
+        var stdout = RunExport(project, dir.Path);
+
+        Assert.True(block.Compiled);
+        Assert.Equal("the last export", File.ReadAllText(mainPath));
+        Assert.Empty(Directory.GetFiles(dir.Path, "*" + HostApp.SetAsideSuffix, SearchOption.AllDirectories));
+
+        using var manifest = JsonDocument.Parse(File.ReadAllText(Path.Combine(dir.Path, "_manifest.json")));
+        var skip = Assert.Single(manifest.RootElement.GetProperty("skipped").EnumerateArray(),
+            s => s.GetProperty("reason").GetString() == "EXPORT_FAILED");
+        Assert.Contains("compiled in Versio's own session (Error, 2 error(s)) and refused again",
+            skip.GetProperty("detail").GetString(), StringComparison.Ordinal);
+        var warned = Assert.Single(manifest.RootElement.GetProperty("warnings").EnumerateArray());
+        Assert.Equal("XML_EXPORT_FAILED", warned.GetProperty("code").GetString());
+        Assert.Contains("Inconsistent blocks", warned.GetProperty("detail").GetString(), StringComparison.Ordinal);
+        Assert.Contains("2 error(s)", warned.GetProperty("detail").GetString(), StringComparison.Ordinal);
+
+        var warning = Assert.Single(stdout, l => l.Contains("\"t\":\"warning\"", StringComparison.Ordinal)
+                                              && l.Contains("Main.xml", StringComparison.Ordinal));
+        Assert.Contains("Portal refused to export it", warning, StringComparison.Ordinal);
+        Assert.Contains("2 error(s)", warning, StringComparison.Ordinal);
+        Assert.Contains("kept as it was", warning, StringComparison.Ordinal);
+        Assert.DoesNotContain(stdout, l => l.Contains("\"t\":\"summary\"", StringComparison.Ordinal)
+                                        && l.Contains("exported it", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public void A_block_Portal_refuses_keeps_its_last_export_and_its_rows_and_says_so_on_stdout()
     {
         using var dir = new TempDir();
@@ -384,6 +464,47 @@ public sealed class TiaPortalHostExportFileTests
 
         public void Export(FileInfo file, FakeExportOptions options) => new RefusingBlock().Export(file, options);
     }
+
+    /// <summary>
+    /// A ladder OB edited and not compiled since: Portal refuses it until something compiles
+    /// it, and a compile with errors leaves it refused. Its stamp moves with the compile, as
+    /// the real one does (measured 2026-10-30).
+    /// </summary>
+    private sealed class UncompiledOB(int errors)
+    {
+        public bool Compiled { get; private set; }
+
+        public string Name => "Main";
+
+        public int Number => 1;
+
+        public string ProgrammingLanguage => "LAD";
+
+        public bool IsKnowHowProtected => false;
+
+        public DateTime ModifiedDate => Compiled
+            ? new DateTime(2026, 10, 30, 15, 24, 20, DateTimeKind.Utc)
+            : new DateTime(2026, 10, 29, 20, 48, 47, DateTimeKind.Utc);
+
+        public FakeCompilerResult Compile()
+        {
+            Compiled = true;
+            return new FakeCompilerResult(errors == 0 ? "Success" : "Error", errors);
+        }
+
+        public void Export(FileInfo file, FakeExportOptions options)
+        {
+            if (!Compiled || errors > 0)
+            {
+                new RefusingBlock().Export(file, options);
+            }
+
+            File.WriteAllText(file.FullName, "the new export");
+        }
+    }
+
+    /// <summary>Stands in for <c>Siemens.Engineering.Compiler.CompilerResult</c>: the host reads State and ErrorCount.</summary>
+    private sealed record FakeCompilerResult(string State, int ErrorCount);
 
     /// <summary>A ladder OB Portal exports again unchanged: the same text, a later stamp.</summary>
     private sealed class RestampingOB
