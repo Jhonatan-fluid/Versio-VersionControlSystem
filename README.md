@@ -219,7 +219,7 @@ Versio.sln
 │  ├─ Versio.Integration.Tests/ 188 tests against real git and the real filesystem, ~40 s.
 │  │                            NO CODESYS: that is a different project now, so this one
 │  │                            needs no filter and cannot accidentally cost half an hour
-│  ├─ Versio.App.Tests/         833 tests that build the real windows and panels against
+│  ├─ Versio.App.Tests/         901 tests that build the real windows and panels against
 │  │                            the real stylesheet on an STA thread — none is ever shown
 │  ├─ Versio.Plc.Codesys.Pure.Tests/ 404 pure vendor tests — the planner, the codecs, the
 │  │                            protocol, the LD/FBD parser, the File-Based Storage layout —
@@ -433,14 +433,14 @@ dotnet test tests/Versio.Core.Tests
 > `%LOCALAPPDATA%\Microsoft\dotnet\dotnet.exe`, or set `DOTNET_ROOT` to it — the same install
 > layout that makes a framework-dependent `Versio.exe` fail to start, noted again below.
 
-**Twelve suites, and they need different things** (plus the web page's own vitest suite in `web/`, 216 tests, which needs the pinned Node):
+**Twelve suites, and they need different things** (plus the web page's own vitest suite in `web/`, 217 tests, which needs the pinned Node):
 
 | Suite | Tests | Needs | Runs in |
 |---|---|---|---|
 | `Versio.Core.Tests` | 2,119 | nothing — pure, no IO, no clock, no UI | ~0.3 s |
 | `Versio.Integration.Tests` | 268 | a real `git.exe`, the real filesystem, and the real Windows local groups for five | ~55 s |
 | `Versio.Arch.Tests` | 45 | nothing — it reads assembly metadata, IL, and the project files | instant |
-| `Versio.App.Tests` | 898 | Windows (WPF). Builds the real dialogs against the real stylesheet on an STA thread; **no window is ever shown**. One test runs the web viewer too, over every fixture row, and references `Versio.Web.Tests` for its fake GitHub | ~3.6–11 min |
+| `Versio.App.Tests` | 901 | Windows (WPF). Builds the real dialogs against the real stylesheet on an STA thread; **no window is ever shown**. One test runs the web viewer too, over every fixture row, and references `Versio.Web.Tests` for its fake GitHub | ~3.6–11 min |
 | `Versio.Plc.Codesys.Pure.Tests` | 405 | nothing — the vendor's planner, codecs, protocol, LD/FBD parser and File-Based Storage layout, pure | under a second |
 | `Versio.Plc.Codesys.Parity.Tests` | 104 | `python` on PATH, no CODESYS — **skips cleanly without python, so check the count** | ~15 s |
 | `Versio.Plc.TiaPortal.Pure.Tests` | 160 | nothing — format, planner, protocol, scrubber, member table, LAD and FBD parser, and the host's export walk, re-export baseline and file rules against fakes | instant |
