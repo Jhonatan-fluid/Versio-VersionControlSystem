@@ -68,6 +68,17 @@ unknown type GUID is a note on a file that is this export's); asking the owner t
 (they had, and the block they edited next was refused all the same — the rule is Portal's,
 and it is the host's job to meet it).
 
+**Measured on the owner's project, 2026-10-30 09:15, Versio 0.4.21 installed over 0.4.20:**
+the first run after the install timed out on Portal's Openness window (a new host hash;
+nobody at the desk for nine minutes), the owner answered it on the retry, and that export
+asked Portal for 28 objects, kept 1,338, and took 68.0 s. Both `Main`s were refused, compiled
+in session (`Success, 0 error(s)` on MHC_001, `Warning, 0 error(s)` on MHC_100) and
+exported; `git diff` on the two files is the moved calls and nothing else — in MHC_100
+`StatusReport` and `MinFlowValves` swapped, in MHC_001 `PlantHydraulics` went to the end —
+and no other XML file moved. The card's Warnings row read *2 — export refused:
+MHC_001/…/Main.xml, MHC_100/…/Main.xml; see the log* while the retry ran, from the manifest
+the failed run had left.
+
 ---
 
 ### A shut folder with a change under it looked like one without: the desktop's roll-up colour was on a blank glyph

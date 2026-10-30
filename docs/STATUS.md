@@ -742,10 +742,15 @@ Close Versio **and** Portal before a host rebuild. Click **Yes to all** on Openn
     refuses any block edited and not compiled since, both `Main`s were, and the owner's
     compile was not the answer — the next edit is refused all the same. The host now compiles
     a refused object in its own session and exports it (FINDINGS 2026-10-30), and the row,
-    pane and card say *export refused* for what it still cannot. **Owner eyeball, still
+    pane and card say *export refused* for what it still cannot. ~~**Owner eyeball, still
     open:** with that build installed, the next export should bring MHC_100's `Main` across
     with the moved network, the log should carry one `compiled it in this session` line per
-    `Main`, and nothing on screen should say *export refused* unless Portal reports errors.
+    `Main`, and nothing on screen should say *export refused* unless Portal reports errors.~~
+    **Done 2026-10-30 09:16 with 0.4.21** (FINDINGS 2026-10-30, the measured paragraph): both
+    `Main`s compiled in session with zero errors and exported, 28 asked, 1,338 kept, 68.0 s,
+    and the two files' diffs are the moved calls alone. The first run after the install
+    timed out on the Openness window, as every host update's first run will until it is
+    answered.
     Not carried yet: the web viewer's tree (`ApiEndpoints`' node record has no
     `ExportWarning`), so a refused object reads there as the desktop's did before.
 
