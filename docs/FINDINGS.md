@@ -81,6 +81,44 @@ the failed run had left.
 
 ---
 
+### The collapsed-only dot lasted a morning: every level with a change below wears it, and only the project row opens itself
+
+**2026-10-30, the fresh 0.4.22 install on the owner's `controls-design-siemens`, one save on
+LBB101.** Two screenshots an hour after the entry below shipped. In the first, both CPUs'
+*Program blocks* stood unfolded down to their changed `Main`, because the default still opened
+every node on the way to a change — on a project where one save touches a block under each of
+eight CPUs, that is most of the tree. In the second, with *Program blocks* shut by hand, its dot
+showed, and the owner's word for it was "easy to miss": seven pixels beside a 14-pixel name.
+
+**Three asks, in one message.** The dot on every level that has a change below it, open or
+shut, "to showcase something is modified"; the tree opening the project row alone, "everything
+under it has to be manually expanded"; and nine pixels. Together they are one design, not
+three: once folders stay shut by default, a collapsed-only dot would have shown on every
+parent anyway, and marking the open ones too is what keeps the open state honest — a folder
+that is open and marked says "keep going down", which the collapsed-only rule could not.
+
+**What changed.** `TreeRow.HasChangesBelow` is `ChangedDescendants > 0` with no look at
+`IsExpanded` (so the setter's notification of the morning went with it);
+`TreeExpansion.DefaultFor` is `Kind == Project` and nothing else — the change-driven half
+("anything with children opens when there is a change under it", 2026-10-05) is gone, and the
+row built without an expansion follows the same default. The web's `Node` opens `depth < 1`
+and `kind === 'project'`, and its dot drops the `!shown`. Nine pixels on both sides. The
+shell's reveal — a type link, a changed file, the member table — still opens the ancestors
+itself (`MemberTablePaneFlowTests` is green), because that is a selection, not a default.
+
+**Checked by breaking it, four ways.** The desktop's dot back to collapsed-only turned both
+`TreeRowChromeTests` red; the old default back turned
+`A_manager_with_a_bumped_library_stays_closed_and_wears_the_dot` red (it was
+`…opens_itself` until today, and its reasoning is now the opposite claim with the same
+evidence); the web's `!shown` back turned both tree tests red, and dropping the project row
+from its default turned the new expansion test red. Baseline green after each restore.
+
+**Left as it was:** the comparison page still opens every folder — it lists only what
+changed, which is short — and the Explorer still opens the first level of the clone, which
+is a listing, not a project.
+
+---
+
 ### A shut folder with a change under it looked like one without: the desktop's roll-up colour was on a blank glyph
 
 **2026-10-30, `main`, after the tree counts went (the entry below).** The owner asked how

@@ -115,7 +115,7 @@ Both directions run automatically and deterministically. A per-project **directi
 | **The repository and branch dropdowns are guarded** | ✅ shut while an import runs, and they snap back whenever a switch does not happen — a refused checkout used to leave the control naming a branch you were not on |
 | **Auto-stash on a branch switch** | ✅ uncommitted work is stashed with a marker, recorded in `.versio/local/autostash.json` with the direction locks it released, and offered back — restore, leave, discard — on returning to that branch. The stash is proven to exist by a set difference over `git stash list`, because `git stash push` on a clean tree exits 0 and creates nothing |
 | Branch switching with work in the tree | ✅ the guard asks, the auto-stash saves it with the direction locks it released, and returning to the branch offers it back — restore, leave, or discard. A stash that git did not actually create abandons the switch rather than checking out over unsaved work |
-| **Project tree** — CODESYS structure, a dot on a collapsed folder hiding a change, search | ✅ 34 unit tests + built from the export this repository commits. The count beside a folder went on 2026-10-29 (it read as a count of items) and the roll-up colour on 2026-10-30 (every parent of one edit was orange); the dot shows only while a row is shut over a change, on the desktop and the web alike |
+| **Project tree** — CODESYS structure, a dot on every folder with a change below it, only the project row open by default, search | ✅ 34 unit tests + built from the export this repository commits. The count beside a folder went on 2026-10-29 (it read as a count of items) and the roll-up colour on 2026-10-30 (every parent of one edit was orange); the dot marks every level with a change under it, open or shut, on the desktop and the web alike, and the folders under a project wait for a click |
 | **Methods and properties under the object that owns them** | ✅ manifest schema 4 records each member's owner GUID and the tree nests by it — a chain, since a property owns its accessors. Before this a function block's methods were its siblings, and four `InitRoom` methods on four different rooms were four rows in one folder. A mirror exported earlier carries no parents and stays flat until it is re-exported |
 | **Library and task rows, layer chips, context menu** | ✅ one node per library reference, task, device parameter and empty slot; chips in the diff header for ST / native / tasks / libraries / devices; a themed context menu on changed rows. Device YAML is export-only |
 | Packaging | ✅ `Build_Package.bat` produces unsigned `Setup.exe` and an MSI, both **per-user** (so an update needs no administrator). It asks how to bump `VersioVersion` first. PortableGit, .NET 9 and both vendor hosts ship in the payload. CODESYS / Portal / XAE are detected, never bundled. Signing is still open. |
@@ -433,7 +433,7 @@ dotnet test tests/Versio.Core.Tests
 > `%LOCALAPPDATA%\Microsoft\dotnet\dotnet.exe`, or set `DOTNET_ROOT` to it — the same install
 > layout that makes a framework-dependent `Versio.exe` fail to start, noted again below.
 
-**Twelve suites, and they need different things** (plus the web page's own vitest suite in `web/`, 217 tests, which needs the pinned Node):
+**Twelve suites, and they need different things** (plus the web page's own vitest suite in `web/`, 218 tests, which needs the pinned Node):
 
 | Suite | Tests | Needs | Runs in |
 |---|---|---|---|
