@@ -197,8 +197,10 @@ code, kbd, pre { font-family: var(--font-mono); }
 .change-renamed { color: var(--color-accent-fg); }
 /* The desktop's tree row (TreeRow), drawn here since Step 8: the vendor's pill on a project, the
    type or detail beside the name, the change glyph at the end, and a struck deleted name. The
-   count of changes below a folder went with the desktop's on 2026-10-29: the roll-up colour on
-   the name already says it, and the number read as a count of items. */
+   count of changes below a folder went with the desktop's on 2026-10-29 (it read as a count of
+   items), and the roll-up colour on a folder's name went on 2026-10-30 (every parent of one edit
+   was orange). What remains for a parent is the dot: drawn only while the row is collapsed and
+   hiding a change, in the strongest hidden state's colour, and matched on the desktop. */
 .tree-filter-row { display: flex; gap: 4px; align-items: center; }
 .tree-pill { font: 600 10px/16px var(--font-ui); border: 1px solid var(--color-accent-fg); color: var(--color-accent-fg); border-radius: 999px; padding: 0 6px; flex: none; }
 .tree-annotation { font-size: 11px; color: var(--color-fg-muted); overflow: hidden; text-overflow: ellipsis; flex: none; max-width: 40%; }
@@ -207,6 +209,10 @@ code, kbd, pre { font-family: var(--font-mono); }
 .tree-row.tone-added .tree-name { color: var(--color-success-fg); }
 .tree-row.tone-modified .tree-name { color: var(--color-attention-fg); }
 .tree-row.tone-deleted .tree-name { color: var(--color-danger-fg); }
+.tree-dot { width: 7px; height: 7px; border-radius: 50%; flex: none; background: var(--color-attention-fg); }
+.tree-dot.tone-added { background: var(--color-success-fg); }
+.tree-dot.tone-deleted { background: var(--color-danger-fg); }
+.tree-dot.tone-renamed { background: var(--color-accent-fg); }
 .tree-icon-project { color: var(--color-accent-fg); }
 /* An HTML object's Web page tab (Step 9): the file framed sandboxed, as the desktop's third chip. */
 .page-frame { width: 100%; min-height: 480px; height: 70vh; border: 1px solid var(--color-border-default); border-radius: var(--radius); background: #fff; }

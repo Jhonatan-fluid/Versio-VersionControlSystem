@@ -309,8 +309,10 @@
                                                Converter={StaticResource ResourceKey}}" />
 
                                 <!-- A file row's name is a whole repo-relative
-                                     path, and paths read in the monospaced face. -->
-                                <DockPanel Grid.Column="1">
+                                     path, and paths read in the monospaced face.
+                                     Left-aligned so the dot lands beside the name
+                                     rather than at the far end of the column. -->
+                                <DockPanel Grid.Column="1" HorizontalAlignment="Left">
                                     <!-- What kind of row, before its name. Dim, so the
                                          name stays what the eye lands on. -->
                                     <TextBlock DockPanel.Dock="Left" Margin="0,0,6,0"
@@ -319,6 +321,21 @@
                                                Foreground="{DynamicResource Brush.Text.Secondary}"
                                                Text="{Binding IconKey,
                                                    Converter={StaticResource ResourceKey}}" />
+                                    <!-- THE ONE MARK A PARENT CARRIES: a dot while the
+                                         row is collapsed with changes under it, in the
+                                         strongest hidden state's colour. Open, nothing,
+                                         because the changes are on screen below. See
+                                         TreeRow.HidesChanges for the three treatments
+                                         the owner chose between on 2026-10-30; the web
+                                         tree draws the same. Docked right and declared
+                                         before the name, which must stay last to fill. -->
+                                    <Ellipse DockPanel.Dock="Right" Width="7" Height="7"
+                                             Margin="6,0,0,0" VerticalAlignment="Center"
+                                             ToolTip="Changes below"
+                                             Fill="{Binding HiddenChangeBrushKey,
+                                                 Converter={StaticResource ResourceKey}}"
+                                             Visibility="{Binding HidesChanges,
+                                                 Converter={StaticResource BoolToVisibility}}" />
                                     <TextBlock Text="{Binding Name}"
                                                VerticalAlignment="Center"
                                                FontSize="{DynamicResource Font.Size.Body}"

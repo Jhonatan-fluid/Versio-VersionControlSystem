@@ -131,7 +131,15 @@ function Node({ node, depth, filter, selected, onSelect, openAll }: { node: Tree
   const annotation = node.kind === 'project' || node.kind === 'library' || node.kind === 'task' || node.kind === 'device' || node.kind === 'folder'
     ? node.detail || ''
     : node.typeName ?? '';
-  const tone = status !== 'unmodified' ? status : node.rollUp && node.rollUp !== 'unmodified' ? node.rollUp : '';
+  // The name takes a colour only for the row's OWN change. It used to take the roll-up too, so
+  // every folder on the way down to one edited block was orange, and the owner asked for a
+  // tree where a parent carries a mark only while it is hiding something (2026-10-30). So: a
+  // collapsed branch with changes below it draws a dot in the strongest hidden state's colour,
+  // and an open one draws nothing, because its changes are on screen under it. The dot goes
+  // on the project row too, which is the row most often folded shut.
+  const tone = status !== 'unmodified' ? status : '';
+  const hides = branch && !shown && (node.changedDescendants ?? 0) > 0;
+  const hiddenTone = node.rollUp && node.rollUp !== 'unmodified' ? node.rollUp : 'modified';
 
   return (
     <li role="treeitem" aria-expanded={branch ? shown : undefined} aria-selected={isSelected}>
@@ -156,6 +164,7 @@ function Node({ node, depth, filter, selected, onSelect, openAll }: { node: Tree
         <span className="tree-caret" aria-hidden="true">{branch ? <Icon name={shown ? 'chevron-down' : 'chevron-right'} size={12} /> : ''}</span>
         <Icon name={glyphOf.name} className={glyphOf.className} label={glyphOf.title} />
         <span className="tree-name">{node.name}</span>
+        {hides && <span className={`tree-dot tone-${hiddenTone}`} role="img" aria-label="Changes below" title="Changes below" />}
         {node.toolchain && <span className="tree-pill" title="The toolchain that opens this project">{node.toolchain}</span>}
         {annotation && <span className="tree-annotation">{annotation}</span>}
         {mark && <span className={`change change-${status}`} aria-label={status}>{mark}</span>}

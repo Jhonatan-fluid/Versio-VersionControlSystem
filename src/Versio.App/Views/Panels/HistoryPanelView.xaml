@@ -299,7 +299,9 @@
                                        FontWeight="{DynamicResource Font.Weight.Semibold}"
                                        Foreground="{Binding BrushKey,
                                            Converter={StaticResource ResourceKey}}" />
-                            <DockPanel Grid.Column="1">
+                            <!-- Left-aligned so the dot lands beside the name rather than at
+                                 the far end of the column. -->
+                            <DockPanel Grid.Column="1" HorizontalAlignment="Left">
                                 <!-- What kind of row, before its name. Dim, so the
                                      name stays what the eye lands on. -->
                                 <TextBlock DockPanel.Dock="Left" Margin="0,0,6,0"
@@ -308,6 +310,17 @@
                                            Foreground="{DynamicResource Brush.Text.Secondary}"
                                            Text="{Binding IconKey,
                                                Converter={StaticResource ResourceKey}}" />
+                                <!-- A dot while the row is collapsed with changes under it,
+                                     nothing while open: the one mark a parent carries. The
+                                     Project panel's row says why; docked right and declared
+                                     before the name, which fills. -->
+                                <Ellipse DockPanel.Dock="Right" Width="7" Height="7"
+                                         Margin="6,0,0,0" VerticalAlignment="Center"
+                                         ToolTip="Changes below"
+                                         Fill="{Binding HiddenChangeBrushKey,
+                                             Converter={StaticResource ResourceKey}}"
+                                         Visibility="{Binding HidesChanges,
+                                             Converter={StaticResource BoolToVisibility}}" />
                                 <TextBlock Text="{Binding Name}"
                                            VerticalAlignment="Center"
                                            FontSize="{DynamicResource Font.Size.Body}"

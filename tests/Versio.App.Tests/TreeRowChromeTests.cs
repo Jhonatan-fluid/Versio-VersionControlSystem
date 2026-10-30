@@ -134,6 +134,100 @@ public sealed class TreeRowChromeTests
         });
     }
 
+    /// <summary>A folder with one modified object under it, shut.</summary>
+    private static TreeRow ShutFolderHidingAChange(string name) =>
+        new(new ProjectTreeNode
+        {
+            Name = name, Path = "plc/" + name, Kind = ProjectNodeKind.Folder,
+            ChangedDescendants = 1, RollUp = Versio.Core.Git.ChangeKind.Modified,
+            Children =
+            [
+                new ProjectTreeNode
+                {
+                    Name = name + "_PRG", Path = "plc/" + name + "/" + name + "_PRG",
+                    Kind = ProjectNodeKind.Object, Status = Versio.Core.Git.ChangeKind.Modified,
+                },
+            ],
+        }, depth: 0) { IsExpanded = false };
+
+    [Fact]
+    public void A_row_hides_changes_only_while_it_is_collapsed_with_changes_below()
+    {
+        // The row's half of the dot rule the owner chose on 2026-10-30 (TreeRow.HidesChanges):
+        // shut with a change below, true; open, false; shut with nothing below, false. And the
+        // flip has to be announced, or the template only hears about it at the next rebuild.
+        var hiding = ShutFolderHidingAChange("Library");
+        var empty = new TreeRow(new ProjectTreeNode
+        {
+            Name = "Idle", Path = "plc/Idle", Kind = ProjectNodeKind.Folder,
+            Children = [new ProjectTreeNode { Name = "Nop", Path = "plc/Idle/Nop", Kind = ProjectNodeKind.Object }],
+        }, depth: 0) { IsExpanded = false };
+
+        Assert.True(hiding.HidesChanges);
+        Assert.Equal("Brush.Status.Modified", hiding.HiddenChangeBrushKey);
+        Assert.False(empty.HidesChanges);
+
+        var announced = new List<string?>();
+        hiding.PropertyChanged += (_, e) => announced.Add(e.PropertyName);
+        hiding.IsExpanded = true;
+
+        Assert.False(hiding.HidesChanges);
+        Assert.Contains(nameof(TreeRow.HidesChanges), announced);
+    }
+
+    [Fact]
+    public void Both_trees_draw_a_dot_on_a_shut_folder_hiding_a_change_and_nothing_once_it_opens()
+    {
+        // The template's half: the flag is nothing without an element bound to it. Through the
+        // real Project and Explorer rows, as the glyph test above. Three rows each time — shut
+        // and hiding, shut and empty, open and hiding — and exactly one dot may show.
+        StaHarness.Run(() =>
+        {
+            using var shell = TestShell.Build();
+            var window = new Versio.App.Views.MainWindow(shell);
+            var content = Assert.IsAssignableFrom<FrameworkElement>(window.Content);
+
+            var modified = Application.Current.Resources["Brush.Status.Modified"];
+
+            void Check(FrameworkElement panel, System.Collections.ObjectModel.ObservableCollection<TreeRow> tree)
+            {
+                var hiding = ShutFolderHidingAChange("Library");
+                var open = ShutFolderHidingAChange("Application");
+                open.IsExpanded = true;
+                tree.Add(hiding);
+                tree.Add(new TreeRow(new ProjectTreeNode
+                {
+                    Name = "Idle", Path = "plc/Idle", Kind = ProjectNodeKind.Folder,
+                    Children = [new ProjectTreeNode { Name = "Nop", Path = "plc/Idle/Nop", Kind = ProjectNodeKind.Object }],
+                }, depth: 0) { IsExpanded = false });
+                tree.Add(open);
+                Lay(content);
+
+                // Every realised row carries the ellipse, collapsed — the open folder's child
+                // among them — so the count is not the assertion; which one shows is.
+                var dots = Descendants(panel).OfType<System.Windows.Shapes.Ellipse>()
+                    .Where(e => e.ToolTip is "Changes below").ToList();
+                Assert.True(dots.Count >= 3, $"{dots.Count} dot(s) realised");
+                var shown = Assert.Single(dots, d => d.Visibility == Visibility.Visible);
+                Assert.Same(modified, shown.Fill);
+                var besideName = (DependencyObject)System.Windows.Media.VisualTreeHelper.GetParent(shown);
+                Assert.Contains(Descendants(besideName).OfType<TextBlock>(), t => t.Text == "Library");
+
+                // Opening the folder takes the dot away without a rebuild: the change it
+                // stood for is now on screen under it.
+                hiding.IsExpanded = true;
+                Lay(content);
+                Assert.DoesNotContain(dots, d => d.Visibility == Visibility.Visible);
+            }
+
+            Check((FrameworkElement)window.FindName("ProjectPanel"), shell.Sync.Tree);
+
+            var explorer = (FrameworkElement)window.FindName("ExplorerPanel");
+            explorer.Visibility = Visibility.Visible;
+            Check(explorer, shell.Explorer.Tree);
+        });
+    }
+
     [Fact]
     public void An_object_row_shows_the_vendor_word_for_its_type_not_the_raw_identifier()
     {

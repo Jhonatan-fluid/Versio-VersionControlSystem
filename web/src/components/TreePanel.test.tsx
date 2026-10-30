@@ -5,7 +5,9 @@ import type { Tree, TreeNode } from '../api';
 import { TreePanel } from './TreePanel';
 
 // The desktop's tree row on the web (docs/web/FINISH.md, Step 8): the vendor's pill, the object's
-// type, the change glyph, a struck deleted name, the folder's count in the strongest state's colour.
+// type, the change glyph, a struck deleted name, and on a collapsed folder hiding a change a dot in
+// the strongest hidden state's colour (the count went 2026-10-29, the roll-up colour on the name
+// 2026-10-30).
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -48,16 +50,53 @@ describe('TreePanel', () => {
 
     expect(row('Plant.project').querySelector('.tree-pill')?.textContent).toBe('CODESYS V3.5 SP19');
     expect(row('Plant.project').querySelector('.tree-annotation')?.textContent).toBe('in sync');
-    // Two changed descendants in the fixture, and no number drawn for them: the roll-up
-    // tone on the row is what says it (dropped with the desktop's badge, 2026-10-29).
+    // Two changed descendants in the fixture, and nothing drawn for them while the project is
+    // open: no number (2026-10-29), no colour on the name (2026-10-30), and no dot, because the
+    // changes themselves are on screen under it. The dot is the collapsed case, tested below.
     expect(row('Plant.project').querySelector('.tree-badge')).toBeNull();
-    expect(row('Plant.project').className).toContain('tone-deleted');
+    expect(row('Plant.project').className).not.toContain('tone-');
+    expect(row('Plant.project').querySelector('.tree-dot')).toBeNull();
+    expect(row('Pump').className).toContain('tone-modified');
     expect(row('Pump').querySelector('.tree-annotation')?.textContent).toBe('Function block');
     expect(row('Pump').querySelector('.change')?.textContent).toBe('M');
     expect(row('Old').querySelector('.change')?.textContent).toBe('D');
     expect(row('Old').className).toContain('is-deleted');
     expect(row('Valve').querySelector('.change')).toBeNull();
     expect(row('README.md').querySelector('.tree-pill')).toBeNull();
+    act(() => root.unmount());
+  });
+
+  it('draws a dot on a collapsed row only while it hides a change', async () => {
+    // Option 1 of three the owner was shown on 2026-10-30: a parent carries a mark only while
+    // it is hiding something. Collapsed with changes below, a dot in the strongest hidden
+    // state's colour; open, nothing; collapsed with nothing changed below, nothing either, which
+    // is what tells two shut projects apart.
+    const two: Tree = {
+      ...tree,
+      nodes: [
+        tree.nodes[0]!,
+        node({ name: 'Idle.project', path: 'plc/Idle.project', kind: 'project', children: [
+          node({ name: 'Nop', path: 'plc/Idle/Nop.st', typeName: 'Program' }),
+        ] }),
+      ],
+    };
+    const { host, root } = await render(two);
+    const row = (name: string) =>
+      Array.from(host.querySelectorAll<HTMLElement>('.tree-row')).find((r) => r.querySelector('.tree-name')?.textContent === name)!;
+
+    expect(row('Plant.project').querySelector('.tree-dot')).toBeNull();
+    await act(async () => { row('Plant.project').click(); });
+    await act(async () => { row('Idle.project').click(); });
+
+    const dot = row('Plant.project').querySelector<HTMLElement>('.tree-dot');
+    expect(dot).not.toBeNull();
+    expect(dot!.className).toContain('tone-deleted');
+    expect(dot!.getAttribute('aria-label')).toBe('Changes below');
+    expect(row('Plant.project').className).not.toContain('tone-');
+    expect(row('Idle.project').querySelector('.tree-dot')).toBeNull();
+
+    await act(async () => { row('Plant.project').click(); });
+    expect(row('Plant.project').querySelector('.tree-dot')).toBeNull();
     act(() => root.unmount());
   });
 

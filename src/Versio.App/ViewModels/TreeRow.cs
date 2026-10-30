@@ -47,7 +47,7 @@ public sealed class TreeRow : ObservableObject
 
         // Anything on the path to a change opens itself, and so does a project. Somebody who
         // had to expand five levels by hand to find the object they just edited would
-        // reasonably wonder what the roll-up badges were for.
+        // reasonably wonder what the dot on the folder was for.
         //
         // Written as "has changed descendants" rather than "is a folder with changes",
         // because a function block owns its methods now: an edited method sat behind a
@@ -326,6 +326,11 @@ public sealed class TreeRow : ObservableObject
                 // Recorded so the next rebuild - one per git status refresh - puts the tree
                 // back the way the user left it rather than the way the defaults want it.
                 _expansion?.Record(_node, value);
+
+                // The dot is a function of this flag, and WPF only re-reads what it is told
+                // changed: without this line a folder shut by a click kept no dot until the
+                // next status refresh happened to rebuild the row.
+                OnPropertyChanged(nameof(HidesChanges));
             }
         }
     }
@@ -357,16 +362,39 @@ public sealed class TreeRow : ObservableObject
         _ => " ",
     };
 
-    /// <summary>The brush for the name: this node's own change, else the strongest one below it.</summary>
+    /// <summary>The brush for this node's own letter.</summary>
     /// <remarks>
-    /// The roll-up is what says a collapsed folder has changes under it. A count used to
-    /// sit beside it too — "91" on a folder, "1357" on a project — and after a first export
-    /// every object is a change, so the owner read the numbers as a count of items and found
-    /// them misleading on every vendor (2026-10-29). The colour carries the one fact that
-    /// matters, and the facts pane still states the number for whoever asks.
+    /// Own change only. It fell back to the roll-up until 2026-10-30, which was dead once the
+    /// count went: the only thing painted with it is <see cref="Glyph"/>, and a folder's glyph
+    /// is blank. What a parent says about the changes below it is <see cref="HidesChanges"/>.
     /// </remarks>
-    public string BrushKey => BrushFor(
-        Node.Status != ChangeKind.Unmodified ? Node.Status : Node.RollUp);
+    public string BrushKey => BrushFor(Node.Status);
+
+    /// <summary>
+    /// True while this row is collapsed with changes under it: the one case a parent marks.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The row used to carry a count of changed descendants — "91" on a folder, "1357" on a
+    /// project — and after a first export every object is a change, so the owner read the
+    /// numbers as counts of items and had them removed on every vendor (2026-10-29). The web
+    /// tree then coloured every folder's name on the way down to an edit, and the desktop
+    /// coloured nothing a folder actually draws, so a shut folder with a change under it looked
+    /// like one without. Shown three treatments on 2026-10-30, the owner picked this one: an
+    /// open folder shows nothing, because its changes are on screen under it; a collapsed one
+    /// hiding a change gets a dot in the strongest hidden state's colour
+    /// (<see cref="HiddenChangeBrushKey"/>); a collapsed one with nothing changed below gets
+    /// nothing, which is what tells two shut projects apart. The web tree draws the same rule.
+    /// </para>
+    /// <para>
+    /// On the descendants' count, not on the roll-up, so that a deleted folder whose children
+    /// all went with it still says so when shut. The facts pane still states the number.
+    /// </para>
+    /// </remarks>
+    public bool HidesChanges => !IsExpanded && Node.ChangedDescendants > 0;
+
+    /// <summary>The dot's brush: the strongest change below this node.</summary>
+    public string HiddenChangeBrushKey => BrushFor(Node.RollUp);
 
     /// <summary>The file the diff pane opens for this node, or null when it opens none.</summary>
     /// <remarks>
