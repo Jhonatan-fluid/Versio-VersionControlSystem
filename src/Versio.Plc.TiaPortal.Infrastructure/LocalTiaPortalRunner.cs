@@ -388,6 +388,24 @@ public sealed class LocalTiaPortalRunner(
             _log.Warn(TiaPortalLog.Category, "malformed protocol line: " + line);
         }
 
+        // What the host decided, one line per PLC: how many objects it kept from the last
+        // export and how many it exported, and why. Until 2026-10-29 every `info` event the
+        // host emitted was parsed and then dropped — not even at Debug — so an export that
+        // skipped 1,300 objects would have looked in the log exactly like one that wrote them.
+        // The per-object `info` lines the import emits stay at Debug: hundreds on a large
+        // import, and the summary is the line a reader needs.
+        foreach (var evt in output.Events)
+        {
+            if (evt.Type == "summary" && evt.String("msg") is { Length: > 0 } summary)
+            {
+                _log.Info(TiaPortalLog.Category, summary);
+            }
+            else if (evt.Type == "info" && evt.String("msg") is { Length: > 0 } info)
+            {
+                _log.Debug(TiaPortalLog.Category, info);
+            }
+        }
+
         if (output.Fatal is { } fatal)
         {
             var msg = WithAccessHint(fatal.String("msg") ?? fatal.Raw, dialogExpected);

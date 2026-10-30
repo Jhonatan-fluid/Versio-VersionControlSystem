@@ -33,7 +33,7 @@ namespace Versio.Plc.TiaPortal.Tests
     /// plcs[0]</c>, the fifth review's P1). A fake PLC that records what is written to it is
     /// how that is pinned.
     /// </remarks>
-    [Collection(HostStdout.Name)]
+    [Collection(HostConsoleCollection.Name)]
     public sealed class TiaPortalHostImportTests
     {
         // Console.Out is process-wide and the host writes its protocol there. The gate

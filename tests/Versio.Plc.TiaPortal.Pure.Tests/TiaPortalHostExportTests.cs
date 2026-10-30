@@ -1,346 +1,310 @@
-using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using Versio.Core.Plc;
+using Versio.Core.Projects;
+using Versio.Plc.TiaPortal;
 using Versio.Plc.TiaPortal.Host;
 using Xunit;
 
 namespace Versio.Plc.TiaPortal.Tests;
 
 /// <summary>
-/// The host writes its protocol to <c>Console.Out</c>, which is one per process: every test
-/// class that captures it runs in this collection, one at a time, or two captures interleave.
+/// Every test class that drives the host in-process, serialised: the host writes its protocol
+/// to <c>Console.Out</c>, which is one stream per process, and two classes swapping it under
+/// each other interleave their lines — two of nine export tests went red on the first full run
+/// of the suite and green alone, 2026-10-29.
 /// </summary>
-public static class HostStdout
+[CollectionDefinition(Name)]
+public sealed class HostConsoleCollection
 {
-    public const string Name = "TIA host stdout";
+    public const string Name = "tia-host-console";
 }
 
 /// <summary>
-/// The host's export, without a Portal in the room: what it does to the file Openness wrote,
-/// and what it leaves when Openness refuses to write one. The host's sources compile into
-/// this project (see the csproj), so these drive the real methods against fakes.
+/// The host's export walk, driven without a Portal: fakes that count how often Portal is
+/// asked for each object, so the one thing the real gate cannot see — whether a re-export
+/// <i>asked</i> for an unchanged object — is pinned here.
 /// </summary>
 /// <remarks>
-/// Both rules were found on 2026-10-29 on the owner's project, from one screenshot: a second
-/// export of an untouched project showed 1,354 files changed by the export stamp alone, and
-/// the one block the owner had edited was missing from the mirror, because Portal refused to
-/// export it uncompiled and the host had already deleted the previous file. See Findings.
+/// <b>Why this exists.</b> The skip is a decision not to call <c>Export</c> and
+/// <c>GenerateSource</c>, and its failure modes are silent in both directions: a skip that
+/// never fires costs two minutes per save and the gate stays green; a skip that fires wrongly
+/// leaves a stale mirror and the gate's unchanged fixture cannot tell. A fake block that
+/// counts its calls can tell both. Every case here is one of the conditions
+/// <see cref="ExportBaseline"/> states, exercised through the walk rather than the class, so a
+/// condition the walk stopped consulting would go red.
 /// </remarks>
-[Collection(HostStdout.Name)]
+[Collection(HostConsoleCollection.Name)]
 public sealed class TiaPortalHostExportTests
 {
-    private const string Stamped =
-        "<?xml version=\"1.0\" encoding=\"utf-8\"?>\r\n"
-        + "<Document>\r\n"
-        + "  <Engineering version=\"V20\" />\r\n"
-        + "  <DocumentInfo>\r\n"
-        + "    <Created>2026-10-29T20:49:45.6025282Z</Created>\r\n"
-        + "    <ExportSetting>None</ExportSetting>\r\n"
-        + "  </DocumentInfo>\r\n"
-        + "  <SW.Blocks.OB ID=\"0\">\r\n"
-        + "    <AttributeList>\r\n"
-        + "      <Name>Main</Name>\r\n"
-        + "    </AttributeList>\r\n"
-        + "  </SW.Blocks.OB>\r\n"
-        + "</Document>\r\n";
+    private const string Portal = "TIA Portal V21; Siemens.Engineering.Base 21.0.0.0";
+
+    private static readonly object ConsoleGate = new();
+
+    private static readonly DateTime Stamp1 = new(2026, 10, 29, 20, 0, 0, DateTimeKind.Utc);
 
     [Fact]
-    public void Stripping_the_stamp_removes_that_line_and_nothing_else()
-    {
-        var stripped = HostApp.StripExportStamp(Stamped);
-
-        Assert.DoesNotContain("<Created>", stripped, StringComparison.Ordinal);
-        Assert.Equal(Stamped.Replace("    <Created>2026-10-29T20:49:45.6025282Z</Created>\r\n", "", StringComparison.Ordinal), stripped);
-        // Portal's line endings survive: the file stays Portal's bytes but for the one line.
-        Assert.Contains("</DocumentInfo>\r\n", stripped, StringComparison.Ordinal);
-        Assert.DoesNotContain("\n\n", stripped, StringComparison.Ordinal);
-        // A file without the stamp is left alone.
-        Assert.Equal(stripped, HostApp.StripExportStamp(stripped));
-    }
-
-    [Fact]
-    public void Only_the_headers_stamp_is_stripped_a_Created_line_in_the_body_is_content()
-    {
-        var withBody = Stamped.Replace(
-            "      <Name>Main</Name>\r\n",
-            "      <Name>Main</Name>\r\n      <Created>2026-01-01T00:00:00Z</Created>\r\n",
-            StringComparison.Ordinal);
-
-        var stripped = HostApp.StripExportStamp(withBody);
-
-        Assert.DoesNotContain("<Created>2026-10-29", stripped, StringComparison.Ordinal);
-        Assert.Contains("      <Created>2026-01-01T00:00:00Z</Created>\r\n", stripped, StringComparison.Ordinal);
-        // No header at all: nothing to do, and the text is handed back as it came.
-        const string headerless = "<Document><SW.Blocks.OB><Created>x</Created></SW.Blocks.OB></Document>";
-        Assert.Same(headerless, HostApp.StripExportStamp(headerless));
-    }
-
-    [Fact]
-    public void A_set_aside_left_by_a_dead_host_is_the_previous_export_and_is_put_back_first()
-    {
-        // The host died between moving Main.xml aside and Openness writing the new one: the
-        // mirror has Main.xml.versio-previous and no Main.xml. On the next run that file is
-        // the previous export, so a refusal still keeps it, and a success leaves no orphan.
-        using var dir = new TempDir();
-        var path = Path.Combine(dir.Path, "Main.xml");
-        File.WriteAllText(path + HostApp.SetAsideSuffix, "the export before the crash");
-
-        Assert.Throws<System.Reflection.TargetInvocationException>(
-            () => HostApp.ExportXml(new RefusingBlock(), path));
-        Assert.Equal("the export before the crash", File.ReadAllText(path));
-        Assert.Single(Directory.GetFiles(dir.Path));
-
-        File.Delete(path);
-        File.WriteAllText(path + HostApp.SetAsideSuffix, "the export before the crash");
-        HostApp.ExportXml(new WritingBlock(), path);
-        Assert.Equal("this export", File.ReadAllText(path));
-        Assert.Single(Directory.GetFiles(dir.Path));
-    }
-
-    [Fact]
-    public void Scrubbing_the_file_keeps_its_byte_order_mark_and_its_line_endings()
+    public void A_first_export_asks_Portal_for_everything_and_records_stamps()
     {
         using var dir = new TempDir();
-        var path = Path.Combine(dir.Path, "Main.xml");
-        File.WriteAllBytes(path, [0xEF, 0xBB, 0xBF, .. Encoding.UTF8.GetBytes(Stamped)]);
+        var fx = new Fixture();
 
-        HostApp.ScrubExportedFile(path);
+        var output = Export(fx.Project, dir.Path);
 
-        var bytes = File.ReadAllBytes(path);
-        Assert.Equal([0xEF, 0xBB, 0xBF], bytes.Take(3));
-        var text = Encoding.UTF8.GetString(bytes, 3, bytes.Length - 3);
-        Assert.DoesNotContain("<Created>", text, StringComparison.Ordinal);
-        Assert.Contains("\r\n", text, StringComparison.Ordinal);
-        Assert.DoesNotContain("\uFEFF", text, StringComparison.Ordinal);
+        Assert.Equal(1, fx.Pump.Exports);
+        Assert.Equal(1, fx.Pump.Generates);
+        Assert.Equal(1, fx.Valve.Exports);
+        Assert.Equal(1, fx.Udt.Exports);
+        Assert.Equal(1, fx.Udt.Generates);
+        var manifest = Manifest(dir.Path);
+        Assert.Equal(ExportBaseline.StampSchema, manifest.Schema);
+        Assert.Equal(Portal, manifest.ToolchainVersion);
+        Assert.Equal(PlcVendor.TiaPortal, manifest.Vendor);
+        var pump = manifest.Objects.Where(o => o.Guid == "Dev/PLC/FB/Pump#3").ToList();
+        Assert.Equal(2, pump.Count);
+        Assert.All(pump, o => Assert.Equal(Stamp1.ToString("o"), o.Stamp));
+        Assert.Contains("full export: no previous manifest", Summary(output));
+        Assert.Contains("3 blocks and types exported (full export)", Summary(output));
     }
 
     [Fact]
-    public void Two_exports_that_differ_only_by_their_stamp_hash_alike()
-    {
-        // The written file has no stamp and an in-session export has one; the deletion
-        // check compares the two through this hash, so the stamp must not be in it.
-        var later = Stamped.Replace("20:49:45.6025282Z", "21:03:12.0000000Z", StringComparison.Ordinal);
-        Assert.Equal(HostApp.HashNormalized(Stamped), HostApp.HashNormalized(later));
-        Assert.Equal(HostApp.HashNormalized(Stamped), HostApp.HashNormalized(HostApp.StripExportStamp(Stamped)));
-        Assert.NotEqual(
-            HostApp.HashNormalized(Stamped),
-            HostApp.HashNormalized(Stamped.Replace("<Name>Main</Name>", "<Name>Main_1</Name>", StringComparison.Ordinal)));
-    }
-
-    [Fact]
-    public void A_refused_export_leaves_the_previous_file_exactly_as_it_was()
+    public void A_second_export_of_an_unchanged_project_asks_Portal_for_nothing_and_keeps_the_records()
     {
         using var dir = new TempDir();
-        var path = Path.Combine(dir.Path, "Main.xml");
-        File.WriteAllText(path, "the last export");
+        var fx = new Fixture();
+        Export(fx.Project, dir.Path);
+        var first = File.ReadAllText(Path.Combine(dir.Path, "_manifest.json"));
+        var pumpScl = File.ReadAllText(Path.Combine(dir.Path, "Dev", "PLC", "Program blocks", "Pump.scl"));
 
-        var thrown = Assert.Throws<System.Reflection.TargetInvocationException>(
-            () => HostApp.ExportXml(new RefusingBlock(), path));
+        var output = Export(fx.Project, dir.Path);
 
-        Assert.Contains("Inconsistent blocks", thrown.InnerException?.Message, StringComparison.Ordinal);
-        Assert.Equal("the last export", File.ReadAllText(path));
-        Assert.False(File.Exists(path + HostApp.SetAsideSuffix), "the set-aside is put back, not left beside the file");
+        Assert.Equal(1, fx.Pump.Exports);
+        Assert.Equal(1, fx.Pump.Generates);
+        Assert.Equal(1, fx.Valve.Exports);
+        Assert.Equal(1, fx.Udt.Exports);
+        Assert.Equal(1, fx.Udt.Generates);
+        // Same records, same files: the manifest is byte-identical and the mirror untouched.
+        Assert.Equal(first, File.ReadAllText(Path.Combine(dir.Path, "_manifest.json")));
+        Assert.Equal(pumpScl, File.ReadAllText(Path.Combine(dir.Path, "Dev", "PLC", "Program blocks", "Pump.scl")));
+        // No `object` event for a kept object: the runner's ChangedPaths are what was written.
+        Assert.DoesNotContain(output.Events, e => e.Type == "object" && (e.String("path") ?? "").EndsWith(".scl", StringComparison.Ordinal));
+        Assert.Contains("Dev/PLC: 3 blocks and types: 3 kept (unchanged since the last export), 0 exported", Summary(output));
     }
 
     [Fact]
-    public void A_refused_export_that_wrote_a_partial_file_discards_it_for_the_previous_one()
+    public void An_edited_block_is_exported_alone_and_the_mirror_carries_its_new_text()
     {
         using var dir = new TempDir();
-        var path = Path.Combine(dir.Path, "Main.xml");
-        File.WriteAllText(path, "the last export");
+        var fx = new Fixture();
+        Export(fx.Project, dir.Path);
 
-        Assert.Throws<System.Reflection.TargetInvocationException>(
-            () => HostApp.ExportXml(new HalfWritingBlock(), path));
+        fx.Valve.Body = "#Open := TRUE; // edited";
+        fx.Valve.ModifiedDate = Stamp1.AddMinutes(5);
+        var output = Export(fx.Project, dir.Path);
 
-        Assert.Equal("the last export", File.ReadAllText(path));
-        Assert.Single(Directory.GetFiles(dir.Path));
+        Assert.Equal(1, fx.Pump.Exports);
+        Assert.Equal(2, fx.Valve.Exports);
+        Assert.Equal(2, fx.Valve.Generates);
+        Assert.Contains("edited", File.ReadAllText(Path.Combine(dir.Path, "Dev", "PLC", "Program blocks", "Valve.scl")), StringComparison.Ordinal);
+        var valve = Manifest(dir.Path).Objects.First(o => o.Guid == "Dev/PLC/FB/Valve#4" && o.Form == "SCL");
+        Assert.Equal(Stamp1.AddMinutes(5).ToString("o"), valve.Stamp);
+        Assert.Contains("2 kept (unchanged since the last export), 1 exported (1 changed)", Summary(output));
     }
 
     [Fact]
-    public void A_successful_export_replaces_the_previous_file_and_leaves_no_set_aside()
+    public void A_deleted_block_leaves_the_manifest_and_a_renamed_one_is_a_new_identity()
     {
         using var dir = new TempDir();
-        var path = Path.Combine(dir.Path, "Main.xml");
-        File.WriteAllText(path, "the last export");
+        var fx = new Fixture();
+        Export(fx.Project, dir.Path);
 
-        HostApp.ExportXml(new WritingBlock(), path);
+        fx.Blocks.Blocks.Remove(fx.Pump);
+        fx.Valve.Name = "Valve2";
+        var output = Export(fx.Project, dir.Path);
 
-        Assert.Equal("this export", File.ReadAllText(path));
-        Assert.Single(Directory.GetFiles(dir.Path));
+        var manifest = Manifest(dir.Path);
+        Assert.DoesNotContain(manifest.Objects, o => o.Guid == "Dev/PLC/FB/Pump#3");
+        Assert.DoesNotContain(manifest.Objects, o => o.Guid == "Dev/PLC/FB/Valve#4");
+        Assert.Contains(manifest.Objects, o => o.Guid == "Dev/PLC/FB/Valve2#4" && o.Path == "Dev/PLC/Program blocks/Valve2.scl");
+        // The rename did not move the stamp, and it still exported: the name is the identity.
+        Assert.Equal(2, fx.Valve.Exports);
+        Assert.Contains("1 kept (unchanged since the last export), 1 exported (1 new or renamed)", Summary(output));
     }
 
     [Fact]
-    public void A_first_export_has_nothing_to_set_aside()
+    public void A_block_moved_to_another_group_is_exported_at_its_new_place()
     {
         using var dir = new TempDir();
-        var path = Path.Combine(dir.Path, "Program blocks", "Main.xml");
+        var fx = new Fixture();
+        Export(fx.Project, dir.Path);
 
-        HostApp.ExportXml(new WritingBlock(), path);
+        fx.Blocks.Blocks.Remove(fx.Pump);
+        var pumps = new FakeGroup("Pumps");
+        pumps.Blocks.Add(fx.Pump);
+        fx.Blocks.Groups.Add(pumps);
+        var output = Export(fx.Project, dir.Path);
 
-        Assert.Equal("this export", File.ReadAllText(path));
+        Assert.Equal(2, fx.Pump.Exports);
+        var pump = Manifest(dir.Path).Objects.Where(o => o.Guid == "Dev/PLC/FB/Pump#3").ToList();
+        Assert.All(pump, o => Assert.StartsWith("Dev/PLC/Program blocks/Pumps/", o.Path, StringComparison.Ordinal));
+        Assert.Contains("1 exported (1 moved)", Summary(output));
     }
 
     [Fact]
-    public void The_previous_manifest_entries_for_an_object_are_found_by_path_or_by_identity()
+    public void A_mirror_file_edited_by_hand_is_exported_again_from_Portal()
     {
-        var previous = new List<Dictionary<string, object?>>
+        using var dir = new TempDir();
+        var fx = new Fixture();
+        Export(fx.Project, dir.Path);
+        var scl = Path.Combine(dir.Path, "Dev", "PLC", "Program blocks", "Pump.scl");
+        File.WriteAllText(scl, "FUNCTION_BLOCK \"Pump\"\n// somebody typed here\nEND_FUNCTION_BLOCK\n");
+
+        var output = Export(fx.Project, dir.Path);
+
+        Assert.Equal(2, fx.Pump.Exports);
+        Assert.DoesNotContain("somebody typed here", File.ReadAllText(scl), StringComparison.Ordinal);
+        Assert.Contains("1 exported (1 with a mirror file missing or edited)", Summary(output));
+    }
+
+    [Fact]
+    public void A_previous_manifest_by_another_Portal_is_a_full_export()
+    {
+        using var dir = new TempDir();
+        var fx = new Fixture();
+        Export(fx.Project, dir.Path, "TIA Portal V20; Siemens.Engineering 20.0.0.0");
+
+        var output = Export(fx.Project, dir.Path);
+
+        Assert.Equal(2, fx.Pump.Exports);
+        Assert.Equal(2, fx.Valve.Exports);
+        Assert.Equal(2, fx.Udt.Exports);
+        Assert.Contains("full export: the previous export was by 'TIA Portal V20", Summary(output));
+    }
+
+    [Fact]
+    public void A_manifest_whose_stamps_were_forced_to_mismatch_is_a_full_export()
+    {
+        // The mutation check in pure form: the same edit the gate makes to the real mirror.
+        using var dir = new TempDir();
+        var fx = new Fixture();
+        Export(fx.Project, dir.Path);
+        var manifestPath = Path.Combine(dir.Path, "_manifest.json");
+        File.WriteAllText(manifestPath, File.ReadAllText(manifestPath).Replace(Stamp1.ToString("o"), "2000-01-01T00:00:00.0000000Z", StringComparison.Ordinal));
+
+        var output = Export(fx.Project, dir.Path);
+
+        Assert.Equal(2, fx.Pump.Exports);
+        Assert.Equal(2, fx.Valve.Exports);
+        Assert.Equal(2, fx.Udt.Exports);
+        Assert.Contains("3 exported (3 changed)", Summary(output));
+    }
+
+    [Fact]
+    public void An_object_without_a_stamp_is_exported_every_time()
+    {
+        using var dir = new TempDir();
+        var fx = new Fixture();
+        fx.Pump.ModifiedDate = null;
+        Export(fx.Project, dir.Path);
+
+        var output = Export(fx.Project, dir.Path);
+
+        Assert.Equal(2, fx.Pump.Exports);
+        Assert.Equal(1, fx.Valve.Exports);
+        Assert.Equal("", Manifest(dir.Path).Objects.First(o => o.Guid == "Dev/PLC/FB/Pump#3").Stamp);
+        Assert.Contains("1 exported (1 without a stamp)", Summary(output));
+    }
+
+    // ---- driving the host -----------------------------------------------------------------
+
+    private static TiaPortalOutput Export(FakeProject project, string outDir, string toolchain = Portal)
+    {
+        lock (ConsoleGate)
         {
-            Row("PLC/PLC/OB/Main#1", "PLC/PLC/Program blocks/Main.xml"),
-            Row("PLC/PLC/FB/Motor#2", "PLC/PLC/Program blocks/Motor.scl"),
-            Row("PLC/PLC/FB/Motor#2", "PLC/PLC/Program blocks/Motor.xml"),
-            Row("PLC/PLC/FB/Valve#3", "PLC/PLC/Program blocks/Valve.scl"),
-        };
-
-        // A block's XML and the .scl beside it: both are the object's, both come forward.
-        var motor = HostApp.PreviousEntriesFor(previous, "PLC/PLC/Program blocks/Motor.xml", "PLC/PLC/FB/Motor#2");
-        Assert.Equal(["PLC/PLC/Program blocks/Motor.scl", "PLC/PLC/Program blocks/Motor.xml"], motor.Select(e => e["path"]));
-
-        // Renumbered since the last export: the path still finds it.
-        var main = HostApp.PreviousEntriesFor(previous, "PLC/PLC/Program blocks/Main.xml", "PLC/PLC/OB/Main#7");
-        Assert.Equal(["PLC/PLC/Program blocks/Main.xml"], main.Select(e => e["path"]));
-
-        Assert.Empty(HostApp.PreviousEntriesFor(previous, "PLC/PLC/Program blocks/New.xml", "PLC/PLC/FB/New#9"));
-    }
-
-    [Fact]
-    public void The_previous_manifest_is_read_as_the_rows_this_export_writes_and_its_absence_is_nothing()
-    {
-        using var dir = new TempDir();
-        var manifest = Path.Combine(dir.Path, "_manifest.json");
-        Assert.Empty(HostApp.ReadPreviousManifest(manifest));
-
-        File.WriteAllText(manifest, """
+            var writer = new StringWriter();
+            var original = Console.Out;
+            Console.SetOut(writer);
+            try
             {
-              "schema": 9,
-              "vendor": "TiaPortal",
-              "objects": [
-                { "guid": "PLC/PLC/OB/Main#1", "name": "Main", "type": "OB", "form": "NATIVE",
-                  "path": "PLC/PLC/Program blocks/Main.xml", "hash": "sha256:a", "nhash": "sha256:n", "parent": "" }
-              ],
-              "skipped": [],
-              "warnings": []
+                HostApp.Export(project, outDir, toolchain);
             }
-            """);
+            finally
+            {
+                Console.SetOut(original);
+            }
 
-        var rows = HostApp.ReadPreviousManifest(manifest);
-        var row = Assert.Single(rows);
-        Assert.Equal("PLC/PLC/OB/Main#1", row["guid"]);
-        Assert.Equal("NATIVE", row["form"]);
-        Assert.Equal("sha256:n", row["nhash"]);
-        Assert.Equal("", row["parent"]);
-
-        File.WriteAllText(manifest, "{ not json");
-        Assert.Empty(HostApp.ReadPreviousManifest(manifest));
-    }
-
-    [Fact]
-    public void A_block_Portal_refuses_keeps_its_last_export_and_its_rows_and_says_so_on_stdout()
-    {
-        using var dir = new TempDir();
-        var mainPath = Path.Combine(dir.Path, "Dev", "PLC", "Program blocks", "Main.xml");
-        Directory.CreateDirectory(Path.GetDirectoryName(mainPath)!);
-        File.WriteAllText(mainPath, "the last export");
-        File.WriteAllText(Path.Combine(dir.Path, "_manifest.json"), PreviousManifest);
-        var project = new FakeProject(new FakeDevice("Dev", new PlcSoftware("PLC", new FakeBlockGroup(new RefusingOB()))));
-
-        var stdout = RunExport(project, dir.Path);
-
-        // The file is as the last export left it, with nothing beside it.
-        Assert.Equal("the last export", File.ReadAllText(mainPath));
-        Assert.Empty(Directory.GetFiles(dir.Path, "*" + HostApp.SetAsideSuffix, SearchOption.AllDirectories));
-
-        // The manifest still knows the object, by the rows the last export recorded.
-        using var manifest = JsonDocument.Parse(File.ReadAllText(Path.Combine(dir.Path, "_manifest.json")));
-        var row = Assert.Single(manifest.RootElement.GetProperty("objects").EnumerateArray(),
-            o => o.GetProperty("path").GetString() == "Dev/PLC/Program blocks/Main.xml");
-        Assert.Equal("sha256:a", row.GetProperty("hash").GetString());
-        Assert.Equal("Dev/PLC/OB/Main#1", row.GetProperty("guid").GetString());
-        var skip = Assert.Single(manifest.RootElement.GetProperty("skipped").EnumerateArray(),
-            s => s.GetProperty("reason").GetString() == "EXPORT_FAILED");
-        Assert.Equal("Main", skip.GetProperty("path").GetString());
-
-        // And the refusal reached the protocol, where the runner reads: a warning, not an object.
-        var warning = Assert.Single(stdout, l => l.Contains("\"t\":\"warning\"", StringComparison.Ordinal)
-                                              && l.Contains("Main.xml", StringComparison.Ordinal));
-        Assert.Contains("Portal refused to export it", warning, StringComparison.Ordinal);
-        Assert.Contains("Inconsistent blocks", warning, StringComparison.Ordinal);
-        Assert.Contains("kept as it was", warning, StringComparison.Ordinal);
-        Assert.DoesNotContain(stdout, l => l.Contains("\"t\":\"object\"", StringComparison.Ordinal)
-                                        && l.Contains("Main.xml", StringComparison.Ordinal));
-    }
-
-    [Fact]
-    public void A_block_Portal_exports_lands_without_its_stamp_and_its_row_hashes_as_if_it_had_one()
-    {
-        using var dir = new TempDir();
-        var project = new FakeProject(new FakeDevice("Dev", new PlcSoftware("PLC", new FakeBlockGroup(new WritingOB()))));
-
-        var stdout = RunExport(project, dir.Path);
-
-        var mainPath = Path.Combine(dir.Path, "Dev", "PLC", "Program blocks", "Main.xml");
-        var bytes = File.ReadAllBytes(mainPath);
-        Assert.Equal([0xEF, 0xBB, 0xBF], bytes.Take(3));
-        var text = Encoding.UTF8.GetString(bytes, 3, bytes.Length - 3);
-        Assert.DoesNotContain("<Created>", text, StringComparison.Ordinal);
-        Assert.Contains("<ExportSetting>None</ExportSetting>\r\n", text, StringComparison.Ordinal);
-
-        using var manifest = JsonDocument.Parse(File.ReadAllText(Path.Combine(dir.Path, "_manifest.json")));
-        var row = Assert.Single(manifest.RootElement.GetProperty("objects").EnumerateArray(),
-            o => o.GetProperty("path").GetString() == "Dev/PLC/Program blocks/Main.xml");
-        Assert.Equal("NATIVE", row.GetProperty("form").GetString());
-        // hash is the file as written (no stamp); nhash is what an in-session export (with
-        // the stamp) will hash to, which is how the deletion check compares the two.
-        Assert.Equal("sha256:" + Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant(), row.GetProperty("hash").GetString());
-        Assert.Equal(HostApp.HashNormalized(Stamped), row.GetProperty("nhash").GetString());
-        Assert.Contains(stdout, l => l.Contains("\"t\":\"object\"", StringComparison.Ordinal)
-                                  && l.Contains("Dev/PLC/Program blocks/Main.xml", StringComparison.Ordinal));
-    }
-
-    /// <summary>Run the host's export with its protocol captured, one line per entry.</summary>
-    private static List<string> RunExport(object project, string outDir)
-    {
-        var writer = new StringWriter();
-        var original = Console.Out;
-        Console.SetOut(writer);
-        try
-        {
-            HostApp.Export(project, outDir);
+            return TiaPortalProtocol.Parse(writer.ToString());
         }
-        finally
-        {
-            Console.SetOut(original);
-        }
-
-        return writer.ToString().Split('\n', StringSplitOptions.RemoveEmptyEntries).Select(l => l.TrimEnd('\r')).ToList();
     }
 
-    private const string PreviousManifest = """
-        {
-          "schema": 9,
-          "vendor": "TiaPortal",
-          "objects": [
-            { "guid": "Dev/PLC/OB/Main#1", "name": "Main", "type": "OB", "form": "NATIVE",
-              "path": "Dev/PLC/Program blocks/Main.xml", "hash": "sha256:a", "nhash": "sha256:n", "parent": "" }
-          ],
-          "skipped": [],
-          "warnings": []
-        }
-        """;
+    private static string Summary(TiaPortalOutput output) =>
+        string.Join("\n", output.Events.Where(e => e.Type == "summary").Select(e => e.String("msg")));
 
-    // ---- fakes shaped like what the export walk reads by name ---------------------------
+    private static ProjectManifest Manifest(string dir) =>
+        ProjectManifest.Parse(File.ReadAllText(Path.Combine(dir, "_manifest.json")));
+
+    private sealed class TempDir : IDisposable
+    {
+        public string Path { get; } = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "versio-tia-export-test-" + Guid.NewGuid().ToString("N")[..8]);
+
+        public void Dispose()
+        {
+            try
+            {
+                Directory.Delete(Path, recursive: true);
+            }
+            catch (IOException)
+            {
+                // Temp.
+            }
+        }
+    }
+
+    // ---- fakes shaped like what the export walk reads by name ------------------------------
     //
-    // WalkPlcSoftware takes Project.Devices, each device's DeviceItems, GetService<SoftwareContainer>()
-    // (the stand-in type lives in TiaPortalHostImportTests.cs), and software named PlcSoftware;
-    // WalkBlocks takes BlockGroup.Blocks and .Groups; ExportBlock reads Name, Number,
-    // ProgrammingLanguage and IsKnowHowProtected, names the type from the object's type name
-    // (an "OB" in it), and calls Export(FileInfo, <enum with None>).
+    // The walk reads Project.Devices → DeviceItems → GetService<SoftwareContainer>().Software
+    // (a type named PlcSoftware), then BlockGroup.Blocks / .Groups and TypeGroup.Types /
+    // .Groups; on each object Name, Number, ProgrammingLanguage, IsKnowHowProtected,
+    // ModifiedDate, Export(FileInfo, <enum with None>) and GenerateSource(FileInfo). The
+    // block's CLR type name decides its manifest type (BlockType), hence FakeFB.
 
-    private sealed class FakeProject(params object[] devices)
+    private sealed class Fixture
+    {
+        public Fixture()
+        {
+            Pump = new FakeFB("Pump", 3, Stamp1);
+            Valve = new FakeFB("Valve", 4, Stamp1);
+            Udt = new FakeUdt("UDT_Pump", Stamp1);
+            Blocks = new FakeGroup("Program blocks");
+            Blocks.Blocks.Add(Pump);
+            Blocks.Blocks.Add(Valve);
+            var types = new FakeTypeGroup();
+            types.Types.Add(Udt);
+            Project = new FakeProject(new FakeDevice("Dev", new PlcSoftware("PLC", Blocks, types)));
+        }
+
+        public FakeFB Pump { get; }
+
+        public FakeFB Valve { get; }
+
+        public FakeUdt Udt { get; }
+
+        public FakeGroup Blocks { get; }
+
+        public FakeProject Project { get; }
+    }
+
+    public enum FakeExportOptions
+    {
+        None,
+    }
+
+    private sealed class FakeProject(params FakeDevice[] devices)
     {
         public IReadOnlyList<object> Devices { get; } = devices;
     }
 
-    private sealed class FakeDevice(string name, object software)
+    private sealed class FakeDevice(string name, PlcSoftware software)
     {
         public string Name { get; } = name;
 
@@ -353,123 +317,86 @@ public sealed class TiaPortalHostExportTests
                 : null;
     }
 
-    private sealed class PlcSoftware(string name, object blockGroup)
+    private sealed class PlcSoftware(string name, FakeGroup blocks, FakeTypeGroup types)
     {
         public string Name { get; } = name;
 
-        public object BlockGroup { get; } = blockGroup;
+        public FakeGroup BlockGroup { get; } = blocks;
 
-        public object? TypeGroup => null;
+        public FakeTypeGroup TypeGroup { get; } = types;
 
         public object? TagTableGroup => null;
+
+        public object? ExternalSourceGroup => null;
     }
 
-    private sealed class FakeBlockGroup(params object[] blocks)
+    private sealed class FakeGroup(string name)
     {
-        public IReadOnlyList<object> Blocks { get; } = blocks;
+        public string Name { get; } = name;
 
-        public IReadOnlyList<object> Groups { get; } = [];
+        public List<object> Blocks { get; } = [];
+
+        public List<object> Groups { get; } = [];
     }
 
-    /// <summary>A ladder OB Portal refuses: edited and not compiled since.</summary>
-    private sealed class RefusingOB
+    private sealed class FakeTypeGroup
     {
-        public string Name => "Main";
+        public List<object> Types { get; } = [];
 
-        public int Number => 1;
+        public List<object> Groups { get; } = [];
+    }
 
-        public string ProgrammingLanguage => "LAD";
+    private sealed class FakeFB(string name, int number, DateTime? stamp)
+    {
+        public string Name { get; set; } = name;
+
+        public int Number { get; } = number;
+
+        public string ProgrammingLanguage => "SCL";
 
         public bool IsKnowHowProtected => false;
 
-        public void Export(FileInfo file, FakeExportOptions options) => new RefusingBlock().Export(file, options);
-    }
+        public DateTime? ModifiedDate { get; set; } = stamp;
 
-    /// <summary>A ladder OB Portal exports, stamp and BOM and all.</summary>
-    private sealed class WritingOB
-    {
-        public string Name => "Main";
+        public string Body { get; set; } = "#Open := FALSE;";
 
-        public int Number => 1;
+        public int Exports { get; private set; }
 
-        public string ProgrammingLanguage => "LAD";
-
-        public bool IsKnowHowProtected => false;
+        public int Generates { get; private set; }
 
         public void Export(FileInfo file, FakeExportOptions options)
         {
-            _ = options;
-            File.WriteAllBytes(file.FullName, [0xEF, 0xBB, 0xBF, .. Encoding.UTF8.GetBytes(Stamped)]);
+            Exports++;
+            File.WriteAllText(file.FullName, $"<Document><SW.Blocks.FB Name=\"{Name}\" Number=\"{Number}\"><Body>{Body}</Body></SW.Blocks.FB></Document>");
+        }
+
+        public void GenerateSource(FileInfo file)
+        {
+            Generates++;
+            File.WriteAllText(file.FullName, $"FUNCTION_BLOCK \"{Name}\"\nBEGIN\n{Body}\nEND_FUNCTION_BLOCK\n", new UTF8Encoding(true));
         }
     }
 
-    private static Dictionary<string, object?> Row(string guid, string path) => new()
+    private sealed class FakeUdt(string name, DateTime? stamp)
     {
-        ["guid"] = guid,
-        ["name"] = Path.GetFileNameWithoutExtension(path),
-        ["type"] = "FB",
-        ["form"] = "NATIVE",
-        ["path"] = path,
-        ["hash"] = "sha256:a",
-        ["nhash"] = "sha256:n",
-        ["parent"] = "",
-    };
+        public string Name { get; } = name;
 
-    /// <summary>What Portal's Openness does with a block edited and not compiled since.</summary>
-    private sealed class RefusingBlock
-    {
+        public DateTime? ModifiedDate { get; set; } = stamp;
+
+        public int Exports { get; private set; }
+
+        public int Generates { get; private set; }
+
         public void Export(FileInfo file, FakeExportOptions options)
         {
-            _ = file;
-            _ = options;
-            throw new InvalidOperationException(
-                "Error when calling method 'Export' of type 'Siemens.Engineering.SW.Blocks.OB'.\r\n\r\n"
-                + "Inconsistent blocks and PLC data types (UDT) cannot be exported.");
+            Exports++;
+            File.WriteAllText(file.FullName, $"<Document><SW.Types.PlcStruct Name=\"{Name}\" /></Document>");
         }
-    }
 
-    private sealed class HalfWritingBlock
-    {
-        public void Export(FileInfo file, FakeExportOptions options)
+        public void GenerateSource(FileInfo file)
         {
-            _ = options;
-            File.WriteAllText(file.FullName, "half of");
-            throw new IOException("the disk went away");
-        }
-    }
-
-    private sealed class WritingBlock
-    {
-        public void Export(FileInfo file, FakeExportOptions options)
-        {
-            _ = options;
-            File.WriteAllText(file.FullName, "this export");
-        }
-    }
-
-    /// <summary>Stands in for <c>Siemens.Engineering.ExportOptions</c>: the host parses "None" from it.</summary>
-    private enum FakeExportOptions
-    {
-        None,
-    }
-
-    private sealed class TempDir : IDisposable
-    {
-        public string Path { get; } = System.IO.Path.Combine(
-            System.IO.Path.GetTempPath(), "versio-host-export-" + Guid.NewGuid().ToString("N"));
-
-        public TempDir() => Directory.CreateDirectory(Path);
-
-        public void Dispose()
-        {
-            try
-            {
-                Directory.Delete(Path, recursive: true);
-            }
-            catch (IOException)
-            {
-                // A handle still closing; the temp folder is nobody's data.
-            }
+            Generates++;
+            File.WriteAllText(file.FullName, $"TYPE \"{Name}\"\nSTRUCT\n  Speed : Real;\nEND_STRUCT;\nEND_TYPE\n", new UTF8Encoding(true));
         }
     }
 }
