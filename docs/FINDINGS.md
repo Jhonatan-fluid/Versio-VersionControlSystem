@@ -62,6 +62,16 @@ time) and one that renames the block (the file is replaced, stamp and all), and 
 over a schema-9 manifest, which is the owner's mirror after the upgrade: Portal is asked for
 everything, and nothing on disk changes.
 
+**Measured on the owner's project, 2026-10-29 18:19, Versio 0.4.20 installed over 0.4.11:**
+the mirror put back to HEAD with Versio closed, the binding's last-synced project hash
+cleared so the open would export, then one full export (the manifest was schema 9, so the
+skip had nothing to compare): 1,365 objects in 168.3 s, 170.5 s with Portal's start, and
+`git status` afterwards named four files — `_manifest.json` (schema 11 now, stamps on every
+row), `_coverage.md` (*Skipped: 4*, the refused block), and the project file's two LFS
+pointers, which are the owner's rung. Not one of the 1,355 XML files moved. `Main` under
+MHC_001 was refused as inconsistent, kept as HEAD has it, and the refusal reached the log as
+a `WRN [Plc]` line, which the previous host never produced.
+
 **2. The block the owner edited was gone from the mirror, and nothing said so.** Openness
 refuses to export a block edited and not compiled since:
 

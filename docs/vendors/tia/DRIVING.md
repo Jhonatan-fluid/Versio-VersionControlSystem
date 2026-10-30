@@ -568,7 +568,10 @@ pane and the deletion check), and when nothing else differs the previous file st
 new one is discarded. The mirror is Portal's bytes, untouched, from the last export that
 changed the object. For one day the host stripped the line from the written file instead;
 replaced because the next export would have rewritten every committed file once, and an
-import of a file Versio had edited was never measured against Portal. FINDINGS 2026-10-29.
+import of a file Versio had edited was never measured against Portal. Measured on the owner's
+nine-CPU project with 0.4.20 the same evening: a full export of 1,365 objects over a mirror at
+HEAD, 170.5 s, and four files changed afterwards — the manifest, the coverage note and the
+project's two LFS pointers; none of the 1,355 XML files. FINDINGS 2026-10-29.
 
 **A refused export keeps the previous file (since 2026-10-29).** `Export(…, None)` refuses
 an existing file, so the host moves the old one aside (`<name>.xml.versio-previous`) for the

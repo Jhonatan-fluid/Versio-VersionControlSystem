@@ -729,20 +729,15 @@ Close Versio **and** Portal before a host rebuild. Click **Yes to all** on Openn
     re-export branch, 2026-10-29). The host no longer edits what Portal wrote: an unchanged
     object is not asked of Portal (DRIVING §7.1), and a file Portal rewrote with nothing but
     its stamp changed keeps its previous bytes (§7; FINDINGS 2026-10-29, *One rung moved*).
-    **Owner eyeball** on `controls-design-siemens`, with a release that carries both (the
-    installed 0.4.18 has neither): first, with Versio closed, put the working tree's 1,354
-    stamp-only changes back to HEAD (`git checkout -- JV_WorkingSpace/LBB101/LBB101`, which
-    also restores the deleted `MHC_001/…/Program blocks/Main.xml`) — closed, because the
-    binding is project-authoritative and a text-side change under it is refused with a banner
-    (`SyncStateMachine`), noise rather than harm, but noise. The keep rule compares with the
-    file on disk, not with HEAD, so a first export over the 13:49 stamps would keep the 13:49
-    stamps. With HEAD on disk, the first export of the new build — a full one, the mirror's
-    manifest being schema 9 — should leave *0 changed* in the mirror, with only the project
-    file's two LFS pointers and the manifest differing; compile MHC_001 in Portal and let the
-    export run — that `Main.xml`
-    should come back with the moved network and the project card should show the moved rung
-    alone; a second export with nothing changed should show *0 changed* and take about a third
-    of the time, with one `kept` summary line per PLC in the log.
+    **Done on 2026-10-29 at 18:19 with 0.4.20** (FINDINGS 2026-10-29, *One rung moved*, the
+    measured paragraph): the mirror put back to HEAD with Versio closed (the keep rule compares
+    with the file on disk, not with HEAD, so the 13:49 stamps had to go first), the binding's
+    last-synced project hash cleared, one full export of 1,365 objects in 170.5 s, and
+    `git status` named four files — the manifest (schema 11), the coverage note (*Skipped: 4*)
+    and the project file's two LFS pointers. **Owner eyeball, still open:** compile MHC_001 in
+    Portal and save — that `Main.xml` should come back with the moved network, the project card
+    should show the moved rung alone, and that export should be the first to say *kept* in its
+    per-PLC summary lines and take well under the 170 s.
 
 ---
 
