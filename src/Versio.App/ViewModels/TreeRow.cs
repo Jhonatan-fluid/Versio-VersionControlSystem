@@ -269,6 +269,12 @@ public sealed class TreeRow : ObservableObject
     /// <summary>The Explorer's toolchain pill — <c>TIA Portal V21</c> — or empty.</summary>
     public string Toolchain => Node.Toolchain;
 
+    /// <summary>What the last export could not write for this object, or null.</summary>
+    public string? ExportWarning => Node.ExportWarning;
+
+    /// <summary>Drawn in the warning colour by the panel, with the word on the annotation.</summary>
+    public bool HasExportWarning => Node.ExportWarning is not null;
+
     /// <summary>True while a toolchain run is in flight for this project.</summary>
     public bool IsBusy => Node.Busy;
 
@@ -288,6 +294,11 @@ public sealed class TreeRow : ObservableObject
             or ProjectNodeKind.Device => Detail,
         // Only the Explorer sets a folder's Detail: the state of the directory project it is.
         ProjectNodeKind.Folder => Detail,
+        // An object the export could not write says so beside its type, in words: the type
+        // alone reads as "here it is", and what is here is the previous export. The detail
+        // is the pane's, above the file; the colour is the panel's.
+        _ when Node.ExportWarning is not null =>
+            TypeLabel.Length == 0 ? "export refused" : TypeLabel + " · export refused",
         _ => TypeLabel,
     };
 

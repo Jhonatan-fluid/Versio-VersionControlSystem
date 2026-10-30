@@ -368,7 +368,12 @@
                                      happening for half a minute, and "exporting…"
                                      rendered in the same grey as "in sync" is a
                                      poor answer to it: the eye reads the colour
-                                     before it reads the word. -->
+                                     before it reads the word.
+
+                                     An object the export could not write is the
+                                     conflict colour, for the same reason: "export
+                                     refused" in the dimmest grey beside a name in
+                                     the ordinary one is a row that looks fine. -->
                                 <TextBlock Grid.Column="2" Text="{Binding Annotation}"
                                            VerticalAlignment="Center" Margin="8,0,0,0"
                                            FontFamily="{DynamicResource Font.UI}"
@@ -378,6 +383,10 @@
                                             <Setter Property="Foreground"
                                                     Value="{DynamicResource Brush.Text.Disabled}" />
                                             <Style.Triggers>
+                                                <DataTrigger Binding="{Binding HasExportWarning}" Value="True">
+                                                    <Setter Property="Foreground"
+                                                            Value="{DynamicResource Brush.Status.Conflict}" />
+                                                </DataTrigger>
                                                 <DataTrigger Binding="{Binding IsBusy}" Value="True">
                                                     <Setter Property="Foreground"
                                                             Value="{DynamicResource Brush.Accent.Default}" />

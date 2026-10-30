@@ -5873,10 +5873,34 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
 
         if (manifest.Warnings.Count > 0)
         {
-            facts.Add(new FactRow("Warnings", $"{manifest.Warnings.Count} — see the log"));
+            facts.Add(new FactRow("Warnings", WarningsFact(manifest)));
         }
 
         return new ProjectSummaryRender { Name = node.Name, Facts = facts };
+    }
+
+    /// <summary>The card's Warnings row: how many, and which objects the export could not write.</summary>
+    /// <remarks>
+    /// "1 — see the log" was the whole row until 2026-10-30, and on the owner's project the
+    /// one warning was the block they had just edited, refused by Portal: the card gave a
+    /// number and the log gave the object. The refused objects are named here, by the path
+    /// the exporter wrote, so the card answers the question its number raises.
+    /// </remarks>
+    private static string WarningsFact(ProjectManifest manifest)
+    {
+        var refused = manifest.Warnings
+            .Where(w => w.IsRefusal)
+            .Select(w => w.Path)
+            .Distinct(StringComparer.Ordinal)
+            .ToList();
+        if (refused.Count == 0)
+        {
+            return $"{manifest.Warnings.Count} — see the log";
+        }
+
+        var named = string.Join(", ", refused.Take(3));
+        var more = refused.Count > 3 ? $" and {refused.Count - 3} more" : string.Empty;
+        return $"{manifest.Warnings.Count} — export refused: {named}{more}; see the log";
     }
 
     /// <summary>
@@ -7517,6 +7541,9 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
     private object? _renderedContent;
     private string _paneNote = string.Empty;
 
+    /// <summary>The shown object's export refusal, by the files it owns; see <see cref="WithExportWarning"/>.</summary>
+    private (IReadOnlyList<string> Files, string Detail)? _selectedExportWarning;
+
     /// <summary>
     /// What the Rendered tab draws for the current selection, or null when there is only
     /// the raw view.
@@ -7680,6 +7707,36 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         WebPagePath = null;
         ShowRendered = false;
         PaneNote = string.Empty;
+        _selectedExportWarning = null;
+    }
+
+    /// <summary>
+    /// The pane's note for a file, with the export's refusal of the object in front of it
+    /// when the file is one the refusal names.
+    /// </summary>
+    /// <remarks>
+    /// Keyed by the file rather than by "the last row clicked": the git panel and the explorer
+    /// reach <see cref="ShowPathAsync"/> too, and a note remembered from a tree row would
+    /// follow the reader to the next file. On the owner's project on 2026-10-30 the refused
+    /// block's pane read "No changes right now — showing the whole file." over a file that was
+    /// the previous export, with the refusal two panels away in the log.
+    /// </remarks>
+    private string WithExportWarning(string path, string note)
+    {
+        if (_selectedExportWarning is not { } refusal
+            || !refusal.Files.Contains(path, StringComparer.OrdinalIgnoreCase))
+        {
+            return note;
+        }
+
+        var detail = System.Text.RegularExpressions.Regex.Replace(refusal.Detail, @"\s+", " ").Trim();
+        if (!detail.EndsWith('.'))
+        {
+            detail += ".";
+        }
+
+        var sentence = $"Export refused: {detail} Showing the previous export.";
+        return note.Length == 0 ? sentence : sentence + " " + note;
     }
 
     /// <summary>Empty the diff pane: no diff, no path, no commit, no layers, no rendered half.</summary>
@@ -8779,7 +8836,7 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
 
         if (manifest.Warnings.Count > 0)
         {
-            facts.Add(new FactRow("Warnings", $"{manifest.Warnings.Count} — see the log"));
+            facts.Add(new FactRow("Warnings", WarningsFact(manifest)));
         }
 
         return new ProjectSummaryRender { Name = node.Name, Facts = facts, ProjectPath = node.Path, Remedy = Sync.RemedyFor(node.Path) };
@@ -8954,6 +9011,7 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
             WebPagePath = null;
             ShowRendered = true;
             PaneNote = string.Empty;
+            _selectedExportWarning = null;
 
             var coverage = Sync.CoverageFor(row.Node.Path);
 
@@ -8999,6 +9057,12 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
             return;
         }
 
+        // Remembered before the note is written, by the files it names: both routes below
+        // write the note, and WithExportWarning is what puts the refusal in front of it.
+        _selectedExportWarning = row.Node.ExportWarning is { } refused
+            ? (row.Node.Files, refused)
+            : null;
+
         // The rendered half, beside whatever the raw half loads below. Rendered first,
         // always, whenever there is one - see ShowRendered's remark for why that changed.
         RenderedContent = BuildRenderedContent(row, WorkingTreeInputs());
@@ -9013,7 +9077,7 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
             DiffLayers = [];
             _shownCommit = null;
             _selectedDiffStaged = false;
-            PaneNote = string.Empty;
+            PaneNote = WithExportWarning(row.PrimaryFile ?? row.Node.Path, string.Empty);
             PaneMode = PaneMode.File;
             SelectedDiffPath = row.PrimaryFile ?? row.Node.Path;
 
@@ -9186,7 +9250,7 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
                 && !content.PseudoDiff.Contains('\0'))
             {
                 SelectedDiff = content.PseudoDiff;
-                PaneNote = "No changes right now — showing the whole file.";
+                PaneNote = WithExportWarning(path, "No changes right now — showing the whole file.");
                 CanStageHunks = false;
 
                 // Asked for as a diff, shown whole: the header says what is on screen.
@@ -9194,7 +9258,7 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
                 return;
             }
 
-            PaneNote = string.Empty;
+            PaneNote = WithExportWarning(path, string.Empty);
             SelectedDiff = string.IsNullOrWhiteSpace(diff)
                 ? path + Environment.NewLine + Environment.NewLine +
                   "Nothing to compare: this file is unchanged, or git reports it as binary."

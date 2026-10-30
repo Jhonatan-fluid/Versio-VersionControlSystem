@@ -125,6 +125,20 @@ public sealed record ProjectTreeNode
     public string Toolchain { get; init; } = string.Empty;
 
     /// <summary>
+    /// What the last export could not write for this object, in the exporter's own words;
+    /// null when it wrote every layer.
+    /// </summary>
+    /// <remarks>
+    /// From the manifest's warnings (<see cref="ExportWarning.IsRefusal"/>), when one names a
+    /// file of this object. The file on disk is then the previous export or nothing, and a row
+    /// drawn like any other read, on the owner's project on 2026-10-30, as "no changes" over
+    /// a block Portal had refused twice: the refusal was a log line and the project card's
+    /// "Warnings 1 — see the log", and nowhere a reader looking at the block would see it.
+    /// The row says it in words beside the type, and the pane says it above the file.
+    /// </remarks>
+    public string? ExportWarning { get; init; }
+
+    /// <summary>
     /// Every file this object exports to, repo-relative.
     /// </summary>
     /// <remarks>
@@ -354,12 +368,23 @@ public static class ProjectTreeBuilder
             status[change.Path.Replace('\\', '/')] = change.Effective;
         }
 
+        // What the export could not write, by the file it named. First warning per file wins:
+        // the exporter says the same refusal once per layer, and one sentence is the point.
+        var refusals = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var warning in manifest.Warnings)
+        {
+            if (warning.IsRefusal)
+            {
+                refusals.TryAdd(warning.Path.Replace('\\', '/'), warning.Detail);
+            }
+        }
+
         // One node per OBJECT, not per file: several manifest records can share a GUID
         // because one object exports to several layers.
         var objects = manifest.Objects
             .Where(o => !string.IsNullOrEmpty(o.Path))
             .GroupBy(o => string.IsNullOrEmpty(o.Guid) ? o.Path : o.Guid, StringComparer.Ordinal)
-            .Select(g => BuildLeaf(g.ToList(), root, status, manifest.Vendor))
+            .Select(g => BuildLeaf(g.ToList(), root, status, manifest.Vendor, refusals))
             .ToList();
 
         objects = AttachLibraries(objects, libraries);
@@ -662,7 +687,8 @@ public static class ProjectTreeBuilder
         List<ProjectObject> files,
         string root,
         IReadOnlyDictionary<string, ChangeKind> status,
-        Plc.PlcVendor vendor)
+        Plc.PlcVendor vendor,
+        IReadOnlyDictionary<string, string> refusals)
     {
         // Deterministic layer order, so the diff pane's default does not depend on the order
         // the export happened to walk the project in.
@@ -690,6 +716,9 @@ public static class ProjectTreeBuilder
                 Type = first.Type,
                 TypeName = ObjectTypeNames.Chip(vendor, first.Type),
                 Files = paths,
+                ExportWarning = ordered
+                    .Select(f => refusals.TryGetValue(f.Path.Replace('\\', '/'), out var why) ? why : null)
+                    .FirstOrDefault(why => why is not null),
 
                 // The strongest state across the object's layers. Editing the .st and leaving
                 // the .xml alone still means the object changed, and a node reporting the

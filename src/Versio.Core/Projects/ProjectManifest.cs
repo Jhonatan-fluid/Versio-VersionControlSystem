@@ -221,6 +221,21 @@ public sealed record ExportWarning
 
     /// <summary>Whatever the code needs to be actionable — for a type GUID, the GUID.</summary>
     [JsonPropertyName("detail")] public string Detail { get; init; } = string.Empty;
+
+    /// <summary>
+    /// True when the warning says a file of the object was not written: the file at
+    /// <see cref="Path"/> is the exporter's previous copy, or nothing.
+    /// </summary>
+    /// <remarks>
+    /// The code ends in <c>_FAILED</c>, which every exporter's codes for a file it could not
+    /// write do (<c>XML_EXPORT_FAILED</c>, <c>TYPE_EXPORT_FAILED</c>,
+    /// <c>TAG_TABLE_EXPORT_FAILED</c>, <c>SCL_EXPORT_FAILED</c>, <c>UDT_SOURCE_FAILED</c>) and
+    /// the notes do not (an unknown type GUID, a path too long here). The tree row and the
+    /// project card both ask, so the rule is stated once, here, beside the code it reads.
+    /// </remarks>
+    [JsonIgnore]
+    public bool IsRefusal =>
+        Path.Length > 0 && Code.EndsWith("_FAILED", StringComparison.Ordinal);
 }
 
 /// <summary>The contents of an export's <c>_manifest.json</c>.</summary>

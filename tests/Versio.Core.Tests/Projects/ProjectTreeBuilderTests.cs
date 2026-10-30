@@ -77,6 +77,29 @@ public sealed class ProjectTreeBuilderTests
     }
 
     [Fact]
+    public void An_object_the_export_could_not_write_carries_the_warning_and_a_note_does_not()
+    {
+        // A refused file is the previous export or nothing; the row must say so where the
+        // reader looks, not only in the log (the owner's refused OB, 2026-10-30). A note —
+        // an unknown type GUID — is not a refusal: the file is there and is this export's.
+        var manifest = Manifest(
+            Obj("Main", "Device/App/Main.st", "g1"),
+            Obj("Helper", "Device/App/Helper.st", "g2")) with
+        {
+            Warnings =
+            [
+                new ExportWarning { Code = "XML_EXPORT_FAILED", Path = "Device/App/Main.st", Detail = "Inconsistent blocks cannot be exported." },
+                new ExportWarning { Code = "UNKNOWN_TYPE_GUID", Path = "Device/App/Helper.st", Detail = "{guid}" },
+            ],
+        };
+
+        var tree = Build(manifest, []);
+
+        Assert.Equal("Inconsistent blocks cannot be exported.", Find(tree, "Main").ExportWarning);
+        Assert.Null(Find(tree, "Helper").ExportWarning);
+    }
+
+    [Fact]
     public void An_unknown_type_is_named_exactly_as_the_exporter_wrote_it()
     {
         // Fall back, never fabricate - ObjectTypeNames' rule, reaching the tree unchanged.
